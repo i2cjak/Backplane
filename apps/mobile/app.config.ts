@@ -1,6 +1,5 @@
 import type { ExpoConfig } from "expo/config";
 
-import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 
 type AppVariant = "development" | "preview" | "production" | "k3eda";
@@ -17,10 +16,9 @@ const runtimeVersionPolicy =
 const personalTeamBundleIdentifier = repoEnv.T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();
 const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
-const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
 // Universal exports already contain their own rounded-square silhouette. Using one as an adaptive
 // foreground makes Android draw an icon shape inside the launcher's mask.
-const androidAdaptiveForeground = "./assets/android-icon-foreground.png";
+const androidAdaptiveForeground = "./assets/cad/foreground.png";
 
 if (
   isIosPersonalTeamBuild &&
@@ -33,35 +31,35 @@ if (
 }
 
 const DEVELOPMENT_ASSETS = {
-  appIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
-  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIconComposerProject),
-  splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
+  appIcon: "./assets/cad/development.png",
+  iosIcon: "./assets/cad/development.png",
+  splashIcon: "./assets/cad/development.png",
   androidAdaptiveForeground,
-  androidAdaptiveBackgroundColor: "#00639B",
-  androidMonochromeIcon: "./assets/android-icon-mark.png",
-  androidNotificationIcon: "./assets/android-notification-icon.png",
-  androidNotificationColor: "#00639B",
+  androidAdaptiveBackgroundColor: "#082D45",
+  androidMonochromeIcon: "./assets/cad/monochrome.png",
+  androidNotificationIcon: "./assets/cad/notification.png",
+  androidNotificationColor: "#082D45",
 } as const;
 
 const PREVIEW_ASSETS = {
-  appIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
-  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIconComposerProject),
-  splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
+  appIcon: "./assets/cad/preview.png",
+  iosIcon: "./assets/cad/preview.png",
+  splashIcon: "./assets/cad/preview.png",
   androidAdaptiveForeground,
-  androidAdaptiveBackgroundColor: "#111533",
-  androidMonochromeIcon: "./assets/android-icon-mark.png",
-  androidNotificationIcon: "./assets/android-notification-icon.png",
+  androidAdaptiveBackgroundColor: "#171A35",
+  androidMonochromeIcon: "./assets/cad/monochrome.png",
+  androidNotificationIcon: "./assets/cad/notification.png",
   androidNotificationColor: "#7565C7",
 } as const;
 
 const RELEASE_ASSETS = {
-  appIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
-  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIconComposerProject),
-  splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
+  appIcon: "./assets/cad/production.png",
+  iosIcon: "./assets/cad/production.png",
+  splashIcon: "./assets/cad/production.png",
   androidAdaptiveForeground,
-  androidAdaptiveBackgroundColor: "#000000",
-  androidMonochromeIcon: "./assets/android-icon-mark.png",
-  androidNotificationIcon: "./assets/android-notification-icon.png",
+  androidAdaptiveBackgroundColor: "#07151F",
+  androidMonochromeIcon: "./assets/cad/monochrome.png",
+  androidNotificationIcon: "./assets/cad/notification.png",
   androidNotificationColor: "#FFFFFF",
 } as const;
 

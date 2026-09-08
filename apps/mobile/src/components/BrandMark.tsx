@@ -7,10 +7,10 @@ import { AppText as Text } from "./AppText";
 const appVariant = Constants.expoConfig?.extra?.appVariant;
 const BRAND_MARK_SOURCE =
   appVariant === "development"
-    ? require("../../../../assets/dev/blueprint-ios-1024.png")
+    ? require("../../assets/cad/development.png")
     : appVariant === "preview"
-      ? require("../../../../assets/nightly/nightly-ios-1024.png")
-      : require("../../../../assets/prod/black-ios-1024.png");
+      ? require("../../assets/cad/preview.png")
+      : require("../../assets/cad/production.png");
 const DEFAULT_STAGE_LABEL =
   appVariant === "development" ? "Dev" : appVariant === "preview" ? "Preview" : "Alpha";
 

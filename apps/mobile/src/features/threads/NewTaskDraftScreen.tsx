@@ -37,6 +37,7 @@ import {
   ComposerToolbarScroller,
 } from "../../components/ComposerToolbar";
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
+import { CadMark } from "../../components/CadMark";
 import { ComposerAttachmentButton } from "../../components/ComposerAttachmentButton";
 import { ComposerAttachmentStrip } from "../../components/ComposerAttachmentStrip";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
@@ -1068,7 +1069,11 @@ export function NewTaskDraftScreen(props: {
         {Platform.OS === "android" ? (
           <>
             <NativeStackScreenOptions options={{ headerShown: false }} />
-            <AndroidScreenHeader title="New Thread" onBack={() => navigation.goBack()} />
+            <AndroidScreenHeader
+              title="New Thread"
+              titleLeading={<CadMark />}
+              onBack={() => navigation.goBack()}
+            />
           </>
         ) : (
           <NativeStackScreenOptions options={{ title: "Loading task" }} />
@@ -1425,7 +1430,7 @@ export function NewTaskDraftScreen(props: {
     return (
       <View className="flex-1 bg-sheet" collapsable={false}>
         <NativeStackScreenOptions options={{ headerShown: false }} />
-        <AndroidScreenHeader title="New task" onBack={closeNewTask} />
+        <AndroidScreenHeader title="New task" titleLeading={<CadMark />} onBack={closeNewTask} />
         {heroViewport}
 
         <KeyboardStickyView
@@ -1444,6 +1449,7 @@ export function NewTaskDraftScreen(props: {
         options={{
           headerBackVisible: false,
           headerShadowVisible: false,
+          headerTitle: renderCadHeaderMark,
           title: "",
         }}
       />
@@ -1471,4 +1477,8 @@ export function NewTaskDraftScreen(props: {
       </KeyboardStickyView>
     </View>
   );
+}
+
+function renderCadHeaderMark() {
+  return <CadMark />;
 }

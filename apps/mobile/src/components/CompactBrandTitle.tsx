@@ -3,6 +3,7 @@ import type { NativeStackNavigationOptions } from "@react-navigation/native-stac
 import { Platform, View } from "react-native";
 
 import { AppText as Text } from "./AppText";
+import { CadMark } from "./CadMark";
 import { T3Wordmark } from "./T3Wordmark";
 import { IPAD_HOME_TITLE_OFFSET } from "../lib/layoutMetrics";
 import { resolveMobileStageLabel } from "../lib/mobileBranding";
@@ -43,6 +44,7 @@ export function CompactBrandTitle(
       >
         CAD
       </Text>
+      <CadMark />
       <View className="rounded-full bg-subtle px-1.5 py-0.5">
         <Text
           allowFontScaling={props.allowFontScaling}

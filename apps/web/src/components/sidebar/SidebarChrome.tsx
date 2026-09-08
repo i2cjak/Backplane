@@ -101,6 +101,17 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
         >
           CAD
         </span>
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 24 24"
+          className="size-3 shrink-0 self-center opacity-60"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinejoin="round"
+        >
+          <path d="M12 2 21 7v10l-9 5-9-5V7l9-5ZM3 7l9 5 9-5M12 12v10" />
+        </svg>
       </span>
     </Link>
   );

@@ -29,6 +29,8 @@ import { useEnvironmentQuery } from "../../state/query";
 import { dismissGitActionResult, useGitActionProgress } from "../../state/use-vcs-action-state";
 import { vcsEnvironment } from "../../state/vcs";
 
+import { CadMark } from "../../components/CadMark";
+import { CadThreadTitle } from "../../components/CadThreadTitle";
 import { EmptyState } from "../../components/EmptyState";
 import {
   AndroidScreenHeader,
@@ -314,6 +316,16 @@ function ThreadRouteContent(
   ]
     .filter(Boolean)
     .join(" · ");
+  const headerTitle = selectedThread?.title ?? "";
+  const renderHeaderTitle = useCallback(
+    () => (
+      <CadThreadTitle
+        title={headerTitle}
+        subtitle={usesNativeHeaderGlass ? headerSubtitle : undefined}
+      />
+    ),
+    [headerTitle, headerSubtitle],
+  );
   /* ─── Git status for native header trigger ───────────────────────── */
   const gitStatus = useEnvironmentQuery(
     selectedThread !== null && selectedThreadCwd !== null
@@ -877,13 +889,7 @@ function ThreadRouteContent(
           // Android draws its own in-flow header (AndroidScreenHeader below);
           // the native stack header stays iOS-only.
           headerShown: Platform.OS !== "android",
-          headerTitle: selectedThread.title,
-          headerTitleStyle: usesNativeHeaderGlass
-            ? {
-                fontSize: 17,
-                fontWeight: "800",
-              }
-            : undefined,
+          headerTitle: renderHeaderTitle,
           title: selectedThread.title,
           headerBackVisible: !layout.usesSplitView,
           // Compact uses the NATIVE back button when a previous route exists;
@@ -904,13 +910,13 @@ function ThreadRouteContent(
             Platform.OS === "ios"
               ? () => (layout.usesSplitView ? splitCenterHeaderItems : compactRightHeaderItems)
               : undefined,
-          unstable_headerSubtitle: usesNativeHeaderGlass ? headerSubtitle : undefined,
         }}
       />
 
       {Platform.OS === "android" ? (
         <AndroidScreenHeader
           title={selectedThread.title}
+          titleLeading={<CadMark />}
           subtitle={headerSubtitle}
           onBack={layout.usesSplitView ? undefined : () => navigation.goBack()}
           actions={androidHeaderActions}

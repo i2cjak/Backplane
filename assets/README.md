@@ -1,5 +1,20 @@
 # Brand icons
 
+## T3CAD mobile icons
+
+The mobile app uses the vectors in `apps/mobile/assets/cad/`: T3 with a cyan
+wireframe cube, with distinct production, development, and preview backgrounds.
+The cube is also the subtle mobile workspace signature and widget mark.
+
+After editing these vectors, run `bash apps/mobile/scripts/export-cad-icons.sh`
+(requires ImageMagick with SVG support). It regenerates the iOS/splash PNGs and
+the transparent Android adaptive, monochrome, and notification images. Keep
+the Android foreground inside the central adaptive-icon safe zone. Expo uses
+these CAD PNGs directly; the legacy Icon Composer exports below remain the
+desktop/web icon family. Launcher and widget changes require a native rebuild.
+
+## Desktop and web icons
+
 The three Icon Composer projects are the source of truth for full application icons:
 
 - `dev/app-icon.icon`
