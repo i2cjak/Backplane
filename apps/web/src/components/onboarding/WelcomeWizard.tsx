@@ -314,7 +314,9 @@ function ConnectionStep({
 
   return (
     <>
-      <h1 className="text-3xl font-semibold text-foreground sm:text-[34px]">Where is your code?</h1>
+      <h1 className="text-3xl font-semibold text-foreground sm:text-[34px]">
+        Where are your CAD projects?
+      </h1>
       <p className="mt-2.5 text-sm text-muted-foreground">Choose where your agents will run.</p>
       <div className="mt-8 border-t border-border">
         {localAvailable ? (
@@ -468,7 +470,7 @@ function ConnectMachinesStep({
       description={
         hasRemoteMachines
           ? "Connected to your T3 account."
-          : "Run this command on the computer with your code."
+          : "Run this command on the computer with your CAD projects."
       }
       onBack={onBack}
     >
@@ -490,7 +492,7 @@ function ConnectMachinesStep({
             <CollapsiblePanel>
               <CommandBlock command={CONNECT_LOGIN_COMMAND} className="mt-2" />
               <p className="mt-2 text-xs text-muted-foreground">
-                Keep T3 Code running on that computer. If it is not running, open T3 Code or run{" "}
+                Keep T3CAD running on that computer. If it is not running, open T3CAD or run{" "}
                 <code className="font-mono">npx t3 serve</code>.
               </p>
             </CollapsiblePanel>
@@ -503,7 +505,7 @@ function ConnectMachinesStep({
         <>
           <CommandBlock command={CONNECT_LOGIN_COMMAND} className="mt-7" prominent />
           <p className="mt-2 text-xs text-muted-foreground">
-            Keep T3 Code running on that computer. If it is not running, open T3 Code or run{" "}
+            Keep T3CAD running on that computer. If it is not running, open T3CAD or run{" "}
             <code className="font-mono">npx t3 serve</code>.
           </p>
           <div className="mt-5 overflow-hidden border-y border-border">

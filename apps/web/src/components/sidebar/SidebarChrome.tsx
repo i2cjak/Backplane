@@ -99,7 +99,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
             onBackdrop ? "text-white/70" : "text-muted-foreground",
           )}
         >
-          Code
+          CAD
         </span>
       </span>
     </Link>

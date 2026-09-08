@@ -18,8 +18,8 @@ interface Props {
 }
 
 const {
-  title = "T3 Code",
-  description = "T3 Code. The open-source control plane for coding agents.",
+  title = "T3CAD",
+  description = "T3CAD. The open-source control plane for coding agents.",
   pageClass,
 } = Astro.props;
 
@@ -46,14 +46,14 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
     <meta name="description" content={description} />
     <link rel="canonical" href={canonicalUrl} />
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="T3 Code" />
+    <meta property="og:site_name" content="T3CAD" />
     <meta property="og:url" content={canonicalUrl} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:image" content={socialImageUrl} />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="The T3 Code desktop app with a thread open." />
+    <meta property="og:image:alt" content="An illustration of the T3CAD desktop interface with a thread open." />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@t3dotgg" />
     <meta name="twitter:title" content={title} />
@@ -76,8 +76,8 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
     <div class:list={["page", pageClass]}>
       <nav class="nav">
         <div class="nav-inner">
-          <a href="/" class="nav-brand" aria-label="T3 Code home">
-            <span class="nav-brand-name">T3 Code</span>
+          <a href="/" class="nav-brand" aria-label="T3CAD home">
+            <span class="nav-brand-name">T3CAD</span>
           </a>
           <div class="nav-right">
             <a
@@ -85,7 +85,7 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
               href={GITHUB_REPOSITORY_URL}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label={`Star T3 Code on GitHub — ${MARKETING_STATS.githubStars} stars`}
+              aria-label={`Star T3CAD on GitHub — ${MARKETING_STATS.githubStars} stars`}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <path d="M12 2.3l2.9 5.88 6.49.94-4.7 4.58 1.11 6.47L12 17.12l-5.8 3.05 1.11-6.47-4.7-4.58 6.49-.94L12 2.3z"/>

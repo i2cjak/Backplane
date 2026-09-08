@@ -287,7 +287,7 @@ function UnknownWhenVariableWarning({
 
   return (
     <WarningTooltipIcon label={label} focusable={focusable} className="size-4.5">
-      T3 Code does not recognize this condition yet. It can still be saved, but it may not match
+      T3CAD does not recognize this condition yet. It can still be saved, but it may not match
       unless the runtime provides it.
     </WarningTooltipIcon>
   );
@@ -1327,8 +1327,8 @@ function BrowserKeybindingNotice() {
     <div className="flex items-center gap-2 px-3 py-2.5 text-[12px] leading-[1.45] text-muted-foreground sm:px-4">
       <TriangleAlertIcon className="size-3.5 shrink-0 text-warning" aria-hidden />
       <span>
-        Some shortcuts may be claimed by the browser before T3 Code sees them. Use the desktop app
-        for better keybinding support.
+        Some shortcuts may be claimed by the browser before T3CAD sees them. Use the desktop app for
+        better keybinding support.
       </span>
     </div>
   );

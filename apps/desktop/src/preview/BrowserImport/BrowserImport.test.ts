@@ -70,7 +70,7 @@ const withImporter = Effect.fnUntraced(function* () {
         Layer.provide(rejectedBeforeSession),
         Layer.provide(environment),
         Layer.provide(Layer.succeed(HostProcessPlatform, "darwin")),
-        Layer.provide(Layer.succeed(HostProcessExecutablePath, "/Applications/T3 Code.app")),
+        Layer.provide(Layer.succeed(HostProcessExecutablePath, "/Applications/T3CAD.app")),
         Layer.provide(NodeServices.layer),
       ),
     ),

@@ -43,7 +43,7 @@ function versionCore(version: string): string {
 }
 
 /**
- * The skew a user can act on: the connected server runs an older T3 Code than
+ * The skew a user can act on: the connected server runs an older T3CAD than
  * this client, so the server is the side that needs updating.
  *
  * Two nightly builds compare their full versions, including the date and run.
@@ -80,7 +80,7 @@ export function resolveVersionMismatch(
   return {
     clientVersion: normalizedClientVersion,
     serverVersion: normalizedServerVersion,
-    hint: "Version mismatch. Try syncing the client and server to the same T3 Code version.",
+    hint: "Version mismatch. Try syncing the client and server to the same T3CAD version.",
   };
 }
 
