@@ -43,6 +43,7 @@ import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
+import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
@@ -74,6 +75,12 @@ import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as ProjectionSnapshotQuery from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import bundle from "../kistack.bundle.json" with { type: "json" };
+import {
+  buildKiStackInstructions,
+  getKiStackRevision,
+  refreshKiStackSkills as refreshKiStackSkillsDefault,
+} from "../KiStackSkills.ts";
 const isModelSelection = Schema.is(ModelSelection);
 
 /** How long a manual context compaction may run before ProviderService gives up on it. */
@@ -105,6 +112,13 @@ export interface ProviderServiceLiveOptions {
   readonly issueMcpCredential?: typeof McpSessionRegistry.issueActiveMcpCredential;
   /** Same seam as `issueMcpCredential`, for observing the deny path's revoke. */
   readonly revokeMcpCredential?: typeof McpSessionRegistry.revokeActiveMcpThread;
+  /** Test seam for the best-effort refresh run after an agent request. */
+  readonly refreshKiStackSkills?: () => Promise<unknown>;
+  /** Test seam for the current KiStack revision and instruction catalog. */
+  readonly getKiStackInstructionsSnapshot?: () => {
+    readonly revision: string;
+    readonly instructions: string;
+  };
 }
 
 interface TurnAnalyticsMetadata {
@@ -317,6 +331,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   options?: ProviderServiceLiveOptions,
 ) {
   const analytics = yield* Effect.service(AnalyticsService.AnalyticsService);
+  const serviceScope = yield* Scope.Scope;
   const serverConfig = yield* ServerConfig.ServerConfig;
   const eventLoggers = yield* ProviderEventLoggers.ProviderEventLoggers;
   // Options-provided logger wins (test overrides); otherwise we take whatever
@@ -335,6 +350,14 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     options?.issueMcpCredential ?? McpSessionRegistry.issueActiveMcpCredential;
   const revokeMcpCredential =
     options?.revokeMcpCredential ?? McpSessionRegistry.revokeActiveMcpThread;
+  const refreshKiStackSkills = options?.refreshKiStackSkills ?? refreshKiStackSkillsDefault;
+  const getKiStackInstructionsSnapshot =
+    options?.getKiStackInstructionsSnapshot ??
+    (() => ({
+      revision: getKiStackRevision(),
+      instructions: buildKiStackInstructions(),
+    }));
+  const kiStackRevisionByThread = new Map<ThreadId, string>();
   const fileSystem = yield* FileSystem.FileSystem;
   const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
   const pendingCompactions = new Map<ThreadId, PendingCompaction>();
@@ -1429,6 +1452,18 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       }
       metricProvider = routed.adapter.provider;
       metricModel = input.modelSelection?.model;
+      const kiStackSnapshot = getKiStackInstructionsSnapshot();
+      const knownKiStackRevision = kiStackRevisionByThread.get(input.threadId) ?? bundle.revision;
+      const canAppendKiStackInstructions = input.input !== undefined || attachments.length > 0;
+      const dispatchInput =
+        kiStackSnapshot.revision !== knownKiStackRevision && canAppendKiStackInstructions
+          ? {
+              ...input,
+              input: [input.input, kiStackSnapshot.instructions]
+                .filter((part): part is string => typeof part === "string" && part.length > 0)
+                .join("\n\n"),
+            }
+          : input;
       yield* Effect.annotateCurrentSpan({
         "provider.kind": routed.adapter.provider,
         ...(input.modelSelection?.model ? { "provider.model": input.modelSelection.model } : {}),
@@ -1452,7 +1487,10 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         }),
         (turnMetadata) =>
           Effect.gen(function* () {
-            const turn = yield* routed.adapter.sendTurn(input);
+            const turn = yield* routed.adapter.sendTurn(dispatchInput);
+            if (dispatchInput !== input) {
+              kiStackRevisionByThread.set(input.threadId, kiStackSnapshot.revision);
+            }
             yield* associateTurnAnalytics({
               providerInstanceId: routed.instanceId,
               threadId: input.threadId,
@@ -1495,6 +1533,16 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         attachmentCount: attachments.length,
         hasInput: typeof input.input === "string" && input.input.trim().length > 0,
       });
+      // Refresh the app-owned KiStack cache after dispatch so a newly released
+      // skill revision is available to the next provider request. This is
+      // deliberately detached from the request's latency and failure channel:
+      // a cache refresh must never affect an agent turn.
+      yield* Effect.tryPromise(() => refreshKiStackSkills()).pipe(
+        Effect.catch((cause) =>
+          Effect.logDebug("provider KiStack skills refresh failed", { cause }),
+        ),
+        Effect.forkIn(serviceScope),
+      );
       return turn;
     }).pipe(
       withMetrics({
@@ -1773,6 +1821,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           yield* settleCompaction(input.threadId, pendingCompaction, "turn.aborted");
         }
         timedOutNativeCompactions.delete(input.threadId);
+        kiStackRevisionByThread.delete(input.threadId);
         yield* clearTurnAnalyticsSession(routed.instanceId, input.threadId);
         yield* clearMcpSession(input.threadId);
         yield* directory.upsert({
@@ -2010,6 +2059,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     });
     yield* recordCompletedTurnProperties(properties);
     const threadIds = yield* directory.listThreadIds();
+    kiStackRevisionByThread.clear();
     const currentAdapters = yield* getAdapterEntries;
     const activeSessions = yield* Effect.forEach(currentAdapters, ([instanceId, adapter]) =>
       adapter.listSessions().pipe(

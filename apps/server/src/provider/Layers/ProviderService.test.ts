@@ -418,6 +418,11 @@ function makeProviderServiceLayer(
     readonly supportsConversationRollback?: boolean;
     readonly analyticsLayer?: Layer.Layer<AnalyticsService.AnalyticsService>;
     readonly registry?: ProviderAdapterRegistry.ProviderAdapterRegistry["Service"];
+    readonly refreshKiStackSkills?: () => Promise<void>;
+    readonly getKiStackInstructionsSnapshot?: () => {
+      readonly revision: string;
+      readonly instructions: string;
+    };
   } = {},
 ) {
   const codex = makeFakeCodexAdapter(CODEX_DRIVER, input.supportsConversationRollback);
@@ -445,7 +450,14 @@ function makeProviderServiceLayer(
 
   const layer = it.layer(
     Layer.mergeAll(
-      makeProviderServiceLive().pipe(
+      makeProviderServiceLive({
+        ...(input.refreshKiStackSkills === undefined
+          ? {}
+          : { refreshKiStackSkills: input.refreshKiStackSkills }),
+        ...(input.getKiStackInstructionsSnapshot === undefined
+          ? {}
+          : { getKiStackInstructionsSnapshot: input.getKiStackInstructionsSnapshot }),
+      }).pipe(
         Layer.provide(NodeServices.layer),
         Layer.provide(providerAdapterLayer),
         Layer.provide(directoryLayer),
@@ -593,6 +605,72 @@ for (const [enabled, completed] of [
       }).pipe(Effect.provide(NodeServices.layer)),
   );
 }
+
+const kistackRefreshStarted = { value: false };
+let releaseKiStackRefresh: (() => void) | undefined;
+const kistackRefresh = vi.fn(
+  () =>
+    new Promise<void>((resolve) => {
+      kistackRefreshStarted.value = true;
+      releaseKiStackRefresh = resolve;
+    }),
+);
+const kistackRefreshFixture = makeProviderServiceLayer({ refreshKiStackSkills: kistackRefresh });
+kistackRefreshFixture.layer("KiStack refresh", (it) => {
+  it.effect("refreshes after dispatch without delaying sendTurn", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("kistack-refresh-after-dispatch");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const turn = yield* provider.sendTurn({ threadId, input: "hello" });
+      yield* Effect.yieldNow;
+
+      assert.equal(turn.threadId, threadId);
+      assert.equal(kistackRefreshFixture.codex.sendTurn.mock.calls.length, 1);
+      assert.equal(kistackRefresh.mock.calls.length, 1);
+      assert.equal(kistackRefreshStarted.value, true);
+      releaseKiStackRefresh?.();
+    }),
+  );
+});
+
+let kistackSnapshot = { revision: "dynamic-kistack-v1", instructions: "<kistack-v1>" };
+const kistackInstructionsFixture = makeProviderServiceLayer({
+  refreshKiStackSkills: async () => {},
+  getKiStackInstructionsSnapshot: () => kistackSnapshot,
+});
+kistackInstructionsFixture.layer("KiStack instruction updates", (it) => {
+  it.effect("appends changed instructions once per session revision", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("kistack-instruction-update");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      yield* provider.sendTurn({ threadId, input: "first" });
+      yield* provider.sendTurn({ threadId, input: "second" });
+      kistackSnapshot = { revision: "dynamic-kistack-v2", instructions: "<kistack-v2>" };
+      yield* provider.sendTurn({ threadId, input: "third" });
+
+      const inputs = kistackInstructionsFixture.codex.sendTurn.mock.calls.map(
+        ([request]) => request.input,
+      );
+      assert.equal(inputs[0], "first\n\n<kistack-v1>");
+      assert.equal(inputs[1], "second");
+      assert.equal(inputs[2], "third\n\n<kistack-v2>");
+    }),
+  );
+});
 
 it.effect("ProviderServiceLive catches stopAll failures during shutdown", () =>
   Effect.gen(function* () {

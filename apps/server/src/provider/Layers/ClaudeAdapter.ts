@@ -86,7 +86,7 @@ import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import { planClaudeSkillDispatch } from "../Drivers/ClaudeSkillDispatch.ts";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
-import { kiStackSkillsDirectory } from "../KiStackSkills.ts";
+import { kiStackCacheDirectory } from "../KiStackSkills.ts";
 import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
 import {
   BUNDLED_CLAUDE_MODEL_CATALOG,
@@ -4615,7 +4615,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const additionalDirectories = [
         ...(input.cwd ? [input.cwd] : []),
         serverConfig.attachmentsDir,
-        kiStackSkillsDirectory,
+        kiStackCacheDirectory,
       ];
       const queryOptions: ClaudeQueryOptions = {
         ...(input.cwd ? { cwd: input.cwd } : {}),

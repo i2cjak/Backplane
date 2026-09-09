@@ -46,7 +46,7 @@ import {
   SYNTHETIC_CLAUDE_THINKING_MODEL,
 } from "../ClaudeModelCatalog.testFixtures.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
-import { kiStackSkillsDirectory } from "../KiStackSkills.ts";
+import { kiStackCacheDirectory } from "../KiStackSkills.ts";
 import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import type { ClaudeScopedLimitNames } from "./claudeUsageLimits.ts";
@@ -394,7 +394,7 @@ describe("ClaudeAdapterLive", () => {
         preset: "claude_code",
         append: buildRuntimeInstructions({ harness: "Claude Code" }),
       });
-      assert.include(createInput?.options.additionalDirectories ?? [], kiStackSkillsDirectory);
+      assert.include(createInput?.options.additionalDirectories ?? [], kiStackCacheDirectory);
       assert.equal(createInput?.options.permissionMode, "bypassPermissions");
       assert.equal(createInput?.options.allowDangerouslySkipPermissions, true);
     }).pipe(
