@@ -251,8 +251,8 @@ describe("DesktopBackendConfiguration", () => {
         assert.isUndefined(first.env.BACKPLANE_PORT);
         assert.isUndefined(first.env.BACKPLANE_MODE);
         assert.isUndefined(first.env.BACKPLANE_DESKTOP_LAN_HOST);
-        assert.equal(first.env.BACKPLANE_KICAD_ROOT, "/missing/resources/kicad");
-        assert.equal(first.env.BACKPLANE_PYTHON, "/missing/resources/python/bin/python3");
+        assert.isUndefined(first.env.BACKPLANE_KICAD_ROOT);
+        assert.isUndefined(first.env.BACKPLANE_PYTHON);
 
         assert.equal(first.bootstrap.mode, "desktop");
         assert.equal(first.bootstrap.noBrowser, true);
@@ -277,6 +277,31 @@ describe("DesktopBackendConfiguration", () => {
       }),
       { isPackaged: false, resourcesPath: "/dev/resources" },
     ),
+  );
+
+  it.effect("injects packaged runtime paths only when bundled runtimes exist", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const resourcesPath = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "backplane-desktop-runtime-test-",
+      });
+      const pythonPath = `${resourcesPath}/python/bin/python3`;
+      yield* fileSystem.makeDirectory(`${resourcesPath}/kicad`, { recursive: true });
+      yield* fileSystem.makeDirectory(`${resourcesPath}/kicad/bin`, { recursive: true });
+      yield* fileSystem.writeFileString(`${resourcesPath}/kicad/bin/kicad-cli`, "bundled kicad");
+      yield* fileSystem.makeDirectory(`${resourcesPath}/python/bin`, { recursive: true });
+      yield* fileSystem.writeFileString(pythonPath, "bundled python");
+
+      yield* withHarness(
+        Effect.gen(function* () {
+          const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+          const config = yield* configuration.resolvePrimary;
+          assert.equal(config.env.BACKPLANE_KICAD_ROOT, `${resourcesPath}/kicad`);
+          assert.equal(config.env.BACKPLANE_PYTHON, pythonPath);
+        }),
+        { resourcesPath },
+      );
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
   it("preserves explicit runtime environment overrides for packaged backends", async () => {

@@ -467,24 +467,53 @@ const buildObservabilityFragment = (observabilitySettings: BackendObservabilityS
   }),
 });
 
-const resolveBundledRuntimeEnvironment = (
+const resolveBundledRuntimeEnvironment = Effect.fn(
+  "desktop.backendConfiguration.resolveBundledRuntimeEnvironment",
+)(function* (
   environment: DesktopEnvironment.DesktopEnvironment["Service"],
-): Record<string, string> => {
+): Effect.fn.Return<Record<string, string>, never, FileSystem.FileSystem> {
   if (!environment.isPackaged) return {};
 
-  const defaults = {
-    BACKPLANE_KICAD_ROOT: environment.path.join(environment.resourcesPath, "kicad"),
-    BACKPLANE_PYTHON: environment.path.join(
-      environment.resourcesPath,
-      "python",
-      "bin",
-      process.platform === "win32" ? "python.exe" : "python3",
+  const fileSystem = yield* FileSystem.FileSystem;
+  const kicadRoot = environment.path.join(environment.resourcesPath, "kicad");
+  const defaults = [
+    {
+      name: "BACKPLANE_KICAD_ROOT",
+      value: kicadRoot,
+      probe: environment.path.join(
+        kicadRoot,
+        "bin",
+        process.platform === "win32" ? "kicad-cli.exe" : "kicad-cli",
+      ),
+    },
+    {
+      name: "BACKPLANE_PYTHON",
+      value: environment.path.join(
+        environment.resourcesPath,
+        "python",
+        "bin",
+        process.platform === "win32" ? "python.exe" : "python3",
+      ),
+      probe: environment.path.join(
+        environment.resourcesPath,
+        "python",
+        "bin",
+        process.platform === "win32" ? "python.exe" : "python3",
+      ),
+    },
+  ];
+  const available = yield* Effect.forEach(defaults, ({ name, value, probe }) =>
+    fileSystem.exists(probe).pipe(
+      Effect.orElseSucceed(() => false),
+      Effect.map((exists) => [name, value, exists] as const),
     ),
-  };
-  return Object.fromEntries(
-    Object.entries(defaults).filter(([name]) => !(process.env[name]?.trim() ?? "")),
   );
-};
+  return Object.fromEntries(
+    available
+      .filter(([name, _value, exists]) => exists && !(process.env[name]?.trim() ?? ""))
+      .map(([name, value]) => [name, value]),
+  );
+});
 
 const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolvePrimary")(
   function* (
@@ -526,7 +555,6 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       env: {
         ...backendChildEnvPatch(),
         ELECTRON_RUN_AS_NODE: "1",
-        ...resolveBundledRuntimeEnvironment(environment),
       },
       // Primary wants process.env (PATH, dev-runner's BACKPLANE_HOME, etc.).
       extendEnv: true,
@@ -825,6 +853,9 @@ export const make = Effect.gen(function* () {
 
   const buildWindowsPrimaryConfig = Effect.gen(function* () {
     const shared = yield* sharedInputs;
+    const bundledRuntimeEnvironment = yield* resolveBundledRuntimeEnvironment(environment).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+    );
     const resourceMonitorPath = yield* resolveResourceMonitorPath().pipe(
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
@@ -832,6 +863,10 @@ export const make = Effect.gen(function* () {
     return yield* resolvePrimaryStartConfig({ ...shared, resourceMonitorPath }).pipe(
       Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
       Effect.provideService(DesktopServerExposure.DesktopServerExposure, serverExposure),
+      Effect.map((config) => ({
+        ...config,
+        env: { ...config.env, ...bundledRuntimeEnvironment },
+      })),
     );
   });
 
