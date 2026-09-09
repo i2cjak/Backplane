@@ -32,8 +32,8 @@ import {
   type BrowserImportSource,
   type PreviewAppearancePreference,
   type PreviewViewportSetting,
-} from "@t3tools/contracts";
-import { PREVIEW_VIEWPORT_PRESETS } from "@t3tools/shared/previewViewport";
+} from "@backplane/contracts";
+import { PREVIEW_VIEWPORT_PRESETS } from "@backplane/shared/previewViewport";
 import { Link } from "@tanstack/react-router";
 import { InfoIcon, MoreVertical, Plus as PlusIcon } from "lucide-react";
 import { useCallback, useRef, useState, type ReactNode } from "react";

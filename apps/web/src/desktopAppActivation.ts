@@ -7,7 +7,7 @@ import type {
   ProjectId,
   ScopedProjectRef,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 
 export interface DesktopAppActivationProject {
   readonly id: ProjectId;
@@ -85,7 +85,7 @@ export async function handleDesktopAppActivationRequest(
       return failure(
         request.requestId,
         "project-create-failed",
-        errorMessage(error, "T3CAD could not add the project."),
+        errorMessage(error, "Backplane could not add the project."),
       );
     }
   }
@@ -99,7 +99,7 @@ export async function handleDesktopAppActivationRequest(
       return failure(
         request.requestId,
         "thread-open-failed",
-        "T3CAD could not open a new thread for the project.",
+        "Backplane could not open a new thread for the project.",
       );
     }
     return {
@@ -113,7 +113,7 @@ export async function handleDesktopAppActivationRequest(
     return failure(
       request.requestId,
       "thread-open-failed",
-      errorMessage(error, "T3CAD could not open a new thread for the project."),
+      errorMessage(error, "Backplane could not open a new thread for the project."),
     );
   }
 }

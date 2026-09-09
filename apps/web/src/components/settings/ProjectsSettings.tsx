@@ -1,4 +1,4 @@
-import { resolveEnvironmentMachineKind } from "@t3tools/contracts";
+import { resolveEnvironmentMachineKind } from "@backplane/contracts";
 import { FolderIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";

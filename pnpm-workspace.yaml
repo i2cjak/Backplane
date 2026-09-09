@@ -1,7 +1,7 @@
 packages:
   - apps/*
   - infra/*
-  - oxlint-plugin-t3code
+  - oxlint-plugin-backplane
   - packages/*
   - scripts
 
@@ -157,6 +157,7 @@ packageExtensions:
       vite: "catalog:"
 
 patchedDependencies:
+  react-native-shiki-engine@0.3.12: patches/react-native-shiki-engine@0.3.12.patch
   "@clerk/expo@4.2.0": patches/@clerk__expo@4.2.0.patch
   "@effect/vitest@4.0.0-beta.103": patches/@effect__vitest@4.0.0-beta.103.patch
   "@expo/metro-config@57.0.12": patches/@expo__metro-config@57.0.12.patch

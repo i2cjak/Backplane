@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@backplane/contracts";
 import { ScaleIcon } from "lucide-react";
 import { memo, useMemo } from "react";
 

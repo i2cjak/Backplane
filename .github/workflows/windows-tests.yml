@@ -63,7 +63,7 @@ jobs:
 
       - name: Ensure Electron runtime is installed
         if: inputs.package == '' || inputs.package == 'apps/desktop'
-        run: vp run --filter "@t3tools/desktop" ensure:electron
+        run: vp run --filter "@backplane/desktop" ensure:electron
 
       # `vp run ... test -- <files>` does not forward positional args to vitest,
       # so file-scoped runs call `vp test run` inside the package instead.
@@ -73,7 +73,7 @@ jobs:
           $package = '${{ inputs.package }}'
           $files = '${{ inputs.files }}'
           if ($package -eq '') {
-            vp run --parallel --concurrency-limit 4 --filter '!t3' --filter '!@t3tools/monorepo' test
+            vp run --parallel --concurrency-limit 4 --filter '!backplane' --filter '!@backplane/monorepo' test
           } elseif ($files -eq '') {
             vp run --filter "./$package" test
           } else {

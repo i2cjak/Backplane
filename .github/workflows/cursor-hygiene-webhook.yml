@@ -21,12 +21,12 @@ jobs:
     steps:
       - name: POST to Cursor
         env:
-          URL: ${{ secrets.CURSOR_T3CODE_WEBHOOK_URL }}
-          AUTH: ${{ secrets.CURSOR_T3CODE_WEBHOOK_AUTH }}
+          URL: ${{ secrets.CURSOR_BACKPLANE_WEBHOOK_URL }}
+          AUTH: ${{ secrets.CURSOR_BACKPLANE_WEBHOOK_AUTH }}
         run: |
           set -euo pipefail
           if [ -z "${URL:-}" ] || [ -z "${AUTH:-}" ]; then
-            echo "Missing CURSOR_T3CODE_WEBHOOK_URL or CURSOR_T3CODE_WEBHOOK_AUTH — skipping."
+            echo "Missing CURSOR_BACKPLANE_WEBHOOK_URL or CURSOR_BACKPLANE_WEBHOOK_AUTH — skipping."
             exit 0
           fi
           curl -fsS --max-time 60 -X POST "$URL" \

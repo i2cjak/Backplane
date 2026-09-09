@@ -5,8 +5,8 @@ import {
   settlePromise,
   squashAtomCommandFailure,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+} from "@backplane/client-runtime/state/runtime";
+import { scopeProjectRef, scopeThreadRef } from "@backplane/client-runtime/environment";
 import { AsyncResult } from "effect/unstable/reactivity";
 import {
   deriveProjectGroupingOverrideKey,
@@ -22,17 +22,17 @@ import {
   type ServerSettings,
   type ProviderDriverKind,
   type SidebarProjectGroupingMode,
-  type T3ProjectFileScript,
+  type BackplaneProjectFileScript,
   type ThreadEnvMode,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import { resolveEnvModeLabel } from "../BranchToolbar.logic";
-import { createModelSelection } from "@t3tools/shared/model";
-import { resolveProjectAutoPull } from "@t3tools/shared/serverSettings";
+import { createModelSelection } from "@backplane/shared/model";
+import { resolveProjectAutoPull } from "@backplane/shared/serverSettings";
 import {
   projectScriptsInheritDefaults,
   resolveProjectScripts,
-} from "@t3tools/shared/projectScripts";
-import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
+} from "@backplane/shared/projectScripts";
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@backplane/shared/keybindings";
 import { useNavigate } from "@tanstack/react-router";
 import * as Equal from "effect/Equal";
 import * as Cause from "effect/Cause";
@@ -45,7 +45,7 @@ import {
   useEnvironmentSettings,
   useUpdateClientSettings,
 } from "../../hooks/useSettings";
-import { useT3ProjectFileState } from "../../hooks/useT3ProjectFileScripts";
+import { useBackplaneProjectFileState } from "../../hooks/useBackplaneProjectFileScripts";
 import { ProjectActionsList } from "./ProjectActionsList";
 import { isElectron } from "../../env";
 import {
@@ -723,17 +723,19 @@ function ProjectDetail({
       project: selectedCheckout,
     },
   ]);
-  const t3File = useT3ProjectFileState(
+  const backplaneFile = useBackplaneProjectFileState(
     selectedCheckout.environmentId,
     selectedCheckout.workspaceRoot,
   );
   // What the "Default" option resolves to while no override is set: the
-  // repo's t3.json value when present, otherwise the global setting.
-  const inheritedEnvMode = t3File.file?.defaultThreadEnvMode ?? scriptSettings.defaultThreadEnvMode;
-  const inheritedEnvModeSource = t3File.file?.defaultThreadEnvMode != null ? "t3.json" : "global";
+  // repo's backplane.json value when present, otherwise the global setting.
+  const inheritedEnvMode =
+    backplaneFile.file?.defaultThreadEnvMode ?? scriptSettings.defaultThreadEnvMode;
+  const inheritedEnvModeSource =
+    backplaneFile.file?.defaultThreadEnvMode != null ? "backplane.json" : "global";
   const importableScripts = useMemo(
     () =>
-      t3File.scripts.filter(
+      backplaneFile.scripts.filter(
         (fileScript) =>
           !scripts.some(
             (script) =>
@@ -741,7 +743,7 @@ function ProjectDetail({
               script.name.toLowerCase() === fileScript.name.toLowerCase(),
           ),
       ),
-    [scripts, t3File.scripts],
+    [scripts, backplaneFile.scripts],
   );
 
   const deleteScript = (scriptId: string) =>
@@ -752,7 +754,7 @@ function ProjectDetail({
     );
 
   const importFileScript = useCallback(
-    async (fileScript: T3ProjectFileScript) => {
+    async (fileScript: BackplaneProjectFileScript) => {
       const payload: NewProjectScriptInput = {
         name: fileScript.name,
         command: fileScript.command,
@@ -1065,7 +1067,7 @@ function ProjectDetail({
             }
             description={
               storedEnvMode === null
-                ? "Inherited from t3.json or machine defaults."
+                ? "Inherited from backplane.json or machine defaults."
                 : "Overridden for this project. Reset to inherit its workspace default."
             }
             resetAction={
@@ -1100,7 +1102,7 @@ function ProjectDetail({
                 <SelectPopup align="end" alignItemWithTrigger={false}>
                   <SelectItem value="inherit">
                     {group.memberProjects.length > 1
-                      ? "Default (each checkout's t3.json or global setting)"
+                      ? "Default (each checkout's backplane.json or global setting)"
                       : `Default (${inheritedEnvModeSource}: ${resolveEnvModeLabel(inheritedEnvMode).toLowerCase()})`}
                   </SelectItem>
                   <SelectItem value="worktree">{resolveEnvModeLabel("worktree")}</SelectItem>
@@ -1320,7 +1322,7 @@ function ProjectDetail({
                   </MenuTrigger>
                   <MenuPopup align="end" className="w-72">
                     <MenuGroup>
-                      <MenuGroupLabel>Import from t3.json</MenuGroupLabel>
+                      <MenuGroupLabel>Import from backplane.json</MenuGroupLabel>
                       <p className="px-2 pb-2 text-pretty text-sm text-muted-foreground">
                         Add actions declared by this checkout without editing them first.
                       </p>
@@ -1362,10 +1364,10 @@ function ProjectDetail({
             disabled={isSavingScripts}
             onEdit={(script) => setEditorRequest(editorRequestForScript(script, keybindings))}
           />
-          {t3File.status === "invalid" ? (
+          {backplaneFile.status === "invalid" ? (
             <SettingsRow
-              title="t3.json is invalid"
-              description="A t3.json exists in this checkout but fails to parse, so every action and icon it declares is ignored. Check the JSON syntax and icon values."
+              title="backplane.json is invalid"
+              description="A backplane.json exists in this checkout but fails to parse, so every action and icon it declares is ignored. Check the JSON syntax and icon values."
               className="text-warning"
             />
           ) : null}

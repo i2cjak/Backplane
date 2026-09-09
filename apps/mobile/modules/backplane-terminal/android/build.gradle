@@ -1,0 +1,36 @@
+apply plugin: 'com.android.library'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+group = 'com.backplane.terminal'
+version = '0.0.0'
+
+android {
+  namespace 'expo.modules.backplaneterminal'
+  ndkVersion rootProject.ext.ndkVersion
+  compileSdk rootProject.ext.compileSdkVersion
+
+  // CMake packages the imported Ghostty library with the terminal JNI target.
+  sourceSets.main.jniLibs.srcDirs = []
+
+  defaultConfig {
+    minSdkVersion rootProject.ext.minSdkVersion
+    targetSdkVersion rootProject.ext.targetSdkVersion
+
+    externalNativeBuild {
+      cmake {
+        cppFlags '-std=c++17 -Wall -Wextra -Werror'
+      }
+    }
+  }
+
+  externalNativeBuild {
+    cmake {
+      path 'src/main/cpp/CMakeLists.txt'
+      version '3.22.1'
+    }
+  }
+}
+
+dependencies {
+  implementation project(':expo-modules-core')
+}

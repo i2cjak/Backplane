@@ -66,12 +66,12 @@ test("renders baseline, impact, ceiling, and ceiling changes", () => {
     currentRun: {
       sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       conclusion: "success",
-      url: "https://github.com/pingdotgg/t3code/actions/runs/2",
+      url: "https://github.com/i2cjak/backplane/actions/runs/2",
     },
     baselineRun: {
       sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       matchesBase: true,
-      url: "https://github.com/pingdotgg/t3code/actions/runs/1",
+      url: "https://github.com/i2cjak/backplane/actions/runs/1",
     },
   });
 
@@ -79,10 +79,10 @@ test("renders baseline, impact, ceiling, and ceiling changes", () => {
   assert.match(comment, /\+9\.8 KiB \(\+4\.0%\)/);
   assert.match(comment, /This PR changes transfer ceilings/);
   assert.match(comment, /312\.5 KiB → 322\.3 KiB/);
-  assert.match(comment, /<!-- t3-thread-transfer-report -->/);
+  assert.match(comment, /<!-- backplane-thread-transfer-report -->/);
   assert.match(
     comment,
-    /<!-- t3-thread-transfer-result-sha:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb -->/,
+    /<!-- backplane-thread-transfer-result-sha:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb -->/,
   );
 });
 
@@ -132,7 +132,7 @@ test("resolves a fallback PR with a redacted head repo and exact main baseline",
   await resolve({
     github,
     context: {
-      repo: { owner: "pingdotgg", repo: "t3code" },
+      repo: { owner: "i2cjak", repo: "backplane" },
       payload: {
         workflow_run: {
           id: 2,
@@ -140,7 +140,7 @@ test("resolves a fallback PR with a redacted head repo and exact main baseline",
           workflow_id: 3,
           head_sha: "head-sha",
           head_branch: "feature-branch",
-          head_repository: { full_name: "pingdotgg/t3code" },
+          head_repository: { full_name: "i2cjak/backplane" },
           conclusion: "success",
           pull_requests: [],
         },
@@ -175,7 +175,7 @@ test("does not guess when a fallback commit belongs to multiple PRs", async () =
           head: {
             sha: "head-sha",
             ref: "feature-branch",
-            repo: { full_name: "pingdotgg/t3code" },
+            repo: { full_name: "i2cjak/backplane" },
           },
         }));
       },
@@ -190,7 +190,7 @@ test("does not guess when a fallback commit belongs to multiple PRs", async () =
       },
     },
     context: {
-      repo: { owner: "pingdotgg", repo: "t3code" },
+      repo: { owner: "i2cjak", repo: "backplane" },
       payload: {
         workflow_run: {
           id: 2,
@@ -198,7 +198,7 @@ test("does not guess when a fallback commit belongs to multiple PRs", async () =
           workflow_id: 3,
           head_sha: "head-sha",
           head_branch: "feature-branch",
-          head_repository: { full_name: "pingdotgg/t3code" },
+          head_repository: { full_name: "i2cjak/backplane" },
           conclusion: "success",
           pull_requests: [],
         },
@@ -240,7 +240,7 @@ test("does not publish a stale result after the PR head advances", async () => {
         },
       },
     },
-    { repo: { owner: "pingdotgg", repo: "t3code" } },
+    { repo: { owner: "i2cjak", repo: "backplane" } },
     { info: (message) => info.push(message) },
     5350,
     "old-head-sha",
@@ -261,7 +261,7 @@ test("preserves a successful result when a same-SHA rerun has no artifact", asyn
         {
           id: 1,
           user: { login: "github-actions[bot]" },
-          body: `<!-- t3-thread-transfer-report -->\n<!-- t3-thread-transfer-result-sha:${sha} -->`,
+          body: `<!-- backplane-thread-transfer-report -->\n<!-- backplane-thread-transfer-result-sha:${sha} -->`,
         },
       ],
       rest: {
@@ -279,7 +279,7 @@ test("preserves a successful result when a same-SHA rerun has no artifact", asyn
         },
       },
     },
-    { repo: { owner: "pingdotgg", repo: "t3code" } },
+    { repo: { owner: "i2cjak", repo: "backplane" } },
     { info: () => {} },
     5350,
     sha,

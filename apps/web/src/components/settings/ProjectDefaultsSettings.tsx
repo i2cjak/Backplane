@@ -5,8 +5,8 @@ import {
   type ModelSelection,
   type ProviderInstanceId,
   type ServerSettingsPatch,
-} from "@t3tools/contracts";
-import { createModelSelection } from "@t3tools/shared/model";
+} from "@backplane/contracts";
+import { createModelSelection } from "@backplane/shared/model";
 import { useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { Trash2Icon } from "lucide-react";
@@ -275,7 +275,7 @@ export function ProjectDefaultsSettings({
         <SettingsRow
           id={searchableSetting("new-threads").id}
           title="Workspace"
-          description="Where new threads start, unless overridden by the project or t3.json."
+          description="Where new threads start, unless overridden by the project or backplane.json."
           resetAction={
             mixedWorkspace ||
             serverSettings.defaultThreadEnvMode !== DEFAULT_SERVER_SETTINGS.defaultThreadEnvMode ? (

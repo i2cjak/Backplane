@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { ProviderInstanceId, type ModelCapabilities } from "@t3tools/contracts";
+import { ProviderInstanceId, type ModelCapabilities } from "@backplane/contracts";
 
 import {
   applyClaudePromptEffortPrefix,

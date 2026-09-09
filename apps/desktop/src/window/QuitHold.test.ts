@@ -7,7 +7,7 @@ import {
   QUIT_HOLD_RELEASE_GRACE_MS,
 } from "./QuitHold.ts";
 import type { QuitHoldKeyInput } from "./QuitHold.ts";
-import type { QuitConfirmationMode, QuitShortcutHintEvent } from "@t3tools/contracts";
+import type { QuitConfirmationMode, QuitShortcutHintEvent } from "@backplane/contracts";
 
 const HOLD_DOWN = { state: "down", mode: "hold" } as const;
 const DOUBLE_CLICK_DOWN = { state: "down", mode: "double-click" } as const;

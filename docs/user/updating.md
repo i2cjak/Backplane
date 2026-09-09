@@ -1,4 +1,4 @@
-# Updating T3 Code
+# Updating Backplane
 
 The app you use and the server running your agents can be on different machines.
 When a server is behind your web or desktop app, an update notice appears in the
@@ -15,7 +15,7 @@ Enable it to resume supported active threads after an update, crash, or machine
 restart. Changes are saved to connected environments that support this setting;
 update older servers first. If a supported environment was offline or has a
 different value, use **Apply to all** in Settings after it connects.
-T3 Code must start again on that machine;
+Backplane must start again on that machine;
 the setting does not enable automatic startup. Terminal commands may still be
 interrupted, and threads without saved provider resume state need a new message.
 If you previously enabled continuation for updates, enable this setting once
@@ -34,7 +34,7 @@ The offered action depends on how the server runs:
 For a background service, run the matching version's CLI on the host:
 
 ```sh
-npx t3@<client-version> service update
+npx @backplane/cli@<client-version> service update
 ```
 
 Replace `<client-version>` with the version shown in the notice. Using
@@ -42,7 +42,7 @@ Replace `<client-version>` with the version shown in the notice. Using
 service launcher may require this local update before it supports remote updates
 and rollback.
 
-For a foreground server, the copied command is `npx t3@<client-version>`. Add
+For a foreground server, the copied command is `npx @backplane/cli@<client-version>`. Add
 `serve` if you normally run without a browser, and preserve options such as
 `--host` or `--tailscale-serve`. See
 [background services](./background-service.md) for service management.

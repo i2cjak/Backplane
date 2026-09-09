@@ -428,7 +428,7 @@ it.effect("accepts bootstrap metadata in thread.turn.start", () =>
         prepareWorktree: {
           projectCwd: "/tmp/workspace",
           baseBranch: "main",
-          branch: "t3code/example",
+          branch: "backplane/example",
           startFromOrigin: true,
         },
         runSetupScript: true,
@@ -858,9 +858,9 @@ it.effect("accepts a linked pull request in thread.meta.update", () =>
   Effect.gen(function* () {
     const linkedPullRequest = {
       projectId: "project-1",
-      repository: "pingdotgg/t3code",
+      repository: "i2cjak/backplane",
       number: 42,
-      url: "https://github.com/pingdotgg/t3code/pull/42",
+      url: "https://github.com/i2cjak/backplane/pull/42",
     };
     const parsed = yield* decodeOrchestrationCommand({
       type: "thread.meta.update",
@@ -897,9 +897,9 @@ it.effect("accepts pull request synchronization only as an internal command", ()
   Effect.gen(function* () {
     const pullRequest = {
       projectId: ProjectId.make("project-1"),
-      repository: "pingdotgg/t3code",
+      repository: "i2cjak/backplane",
       number: 42,
-      url: "https://github.com/pingdotgg/t3code/pull/42",
+      url: "https://github.com/i2cjak/backplane/pull/42",
     };
     const command = {
       type: "thread.pull-request.sync" as const,

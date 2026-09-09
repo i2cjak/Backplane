@@ -8,7 +8,7 @@
  *
  * @module provider/Layers/codexResetCredit
  */
-import type { ProviderConsumeResetCreditOutcome } from "@t3tools/contracts";
+import type { ProviderConsumeResetCreditOutcome } from "@backplane/contracts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Duration from "effect/Duration";
@@ -43,7 +43,7 @@ export class CodexResetCreditCoordinator extends Context.Service<
       consume: (idempotencyKey: string) => Effect.Effect<ProviderConsumeResetCreditOutcome, E, R>,
     ) => Effect.Effect<ProviderConsumeResetCreditOutcome, E | PlatformError.PlatformError, R>;
   }
->()("t3/provider/Layers/codexResetCredit/CodexResetCreditCoordinator") {}
+>()("@backplane/cli/provider/Layers/codexResetCredit/CodexResetCreditCoordinator") {}
 
 export const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;

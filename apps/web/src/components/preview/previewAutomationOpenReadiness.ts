@@ -4,7 +4,7 @@ import {
   type PreviewAutomationOpenInput,
   type PreviewSessionSnapshot,
   type PreviewViewportSetting,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 
 /**
  * Viewport an agent-opened tab falls back to when the user has no configured

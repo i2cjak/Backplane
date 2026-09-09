@@ -1,4 +1,4 @@
-import type { SelectableMarkdownTextProps } from "@t3tools/mobile-markdown-text/renderer";
+import type { SelectableMarkdownTextProps } from "@backplane/mobile-markdown-text/renderer";
 
 type MobileSelectableMarkdownTextProps = Omit<SelectableMarkdownTextProps, "highlightCode">;
 
@@ -9,7 +9,7 @@ export type {
   MarkdownImageRequest,
   NativeMarkdownTextStyle,
   SelectableMarkdownSkill,
-} from "@t3tools/mobile-markdown-text/types";
+} from "@backplane/mobile-markdown-text/types";
 
 export function hasNativeSelectableMarkdownText(): boolean {
   return false;

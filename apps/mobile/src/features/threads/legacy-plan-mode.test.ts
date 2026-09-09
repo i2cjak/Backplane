@@ -6,7 +6,7 @@ import {
 } from "./legacy-plan-mode";
 
 describe("resolveProviderInteractionMode", () => {
-  it("clears saved plan mode when the provider cannot use T3 interaction modes", () => {
+  it("clears saved plan mode when the provider cannot use Backplane interaction modes", () => {
     expect(resolveProviderInteractionMode({ showInteractionModeToggle: false }, "plan")).toBe(
       "default",
     );

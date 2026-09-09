@@ -30,14 +30,14 @@ Patch rebuild guidance lives in the
 
 ## Native media presentations
 
-iOS delegates full-screen video to [AVKit](../../apps/mobile/modules/t3-native-controls/ios/T3NativeVideoPresentation.swift)
-and images and documents to [Quick Look](../../apps/mobile/modules/t3-native-controls/ios/T3NativeFilePresentation.swift).
+iOS delegates full-screen video to [AVKit](../../apps/mobile/modules/backplane-native-controls/ios/BackplaneNativeVideoPresentation.swift)
+and images and documents to [Quick Look](../../apps/mobile/modules/backplane-native-controls/ios/BackplaneNativeFilePresentation.swift).
 Each framework owns its controls and transition. A separate UIKit zoom transition
 prevents AVKit's native Close action from exiting full screen and interferes with
 Quick Look's interactive return to its thumbnail. The AVKit entry selector is
 guarded, with standard modal presentation as the fallback.
 
-[Thumbnail registration](../../apps/mobile/modules/t3-native-controls/ios/T3NativePresentation.swift)
+[Thumbnail registration](../../apps/mobile/modules/backplane-native-controls/ios/BackplaneNativePresentation.swift)
 holds weak view references for transition and share-sheet anchors. It does not own
 the preview; a source row can disappear while a native presentation is open.
 Identifiers must distinguish attachments that are visible at the same time.

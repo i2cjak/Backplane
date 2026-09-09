@@ -14,6 +14,6 @@ KiCAD-Prism is Apache-2.0 licensed; its bundled third-party notices remain in
 the generated artifacts. Keep this attribution with the vendored files when
 updating them from upstream.
 
-The Gerber camera hook at `src/kicad/vendor/fabrication-viewport.ts` and server renderer at `apps/server/src/kicad/vendor/prismGerber.ts` come from that same Prism commit. The renderer is embedded verbatim for server packaging. `runtime.html`, `runtime.js`, `model-appearance.js`, and `schematic-sizing.js` are k3eda adapters, not upstream viewer code. The sizing adapter supplies high-density canvas backing and reserves space for the schematic properties panel without modifying the vendor bundle.
+The Gerber camera hook at `src/kicad/vendor/fabrication-viewport.ts` and server renderer at `apps/server/src/kicad/vendor/prismGerber.ts` come from that same Prism commit. The renderer is embedded verbatim for server packaging. `runtime.html`, `runtime.js`, `model-appearance.js`, and `schematic-sizing.js` are backplane adapters, not upstream viewer code. The sizing adapter supplies high-density canvas backing and reserves space for the schematic properties panel without modifying the vendor bundle.
 
 The model appearance adapter adds a resin clearcoat to exported soldermask and tunes Prism's existing lighting. Color and mask opacity come from KiCad's GLB export, not a fixed viewer palette.

@@ -34,7 +34,7 @@ export class ConnectionDriver extends Context.Service<
       reportProgress: (progress: ConnectionDriverProgress) => Effect.Effect<void>,
     ) => Effect.Effect<EnvironmentConnectionLease, ConnectionAttemptError, Scope.Scope>;
   }
->()("@t3tools/client-runtime/connection/driver/ConnectionDriver") {}
+>()("@backplane/client-runtime/connection/driver/ConnectionDriver") {}
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {

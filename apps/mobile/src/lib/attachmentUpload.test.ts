@@ -1,4 +1,4 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@backplane/contracts";
 import * as Option from "effect/Option";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
   readBase64: vi.fn(),
 }));
 
-vi.mock("@t3tools/client-runtime/state/runtime", () => ({
+vi.mock("@backplane/client-runtime/state/runtime", () => ({
   // The client-runtime attachments module resolves the same file through its
   // relative import, so these fakes also feed runAttachmentUploadCycle and
   // verifyPersistedAttachmentUpload.
@@ -118,8 +118,8 @@ const fileBackedImage = {
   name: "photo.png",
   mimeType: "image/png",
   sizeBytes: 3,
-  fileUri: "file:///documents/t3-composer-attachments/photo.png",
-  previewUri: "file:///documents/t3-composer-attachments/photo.png",
+  fileUri: "file:///documents/backplane-composer-attachments/photo.png",
+  previewUri: "file:///documents/backplane-composer-attachments/photo.png",
 } as const satisfies DraftComposerAttachment;
 
 const file = {
@@ -255,14 +255,14 @@ describe("prepareTurnAttachments", () => {
     const fileName = "33333333-3333-4333-8333-333333333333-photo.png";
     mocks.documentUri =
       "file:///var/mobile/Containers/Data/Application/22222222-2222-4222-8222-222222222222/Documents";
-    const oldUri = `file:///var/mobile/Containers/Data/Application/11111111-1111-4111-8111-111111111111/Documents/t3-composer-attachments/${fileName}`;
+    const oldUri = `file:///var/mobile/Containers/Data/Application/11111111-1111-4111-8111-111111111111/Documents/backplane-composer-attachments/${fileName}`;
     const prepared = await prepareTurnAttachments({
       environmentId,
       attachments: [{ ...fileBackedImage, fileUri: oldUri, previewUri: oldUri }],
     });
     expect(prepared.status).toBe("ready");
     expect(mocks.readBase64).toHaveBeenCalledExactlyOnceWith(
-      `${mocks.documentUri}/t3-composer-attachments/${fileName}`,
+      `${mocks.documentUri}/backplane-composer-attachments/${fileName}`,
     );
   });
 
@@ -373,11 +373,11 @@ describe("prepareTurnAttachments", () => {
     const fileName = "33333333-3333-4333-8333-333333333333-report%20%23.pdf";
     const restoredFile = {
       ...file,
-      fileUri: `file:///private/var/mobile/Containers/Data/Application/11111111-1111-4111-8111-111111111111/Documents/t3-composer-attachments/${fileName}`,
+      fileUri: `file:///private/var/mobile/Containers/Data/Application/11111111-1111-4111-8111-111111111111/Documents/backplane-composer-attachments/${fileName}`,
     };
     mocks.documentUri =
       "file:///var/mobile/Containers/Data/Application/22222222-2222-4222-8222-222222222222/Documents";
-    const currentUri = `${mocks.documentUri}/t3-composer-attachments/${fileName}`;
+    const currentUri = `${mocks.documentUri}/backplane-composer-attachments/${fileName}`;
     mocks.upload.mockImplementation(async (uri: string) => {
       if (uri !== currentUri) {
         throw new Error("File does not exist in the previous application container.");
@@ -495,15 +495,15 @@ describe("prepareTurnAttachments", () => {
       supportsImageUploads: true,
       persistUploadedReferences: persisted,
     });
-    expect(mocks.writeFile).toHaveBeenCalledWith("file:///cache/t3-upload-uuid", "YWJj", {
+    expect(mocks.writeFile).toHaveBeenCalledWith("file:///cache/backplane-upload-uuid", "YWJj", {
       encoding: "base64",
     });
     expect(mocks.upload).toHaveBeenCalledWith(
-      "file:///cache/t3-upload-uuid",
+      "file:///cache/backplane-upload-uuid",
       "https://environment.example/api/attachments/upload/signed",
       expect.objectContaining({ headers: { "Content-Type": "image/png" } }),
     );
-    expect(mocks.deleteFile).toHaveBeenCalledExactlyOnceWith("file:///cache/t3-upload-uuid");
+    expect(mocks.deleteFile).toHaveBeenCalledExactlyOnceWith("file:///cache/backplane-upload-uuid");
     expect(prepared.status).toBe("ready");
     if (prepared.status !== "ready") return;
     expect(prepared.attachments).toEqual([
@@ -553,7 +553,7 @@ describe("prepareTurnAttachments", () => {
       ...saved,
       uploadedAttachmentId: MINTED_ID,
     });
-    expect(mocks.writeFile).toHaveBeenCalledWith("file:///cache/t3-upload-uuid", "YWJj", {
+    expect(mocks.writeFile).toHaveBeenCalledWith("file:///cache/backplane-upload-uuid", "YWJj", {
       encoding: "base64",
     });
   });

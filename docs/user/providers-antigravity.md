@@ -1,6 +1,6 @@
 # Antigravity
 
-T3 Code runs Google's official Antigravity ACP agent on your selected environment.
+Backplane runs Google's official Antigravity ACP agent on your selected environment.
 It has its own sign-in, separate from the Antigravity IDE or CLI. Google controls
 which models and account access are available through this agent.
 
@@ -8,7 +8,7 @@ which models and account access are available through this agent.
 
 On web or desktop, open **Settings > Providers**, choose the environment that runs
 your project, and enable Antigravity. Install its runtime there, then choose
-**Sign in with Google** and complete the browser sign-in. Wait for T3 Code to confirm
+**Sign in with Google** and complete the browser sign-in. Wait for Backplane to confirm
 account access and load models before starting a thread. Provider setup is not
 available in the mobile app.
 
@@ -25,12 +25,12 @@ fail to load because the sign-in listener is on the environment.
 Copy the full return address, including everything after `?`, into the return URL
 field in the web or desktop client where you started setup, then choose
 **Continue**. Keep the original address; do not replace it with the server's
-hostname. Only that T3 Code sign-in session can finish the attempt. If it expires,
+hostname. Only that Backplane sign-in session can finish the attempt. If it expires,
 retry sign-in and use the new link.
 
 The return URL contains a temporary sign-in code. Paste it only into the setup
 field. A successful callback page alone does not confirm account access; wait for
-T3 Code's confirmation.
+Backplane's confirmation.
 
 ### Other sign-in methods
 
@@ -72,18 +72,18 @@ The model list comes from your Antigravity account and can differ from other
 Antigravity apps. A resumed thread keeps its selected model. If access to that
 model ends, select another available model before continuing.
 
-Use Antigravity's native `/plan` command for planning. T3 Code's separate Plan mode
+Use Antigravity's native `/plan` command for planning. Backplane's separate Plan mode
 is unavailable. Tool approvals follow [Permission modes](./permission-modes.md).
 Questions with fixed choices still need one of the offered answers, even in
 **Full access**.
 
-T3 Code keeps conversation history and file diffs, but Antigravity cannot rewind
+Backplane keeps conversation history and file diffs, but Antigravity cannot rewind
 its conversation. Reverting a thread or editing and resubmitting an earlier turn
 is unavailable. Continue with a follow-up message or start a new thread.
 
 ### Skills and attachments
 
-Put project skills in `.agents/skills`. T3 Code also reads `.gemini/skills` and the
+Put project skills in `.agents/skills`. Backplane also reads `.gemini/skills` and the
 legacy `.agent/skills` directory. Among these project locations, the first copy
 wins in this order: `.gemini/skills`, `.agents/skills`, `.agent/skills`. See
 [commands and skills](./composer.md#commands-and-skills) for invoking them.

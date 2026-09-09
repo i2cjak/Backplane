@@ -12,7 +12,7 @@ interface HotAtomRuntimeEntry {
   readonly runtime: Atom.AtomRuntime<unknown, unknown>;
 }
 
-const hotAtomRuntimesKey = Symbol.for("t3.mobile.hot-atom-runtimes");
+const hotAtomRuntimesKey = Symbol.for("backplane.mobile.hot-atom-runtimes");
 
 type HotAtomRuntimeGlobal = typeof globalThis & {
   [hotAtomRuntimesKey]?: Map<string, HotAtomRuntimeEntry>;

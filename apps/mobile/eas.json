@@ -50,30 +50,29 @@
       "environment": "production",
       "autoIncrement": true
     },
-    "k3eda": {
+    "testflight": {
       "corepack": true,
       "env": {
-        "APP_VARIANT": "k3eda",
+        "APP_VARIANT": "testflight",
         "NODE_OPTIONS": "--max-old-space-size=4096"
       },
-      "channel": "k3eda",
-      "environment": "production",
+      "channel": "testflight",
       "distribution": "store",
       "autoIncrement": true
+    },
+    "k3eda": {
+      "extends": "testflight"
     }
   },
   "submit": {
-    "k3eda": {
+    "testflight": {
       "ios": {
         "ascAppId": "6809006324"
       }
     },
-    "production": {
+    "k3eda": {
       "ios": {
-        "ascAppId": "6787819824"
-      },
-      "android": {
-        "track": "internal"
+        "ascAppId": "6809006324"
       }
     }
   }

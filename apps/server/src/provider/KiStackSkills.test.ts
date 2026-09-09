@@ -7,7 +7,9 @@ import { buildKiStackInstructions, installKiStackSkills } from "./KiStackSkills.
 import bundle from "./kistack.bundle.json" with { type: "json" };
 
 it("installs all nine skills and supporting files offline, and repairs missing resources", async () => {
-  const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3cad-kistack-test-"));
+  const directory = await NodeFSP.mkdtemp(
+    NodePath.join(NodeOS.tmpdir(), "backplane-kistack-test-"),
+  );
   try {
     await installKiStackSkills(directory);
     expect(bundle.skills).toHaveLength(9);
@@ -34,7 +36,9 @@ it("installs all nine skills and supporting files offline, and repairs missing r
 });
 
 it("reports installation errors instead of advertising unavailable skills", async () => {
-  const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3cad-kistack-error-"));
+  const directory = await NodeFSP.mkdtemp(
+    NodePath.join(NodeOS.tmpdir(), "backplane-kistack-error-"),
+  );
   try {
     const file = NodePath.join(directory, "not-a-directory");
     await NodeFSP.writeFile(file, "existing");

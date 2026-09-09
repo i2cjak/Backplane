@@ -1,7 +1,7 @@
-export const BUILT_IN_THEME_IDS = ["t3-chat", "grove", "ocean", "ember", "iris"] as const;
+export const BUILT_IN_THEME_IDS = ["backplane-chat", "grove", "ocean", "ember", "iris"] as const;
 
 /** The mobile app's own hand-tuned palette, which is not part of the built-in library. */
-export const MOBILE_DEFAULT_THEME_ID = "t3-code";
+export const MOBILE_DEFAULT_THEME_ID = "backplane";
 
 /**
  * Every palette the mobile app can render. Declared here so host-side tooling
@@ -21,11 +21,11 @@ export const RESERVED_THEME_IDS: ReadonlySet<string> = new Set([
   "light",
   "dark",
   ...BUILT_IN_THEME_IDS,
-  "t3-chat-dark",
-  "t3-grove",
-  "t3-ocean",
-  "t3-ember",
-  "t3-iris",
+  "backplane-chat-dark",
+  "backplane-grove",
+  "backplane-ocean",
+  "backplane-ember",
+  "backplane-iris",
 ]);
 
 /**
@@ -121,9 +121,9 @@ export type ThemeDefinition = Readonly<{
   managed?: boolean;
 }>;
 
-export const T3_CHAT_THEME: ThemeDefinition = {
-  id: "t3-chat",
-  label: "T3 Chat",
+export const BACKPLANE_CHAT_THEME: ThemeDefinition = {
+  id: "backplane-chat",
+  label: "Backplane Chat",
   appearance: "light",
   colors: {
     canvas: "oklch(0.982446 0.010114 325.653)",
@@ -757,7 +757,7 @@ export const IRIS_THEME: ThemeDefinition = {
 };
 
 export const BUILT_IN_THEMES: ReadonlyArray<ThemeDefinition> = [
-  T3_CHAT_THEME,
+  BACKPLANE_CHAT_THEME,
   GROVE_THEME,
   OCEAN_THEME,
   EMBER_THEME,

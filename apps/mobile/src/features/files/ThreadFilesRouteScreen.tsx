@@ -10,14 +10,14 @@ import {
   type ProjectListEntriesResult,
   type ProjectReadFileResult,
   ThreadId,
-} from "@t3tools/contracts";
-import { videoMimeType } from "@t3tools/shared/video";
+} from "@backplane/contracts";
+import { videoMimeType } from "@backplane/shared/video";
 import {
   isWorkspaceBrowserPreviewPath,
   isWorkspaceImagePreviewPath,
   mediaMimeTypeFromExtension,
-} from "@t3tools/shared/filePreview";
-import { mediaFileReference } from "@t3tools/client-runtime/media-reference";
+} from "@backplane/shared/filePreview";
+import { mediaFileReference } from "@backplane/client-runtime/media-reference";
 
 import { AndroidHeaderIconButton, AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { SymbolView } from "../../components/AppSymbol";
@@ -191,7 +191,7 @@ function FileContent(props: {
     <View className="flex-1 bg-sheet">
       {props.truncated ? (
         <View className="border-b border-warning-border bg-warning px-4 py-2">
-          <Text className="text-2xs font-t3-bold uppercase text-warning-foreground">
+          <Text className="text-2xs font-backplane-bold uppercase text-warning-foreground">
             Partial file
           </Text>
           <Text className="text-xs leading-snug text-warning-foreground">

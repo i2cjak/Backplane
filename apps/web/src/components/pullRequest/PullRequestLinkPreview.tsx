@@ -1,5 +1,5 @@
-import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, PullRequestRef } from "@t3tools/contracts";
+import { isAtomCommandInterrupted } from "@backplane/client-runtime/state/runtime";
+import type { EnvironmentId, PullRequestRef } from "@backplane/contracts";
 import { cloneElement, useState, type ComponentPropsWithoutRef, type ReactElement } from "react";
 
 import { formatRelativeTimeLabel } from "~/timestampFormat";

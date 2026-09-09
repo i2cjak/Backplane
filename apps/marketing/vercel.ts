@@ -4,7 +4,7 @@ export const config: VercelConfig = {
   git: {
     deploymentEnabled: false,
   },
-  installCommand: "npm install -g vite-plus && vp install --filter '@t3tools/marketing...'",
-  buildCommand: "vp run --filter @t3tools/marketing build",
+  installCommand: "npm install -g vite-plus && vp install --filter '@backplane/marketing...'",
+  buildCommand: "vp run --filter @backplane/marketing build",
   outputDirectory: "dist",
 };

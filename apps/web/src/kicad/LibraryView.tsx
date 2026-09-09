@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Maximize, Minus, Plus } from "lucide-react";
 
 export type LibraryKind = "footprint" | "symbol";
-import type { KiCadLibraryMember as LibraryMember } from "@t3tools/contracts";
+import type { KiCadLibraryMember as LibraryMember } from "@backplane/contracts";
 export type LibraryRead = (path: string, signal: AbortSignal) => Promise<string>;
 
 function payload(text: string): LibraryMember[] {

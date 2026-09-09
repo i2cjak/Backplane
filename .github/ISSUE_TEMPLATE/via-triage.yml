@@ -1,12 +1,12 @@
 name: Triage report
-description: Filed with `npx t3 triage`, where a coding agent investigated the machine. For hand-written reports use the bug report template instead.
+description: Filed with `npx @backplane/cli triage`, where a coding agent investigated the machine. For hand-written reports use the bug report template instead.
 labels:
   - via-triage
 body:
   - type: markdown
     attributes:
       value: |
-        This structure is what `t3 triage` agents follow. Keep one problem per issue
+        This structure is what `backplane triage` agents follow. Keep one problem per issue
         and redact secrets and home directory paths from anything you paste.
 
   - type: textarea
@@ -37,7 +37,7 @@ body:
     id: version
     attributes:
       label: Version
-      description: Installed t3 version or commit.
+      description: Installed backplane version or commit.
       placeholder: 0.0.33
     validations:
       required: true
@@ -75,4 +75,4 @@ body:
     attributes:
       label: Filed by
       description: Which agent and model produced this report.
-      placeholder: claude (opus-5) via t3 triage
+      placeholder: claude (opus-5) via backplane triage

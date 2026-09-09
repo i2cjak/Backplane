@@ -4,9 +4,9 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeUtil from "node:util";
 
-// oxlint-disable-next-line t3code/no-global-process-runtime -- The native compiler targets the actual host; this script has no Effect runtime.
+// oxlint-disable-next-line backplane/no-global-process-runtime -- The native compiler targets the actual host; this script has no Effect runtime.
 const hostArch = process.arch;
-// oxlint-disable-next-line t3code/no-global-process-runtime -- Native compilation only runs on the actual Linux host.
+// oxlint-disable-next-line backplane/no-global-process-runtime -- Native compilation only runs on the actual Linux host.
 const hostPlatform = process.platform;
 
 const { values } = NodeUtil.parseArgs({
@@ -18,7 +18,8 @@ if (hostPlatform === "linux") {
   if (machine === undefined) throw new Error(`Unsupported Linux architecture: ${values.arch}`);
   const root = NodeURL.fileURLToPath(new URL("../../../native/browser-secret/", import.meta.url));
   const source = NodePath.resolve(root, "main.c");
-  const output = values.output ?? NodePath.resolve(root, "build", values.arch, "t3-browser-secret");
+  const output =
+    values.output ?? NodePath.resolve(root, "build", values.arch, "backplane-browser-secret");
   const matchesArchitecture = (file) => {
     const header = NodeFS.readFileSync(file).subarray(0, 20);
     return header.toString("hex", 0, 6) === "7f454c460201" && header.readUInt16LE(18) === machine;

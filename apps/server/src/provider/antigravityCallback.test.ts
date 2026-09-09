@@ -1,5 +1,5 @@
 import { assert, it } from "@effect/vitest";
-import { ProviderInstanceId } from "@t3tools/contracts";
+import { ProviderInstanceId } from "@backplane/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 

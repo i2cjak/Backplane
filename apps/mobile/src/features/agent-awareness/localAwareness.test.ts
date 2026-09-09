@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import type { AgentAwarenessState } from "@t3tools/shared/agentAwareness";
+import { EnvironmentId, ThreadId } from "@backplane/contracts";
+import type { AgentAwarenessState } from "@backplane/shared/agentAwareness";
 import { advanceLocalAwareness, localActivityProps } from "./localAwareness";
 
 const state = (phase: AgentAwarenessState["phase"], environment = "one"): AgentAwarenessState => ({

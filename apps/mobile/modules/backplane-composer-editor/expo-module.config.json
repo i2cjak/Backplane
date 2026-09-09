@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["BackplaneComposerEditorModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.backplanecomposereditor.BackplaneComposerEditorModule"]
+  }
+}

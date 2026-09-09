@@ -1073,9 +1073,9 @@ const PROVIDER_REQUIREMENT: Partial<
   },
   bitbucket: {
     missing:
-      "Bitbucket needs API credentials on the server. Set T3CODE_BITBUCKET_EMAIL and T3CODE_BITBUCKET_API_TOKEN, or T3CODE_BITBUCKET_ACCESS_TOKEN.",
+      "Bitbucket needs API credentials on the server. Set BACKPLANE_BITBUCKET_EMAIL and BACKPLANE_BITBUCKET_API_TOKEN, or BACKPLANE_BITBUCKET_ACCESS_TOKEN.",
     unauthenticated:
-      "Bitbucket rejected the configured credentials. Check T3CODE_BITBUCKET_EMAIL and T3CODE_BITBUCKET_API_TOKEN.",
+      "Bitbucket rejected the configured credentials. Check BACKPLANE_BITBUCKET_EMAIL and BACKPLANE_BITBUCKET_API_TOKEN.",
   },
 };
 

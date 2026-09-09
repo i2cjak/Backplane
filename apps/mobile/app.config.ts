@@ -3,18 +3,18 @@ import type { ExpoConfig } from "expo/config";
 import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 
-type AppVariant = "development" | "preview" | "production" | "k3eda";
+type AppVariant = "development" | "preview" | "production" | "testflight";
 
 const repoEnv = loadRepoEnv();
 Object.assign(process.env, repoEnv);
 
 const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
-const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
+const isIosPersonalTeamBuild = repoEnv.BACKPLANE_IOS_PERSONAL_TEAM === "1";
 const runtimeVersionPolicy =
   process.env.MOBILE_VERSION_POLICY ??
   (APP_VARIANT === "development" ? "appVersion" : "fingerprint");
 
-const personalTeamBundleIdentifier = repoEnv.T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();
+const personalTeamBundleIdentifier = repoEnv.BACKPLANE_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();
 const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
 const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
@@ -28,7 +28,7 @@ if (
     !IOS_BUNDLE_IDENTIFIER_PATTERN.test(personalTeamBundleIdentifier))
 ) {
   throw new Error(
-    "T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID must be a reverse-DNS identifier such as com.example.t3code when T3CODE_IOS_PERSONAL_TEAM=1.",
+    "BACKPLANE_IOS_PERSONAL_TEAM_BUNDLE_ID must be a reverse-DNS identifier such as com.example.backplane when BACKPLANE_IOS_PERSONAL_TEAM=1.",
   );
 }
 
@@ -37,10 +37,10 @@ const DEVELOPMENT_ASSETS = {
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
   androidAdaptiveForeground,
-  androidAdaptiveBackgroundColor: "#00639B",
+  androidAdaptiveBackgroundColor: "#263824",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
-  androidNotificationColor: "#00639B",
+  androidNotificationColor: "#263824",
 } as const;
 
 const PREVIEW_ASSETS = {
@@ -48,10 +48,10 @@ const PREVIEW_ASSETS = {
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
   androidAdaptiveForeground,
-  androidAdaptiveBackgroundColor: "#111533",
+  androidAdaptiveBackgroundColor: "#24291f",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
-  androidNotificationColor: "#7565C7",
+  androidNotificationColor: "#d6edaf",
 } as const;
 
 const RELEASE_ASSETS = {
@@ -59,7 +59,7 @@ const RELEASE_ASSETS = {
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
   androidAdaptiveForeground,
-  androidAdaptiveBackgroundColor: "#000000",
+  androidAdaptiveBackgroundColor: "#111410",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
   androidNotificationColor: "#FFFFFF",
@@ -68,34 +68,30 @@ const RELEASE_ASSETS = {
 const VARIANT_CONFIG = {
   development: {
     appName: "Backplane Dev",
-    scheme: "t3code-dev",
-    iosBundleIdentifier: "com.t3tools.t3code.dev",
-    androidPackage: "com.t3tools.t3code.dev",
-    relyingParty: "clerk.t3.codes",
+    scheme: "backplane-dev",
+    iosBundleIdentifier: "works.backplane.app.dev",
+    androidPackage: "works.backplane.app.dev",
     assets: DEVELOPMENT_ASSETS,
   },
   preview: {
     appName: "Backplane Preview",
-    scheme: "t3code-preview",
-    iosBundleIdentifier: "com.t3tools.t3code.preview",
-    androidPackage: "com.t3tools.t3code.preview",
-    relyingParty: "clerk.t3.codes",
+    scheme: "backplane-preview",
+    iosBundleIdentifier: "works.backplane.app.preview",
+    androidPackage: "works.backplane.app.preview",
     assets: PREVIEW_ASSETS,
   },
   production: {
     appName: "Backplane",
-    scheme: "t3code",
-    iosBundleIdentifier: "com.t3tools.t3code",
-    androidPackage: "com.t3tools.t3code",
-    relyingParty: "clerk.t3.codes",
+    scheme: "backplane",
+    iosBundleIdentifier: "works.backplane.app",
+    androidPackage: "works.backplane.app",
     assets: RELEASE_ASSETS,
   },
-  k3eda: {
+  testflight: {
     appName: "Backplane",
-    scheme: "k3eda",
+    scheme: "backplane-testflight",
     iosBundleIdentifier: "com.i2cjak.k3eda",
     androidPackage: "com.i2cjak.k3eda",
-    relyingParty: "",
     assets: RELEASE_ASSETS,
   },
 } as const;
@@ -106,15 +102,16 @@ function resolveAppVariant(value: string | undefined): AppVariant {
     case "preview":
     case "production":
       return value;
+    case "testflight":
     case "k3eda":
-      return value;
+      return "testflight";
     default:
       return "production";
   }
 }
 
 const variant = VARIANT_CONFIG[APP_VARIANT];
-const isK3edaBuild = APP_VARIANT === "k3eda";
+const relyingParty = repoEnv.BACKPLANE_CLERK_PASSKEY_RP_DOMAINS?.split(",")[0]?.trim();
 const iosBundleIdentifier = isIosPersonalTeamBuild
   ? personalTeamBundleIdentifier!
   : variant.iosBundleIdentifier;
@@ -167,10 +164,10 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
 
 const config: ExpoConfig = {
   name: variant.appName,
-  slug: isK3edaBuild ? "k3eda" : "t3-code",
+  slug: "backplane",
   platforms: ["ios", "android"],
   scheme: variant.scheme,
-  version: isK3edaBuild ? "1.0.0" : "1.0.4",
+  version: "1.0.4",
   runtimeVersion: {
     // Development manifests resolve on every launch, so avoid fingerprint's
     // expensive native-project calculation there. Preview and production stay
@@ -180,35 +177,21 @@ const config: ExpoConfig = {
   orientation: "portrait",
   icon: variant.assets.appIcon,
   userInterfaceStyle: "automatic",
-  ...(isK3edaBuild
-    ? { updates: { enabled: false } }
-    : {
-        updates: {
-          enabled: true,
-          url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454",
-          checkAutomatically: "ON_LOAD",
-          fallbackToCacheTimeout: 0,
-        },
-      }),
+  updates: { enabled: false },
   ios: {
     icon: variant.assets.iosIcon,
     supportsTablet: true,
     // Multitasking-capable iPad apps cannot rotate programmatically, so the
     // showcase capture build requires full screen (see infoPlist below).
-    requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
+    requireFullScreen: process.env.BACKPLANE_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
     // Pin code signing to the configured Apple team so non-interactive `expo run:ios`
     // does not fall back to a personal team (which cannot sign app groups,
     // Sign in with Apple, or push notification entitlements).
-    appleTeamId: isK3edaBuild ? "UZ24P5LGTB" : "ARK85ZXQ4Z",
-    ...(isK3edaBuild
-      ? {}
-      : {
-          associatedDomains: [
-            `applinks:${variant.relyingParty}`,
-            `webcredentials:${variant.relyingParty}`,
-          ],
-        }),
+    appleTeamId: repoEnv.BACKPLANE_APPLE_TEAM_ID,
+    ...(relyingParty
+      ? { associatedDomains: [`applinks:${relyingParty}`, `webcredentials:${relyingParty}`] }
+      : {}),
     infoPlist: {
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: true,
@@ -222,7 +205,7 @@ const config: ExpoConfig = {
       // Simulator menu scripting needs), and iPadOS ignores programmatic
       // orientation requests for multitasking-capable apps — so the capture
       // build opts out of multitasking and declares landscape support.
-      ...(process.env.T3_SHOWCASE_CAPTURE_BUILD === "1"
+      ...(process.env.BACKPLANE_SHOWCASE_CAPTURE_BUILD === "1"
         ? {
             "UISupportedInterfaceOrientations~ipad": [
               "UIInterfaceOrientationPortrait",
@@ -269,7 +252,10 @@ const config: ExpoConfig = {
     // plugins earlier in this array, so it cannot strip the entitlement Clerk would add.
     [
       "@clerk/expo",
-      { theme: "./clerk-theme.json", appleSignIn: !isIosPersonalTeamBuild && !isK3edaBuild },
+      {
+        theme: "./clerk-theme.json",
+        appleSignIn: !isIosPersonalTeamBuild && Boolean(repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY),
+      },
     ],
     "expo-web-browser",
     [
@@ -350,16 +336,12 @@ const config: ExpoConfig = {
     appVariant: APP_VARIANT,
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
     relay: {
-      url: repoEnv.T3CODE_RELAY_URL ?? null,
+      url: repoEnv.BACKPLANE_RELAY_URL ?? null,
     },
-    ...(isK3edaBuild
-      ? {}
-      : {
-          clerk: {
-            publishableKey: repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? null,
-            jwtTemplate: repoEnv.EXPO_PUBLIC_CLERK_JWT_TEMPLATE ?? null,
-          },
-        }),
+    clerk: {
+      publishableKey: repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? null,
+      jwtTemplate: repoEnv.EXPO_PUBLIC_CLERK_JWT_TEMPLATE ?? null,
+    },
     // Native Google sign-in credentials. @clerk/expo reads these from `extra`
     // under their exact env-var names (not nested), and its config plugin reads
     // the iOS URL scheme at prebuild to register it in Info.plist.
@@ -374,9 +356,7 @@ const config: ExpoConfig = {
       tracesDataset: repoEnv.EXPO_PUBLIC_OTLP_TRACES_DATASET ?? null,
       tracesToken: repoEnv.EXPO_PUBLIC_OTLP_TRACES_TOKEN ?? null,
     },
-    ...(isK3edaBuild ? {} : { eas: { projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454" } }),
   },
-  ...(isK3edaBuild ? {} : { owner: "pingdotgg" }),
 };
 
 export default config;

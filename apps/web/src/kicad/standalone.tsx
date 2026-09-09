@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import "../index.css";
 import "./viewer.css";
-import type { KiCadProjectManifest } from "@t3tools/contracts";
+import type { KiCadProjectManifest } from "@backplane/contracts";
 type KiCadViewerSource = { filename: string; content: string };
 import { GerberBrowser } from "./GerberBrowser";
 import { NativeProjectViews } from "./NativeProjectViews";
@@ -90,7 +90,7 @@ window.addEventListener("message", (event) => {
   if (
     event.source !== parent ||
     event.origin !== location.origin ||
-    event.data?.type !== "k3eda-theme"
+    event.data?.type !== "backplane-theme"
   )
     return;
   for (const [key, value] of Object.entries(event.data.variables ?? {})) {
@@ -117,10 +117,10 @@ function RuntimeView({
       if (
         event.source === ref.current?.contentWindow &&
         event.origin === location.origin &&
-        event.data?.type === "k3eda-runtime-ready"
+        event.data?.type === "backplane-runtime-ready"
       ) {
         ref.current?.contentWindow?.postMessage(
-          { type: "k3eda-snapshot", ...snapshotRef.current },
+          { type: "backplane-snapshot", ...snapshotRef.current },
           messageOrigin,
         );
       }
@@ -129,7 +129,10 @@ function RuntimeView({
     return () => window.removeEventListener("message", send);
   }, []);
   useEffect(() => {
-    ref.current?.contentWindow?.postMessage({ type: "k3eda-snapshot", ...snapshot }, messageOrigin);
+    ref.current?.contentWindow?.postMessage(
+      { type: "backplane-snapshot", ...snapshot },
+      messageOrigin,
+    );
   }, [snapshot]);
   return (
     <iframe
@@ -263,7 +266,7 @@ function App() {
           ? files.filter((item) => item.path === configured)
           : libraryView && assignedLibrary && !selected[selectionKey]
             ? files.filter((item) => item.path === normalizedConfiguredLibrary)
-          : files;
+            : files;
   const file =
     selectableFiles.find((item) => item.path === selected[selectionKey]) ??
     selectableFiles.find((item) => item.path === configured) ??
@@ -431,19 +434,19 @@ function App() {
           <span className="design-source">
             {view === "step"
               ? "Recent first"
-                : designView
+              : designView
+                ? selected[selectionKey]
+                  ? "Preview override"
+                  : design.assigned
+                    ? "Assigned design"
+                    : "Project design"
+                : libraryView
                   ? selected[selectionKey]
                     ? "Preview override"
-                    : design.assigned
-                      ? "Assigned design"
-                      : "Project design"
-                  : libraryView
-                    ? selected[selectionKey]
-                      ? "Preview override"
-                      : assignedLibrary
-                        ? "Assigned library"
-                        : "Saved library"
-                : "Saved output"}
+                    : assignedLibrary
+                      ? "Assigned library"
+                      : "Saved library"
+                  : "Saved output"}
           </span>
           {(designView || libraryView) && (
             <button
@@ -599,7 +602,7 @@ function App() {
                   }
                 />
               ) : (
-                <Notice text="No schematic found for the BOM. Select the project's root schematic in .k3eda.json." />
+                <Notice text="No schematic found for the BOM. Select the project's root schematic in .backplane.json." />
               ))}
             {view === "gerbers" &&
               (file ? (
@@ -616,7 +619,7 @@ function App() {
                   }}
                 />
               ) : (
-                <Notice text="No Gerber layers found. Point gerbers in .k3eda.json at your generated output directory." />
+                <Notice text="No Gerber layers found. Point gerbers in .backplane.json at your generated output directory." />
               ))}
             {view === "step" &&
               (localStep || file ? (

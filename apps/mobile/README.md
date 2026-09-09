@@ -1,7 +1,7 @@
 # Backplane Mobile
 
 > [!WARNING]
-> Backplane Mobile is currently in development. The `k3eda` profile carries the existing
+> Backplane Mobile is currently in development. The `testflight` profile carries the existing
 > App Store bundle identity; delivery credentials and project ownership remain external.
 
 ## Quickstart
@@ -14,11 +14,13 @@ This app has four variants:
 - `development`: Expo dev client, installable side-by-side as `Backplane Dev`
 - `preview`: persistent internal preview build, installable side-by-side as `Backplane Preview`
 - `production`: generic store/release build as `Backplane`
-- `k3eda`: Backplane store build (`com.i2cjak.k3eda`), submitted to App Store Connect app `6809006324`
+- `testflight`: App Store Connect build using the existing `com.i2cjak.k3eda` iOS identity
+
+`APP_VARIANT=k3eda` remains a compatibility alias for `testflight`.
 
 Run commands from `apps/mobile`.
 
-T3 Connect is optional and disabled in a fresh clone. Public configuration belongs in the
+Backplane Connect is optional and disabled in a fresh clone. Public configuration belongs in the
 repository-root `.env` or `.env.local`, not an `apps/mobile/.env` file. See
 [`../../.env.example`](../../.env.example).
 
@@ -58,8 +60,8 @@ reduced-capability local build. Personal Team builds omit the widget and share e
 entitlement, and native Sign in with Apple entitlement; builds without this opt-in are unchanged.
 
 ```bash
-T3CODE_IOS_PERSONAL_TEAM=1 \
-T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID=com.example.t3code.dev \
+BACKPLANE_IOS_PERSONAL_TEAM=1 \
+BACKPLANE_IOS_PERSONAL_TEAM_BUNDLE_ID=com.example.backplane.dev \
 vp run ios:dev
 ```
 
@@ -72,8 +74,8 @@ vp run ios:release
 The Personal Team equivalent also needs a unique bundle identifier:
 
 ```bash
-T3CODE_IOS_PERSONAL_TEAM=1 \
-T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID=com.example.t3code \
+BACKPLANE_IOS_PERSONAL_TEAM=1 \
+BACKPLANE_IOS_PERSONAL_TEAM_BUNDLE_ID=com.example.backplane \
 vp run ios:release
 ```
 
@@ -113,13 +115,13 @@ Preview and production variants use Expo fingerprinting so OTA updates only reac
 
 The development variant uses `appVersion` to avoid recalculating the native fingerprint for each Metro launch manifest. `MOBILE_VERSION_POLICY` can override either default. If you distribute a custom Release build with the development identity and publish OTA updates to it, set `MOBILE_VERSION_POLICY=fingerprint` for both its build and updates. Changing the runtime policy requires a native rebuild for OTA matching; an existing dev client can still load local Metro bundles.
 
-For preview or production EAS environments, set `T3CODE_CLERK_PUBLISHABLE_KEY`,
-`T3CODE_CLERK_JWT_TEMPLATE`, and `T3CODE_RELAY_URL`
+For preview or production EAS environments, set `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`,
+`EXPO_PUBLIC_CLERK_JWT_TEMPLATE`, and `BACKPLANE_RELAY_URL`
 as EAS environment variables. Expo config maps the canonical values into the mobile build.
 
-The `k3eda` profile records the Backplane bundle identifier, Apple team, and App Store Connect
-app ID. The EAS project ownership and authenticated uploader still need to be verified before a
-TestFlight build is submitted; the profile alone does not prove that delivery path.
+The `testflight` profile uses the existing `com.i2cjak.k3eda` bundle identity and App Store
+Connect app ID `6809006324`. Set `BACKPLANE_APPLE_TEAM_ID` in the EAS environment used for
+signing; the config does not embed an Apple team ID.
 
 Create a PR preview dev-client build manually:
 
@@ -139,6 +141,12 @@ Create a persistent preview build:
 vp run eas:ios:preview
 ```
 
+Create the existing iOS TestFlight build:
+
+```bash
+vp run eas:ios:testflight
+```
+
 Android equivalents:
 
 ```bash
@@ -146,3 +154,12 @@ vp run eas:android:dev
 vp run eas:android:preview:dev
 vp run eas:android:preview
 ```
+
+Build a standalone Android APK for an ARM64 phone with the local Android SDK and Java 17:
+
+```bash
+vp run android:release
+```
+
+The signed local APK is written to `android/app/build/outputs/apk/release/app-release.apk` and
+uses the `works.backplane.app` application ID with the local development signing key.

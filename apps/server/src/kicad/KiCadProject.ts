@@ -1,4 +1,4 @@
-/* eslint-disable t3code/namespace-node-imports */
+/* eslint-disable backplane/namespace-node-imports */
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off
 import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
@@ -115,7 +115,7 @@ export async function discoverKiCadProject(root: string): Promise<KiCadProjectMa
   const warnings: string[] = [];
   try {
     const parsed = JSON.parse(
-      await NodeFSP.readFile(NodePath.join(projectRoot, ".k3eda.json"), "utf8"),
+      await NodeFSP.readFile(NodePath.join(projectRoot, ".backplane.json"), "utf8"),
     ) as Record<string, unknown>;
     config = {
       ...(typeof parsed.analysisUrl === "string" ? { analysisUrl: parsed.analysisUrl } : {}),
@@ -130,8 +130,8 @@ export async function discoverKiCadProject(root: string): Promise<KiCadProjectMa
     };
   } catch {
     try {
-      if ((await NodeFSP.stat(NodePath.join(projectRoot, ".k3eda.json"))).isFile())
-        warnings.push("Unable to parse .k3eda.json");
+      if ((await NodeFSP.stat(NodePath.join(projectRoot, ".backplane.json"))).isFile())
+        warnings.push("Unable to parse .backplane.json");
     } catch {
       /* configuration is optional */
     }

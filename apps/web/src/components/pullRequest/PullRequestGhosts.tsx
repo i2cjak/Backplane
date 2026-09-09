@@ -7,7 +7,7 @@
  * both themes) and the single `animate-skeleton` pulse, applied once on the container so any
  * number of bars costs one opacity animation.
  */
-import type { PullRequestListEntry } from "@t3tools/contracts";
+import type { PullRequestListEntry } from "@backplane/contracts";
 import { ArrowLeftIcon } from "lucide-react";
 
 import { cn } from "~/lib/utils";

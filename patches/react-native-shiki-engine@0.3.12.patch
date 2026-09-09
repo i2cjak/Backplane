@@ -1,0 +1,11 @@
+diff --git a/android/CMakeLists.txt b/android/CMakeLists.txt
+--- a/android/CMakeLists.txt
++++ b/android/CMakeLists.txt
+@@ -7,6 +7,7 @@ find_library(LOG_LIB log)
+ find_library(ONIG_LIB onig
+     PATHS ${CMAKE_CURRENT_SOURCE_DIR}/src/main/jniLibs/${ANDROID_ABI}
+     NO_CMAKE_FIND_ROOT_PATH
++    NO_DEFAULT_PATH
+     REQUIRED
+ )
+ 

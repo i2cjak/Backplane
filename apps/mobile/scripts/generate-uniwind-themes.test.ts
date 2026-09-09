@@ -20,14 +20,14 @@ describe("generate mobile Uniwind themes", () => {
 
     expect(
       staleOutputs,
-      "Run `vp run --filter @t3tools/mobile generate` and commit the generated outputs.",
+      "Run `vp run --filter @backplane/mobile generate` and commit the generated outputs.",
     ).toEqual([]);
   });
 
   it("registers every custom palette for both appearances", () => {
     expect(customThemeNames).toEqual([
-      "t3-chat-light",
-      "t3-chat-dark",
+      "backplane-chat-light",
+      "backplane-chat-dark",
       "grove-light",
       "grove-dark",
       "ocean-light",
@@ -48,8 +48,8 @@ describe("generate mobile Uniwind themes", () => {
     const css = NodeFS.readFileSync(NodePath.resolve(import.meta.dirname, "../global.css"), "utf8");
     const variables = readDefaultThemeVariables(css);
 
-    expect(variables.light["--color-screen"]).toBe("#f2f2f7");
-    expect(variables.dark["--color-screen"]).toBe("#0a0a0a");
+    expect(variables.light["--color-screen"]).toBe("#f5f6ef");
+    expect(variables.dark["--color-screen"]).toBe("#111410");
     expect(Object.keys(variables.light)).toEqual(Object.keys(variables.dark));
   });
 });

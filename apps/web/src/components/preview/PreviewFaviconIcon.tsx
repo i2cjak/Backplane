@@ -1,4 +1,4 @@
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { ScopedThreadRef } from "@backplane/contracts";
 import { type ReactNode, useState } from "react";
 
 import { useFaviconForThreadUrl } from "~/browserFaviconStore";

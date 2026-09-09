@@ -4,7 +4,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessPlatform } from "@backplane/shared/hostProcess";
 import { vi } from "vite-plus/test";
 
 import * as ProcessRunner from "../processRunner.ts";
@@ -87,7 +87,11 @@ describe("machineKindFromDmi", () => {
       }),
     ).toBe("cloud");
     expect(
-      machineKindFromDmi({ chassisType: "1", sysVendor: "Amazon EC2", productName: "t3.large" }),
+      machineKindFromDmi({
+        chassisType: "1",
+        sysVendor: "Amazon EC2",
+        productName: "backplane.large",
+      }),
     ).toBe("cloud");
   });
 

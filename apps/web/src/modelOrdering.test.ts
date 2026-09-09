@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { ProviderInstanceId } from "@t3tools/contracts";
+import { ProviderInstanceId } from "@backplane/contracts";
 
 import {
   providerModelKey,

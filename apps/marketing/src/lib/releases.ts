@@ -1,9 +1,9 @@
-const REPO = "pingdotgg/t3code";
+const REPO = "i2cjak/backplane";
 
 export const RELEASES_URL = `https://github.com/${REPO}/releases`;
 
 const API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
-const CACHE_KEY = "t3code-latest-release";
+const CACHE_KEY = "backplane-latest-release";
 
 export interface ReleaseAsset {
   name: string;

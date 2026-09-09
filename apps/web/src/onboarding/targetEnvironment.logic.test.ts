@@ -3,8 +3,8 @@ import {
   PrimaryConnectionTarget,
   RelayConnectionTarget,
   SshConnectionTarget,
-} from "@t3tools/client-runtime/connection";
-import { EnvironmentId } from "@t3tools/contracts";
+} from "@backplane/client-runtime/connection";
+import { EnvironmentId } from "@backplane/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -201,7 +201,7 @@ describe("resolveOnboardingTargetEnvironment", () => {
 });
 
 describe("isOnboardingRelayEnvironment", () => {
-  it("includes only T3 Connect relay targets", () => {
+  it("includes only Backplane Connect relay targets", () => {
     expect(
       [olderRelay, pairedRemote, sshEnvironment, desktopLocalEnvironment].filter(
         isOnboardingRelayEnvironment,

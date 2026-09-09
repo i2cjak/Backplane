@@ -4,9 +4,9 @@ import {
   assetUrlStateFromResult,
   EMPTY_ASSET_URL_ATOM,
   resolveAssetUrl,
-} from "@t3tools/client-runtime/state/assets";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
+} from "@backplane/client-runtime/state/assets";
+import { squashAtomCommandFailure } from "@backplane/client-runtime/state/runtime";
+import type { AssetResource, EnvironmentId } from "@backplane/contracts";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useCallback, useMemo } from "react";
 
@@ -14,7 +14,7 @@ import { assetEnvironment } from "~/state/assets";
 import { usePreparedConnection } from "~/state/session";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 
-export { resolveAssetUrl, type AssetUrlState } from "@t3tools/client-runtime/state/assets";
+export { resolveAssetUrl, type AssetUrlState } from "@backplane/client-runtime/state/assets";
 
 export function useAssetUrlState(
   environmentId: EnvironmentId | null,

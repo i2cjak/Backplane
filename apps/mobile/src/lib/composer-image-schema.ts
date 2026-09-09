@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@backplane/contracts";
 
 export const DraftComposerImageAttachmentSchema = Schema.Struct({
   id: Schema.String,

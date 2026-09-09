@@ -5,13 +5,13 @@ import {
   RelayConnectionRegistration,
   RelayConnectionTarget,
   BearerConnectionTarget,
-} from "@t3tools/client-runtime/connection";
+} from "@backplane/client-runtime/connection";
 import {
   type ConnectionCatalogDocument,
   EMPTY_CONNECTION_CATALOG_DOCUMENT,
   registerConnectionInCatalog,
-} from "@t3tools/client-runtime/platform";
-import { EnvironmentId } from "@t3tools/contracts";
+} from "@backplane/client-runtime/platform";
+import { EnvironmentId } from "@backplane/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 

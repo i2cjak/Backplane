@@ -1,4 +1,4 @@
-import type { PreviewSessionSnapshot } from "@t3tools/contracts";
+import type { PreviewSessionSnapshot } from "@backplane/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {

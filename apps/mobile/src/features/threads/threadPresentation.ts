@@ -1,6 +1,6 @@
 import type { StatusTone } from "../../components/StatusPill";
-import type { OrchestrationLatestTurn, OrchestrationSession } from "@t3tools/contracts";
-import { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import type { OrchestrationLatestTurn, OrchestrationSession } from "@backplane/contracts";
+import { EnvironmentThreadShell } from "@backplane/client-runtime/state/shell";
 
 export type ThreadStatusKind =
   | "pending-approval"

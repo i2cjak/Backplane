@@ -8,7 +8,7 @@ import * as Effect from "effect/Effect";
 
 afterEach(() => vi.restoreAllMocks());
 
-const tempRoot = () => NodePath.join("/tmp", `t3-kicad-${crypto.randomUUID()}`);
+const tempRoot = () => NodePath.join("/tmp", `backplane-kicad-${crypto.randomUUID()}`);
 
 it.effect(
   "discovers source and generated KiCad files recursively, including ignored build output",
@@ -101,11 +101,11 @@ it.effect("reports malformed project configuration without preventing discovery"
   Effect.promise(async () => {
     const root = tempRoot();
     NodeFS.mkdirSync(root, { recursive: true });
-    NodeFS.writeFileSync(NodePath.join(root, ".k3eda.json"), "{broken");
+    NodeFS.writeFileSync(NodePath.join(root, ".backplane.json"), "{broken");
     NodeFS.writeFileSync(NodePath.join(root, "board.kicad_pro"), "{}");
     const manifest = await discoverKiCadProject(root);
     expect(manifest.files[0]?.kind).toBe("project");
-    expect(manifest.warnings).toContain("Unable to parse .k3eda.json");
+    expect(manifest.warnings).toContain("Unable to parse .backplane.json");
   }),
 );
 
@@ -119,7 +119,7 @@ it.effect("discovers library assets and preserves the optional analysis dashboar
     );
     NodeFS.writeFileSync(NodePath.join(root, "parts.kicad_sym"), "(kicad_symbol_lib)");
     NodeFS.writeFileSync(
-      NodePath.join(root, ".k3eda.json"),
+      NodePath.join(root, ".backplane.json"),
       '{"analysisUrl":"https://analysis.example.test/"}',
     );
     const manifest = await discoverKiCadProject(root);
@@ -137,9 +137,8 @@ it.effect("reads explicit library assignments and reports missing assigned asset
     NodeFS.mkdirSync(root, { recursive: true });
     NodeFS.writeFileSync(NodePath.join(root, "parts.kicad_sym"), "(kicad_symbol_lib)");
     NodeFS.writeFileSync(
-      NodePath.join(root, ".k3eda.json"),
-      '{"symbol":"parts.kicad_sym","symbolMember":"Controller",' +
-        '"footprint":"generated/controller.kicad_mod"}',
+      NodePath.join(root, ".backplane.json"),
+      '{"symbol":"parts.kicad_sym","symbolMember":"Controller","footprint":"generated/controller.kicad_mod"}',
     );
     const manifest = await discoverKiCadProject(root);
     expect(manifest.config).toMatchObject({

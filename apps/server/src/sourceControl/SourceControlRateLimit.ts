@@ -8,7 +8,7 @@ import * as Schema from "effect/Schema";
 import {
   SourceControlProviderKind as SourceControlProviderKindSchema,
   type SourceControlProviderKind,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 
 const FALLBACK_COOLDOWN = Duration.seconds(30);
 const MAX_FALLBACK_COOLDOWN = Duration.minutes(15);
@@ -57,7 +57,7 @@ export class SourceControlRateLimit extends Context.Service<
     ) => Effect.Effect<void>;
     readonly recordSuccess: (input: RateLimitLease) => Effect.Effect<void>;
   }
->()("t3/sourceControl/SourceControlRateLimit") {}
+>()("@backplane/cli/sourceControl/SourceControlRateLimit") {}
 
 function normalizedKey(key: RateLimitKey): string {
   return `${key.provider}\0${key.host.trim().toLowerCase()}`;

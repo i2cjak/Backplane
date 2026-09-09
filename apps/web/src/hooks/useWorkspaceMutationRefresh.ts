@@ -1,4 +1,4 @@
-import type { OrchestrationThreadActivity } from "@t3tools/contracts";
+import type { OrchestrationThreadActivity } from "@backplane/contracts";
 import { useEffect, useRef } from "react";
 
 const WORKSPACE_MUTATION_ITEM_TYPES = new Set(["command_execution", "file_change"]);

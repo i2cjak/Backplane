@@ -1,4 +1,4 @@
-import type { EnvironmentId, UsageSummaryInput } from "@t3tools/contracts";
+import type { EnvironmentId, UsageSummaryInput } from "@backplane/contracts";
 import * as Schema from "effect/Schema";
 import type { AtomRegistry } from "effect/unstable/reactivity";
 

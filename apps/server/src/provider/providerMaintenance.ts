@@ -2,11 +2,11 @@ import {
   ProviderDriverKind,
   type ServerProvider,
   type ServerProviderVersionAdvisory,
-} from "@t3tools/contracts";
-import { compareSemverVersions } from "@t3tools/shared/semver";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { causeErrorTag } from "@t3tools/shared/observability";
-import { resolveCommandPath } from "@t3tools/shared/shell";
+} from "@backplane/contracts";
+import { compareSemverVersions } from "@backplane/shared/semver";
+import { HostProcessPlatform } from "@backplane/shared/hostProcess";
+import { causeErrorTag } from "@backplane/shared/observability";
+import { resolveCommandPath } from "@backplane/shared/shell";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -119,7 +119,7 @@ export interface ProviderVersionCacheEntry {
 }
 
 export const ProviderVersionCache = Context.Reference<Map<string, ProviderVersionCacheEntry>>(
-  "@t3tools/server/providerMaintenance/ProviderVersionCache",
+  "@backplane/server/providerMaintenance/ProviderVersionCache",
   {
     defaultValue: () => new Map(),
   },
@@ -345,7 +345,7 @@ const runHomebrew = Effect.fn("runHomebrew")(function* (
 /**
  * Derive update capabilities from where the executable actually lives. Every
  * branch that yields a one-click command has evidence that the named tool
- * owns that path; anything unproven stays manual-only so T3 Code never runs
+ * owns that path; anything unproven stays manual-only so Backplane never runs
  * a package manager against an install it did not create.
  */
 export const resolvePackageManagedProviderMaintenance = Effect.fn(

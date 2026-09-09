@@ -1,4 +1,4 @@
-import type { ServerProvider, ServerProviderVersionAdvisory } from "@t3tools/contracts";
+import type { ServerProvider, ServerProviderVersionAdvisory } from "@backplane/contracts";
 
 /**
  * Visual treatment for each server-reported provider status. Centralized so
@@ -40,7 +40,8 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
     return {
       headline: "Disabled",
       detail:
-        provider.message ?? "This provider is installed but disabled for new sessions in T3 Code.",
+        provider.message ??
+        "This provider is installed but disabled for new sessions in Backplane.",
     };
   }
   if (!provider.installed) {

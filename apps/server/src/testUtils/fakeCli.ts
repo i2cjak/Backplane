@@ -2,7 +2,7 @@
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessPlatform } from "@backplane/shared/hostProcess";
 
 export interface FakeCliOptions {
   /** Directory the launcher and its stub are written into. */

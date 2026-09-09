@@ -3,7 +3,7 @@
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import tailwindColors from "tailwindcss/colors";
-import { BUILT_IN_THEME_IDS, type BuiltInThemeId } from "@t3tools/shared/themePalettes";
+import { BUILT_IN_THEME_IDS, type BuiltInThemeId } from "@backplane/shared/themePalettes";
 
 import {
   getMobileThemeVariables,
@@ -249,7 +249,7 @@ if (import.meta.main) {
       const current = NodeFS.existsSync(filename) ? NodeFS.readFileSync(filename, "utf8") : null;
       if (current !== contents) {
         console.error(
-          `${NodePath.relative(process.cwd(), filename)} is stale. Run vp run --filter @t3tools/mobile generate.`,
+          `${NodePath.relative(process.cwd(), filename)} is stale. Run vp run --filter @backplane/mobile generate.`,
         );
         process.exitCode = 1;
       }

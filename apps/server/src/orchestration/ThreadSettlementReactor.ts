@@ -1,5 +1,5 @@
-import { CommandId } from "@t3tools/contracts";
-import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
+import { CommandId } from "@backplane/contracts";
+import { makeDrainableWorker } from "@backplane/shared/DrainableWorker";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -30,7 +30,7 @@ export class ThreadSettlementReactor extends Context.Service<
     readonly start: () => Effect.Effect<void, never, Scope.Scope>;
     readonly drain: Effect.Effect<void>;
   }
->()("t3/orchestration/ThreadSettlementReactor") {}
+>()("@backplane/cli/orchestration/ThreadSettlementReactor") {}
 
 export const make = Effect.gen(function* () {
   const engine = yield* OrchestrationEngine.OrchestrationEngineService;

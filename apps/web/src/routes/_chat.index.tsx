@@ -1,5 +1,5 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef } from "@backplane/client-runtime/environment";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { LinkIcon, PlusIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -164,12 +164,13 @@ function HostedStaticOnboardingState() {
                 Connect to a computer running Backplane
               </EmptyTitle>
               <EmptyDescription className="mt-2 text-sm leading-relaxed text-muted-foreground/78">
-                This browser connects to Backplane running on your computer or a server. Open
-                Backplane on that machine and keep it running.
+                This browser connects to Backplane running on your computer or a server. Start the
+                Backplane Code desktop app or command-line server on that machine and keep it
+                running.
               </EmptyDescription>
               <EmptyDescription className="mt-2 text-sm leading-relaxed text-muted-foreground/78">
                 {cloudEnabled
-                  ? "Enable T3 Connect on that machine, then open Connections here to sign in with the same account. You can also add the machine using a pairing link."
+                  ? "Enable Backplane Connect on that machine, then open Connections here to sign in with the same account. You can also add the machine using a pairing link."
                   : "Open Connections and add that machine using its pairing link. This browser must be able to reach it."}
               </EmptyDescription>
               <div className="mt-6 flex justify-center">

@@ -1,5 +1,5 @@
-import type { EnvironmentId } from "@t3tools/contracts";
-import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
+import type { EnvironmentId } from "@backplane/contracts";
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@backplane/shared/keybindings";
 import { PlusIcon } from "lucide-react";
 import { useState } from "react";
 import { useEnvironments } from "../../state/environments";
@@ -54,7 +54,7 @@ export function ProjectDefaultActionsSettings({
       <SettingsRow
         title="Import scripts"
         aria-disabled
-        description="Select a project to import actions from its checkout's t3.json."
+        description="Select a project to import actions from its checkout's backplane.json."
         control={
           <Button size="xs" variant="ghost" disabled>
             Import scripts

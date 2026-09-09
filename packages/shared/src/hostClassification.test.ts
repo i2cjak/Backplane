@@ -7,7 +7,7 @@ describe("isPublicFaviconHost", () => {
     for (const host of [
       "github.com",
       "www.google.com",
-      "t3.chat",
+      "backplane.works",
       "sub.domain.example.co.uk",
       "8.8.8.8",
       "1.1.1.1",

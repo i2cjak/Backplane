@@ -24,7 +24,7 @@ export type WslServerTreeResult =
   | { readonly ok: true; readonly root: string }
   | { readonly ok: false; readonly reason: string; readonly fatal: boolean };
 
-const MARKER_FILE_NAME = "t3code-wsl-server-tree.json";
+const MARKER_FILE_NAME = "backplane-wsl-server-tree.json";
 const COPY_CONCURRENCY = 8;
 
 const Marker = Schema.Struct({ version: Schema.String });
@@ -56,7 +56,7 @@ export class DesktopWslServerTree extends Context.Service<
     // extraction that the mounted fallback is preparing.
     readonly cleanupLegacy: Effect.Effect<void>;
   }
->()("@t3tools/desktop/wsl/DesktopWslServerTree") {}
+>()("@backplane/desktop/wsl/DesktopWslServerTree") {}
 
 // Child scheduling stays here instead of inside `visit`, so nested directories
 // cannot create independent concurrency pools. The LIFO work list also keeps

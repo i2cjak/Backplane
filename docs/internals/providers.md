@@ -11,8 +11,8 @@ session or catalog state.
 
 ## Process and account isolation
 
-T3-managed OpenCode chat uses one server per thread. Its MCP registrations are directory-scoped, while
-T3's MCP connection is thread-scoped. Sharing a chat server between threads in one directory would
+Backplane-managed OpenCode chat uses one server per thread. Its MCP registrations are directory-scoped, while
+Backplane's MCP connection is thread-scoped. Sharing a chat server between threads in one directory would
 let them replace each other's connection. Catalog and text-generation work can share the
 [instance-owned helper](../../apps/server/src/provider/OpenCodeServerOwner.ts), which closes
 after an idle period. External OpenCode servers remain externally owned and can require an
@@ -43,7 +43,7 @@ session creation for this reason. Antigravity likewise reserves authenticated ca
 explicit setup or model refresh; background checks use initialization only.
 
 [Antigravity sign-in](../../apps/server/src/provider/AntigravityAuth.ts) belongs to the initiating
-T3 auth session. The client carries the return URL back to the environment because the provider's
+Backplane auth session. The client carries the return URL back to the environment because the provider's
 loopback listener may be on another machine. Forward only the callback for the owned pending flow;
 a successful callback HTTP request is not proof that provider authentication finished. The native
 process owns token exchange and storage.

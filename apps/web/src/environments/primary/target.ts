@@ -1,4 +1,7 @@
-import { PRIMARY_LOCAL_ENVIRONMENT_ID, type DesktopEnvironmentBootstrap } from "@t3tools/contracts";
+import {
+  PRIMARY_LOCAL_ENVIRONMENT_ID,
+  type DesktopEnvironmentBootstrap,
+} from "@backplane/contracts";
 import * as Schema from "effect/Schema";
 
 const PrimaryEnvironmentTargetSource = Schema.Literals([

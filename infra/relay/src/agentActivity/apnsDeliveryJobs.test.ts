@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import type { RelayAgentActivityAggregateState } from "@t3tools/contracts/relay";
+import { EnvironmentId, ThreadId } from "@backplane/contracts";
+import type { RelayAgentActivityAggregateState } from "@backplane/contracts/relay";
 import * as Redacted from "effect/Redacted";
 
 import {
@@ -11,7 +11,7 @@ import {
 
 const secret = Redacted.make("queue-signing-secret");
 const aggregate: RelayAgentActivityAggregateState = {
-  title: "T3 Code",
+  title: "Backplane",
   subtitle: "Agent work in progress",
   activeCount: 1,
   updatedAt: "2026-05-25T00:00:00.000Z",

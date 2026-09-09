@@ -95,7 +95,7 @@ export function SettingsLegalDocumentRouteScreen({
           weight="regular"
         />
         <View className="items-center gap-2">
-          <Text className="text-center font-t3-bold text-lg text-foreground">
+          <Text className="text-center font-backplane-bold text-lg text-foreground">
             Couldn&apos;t load the {documentName.toLowerCase()}
           </Text>
           <Text selectable className="text-center text-sm leading-normal text-foreground-muted">
@@ -111,14 +111,16 @@ export function SettingsLegalDocumentRouteScreen({
             }}
             className="items-center rounded-xl bg-foreground px-4 py-3 active:opacity-80"
           >
-            <Text className="font-t3-bold text-base text-sheet">Try Again</Text>
+            <Text className="font-backplane-bold text-base text-sheet">Try Again</Text>
           </Pressable>
           <Pressable
             accessibilityRole="link"
             onPress={() => openExternalUrl(documentUrl)}
             className="items-center rounded-xl px-4 py-3 active:bg-foreground/5"
           >
-            <Text className="font-t3-medium text-base text-foreground-muted">Open in Browser</Text>
+            <Text className="font-backplane-medium text-base text-foreground-muted">
+              Open in Browser
+            </Text>
           </Pressable>
         </View>
       </View>

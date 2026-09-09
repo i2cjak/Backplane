@@ -18,7 +18,7 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
         "- fix(opencode): handle child approvals, stops, and model catalogs by @human in #8480",
         "## New Contributors",
         "- @human made their first contribution in #8435",
-        "**Full Changelog**: https://github.com/pingdotgg/t3code/compare/old...new",
+        "**Full Changelog**: https://github.com/i2cjak/backplane/compare/old...new",
       ].join("\n"),
       "0.0.36-nightly.20260828.1213",
     );

@@ -51,7 +51,7 @@ describe("theme failure handling", () => {
       expect(error).toBeInstanceOf(ThemeStorageError);
       expect(error).toMatchObject({
         operation: "read",
-        storageKey: "t3code:theme",
+        storageKey: "backplane:theme",
         cause: readCause,
       });
     }
@@ -63,23 +63,23 @@ describe("theme failure handling", () => {
       expect(error).toBeInstanceOf(ThemeStorageError);
       expect(error).toMatchObject({
         operation: "write",
-        storageKey: "t3code:theme",
+        storageKey: "backplane:theme",
         theme: "dark",
         cause: writeCause,
       });
     }
   });
 
-  it("reads the persisted T3 Chat theme preference", async () => {
+  it("reads the persisted Backplane Chat theme preference", async () => {
     vi.stubGlobal("window", {
       localStorage: createStorage({
-        getItem: () => "t3-chat",
+        getItem: () => "backplane-chat",
       }),
     });
 
     const { readThemePreference } = await import("./useTheme");
 
-    expect(readThemePreference()).toBe("t3-chat");
+    expect(readThemePreference()).toBe("backplane-chat");
   });
 
   it("falls back during initial theme application and logs only safe attributes", async () => {
@@ -102,10 +102,10 @@ describe("theme failure handling", () => {
     await expect(import("./useTheme")).resolves.toBeDefined();
 
     expect(errorLog).toHaveBeenCalledWith(
-      "Failed to read theme preference for t3code:theme.",
+      "Failed to read theme preference for backplane:theme.",
       expect.objectContaining({
         operation: "read",
-        storageKey: "t3code:theme",
+        storageKey: "backplane:theme",
         errorTag: "ThemeStorageError",
       }),
     );
@@ -119,7 +119,7 @@ describe("theme failure handling", () => {
     const themeGetItem = vi.fn((): string | null => {
       throw cause;
     });
-    const getItem = vi.fn((key: string) => (key === "t3code:theme" ? themeGetItem() : null));
+    const getItem = vi.fn((key: string) => (key === "backplane:theme" ? themeGetItem() : null));
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
     let readSnapshot: (() => unknown) | undefined;
     let subscribeToTheme: ((listener: () => void) => () => void) | undefined;
@@ -158,7 +158,7 @@ describe("theme failure handling", () => {
     expect(errorLog).toHaveBeenCalledTimes(1);
 
     const unsubscribe = subscribeToTheme?.(() => undefined);
-    storageHandler?.({ key: "t3code:theme" } as StorageEvent);
+    storageHandler?.({ key: "backplane:theme" } as StorageEvent);
     readSnapshot?.();
 
     expect(themeGetItem).toHaveBeenCalledTimes(2);
@@ -279,7 +279,7 @@ describe("onboarding theme", () => {
       label: "Second Custom",
       colors: { ...EMBER_THEME.colors, error: "#123456" },
     });
-    storage.setItem("t3code:theme", firstTheme.id);
+    storage.setItem("backplane:theme", firstTheme.id);
 
     const { mountOnboardingTheme, useTheme } = await import("./useTheme");
     expect(root.dataset.themeId).toBe(firstTheme.id);
@@ -300,7 +300,7 @@ describe("onboarding theme", () => {
 
   it("stays dark during storage changes and restores the latest saved theme", async () => {
     const storage = createStorage();
-    storage.setItem("t3code:theme", "light");
+    storage.setItem("backplane:theme", "light");
     const classes = new Set<string>();
     const styleValues = new Map<string, string>();
     const style = {
@@ -384,10 +384,10 @@ describe("onboarding theme", () => {
     expect(useTheme().resolvedTheme).toBe("dark");
     expect(setDesktopTheme).toHaveBeenLastCalledWith("dark");
 
-    storage.setItem("t3code:theme", "dark");
-    storageHandler?.({ key: "t3code:theme" } as StorageEvent);
-    storage.setItem("t3code:theme", "light");
-    storageHandler?.({ key: "t3code:theme" } as StorageEvent);
+    storage.setItem("backplane:theme", "dark");
+    storageHandler?.({ key: "backplane:theme" } as StorageEvent);
+    storage.setItem("backplane:theme", "light");
+    storageHandler?.({ key: "backplane:theme" } as StorageEvent);
     expect(classes.has("dark")).toBe(true);
     expect(useTheme().resolvedTheme).toBe("dark");
 
@@ -396,7 +396,7 @@ describe("onboarding theme", () => {
     expect(classes.has("dark")).toBe(false);
     expect(root.style.backgroundColor).toBe("rgb(255, 255, 255)");
     expect(body.style.backgroundColor).toBe("rgb(255, 255, 255)");
-    expect(storage.getItem("t3code:theme")).toBe("light");
+    expect(storage.getItem("backplane:theme")).toBe("light");
     expect(useTheme().resolvedTheme).toBe("light");
     expect(setDesktopTheme).toHaveBeenLastCalledWith("light");
   });

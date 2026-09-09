@@ -13,7 +13,7 @@ import {
   type ReactNode,
 } from "react";
 import { useParams } from "@tanstack/react-router";
-import { type ScopedThreadRef, type ThreadId } from "@t3tools/contracts";
+import { type ScopedThreadRef, type ThreadId } from "@backplane/contracts";
 import {
   CheckIcon,
   ChevronDownIcon,

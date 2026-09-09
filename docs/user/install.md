@@ -25,10 +25,18 @@ cd ~/Applications/backplane-kicad
 This starts KiCad's schematic and PCB editor. It is separate from the Backplane
 viewer.
 
+Backplane uses its own `~/.backplane` data directory, desktop profile, and `backplane://` links. It installs alongside T3 Code without sharing application state.
+
+## Android
+
+Install the Backplane APK on your phone. Android identifies it as `works.backplane.app`, so it can coexist with T3 Code. Connect it to your desktop through a pairing URL; see [remote access](remote-access.md).
+
+To build an ARM64 APK from source, install the Android SDK and JDK 17, then run `vp run --filter @backplane/mobile android:release`.
+
 ## iOS
 
 Existing iOS testers can install the update through the
-[k3eda app in TestFlight](https://testflight.apple.com/v1/app/6809006324).
+[Backplane in TestFlight](https://testflight.apple.com/v1/app/6809006324).
 The installed app is named Backplane and connects to your Backplane server.
 
 ## First run

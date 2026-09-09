@@ -1,6 +1,6 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
-import { scopedThreadKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { scopedThreadKey, scopeProjectRef } from "@backplane/client-runtime/environment";
+import { squashAtomCommandFailure } from "@backplane/client-runtime/state/runtime";
 import {
   type EnvironmentId,
   type PullRequestAction,
@@ -10,7 +10,7 @@ import {
   type PullRequestRef,
   resolveEnvironmentMachineKind,
   type ScopedThreadRef,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import {
   ArrowDownUpIcon,
   ArrowLeftIcon,

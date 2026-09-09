@@ -1,11 +1,11 @@
-import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { pullRequestDetailToVcsStatus } from "@t3tools/client-runtime/state/pull-requests";
+import { scopedThreadKey, scopeThreadRef } from "@backplane/client-runtime/environment";
+import { pullRequestDetailToVcsStatus } from "@backplane/client-runtime/state/pull-requests";
 import {
   type EnvironmentId,
   resolveEnvironmentMachineKind,
   type ThreadLinkedPullRequest,
   type VcsStatusResult,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import { FolderGit2Icon, TerminalIcon } from "lucide-react";
 import { useMemo } from "react";
 import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";

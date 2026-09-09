@@ -1,4 +1,4 @@
-import type { DesktopUpdateState } from "@t3tools/contracts";
+import type { DesktopUpdateState } from "@backplane/contracts";
 import { isValidElement, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -87,9 +87,9 @@ describe("SidebarUpdateReleaseNotes", () => {
     );
 
     expect(anchors.map(({ props }) => props.href)).toEqual([
-      "https://github.com/pingdotgg/t3code/releases/tag/v0.0.36-nightly.3",
-      "https://github.com/pingdotgg/t3code/releases/tag/v0.0.36-nightly.2",
-      "https://github.com/pingdotgg/t3code/releases/tag/v0.0.36-nightly.1",
+      "https://github.com/i2cjak/backplane/releases/tag/v0.0.36-nightly.3",
+      "https://github.com/i2cjak/backplane/releases/tag/v0.0.36-nightly.2",
+      "https://github.com/i2cjak/backplane/releases/tag/v0.0.36-nightly.1",
     ]);
     expect(anchors.map(({ props }) => textContent(props.children))).toEqual([
       "View release on GitHub",
@@ -107,7 +107,7 @@ describe("SidebarUpdateReleaseNotes", () => {
       }),
     );
 
-    expect(anchors.at(-1)?.props.href).toBe("https://github.com/pingdotgg/t3code/releases");
+    expect(anchors.at(-1)?.props.href).toBe("https://github.com/i2cjak/backplane/releases");
     expect(textContent(anchors.at(-1)?.props.children)).toBe("1 older release on GitHub");
   });
 
@@ -141,7 +141,7 @@ describe("SidebarUpdateReleaseNotes", () => {
     expect(preventDefault).toHaveBeenCalledOnce();
     await vi.waitFor(() => {
       expect(openExternal).toHaveBeenCalledWith(
-        "https://github.com/pingdotgg/t3code/releases/tag/v0.0.36-nightly.3",
+        "https://github.com/i2cjak/backplane/releases/tag/v0.0.36-nightly.3",
       );
       expect(testState.addToast).toHaveBeenCalledWith({
         type: "error",

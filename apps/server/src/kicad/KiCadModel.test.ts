@@ -6,7 +6,7 @@ import { expect, it } from "vite-plus/test";
 import { createKiCadModelCache } from "./KiCadModel.ts";
 
 it("shares concurrent exports and never writes outputs beside the source", async () => {
-  const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "k3eda-model-test-"));
+  const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "backplane-model-test-"));
   const board = NodePath.join(root, "board.kicad_pcb");
   await NodeFSP.writeFile(board, "saved board");
   let calls = 0;

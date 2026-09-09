@@ -1,4 +1,4 @@
-import type { BrowserImportFailureReason, BrowserImportSource } from "@t3tools/contracts";
+import type { BrowserImportFailureReason, BrowserImportSource } from "@backplane/contracts";
 
 export interface WizardTargetProfile {
   readonly id: string;

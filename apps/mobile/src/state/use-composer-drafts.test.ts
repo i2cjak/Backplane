@@ -5,7 +5,7 @@ import {
   MessageId,
   ProviderInstanceId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import { onTestFinished, vi } from "vite-plus/test";
 
 const composerDraftFileMocks = vi.hoisted(() => {
@@ -126,7 +126,7 @@ vi.mock("../lib/uuid", () => ({ uuidv4: () => "uuid", randomHex: () => "0000" })
 vi.mock("./assets", () => ({ assetEnvironment: {} }));
 vi.mock("./attachments", () => ({ attachmentEnvironment: {} }));
 vi.mock("./session", () => ({ environmentSession: {} }));
-vi.mock("@t3tools/client-runtime/state/runtime", () => ({
+vi.mock("@backplane/client-runtime/state/runtime", () => ({
   createEnvironmentRpcCommand: () => Symbol("rpc-command"),
   executeAtomQuery: () => {
     throw new Error("Unexpected network query in the inline read test");
@@ -276,7 +276,7 @@ describe("mobile composer drafts", () => {
       name: `${id}.mov`,
       mimeType: "video/quicktime",
       sizeBytes: 42,
-      fileUri: `file:///documents/t3-composer-attachments/${id}.mov`,
+      fileUri: `file:///documents/backplane-composer-attachments/${id}.mov`,
     });
     const draftKey = "new-task:environment-1:project-cap";
     const existing = Array.from({ length: 7 }, (_, index) => makeAttachment(`held-${index}`));
@@ -317,7 +317,7 @@ describe("mobile composer drafts", () => {
       name: "report.pdf",
       mimeType: "application/pdf",
       sizeBytes: 42,
-      fileUri: "file:///documents/t3-composer-attachments/report.pdf",
+      fileUri: "file:///documents/backplane-composer-attachments/report.pdf",
     };
     appAtomRegistry.set(composerDraftsAtom, {
       source: { text: "First draft", attachments: [file] },
@@ -347,8 +347,8 @@ describe("mobile composer drafts", () => {
       name: "photo.png",
       mimeType: "image/png",
       sizeBytes: 3,
-      fileUri: "file:///documents/t3-composer-attachments/photo.png",
-      previewUri: "file:///documents/t3-composer-attachments/photo.png",
+      fileUri: "file:///documents/backplane-composer-attachments/photo.png",
+      previewUri: "file:///documents/backplane-composer-attachments/photo.png",
     };
     appAtomRegistry.set(composerDraftsAtom, {
       "environment-1:thread-1": { text: "look at this", attachments: [image] },
@@ -389,8 +389,8 @@ describe("mobile composer drafts", () => {
       name: "photo.png",
       mimeType: "image/png",
       sizeBytes: 3,
-      fileUri: "file:///documents/t3-composer-attachments/photo.png",
-      previewUri: "file:///documents/t3-composer-attachments/photo.png",
+      fileUri: "file:///documents/backplane-composer-attachments/photo.png",
+      previewUri: "file:///documents/backplane-composer-attachments/photo.png",
     };
     const readStarted = Promise.withResolvers<void>();
     const read = Promise.withResolvers<void>();
@@ -447,7 +447,7 @@ describe("mobile composer drafts", () => {
       name: "report.pdf",
       mimeType: "application/pdf",
       sizeBytes: 42,
-      fileUri: "file:///documents/t3-composer-attachments/failed-send.pdf",
+      fileUri: "file:///documents/backplane-composer-attachments/failed-send.pdf",
       uploadedAttachmentId: "pending-failed-send",
       uploadEnvironmentId: EnvironmentId.make("environment-1"),
     };
@@ -533,7 +533,7 @@ describe("mobile composer drafts", () => {
         name,
         mimeType: type === "image" ? "image/png" : "application/pdf",
         sizeBytes: 42,
-        fileUri: `file:///documents/t3-composer-attachments/${name}`,
+        fileUri: `file:///documents/backplane-composer-attachments/${name}`,
         uploadEnvironmentId: environmentId,
         uploadedAttachmentId: "pending-notes",
       };
@@ -624,7 +624,7 @@ describe("mobile composer drafts", () => {
         name,
         mimeType: type === "image" ? "image/png" : "video/mp4",
         sizeBytes: 42,
-        fileUri: `file:///private/var/mobile/Containers/Data/Application/11111111-1111-4111-8111-111111111111/Documents/t3-composer-attachments/${fileName}`,
+        fileUri: `file:///private/var/mobile/Containers/Data/Application/11111111-1111-4111-8111-111111111111/Documents/backplane-composer-attachments/${fileName}`,
       };
       const file =
         type === "image"
@@ -632,7 +632,7 @@ describe("mobile composer drafts", () => {
           : { ...metadata, type };
       const currentFile = {
         ...file,
-        fileUri: `file:///var/mobile/Containers/Data/Application/22222222-2222-4222-8222-222222222222/Documents/t3-composer-attachments/${fileName}`,
+        fileUri: `file:///var/mobile/Containers/Data/Application/22222222-2222-4222-8222-222222222222/Documents/backplane-composer-attachments/${fileName}`,
       };
       const releasePlayback = retainComposerAttachmentFileForPreview(file);
       const releaseShareCopy = retainComposerAttachmentFileForPreview(currentFile);
@@ -668,7 +668,7 @@ describe("mobile composer drafts", () => {
       name: "recording.mp4",
       mimeType: "video/mp4",
       sizeBytes: 42,
-      fileUri: "file:///documents/t3-composer-attachments/recording.mp4",
+      fileUri: "file:///documents/backplane-composer-attachments/recording.mp4",
     };
     const ownershipReadStarted = Promise.withResolvers<void>();
     const ownershipRead = Promise.withResolvers<[]>();
@@ -705,7 +705,7 @@ describe("mobile composer drafts", () => {
       name: "report.pdf",
       mimeType: "application/pdf",
       sizeBytes: 42,
-      fileUri: "file:///documents/t3-composer-attachments/discarded.pdf",
+      fileUri: "file:///documents/backplane-composer-attachments/discarded.pdf",
       uploadedAttachmentId: "pending-discarded",
       uploadEnvironmentId: environmentId,
     };
@@ -728,14 +728,14 @@ describe("mobile composer drafts", () => {
       name: "report.pdf",
       mimeType: "application/pdf",
       sizeBytes: 42,
-      fileUri: "file:///documents/t3-composer-attachments/discarded-copy.pdf",
+      fileUri: "file:///documents/backplane-composer-attachments/discarded-copy.pdf",
       uploadedAttachmentId: "pending-shared",
       uploadEnvironmentId: environmentId,
     };
     const retained = {
       ...discarded,
       id: "file-retained-copy",
-      fileUri: "file:///documents/t3-composer-attachments/retained-copy.pdf",
+      fileUri: "file:///documents/backplane-composer-attachments/retained-copy.pdf",
     };
     appAtomRegistry.set(composerDraftsAtom, {
       "environment-1:thread-1": { text: "Keep this copy", attachments: [retained] },
@@ -761,7 +761,7 @@ describe("mobile composer drafts", () => {
       name: "report.pdf",
       mimeType: "application/pdf",
       sizeBytes: 42,
-      fileUri: "file:///documents/t3-composer-attachments/delete-failed.pdf",
+      fileUri: "file:///documents/backplane-composer-attachments/delete-failed.pdf",
       uploadedAttachmentId: "pending-delete-failed",
       uploadEnvironmentId: EnvironmentId.make("environment-1"),
     };
@@ -782,7 +782,7 @@ describe("mobile composer drafts", () => {
       name: "report.pdf",
       mimeType: "application/pdf",
       sizeBytes: 42,
-      fileUri: "file:///documents/t3-composer-attachments/report.pdf",
+      fileUri: "file:///documents/backplane-composer-attachments/report.pdf",
     };
     appAtomRegistry.set(threadOutboxManager.queuedMessagesByThreadKeyAtom, {
       "environment-1:thread-1": [
@@ -810,7 +810,7 @@ describe("mobile composer drafts", () => {
       name: "report.pdf",
       mimeType: "application/pdf",
       sizeBytes: 42,
-      fileUri: "file:///documents/t3-composer-attachments/report.pdf",
+      fileUri: "file:///documents/backplane-composer-attachments/report.pdf",
     };
     const load = vi.spyOn(threadOutboxManager, "load").mockImplementation(async () => {
       appAtomRegistry.set(threadOutboxManager.queuedMessagesByThreadKeyAtom, {
@@ -848,7 +848,7 @@ describe("mobile composer drafts", () => {
       name: "report.pdf",
       mimeType: "application/pdf",
       sizeBytes: 42,
-      fileUri: "file:///documents/t3-composer-attachments/incoming.pdf",
+      fileUri: "file:///documents/backplane-composer-attachments/incoming.pdf",
     };
     incomingShareStorageMocks.load
       .mockResolvedValueOnce([
@@ -883,7 +883,7 @@ describe("mobile composer drafts", () => {
       name: "report.pdf",
       mimeType: "application/pdf",
       sizeBytes: 42,
-      fileUri: "file:///documents/t3-composer-attachments/incoming-unknown.pdf",
+      fileUri: "file:///documents/backplane-composer-attachments/incoming-unknown.pdf",
     };
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     incomingShareStorageMocks.load.mockRejectedValueOnce(new Error("inbox unavailable"));
@@ -905,11 +905,11 @@ describe("mobile composer drafts", () => {
         name: "report.pdf",
         mimeType: "application/pdf",
         sizeBytes: 42,
-        fileUri: `file:///private/var/mobile/Containers/Data/Application/11111111-1111-4111-8111-111111111111/Documents/t3-composer-attachments/${fileName}`,
+        fileUri: `file:///private/var/mobile/Containers/Data/Application/11111111-1111-4111-8111-111111111111/Documents/backplane-composer-attachments/${fileName}`,
       };
       const currentFile = {
         ...oldFile,
-        fileUri: `file:///var/mobile/Containers/Data/Application/22222222-2222-4222-8222-222222222222/Documents/t3-composer-attachments/${fileName}`,
+        fileUri: `file:///var/mobile/Containers/Data/Application/22222222-2222-4222-8222-222222222222/Documents/backplane-composer-attachments/${fileName}`,
       };
       const outboxLoad = vi.spyOn(threadOutboxManager, "load").mockResolvedValue(true);
       onTestFinished(() => outboxLoad.mockRestore());
@@ -970,7 +970,7 @@ describe("mobile composer drafts", () => {
       name: "report.pdf",
       mimeType: "application/pdf",
       sizeBytes: 42,
-      fileUri: "file:///documents/t3-composer-attachments/report.pdf",
+      fileUri: "file:///documents/backplane-composer-attachments/report.pdf",
     };
     setComposerDraftText("environment-1:thread-1", "Unsaved draft");
     composerDraftFileMocks.setWriteError(new Error("storage unavailable"));
@@ -1225,7 +1225,7 @@ describe("mobile composer drafts", () => {
         name: "report.pdf",
         mimeType: "application/pdf",
         sizeBytes: 42,
-        fileUri: "file:///documents/t3-composer-attachments/report.pdf",
+        fileUri: "file:///documents/backplane-composer-attachments/report.pdf",
       };
       composerDraftFileMocks.setDocument({
         schemaVersion: failure === "decode" ? 999 : 1,
@@ -1696,7 +1696,7 @@ describe("mobile composer drafts", () => {
       name: "kept.pdf",
       mimeType: "application/pdf",
       sizeBytes: 1,
-      fileUri: "file:///documents/t3-composer-attachments/kept.pdf",
+      fileUri: "file:///documents/backplane-composer-attachments/kept.pdf",
     };
     const insertedAttachment = {
       id: "inserted",
@@ -1704,7 +1704,7 @@ describe("mobile composer drafts", () => {
       name: "inserted.pdf",
       mimeType: "application/pdf",
       sizeBytes: 1,
-      fileUri: "file:///documents/t3-composer-attachments/inserted.pdf",
+      fileUri: "file:///documents/backplane-composer-attachments/inserted.pdf",
     };
     const userAttachment = { ...keptAttachment, id: "user-added" };
     const snapshot: ComposerDraft = { text: "typed before", attachments: [keptAttachment] };
@@ -1773,7 +1773,7 @@ describe("mobile composer drafts", () => {
       name: `${id}.pdf`,
       mimeType: "application/pdf",
       sizeBytes: 42,
-      fileUri: `file:///documents/t3-composer-attachments/${id}.pdf`,
+      fileUri: `file:///documents/backplane-composer-attachments/${id}.pdf`,
     });
     const first = fileFor("file-first");
     const reowned = fileFor("file-reowned");
@@ -1808,7 +1808,7 @@ describe("mobile composer drafts", () => {
       name: "shared.pdf",
       mimeType: "application/pdf",
       sizeBytes: 42,
-      fileUri: "file:///documents/t3-composer-attachments/shared.pdf",
+      fileUri: "file:///documents/backplane-composer-attachments/shared.pdf",
       uploadEnvironmentId: EnvironmentId.make("environment-1"),
       uploadedAttachmentId: "pending-partial-outbox",
     };
@@ -1883,7 +1883,7 @@ describe("mobile composer drafts", () => {
       name: "report.pdf",
       mimeType: "application/pdf",
       sizeBytes: 42,
-      fileUri: "file:///documents/t3-composer-attachments/report.pdf",
+      fileUri: "file:///documents/backplane-composer-attachments/report.pdf",
     };
     composerDraftFileMocks.setDocument({
       schemaVersion: 1,

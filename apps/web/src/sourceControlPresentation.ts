@@ -1,18 +1,18 @@
 import { GitPullRequestIcon } from "lucide-react";
 import type { ElementType } from "react";
-import type { SourceControlProviderInfo, SourceControlProviderKind } from "@t3tools/contracts";
+import type { SourceControlProviderInfo, SourceControlProviderKind } from "@backplane/contracts";
 export {
   DEFAULT_CHANGE_REQUEST_TERMINOLOGY,
   getChangeRequestTerminology,
   resolveChangeRequestPresentation,
   type ChangeRequestPresentation,
   type ChangeRequestTerminology,
-} from "@t3tools/shared/sourceControl";
+} from "@backplane/shared/sourceControl";
 import {
   getChangeRequestTerminology,
   resolveChangeRequestPresentation,
   type ChangeRequestTerminology,
-} from "@t3tools/shared/sourceControl";
+} from "@backplane/shared/sourceControl";
 import { AzureDevOpsIcon, BitbucketIcon, GitHubIcon, GitLabIcon } from "./components/Icons";
 
 export interface SourceControlPresentation {

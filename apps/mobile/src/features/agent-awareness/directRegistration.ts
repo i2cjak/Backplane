@@ -3,7 +3,7 @@ import * as Notifications from "expo-notifications";
 import {
   IosNotificationRegistrationResult,
   type IosNotificationRegistration,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import * as Schema from "effect/Schema";
 import type { SavedRemoteConnection } from "../../lib/connection";
 import { loadOrCreateAgentAwarenessDeviceId } from "../../persistence/imperative";
@@ -112,7 +112,7 @@ async function registerNow(input: RegistrationInput) {
   }
   const body: IosNotificationRegistration = {
     deviceId: await loadOrCreateAgentAwarenessDeviceId(),
-    bundleId: Constants.expoConfig?.ios?.bundleIdentifier ?? "com.i2cjak.k3eda",
+    bundleId: Constants.expoConfig?.ios?.bundleIdentifier ?? "works.backplane.app",
     apsEnvironment: resolveApsEnvironment(Constants.expoConfig?.extra?.appVariant),
     notificationsEnabled: granted,
     liveActivitiesEnabled: input.liveActivitiesEnabled,

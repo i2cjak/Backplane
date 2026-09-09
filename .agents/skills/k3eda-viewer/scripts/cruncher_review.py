@@ -17,12 +17,12 @@ def main() -> None:
     project = args.project.resolve(strict=True)
     if project.suffix not in {".kicad_pro", ".kicad_sch", ".kicad_pcb"}:
         parser.error("expected a KiCad project, schematic, or PCB")
-    output = args.output.resolve() if args.output else Path(tempfile.mkdtemp(prefix="k3eda-cruncher-"))
+    output = args.output.resolve() if args.output else Path(tempfile.mkdtemp(prefix="backplane-cruncher-"))
     if args.output:
         output.mkdir(parents=True, exist_ok=False)
     # Cruncher may create pcb.svg.config beside its input. Keep that behavior,
     # and any intermediate CLI exports, away from the editable project.
-    with tempfile.TemporaryDirectory(prefix="k3eda-cruncher-input-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="backplane-cruncher-input-") as temporary:
         snapshot = Path(temporary)
         for directory, dirs, files in os.walk(project.parent, followlinks=False):
             dirs[:] = [name for name in dirs if name not in {".git", ".history", "node_modules", ".venv"} and not (Path(directory) / name).is_symlink()]

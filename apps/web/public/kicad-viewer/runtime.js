@@ -16,7 +16,7 @@ window.addEventListener("message", (event) => {
   if (
     event.source !== parent ||
     event.origin !== location.origin ||
-    event.data?.type !== "k3eda-snapshot"
+    event.data?.type !== "backplane-snapshot"
   )
     return;
   const snapshot = event.data;
@@ -55,10 +55,10 @@ window.addEventListener("message", (event) => {
           viewer.setAttribute("show-header", "false");
           host.appendChild(viewer);
           viewer.addEventListener("ecad-viewer:selection", (event) =>
-            send({ type: "k3eda-selection", selection: event.detail }),
+            send({ type: "backplane-selection", selection: event.detail }),
           );
           viewer.addEventListener("ecad-viewer:crossprobe", (event) =>
-            send({ type: "k3eda-crossprobe", selection: event.detail }),
+            send({ type: "backplane-crossprobe", selection: event.detail }),
           );
         }
         if (revision !== snapshot.revision) {
@@ -79,7 +79,7 @@ window.addEventListener("message", (event) => {
           if (snapshot.probe && probeId !== snapshot.probe.id) {
             probeId = snapshot.probe.id;
             const found = viewer.requestCrossProbe(snapshot.probe);
-            send({ type: "k3eda-probe-result", found, value: snapshot.probe.value });
+            send({ type: "backplane-probe-result", found, value: snapshot.probe.value });
           }
         }
       }
@@ -89,6 +89,6 @@ window.addEventListener("message", (event) => {
     });
 });
 parent.postMessage(
-  { type: "k3eda-runtime-ready" },
+  { type: "backplane-runtime-ready" },
   location.origin === "null" ? "*" : location.origin,
 );

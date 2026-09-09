@@ -1,4 +1,4 @@
-import { ProjectId, type PullRequestSummary, type VcsStatusResult } from "@t3tools/contracts";
+import { ProjectId, type PullRequestSummary, type VcsStatusResult } from "@backplane/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import {
   GitMergeIcon,
@@ -39,7 +39,7 @@ function status(overrides: Partial<VcsStatusResult> = {}): VcsStatusResult {
     pr: {
       number: 42,
       title: "PR branch",
-      url: "https://github.com/pingdotgg/t3code/pull/42",
+      url: "https://github.com/i2cjak/backplane/pull/42",
       baseRef: "main",
       headRef: "feature/current",
       state: "open",
@@ -55,10 +55,10 @@ function pullRequestSummary(
   return {
     provider: "github",
     projectId: ProjectId.make("project-1"),
-    repository: "pingdotgg/t3code",
+    repository: "i2cjak/backplane",
     number: 42,
     title: "Feature PR",
-    url: "https://github.com/pingdotgg/t3code/pull/42",
+    url: "https://github.com/i2cjak/backplane/pull/42",
     state,
     headBranch: "feature/current",
     baseBranch: "main",

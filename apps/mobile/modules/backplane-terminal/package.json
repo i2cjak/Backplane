@@ -1,0 +1,17 @@
+{
+  "name": "@backplane/mobile-terminal-native",
+  "version": "0.0.0",
+  "private": true,
+  "expo-module": {
+    "ios": {
+      "modules": [
+        "BackplaneTerminalModule"
+      ]
+    },
+    "android": {
+      "modules": [
+        "expo.modules.backplaneterminal.BackplaneTerminalModule"
+      ]
+    }
+  }
+}

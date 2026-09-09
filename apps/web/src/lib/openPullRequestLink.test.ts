@@ -9,7 +9,7 @@ import {
   pullRequestCandidateUrlFromReferenceAutolink,
   shouldOpenPullRequestExternally,
 } from "./openPullRequestLink";
-import { ProjectId, type RepositoryIdentity } from "@t3tools/contracts";
+import { ProjectId, type RepositoryIdentity } from "@backplane/contracts";
 
 function repositoryIdentity(
   provider: string,
@@ -133,20 +133,20 @@ describe("pullRequestCandidateUrlFromReferenceAutolink", () => {
   it("turns GitHub's shared issue route into a pull request candidate", () => {
     expect(
       pullRequestCandidateUrlFromReferenceAutolink(
-        "https://github.com/pingdotgg/t3code/issues/8600#issuecomment-1",
+        "https://github.com/i2cjak/backplane/issues/8600#issuecomment-1",
       ),
-    ).toBe("https://github.com/pingdotgg/t3code/pull/8600#issuecomment-1");
+    ).toBe("https://github.com/i2cjak/backplane/pull/8600#issuecomment-1");
   });
 
   it("does not reinterpret other issue hosts or malformed references", () => {
     expect(
       pullRequestCandidateUrlFromReferenceAutolink(
-        "https://gitlab.com/pingdotgg/t3code/-/issues/8600",
+        "https://gitlab.com/i2cjak/backplane/-/issues/8600",
       ),
     ).toBeNull();
     expect(
       pullRequestCandidateUrlFromReferenceAutolink(
-        "https://github.com/pingdotgg/t3code/issues/not-a-number",
+        "https://github.com/i2cjak/backplane/issues/not-a-number",
       ),
     ).toBeNull();
   });
@@ -155,28 +155,28 @@ describe("pullRequestCandidateUrlFromReferenceAutolink", () => {
 describe("matchesLinkedPullRequestUrl", () => {
   const linkedPullRequest = {
     projectId: ProjectId.make("project-1"),
-    repository: "pingdotgg/t3code",
+    repository: "i2cjak/backplane",
     number: 42,
-    url: "https://github.com/pingdotgg/t3code/pull/42",
+    url: "https://github.com/i2cjak/backplane/pull/42",
   };
 
   it("matches the same pull request without looking up its project", () => {
     expect(
       matchesLinkedPullRequestUrl(
         linkedPullRequest,
-        "https://github.com/PingDotGG/T3Code/pull/42/files",
+        "https://github.com/PingDotGG/Backplane/pull/42/files",
       ),
     ).toBe(true);
   });
 
   it("rejects a different pull request or host", () => {
     expect(
-      matchesLinkedPullRequestUrl(linkedPullRequest, "https://github.com/pingdotgg/t3code/pull/43"),
+      matchesLinkedPullRequestUrl(linkedPullRequest, "https://github.com/i2cjak/backplane/pull/43"),
     ).toBe(false);
     expect(
       matchesLinkedPullRequestUrl(
         linkedPullRequest,
-        "https://github.example.com/pingdotgg/t3code/pull/42",
+        "https://github.example.com/i2cjak/backplane/pull/42",
       ),
     ).toBe(false);
   });
@@ -195,9 +195,9 @@ describe("shouldOpenPullRequestExternally", () => {
 
 describe("parseChangeRequestUrl", () => {
   it("reads a GitHub pull request", () => {
-    expect(parseChangeRequestUrl("https://github.com/T3Tools/T3Code/pull/123")).toEqual({
+    expect(parseChangeRequestUrl("https://github.com/Backplane/Backplane/pull/123")).toEqual({
       host: "github.com",
-      repository: "t3tools/t3code",
+      repository: "backplane/backplane",
       number: 123,
     });
   });
@@ -212,10 +212,10 @@ describe("parseChangeRequestUrl", () => {
 
   it("reads a GitLab merge request, nested groups and all", () => {
     expect(
-      parseChangeRequestUrl("https://gitlab.com/t3tools/platform/t3code/-/merge_requests/42"),
+      parseChangeRequestUrl("https://gitlab.com/backplane/platform/backplane/-/merge_requests/42"),
     ).toEqual({
       host: "gitlab.com",
-      repository: "t3tools/platform/t3code",
+      repository: "backplane/platform/backplane",
       number: 42,
     });
   });
@@ -240,25 +240,27 @@ describe("parseChangeRequestUrl", () => {
 
   it("reads both Azure DevOps URL forms, keeping `_git` in the repository path", () => {
     expect(
-      parseChangeRequestUrl("https://dev.azure.com/acme/platform/_git/t3code/pullrequest/17"),
+      parseChangeRequestUrl("https://dev.azure.com/acme/platform/_git/backplane/pullrequest/17"),
     ).toEqual({
       host: "dev.azure.com",
-      repository: "acme/platform/_git/t3code",
+      repository: "acme/platform/_git/backplane",
       number: 17,
     });
     expect(
-      parseChangeRequestUrl("https://acme.visualstudio.com/platform/_git/t3code/pullrequest/17"),
+      parseChangeRequestUrl("https://acme.visualstudio.com/platform/_git/backplane/pullrequest/17"),
     ).toEqual({
       host: "acme.visualstudio.com",
-      repository: "platform/_git/t3code",
+      repository: "platform/_git/backplane",
       number: 17,
     });
   });
 
   it("survives trailing segments, a trailing slash and a query string", () => {
-    expect(parseChangeRequestUrl("https://github.com/t3tools/t3code/pull/123/files?w=1")).toEqual({
+    expect(
+      parseChangeRequestUrl("https://github.com/backplane/backplane/pull/123/files?w=1"),
+    ).toEqual({
       host: "github.com",
-      repository: "t3tools/t3code",
+      repository: "backplane/backplane",
       number: 123,
     });
     expect(
@@ -267,27 +269,27 @@ describe("parseChangeRequestUrl", () => {
     expect(
       parseChangeRequestUrl("https://bitbucket.org/team/repo/pull-requests/5/commits"),
     ).toEqual({ host: "bitbucket.org", repository: "team/repo", number: 5 });
-    expect(parseChangeRequestUrl("https://github.com/t3tools/t3code/pull/123/")).toEqual({
+    expect(parseChangeRequestUrl("https://github.com/backplane/backplane/pull/123/")).toEqual({
       host: "github.com",
-      repository: "t3tools/t3code",
+      repository: "backplane/backplane",
       number: 123,
     });
   });
 
   it("claims nothing it cannot be sure of, so the link goes to the browser", () => {
     for (const link of [
-      "https://github.com/t3tools/t3code/issues/123",
-      "https://github.com/t3tools/t3code/commit/0a1b2c3",
-      "https://github.com/t3tools/t3code",
-      "https://github.com/t3tools/t3code/pull/abc",
-      "https://gitlab.com/t3tools/t3code/-/snippets/12",
-      "https://gitlab.com/t3tools/t3code/-/issues/12",
+      "https://github.com/backplane/backplane/issues/123",
+      "https://github.com/backplane/backplane/commit/0a1b2c3",
+      "https://github.com/backplane/backplane",
+      "https://github.com/backplane/backplane/pull/abc",
+      "https://gitlab.com/backplane/backplane/-/snippets/12",
+      "https://gitlab.com/backplane/backplane/-/issues/12",
       // A path shape that means nothing off its own host.
       "https://blog.example.test/2026/updates/pull/3",
       // A lookalike is deliberately not fought here: `github.com.evil.test` reads as a GitHub
       // Enterprise install and there is no way to tell it from one. It is `findProjectForChange
       // Request` that refuses it, because no project in the workspace is checked out from it.
-      "javascript:alert(1)//github.com/t3tools/t3code/pull/1",
+      "javascript:alert(1)//github.com/backplane/backplane/pull/1",
       "not a url",
     ]) {
       expect(parseChangeRequestUrl(link), link).toBeNull();
@@ -301,20 +303,20 @@ describe("findProjectForChangeRequest", () => {
 
   it("matches a nested GitLab group by the whole path below the host", () => {
     // The server identifies a repository by `displayName`, which keeps every group segment; the
-    // two-segment owner/name form would look for `t3tools/t3code` and find nothing.
+    // two-segment owner/name form would look for `backplane/backplane` and find nothing.
     const projects = [
       project({
-        canonicalKey: "gitlab.com/t3tools/platform/t3code",
+        canonicalKey: "gitlab.com/backplane/platform/backplane",
         provider: "gitlab",
-        displayName: "t3tools/platform/t3code",
-        owner: "t3tools",
-        name: "t3code",
+        displayName: "backplane/platform/backplane",
+        owner: "backplane",
+        name: "backplane",
       }),
     ];
     expect(
       findProjectForChangeRequest(projects, {
         host: "gitlab.com",
-        repository: "t3tools/platform/t3code",
+        repository: "backplane/platform/backplane",
         number: 42,
       }),
     ).toBe(projects[0]);
@@ -323,16 +325,16 @@ describe("findProjectForChangeRequest", () => {
   it("keeps two hosts apart, so an Enterprise link does not open the public one", () => {
     const projects = [
       project({
-        canonicalKey: "github.com/pingdotgg/t3code",
+        canonicalKey: "github.com/i2cjak/backplane",
         provider: "github",
-        owner: "pingdotgg",
-        name: "t3code",
+        owner: "i2cjak",
+        name: "backplane",
       }),
     ];
     expect(
       findProjectForChangeRequest(projects, {
         host: "github.acme.test",
-        repository: "pingdotgg/t3code",
+        repository: "i2cjak/backplane",
         number: 1,
       }),
     ).toBeUndefined();
@@ -341,16 +343,16 @@ describe("findProjectForChangeRequest", () => {
   it("claims nothing for a lookalike host, which is what keeps a link a link", () => {
     const projects = [
       project({
-        canonicalKey: "github.com/pingdotgg/t3code",
+        canonicalKey: "github.com/i2cjak/backplane",
         provider: "github",
-        owner: "pingdotgg",
-        name: "t3code",
+        owner: "i2cjak",
+        name: "backplane",
       }),
     ];
     expect(
       findProjectForChangeRequest(projects, {
         host: "github.com-evil.test",
-        repository: "pingdotgg/t3code",
+        repository: "i2cjak/backplane",
         number: 1,
       }),
     ).toBeUndefined();

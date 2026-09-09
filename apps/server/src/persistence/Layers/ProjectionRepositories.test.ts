@@ -4,7 +4,7 @@ import {
   TurnId,
   ProviderInstanceId,
   OrchestrationProposedPlanId,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -467,14 +467,14 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
       const threads = yield* ProjectionThreadRepository;
       const linkedPullRequest = {
         projectId: ProjectId.make("project-linked-pr"),
-        repository: "pingdotgg/t3code",
+        repository: "i2cjak/backplane",
         number: 42,
-        url: "https://github.com/pingdotgg/t3code/pull/42",
+        url: "https://github.com/i2cjak/backplane/pull/42",
       };
       const branchPullRequest = {
         ...linkedPullRequest,
         number: 43,
-        url: "https://github.com/pingdotgg/t3code/pull/43",
+        url: "https://github.com/i2cjak/backplane/pull/43",
       };
 
       yield* threads.upsert({

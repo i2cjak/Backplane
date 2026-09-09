@@ -15,13 +15,15 @@ const cleanEnv = () => {
   return env;
 };
 
-import type { KiCadLibraryMember } from "@t3tools/contracts";
+import type { KiCadLibraryMember } from "@backplane/contracts";
 export async function exportKiCadLibrary(
   kind: "footprint" | "symbol",
   input: string,
   name?: string,
 ): Promise<KiCadLibraryMember[]> {
-  const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-kicad-library-"));
+  const directory = await NodeFSP.mkdtemp(
+    NodePath.join(NodeOS.tmpdir(), "backplane-kicad-library-"),
+  );
   try {
     const sourceDir = NodePath.join(directory, "source.pretty");
     await NodeFSP.mkdir(sourceDir);

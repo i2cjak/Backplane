@@ -53,13 +53,13 @@ jobs:
           run-install: false
 
       - name: Install desktop dependencies
-        run: vp install --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
+        run: vp install --filter=@backplane/desktop... --filter=@backplane/cli... --filter=@backplane/scripts...
 
       - name: Cache resource monitor
         id: resource_monitor_cache
         uses: actions/cache@v6
         with:
-          path: native/resource-monitor/target/aarch64-apple-darwin/release/t3-resource-monitor
+          path: native/resource-monitor/target/aarch64-apple-darwin/release/backplane-resource-monitor
           key: resource-monitor-aarch64-apple-darwin-${{ hashFiles('native/resource-monitor/Cargo.lock', 'native/resource-monitor/Cargo.toml', 'native/resource-monitor/src/**') }}
 
       - name: Setup Rust
@@ -87,7 +87,7 @@ jobs:
         name: Build unsigned macOS DMG
         shell: bash
         env:
-          T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: ${{ steps.resource_monitor_cache.outputs.cache-hit == 'true' }}
+          BACKPLANE_DESKTOP_REUSE_RESOURCE_MONITOR: ${{ steps.resource_monitor_cache.outputs.cache-hit == 'true' }}
           PREVIEW_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail

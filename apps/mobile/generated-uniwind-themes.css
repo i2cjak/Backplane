@@ -121,7 +121,7 @@
       --color-adaptive-zinc-600-300: oklch(87.1% 0.006 286.286);
     }
 
-    @variant t3-chat-light {
+    @variant backplane-chat-light {
       --color-screen: #fdf7fd;
       --color-sheet: rgba(253, 247, 253, 0.98);
       --color-sheet-solid: #fdf7fd;
@@ -249,7 +249,7 @@
       --color-adaptive-zinc-600-300: oklch(44.2% 0.017 285.786);
     }
 
-    @variant t3-chat-dark {
+    @variant backplane-chat-dark {
       --color-screen: #1f1a24;
       --color-sheet: rgba(31, 26, 36, 0.98);
       --color-sheet-solid: #1f1a24;

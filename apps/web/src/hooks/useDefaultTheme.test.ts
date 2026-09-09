@@ -22,7 +22,7 @@ describe("default theme adoption", () => {
     expect(defaultThemeToApply({ ...BASE, appliedGeneration: generation })).toBe(null);
   });
 
-  // `t3 theme set` of a theme this client already wears must still act, which
+  // `backplane theme set` of a theme this client already wears must still act, which
   // is why the generation carries the set time and not just the value.
   it("applies the same theme again when the environment re-sets it", () => {
     const applied = defaultThemeGeneration(BASE.defaultTheme, "2026-08-28T00:00:00.000Z");

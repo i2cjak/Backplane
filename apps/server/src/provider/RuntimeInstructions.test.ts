@@ -6,7 +6,7 @@ describe("buildRuntimeInstructions", () => {
     "identifies the %s harness and describes media embedding",
     (harness) => {
       const instructions = buildRuntimeInstructions({ harness });
-      expect(instructions).toContain(`running in T3CAD through the ${harness} harness.`);
+      expect(instructions).toContain(`running in Backplane through the ${harness} harness.`);
       expect(instructions).toContain("embed images and videos");
       expect(instructions).toContain("Markdown with absolute file paths");
       expect(instructions).not.toContain("undefined");

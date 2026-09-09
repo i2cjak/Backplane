@@ -55,7 +55,7 @@ describe("external chat link context menu", () => {
     const harness = createHarness(null);
 
     await showExternalLinkContextMenu({
-      href: "https://github.com/pingdotgg/t3code/pull/6169",
+      href: "https://github.com/i2cjak/backplane/pull/6169",
       canOpenInPreview: false,
       position: { x: 4, y: 8 },
       ...harness,
@@ -86,7 +86,7 @@ describe("external chat link context menu", () => {
     ["unlink-from-thread", "Unlink from thread", false],
   ] as const)("offers and runs the %s action", async (action, label, linked) => {
     const harness = createHarness(action);
-    const href = "https://github.com/pingdotgg/t3code/pull/42";
+    const href = "https://github.com/i2cjak/backplane/pull/42";
 
     await showExternalLinkContextMenu({
       href,
@@ -169,7 +169,7 @@ describe("external chat link context menu", () => {
     harness.updateThreadLink.mockRejectedValue(cause);
 
     await showExternalLinkContextMenu({
-      href: "https://github.com/pingdotgg/t3code/pull/42",
+      href: "https://github.com/i2cjak/backplane/pull/42",
       threadLinkAction: "link-to-thread",
       position: { x: 1, y: 2 },
       ...harness,

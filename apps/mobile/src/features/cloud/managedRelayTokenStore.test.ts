@@ -29,7 +29,7 @@ it.effect("round-trips and clears persisted managed relay access tokens", () =>
     const entries = [
       {
         accountId: "user-1",
-        clientId: "t3-mobile",
+        clientId: "backplane-mobile",
         relayUrl: "https://relay.example.test",
         thumbprint: "thumbprint",
         scopes: ["environment:connect"],
@@ -49,7 +49,7 @@ it.effect("round-trips and clears persisted managed relay access tokens", () =>
 it.effect("falls back to an empty cache when persisted data is invalid", () =>
   Effect.gen(function* () {
     secureStore.clear();
-    secureStore.set("t3code.cloud.relay-access-tokens", "not-json");
+    secureStore.set("backplane.cloud.relay-access-tokens", "not-json");
 
     expect(yield* managedRelayAccessTokenStore.load).toEqual([]);
   }),
@@ -77,7 +77,7 @@ it.effect("logs structured storage failures before falling back to an empty cach
     expect(context.cause).toBeInstanceOf(ManagedRelayTokenStoreError);
     expect(context.cause).toMatchObject({
       operation: "read",
-      storageKey: "t3code.cloud.relay-access-tokens",
+      storageKey: "backplane.cloud.relay-access-tokens",
       cause,
     });
     expect(context.cause.message).not.toContain(cause.message);

@@ -83,13 +83,13 @@ describe("environment themes", () => {
     expect(theme.variants?.light?.canvas).not.toBe(theme.colors.canvas);
   });
 
-  // A published `t3-iris.json` would show its palette on a card that applies
+  // A published `backplane-iris.json` would show its palette on a card that applies
   // the built-in, and a published `dark.json` would capture everyone whose
   // stored preference is the stock "dark". Reserved ids never become cards.
   it("drops published themes with reserved ids", () => {
     const definitions = publishedThemeDefinitions([
       NIGHTFALL_THEME,
-      { ...NIGHTFALL_THEME, id: "t3-iris", name: "Impostor Iris" },
+      { ...NIGHTFALL_THEME, id: "backplane-iris", name: "Impostor Iris" },
       { ...NIGHTFALL_THEME, id: "ocean", name: "Impostor Ocean" },
       { ...NIGHTFALL_THEME, id: "dark", name: "Impostor Dark" },
     ]);

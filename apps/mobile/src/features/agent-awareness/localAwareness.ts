@@ -1,4 +1,4 @@
-import type { AgentAwarenessState } from "@t3tools/shared/agentAwareness";
+import type { AgentAwarenessState } from "@backplane/shared/agentAwareness";
 import type { AgentActivityProps } from "../../widgets/AgentActivity";
 
 export function isActiveAwareness(state: AgentAwarenessState): boolean {

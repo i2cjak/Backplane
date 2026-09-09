@@ -17,11 +17,9 @@ const devBundleIdSuffix = NodePath.basename(repoRoot)
   .replaceAll(/[^a-z0-9]+/g, "");
 export const APP_DISPLAY_NAME = isDevelopment ? "Backplane (Dev)" : "Backplane";
 export const APP_BUNDLE_ID = isDevelopment
-  ? `com.i2cjak.backplane.dev.${devBundleIdSuffix || "local"}`
-  : "com.i2cjak.backplane";
-const APP_PROTOCOL_SCHEMES = isDevelopment
-  ? ["backplane-dev", "t3code-dev"]
-  : ["backplane", "t3code"];
+  ? `works.backplane.app.dev.${devBundleIdSuffix || "local"}`
+  : "works.backplane.app";
+const APP_PROTOCOL_SCHEMES = isDevelopment ? ["backplane-dev"] : ["backplane"];
 const LAUNCHER_VERSION = 15;
 const developmentMacIconPngPath = NodePath.join(
   repoRoot,
@@ -35,7 +33,7 @@ const productionMacIconPngPath = NodePath.join(
   "prod",
   "backplane-macos-1024.png",
 );
-// oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone launcher script has no Effect runtime.
+// oxlint-disable-next-line backplane/no-global-process-runtime -- Standalone launcher script has no Effect runtime.
 const hostPlatform = NodeOS.platform();
 
 function setPlistString(plistPath, key, value) {
@@ -115,12 +113,12 @@ export function makeDevelopmentLauncherScript({
 }) {
   const envEntries = [
     ["VITE_DEV_SERVER_URL", environment.VITE_DEV_SERVER_URL],
-    ["T3CODE_PORT", environment.T3CODE_PORT],
-    ["T3CODE_HOME", environment.T3CODE_HOME],
-    ["T3CODE_COMMIT_HASH", environment.T3CODE_COMMIT_HASH],
-    ["T3CODE_OTLP_TRACES_URL", environment.T3CODE_OTLP_TRACES_URL],
-    ["T3CODE_OTLP_EXPORT_INTERVAL_MS", environment.T3CODE_OTLP_EXPORT_INTERVAL_MS],
-    ["T3CODE_DESKTOP_APP_USER_MODEL_ID", APP_BUNDLE_ID],
+    ["BACKPLANE_PORT", environment.BACKPLANE_PORT],
+    ["BACKPLANE_HOME", environment.BACKPLANE_HOME],
+    ["BACKPLANE_COMMIT_HASH", environment.BACKPLANE_COMMIT_HASH],
+    ["BACKPLANE_OTLP_TRACES_URL", environment.BACKPLANE_OTLP_TRACES_URL],
+    ["BACKPLANE_OTLP_EXPORT_INTERVAL_MS", environment.BACKPLANE_OTLP_EXPORT_INTERVAL_MS],
+    ["BACKPLANE_DESKTOP_APP_USER_MODEL_ID", APP_BUNDLE_ID],
   ].filter((entry) => typeof entry[1] === "string" && entry[1].trim().length > 0);
   return [
     "#!/bin/sh",
@@ -128,7 +126,7 @@ export function makeDevelopmentLauncherScript({
       ([name, value]) =>
         `if [ -z "\${${name}:-}" ]; then export ${name}=${shellSingleQuote(value)}; fi`,
     ),
-    `exec ${shellSingleQuote(electronBinaryPath)} --t3code-dev-root=${shellSingleQuote(desktopRoot)} ${shellSingleQuote(mainEntryPath)} "$@"`,
+    `exec ${shellSingleQuote(electronBinaryPath)} --backplane-dev-root=${shellSingleQuote(desktopRoot)} ${shellSingleQuote(mainEntryPath)} "$@"`,
     "",
   ].join("\n");
 }
@@ -358,7 +356,7 @@ function buildMacLauncher(electronBinaryPath) {
   if (isDevelopment) {
     // Keep Electron's native executable inside the branded bundle. Launching the
     // node_modules copy makes macOS associate the process (and Dock label) with
-    // Electron.app even though this bundle's Info.plist has the T3 Code name.
+    // Electron.app even though this bundle's Info.plist has the Backplane name.
     // Its conventional executable name also keeps Electron's default-app runtime
     // in development mode instead of making app.isPackaged report true.
     writeDevelopmentLauncherScript(launcherBinaryPath, runtimeElectronBinaryPath);

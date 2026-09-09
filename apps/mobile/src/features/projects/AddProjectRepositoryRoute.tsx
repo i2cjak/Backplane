@@ -1,6 +1,6 @@
 import type { StaticScreenProps } from "@react-navigation/native";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
-import { addProjectRemoteSourceLabel } from "@t3tools/client-runtime/operations/projects";
+import { addProjectRemoteSourceLabel } from "@backplane/client-runtime/operations/projects";
 
 import { AddProjectRepositoryScreen } from "./AddProjectScreen";
 

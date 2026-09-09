@@ -1,4 +1,4 @@
-import type { KiCadProjectConfig, KiCadProjectFile } from "@t3tools/contracts";
+import type { KiCadProjectConfig, KiCadProjectFile } from "@backplane/contracts";
 
 const auxiliaryDirectory =
   /(?:^|\/)(?:tools?|vendor|third.party|node_modules|\.git|\.history|\.venv|backups?|archive|examples?|tests?|fixtures?|build|dist|output)(?:\/|$)/i;

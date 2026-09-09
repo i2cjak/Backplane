@@ -55,7 +55,7 @@
 //     (server.log: 13773 primary, 13774 wsl).
 //   - Per-instance log files: server-child.log + server-child-wsl_Ubuntu.log.
 //   - Distinct environment ids reported by each backend's
-//     /.well-known/t3/environment (Windows vs Linux platform).
+//     /.well-known/backplane/environment (Windows vs Linux platform).
 //   - Renderer completes the bearer-token bootstrap against the WSL
 //     backend (POST /api/auth/bootstrap/bearer 200), obtains a
 //     ws-token (POST /api/auth/ws-token 200), and holds an
@@ -169,7 +169,7 @@ export class DesktopBackendPool extends Context.Service<
       id: BackendInstanceId,
     ) => Effect.Effect<void, DesktopBackendPoolCannotUnregisterPrimaryError>;
   }
->()("@t3tools/desktop/backend/DesktopBackendPool") {}
+>()("@backplane/desktop/backend/DesktopBackendPool") {}
 
 // Services required by makeBackendInstance — exported so caller
 // orchestrators that build their own specs can confirm the layer graph

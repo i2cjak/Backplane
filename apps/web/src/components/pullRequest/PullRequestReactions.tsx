@@ -3,7 +3,7 @@ import type {
   PullRequestReaction,
   PullRequestReactionContent,
   PullRequestRef,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import { SmilePlusIcon } from "lucide-react";
 import { useState } from "react";
 

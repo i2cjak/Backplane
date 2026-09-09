@@ -1,12 +1,12 @@
 # View KiCad projects
 
-T3CAD includes KiStack's nine electronics skills automatically for every project and agent provider. Ask your agent to use them for schematics, symbols, footprints, BOM review, PCB review, exports, Gerbers, panelization, or product renders. No separate skill installation is needed. Tools required by a workflow, such as KiCad or Blender, must still be installed on the connected environment.
+Backplane includes KiStack's nine electronics skills automatically for every project and agent provider. Ask your agent to use them for schematics, symbols, footprints, BOM review, PCB review, exports, Gerbers, panelization, or product renders. No separate skill installation is needed. Tools required by a workflow, such as KiCad or Blender, must still be installed on the connected environment.
 
 Open **KiCad** from a thread's right-panel add menu to inspect its PCB, schematic, Gerber layers, and 3D board using KiCAD-Prism's viewers. The panel follows the thread's workspace or worktree. It reads saved files without locking them; you can continue editing in KiCad or through your agent.
 
 On mobile, open **KiCad** from the thread toolbar. The same read-only viewer opens in a full-screen native web view, with its PCB, Gerber, schematic, and 3D tabs available at the top. The viewer uses a short-lived session tied to the active environment; reconnect and tap **Retry** if that session expires.
 
-For a workspace containing several boards, create `.k3eda.json` at its root:
+For a workspace containing several boards, create `.backplane.json` at its root:
 
 ```json
 {
@@ -25,9 +25,9 @@ Generated output is discovered even in Git-ignored folders. Saved changes refres
 
 Use **STEP** to inspect `.step` and `.stp` models. The project picker lists the most recently edited files first; **Open file** also accepts a file from your device without uploading it. Drag to rotate, pinch or scroll to zoom, and use **Fit model** to restore the view. STEP previews run in the viewer and support files up to 100 MB.
 
-The 3D preview requires `kicad-cli` with GLB export on the environment running T3. The preview includes outer copper, pads, silkscreen, and translucent soldermask using the board’s stackup colors. Exports go into a separate temporary cache. Gerber rendering requires `python3` there. Neither operation modifies the project.
+The 3D preview requires `kicad-cli` with GLB export on the environment running Backplane. The preview includes outer copper, pads, silkscreen, and translucent soldermask using the board’s stackup colors. Exports go into a separate temporary cache. Gerber rendering requires `python3` there. Neither operation modifies the project.
 
-Use **Open KiCad viewer in browser** to let your agent inspect and interact with the viewer through the collaborative browser. Its link grants temporary read-only access to this workspace; reopen the panel after the link expires or the server restarts. The `k3eda-viewer` agent skill includes a helper for finding and configuring project files.
+Use **Open KiCad viewer in browser** to let your agent inspect and interact with the viewer through the collaborative browser. Its link grants temporary read-only access to this workspace; reopen the panel after the link expires or the server restarts. The `backplane-viewer` agent skill includes a helper for finding and configuring project files.
 
 Find a component by its reference (such as `U1`), or enable **Net** to search by net name. Select a component and use **Show in schematic/PCB** to inspect its counterpart without losing the other view’s camera.
 
@@ -39,7 +39,7 @@ The BOM follows the selected schematic and the current saved BOM settings in its
 
 Footprints (`.kicad_mod`) and symbol libraries (`.kicad_sym`) are discovered within the workspace. Select a library and then a symbol/unit to inspect its SVG preview. The BOM and library previews require `kicad-cli` on the connected environment.
 
-The analysis view creates a planar antenna starter specification with feed and ground contacts and one or two target bands for the antenna-rl workflow. Export or copy the specification for your agent to use. EMerge results can be embedded by adding an `analysisUrl` to `.k3eda.json`, using a dashboard address reachable from every device that will open the viewer:
+The analysis view creates a planar antenna starter specification with feed and ground contacts and one or two target bands for the antenna-rl workflow. Export or copy the specification for your agent to use. EMerge results can be embedded by adding an `analysisUrl` to `.backplane.json`, using a dashboard address reachable from every device that will open the viewer:
 
 ```json
 {

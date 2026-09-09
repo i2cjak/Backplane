@@ -5,7 +5,7 @@ import {
   HostProcessEnvironment,
   HostProcessExecutablePath,
   HostProcessPlatform,
-} from "@t3tools/shared/hostProcess";
+} from "@backplane/shared/hostProcess";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -173,7 +173,7 @@ describe("OpenCode server output", () => {
         const environment = yield* HostProcessEnvironment;
         const executablePath = yield* HostProcessExecutablePath;
         const platform = yield* HostProcessPlatform;
-        const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-opencode-output-" });
+        const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "backplane-opencode-output-" });
         const isWindows = platform === "win32";
         const binaryPath = path.join(tempDir, isWindows ? "opencode.cmd" : "opencode");
         const scriptPath = path.join(tempDir, "opencode.mjs");
@@ -203,8 +203,8 @@ server.listen(0, "127.0.0.1", () => {
           [
             ...(isWindows ? ["@echo off"] : ["#!/bin/sh"]),
             isWindows
-              ? '"%T3_TEST_NODE_BINARY%" "%T3_TEST_OPENCODE_SCRIPT%" %*'
-              : 'exec "$T3_TEST_NODE_BINARY" "$T3_TEST_OPENCODE_SCRIPT" "$@"',
+              ? '"%BACKPLANE_TEST_NODE_BINARY%" "%BACKPLANE_TEST_OPENCODE_SCRIPT%" %*'
+              : 'exec "$BACKPLANE_TEST_NODE_BINARY" "$BACKPLANE_TEST_OPENCODE_SCRIPT" "$@"',
             "",
           ].join("\n"),
         );
@@ -219,8 +219,8 @@ server.listen(0, "127.0.0.1", () => {
           port: 0,
           environment: {
             ...environment,
-            T3_TEST_NODE_BINARY: executablePath,
-            T3_TEST_OPENCODE_SCRIPT: scriptPath,
+            BACKPLANE_TEST_NODE_BINARY: executablePath,
+            BACKPLANE_TEST_OPENCODE_SCRIPT: scriptPath,
           },
         });
         const response = yield* HttpClient.get(`${server.url}/output`);

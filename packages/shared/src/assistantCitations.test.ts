@@ -7,7 +7,7 @@ import {
   MessageId,
   ThreadId,
   type AssistantCitation,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import {
   assistantCitationsToPlainText,
   collectAssistantCitations,
@@ -32,7 +32,7 @@ const citation: AssistantCitation = {
 };
 
 const legacyHref =
-  "t3-citation://v1/a/b/c?text=A+quote+%26+a+newline.%0A&start=0&end=21&prefix=&suffix=+Next.";
+  "backplane-citation://v1/a/b/c?text=A+quote+%26+a+newline.%0A&start=0&end=21&prefix=&suffix=+Next.";
 const legacyCitation: AssistantCitation = {
   version: 1,
   environmentId: EnvironmentId.make("a"),
@@ -63,7 +63,7 @@ describe("assistant citation references", () => {
     const href = formatAssistantCitationHref(citation);
     expect(parseAssistantCitationHref(href)).toEqual(citation);
     expect(href).toMatch(
-      /^t3-citation:\/\/v1\/environment%2Fremote\/thread%3Aone\/assistant%3Fone\?/,
+      /^backplane-citation:\/\/v1\/environment%2Fremote\/thread%3Aone\/assistant%3Fone\?/,
     );
     expect(href).not.toContain("localhost");
     const marker = serializeAssistantCitation(citation);
@@ -90,21 +90,21 @@ describe("assistant citation references", () => {
 
   it.each([
     "https://example.com/quote",
-    "t3-citation://v2/a/b/c?text=quote&start=0&end=5&prefix=&suffix=",
-    "t3-citation://v1/%ZZ/b/c?text=quote&start=0&end=5&prefix=&suffix=",
-    "t3-citation://v1/a/b/c?text=quote&start=NaN&end=5&prefix=&suffix=",
-    "t3-citation://v1/a/b/c?text=quote&start=5&end=0&prefix=&suffix=",
-    "t3-citation://v1/a/b/c?text=quote&start=0&end=9007199254740992&prefix=&suffix=",
-    "t3-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&text=other",
-    "t3-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&unknown=value",
-    "t3-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&comment=note&unknown=value",
-    "t3-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&comment=one&comment=two",
-    "t3-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&comment=&comment=",
-    "t3-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&comment=one&%63omment=two",
-    "t3-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&comment=note",
-    "t3-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&text=other&comment=note",
-    "t3-citation://v1/a/b/c?text=&start=0&end=5&prefix=&suffix=",
-    "t3-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=#unexpected",
+    "backplane-citation://v2/a/b/c?text=quote&start=0&end=5&prefix=&suffix=",
+    "backplane-citation://v1/%ZZ/b/c?text=quote&start=0&end=5&prefix=&suffix=",
+    "backplane-citation://v1/a/b/c?text=quote&start=NaN&end=5&prefix=&suffix=",
+    "backplane-citation://v1/a/b/c?text=quote&start=5&end=0&prefix=&suffix=",
+    "backplane-citation://v1/a/b/c?text=quote&start=0&end=9007199254740992&prefix=&suffix=",
+    "backplane-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&text=other",
+    "backplane-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&unknown=value",
+    "backplane-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&comment=note&unknown=value",
+    "backplane-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&comment=one&comment=two",
+    "backplane-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&comment=&comment=",
+    "backplane-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&comment=one&%63omment=two",
+    "backplane-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&comment=note",
+    "backplane-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&text=other&comment=note",
+    "backplane-citation://v1/a/b/c?text=&start=0&end=5&prefix=&suffix=",
+    "backplane-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=#unexpected",
   ])("leaves invalid or unsupported references unchanged: %s", (href) => {
     expect(parseAssistantCitationHref(href)).toBeNull();
     const prompt = `[Assistant quote](${href})`;
@@ -264,7 +264,7 @@ describe("assistant citation references", () => {
     expect(expanded).toContain("citation.comment is a user-authored request or comment");
     expect(expanded.match(/<\/assistant_citations>/g)).toHaveLength(1);
     expect(expanded).not.toContain("<other>");
-    expect(expanded).not.toContain("t3-citation://");
+    expect(expanded).not.toContain("backplane-citation://");
   });
 
   it("gives multiple quotes distinct inline references", () => {
@@ -316,7 +316,7 @@ describe("assistant citation references", () => {
     const rendered = renderAssistantCitationsAsText(serializeAssistantCitation(citation));
     expect(rendered).toContain("> Assistant quote:");
     expect(rendered).toContain("日本語 🚀");
-    expect(rendered).not.toContain("t3-citation:");
+    expect(rendered).not.toContain("backplane-citation:");
     expect(rendered).not.toContain("</assistant_citations>");
   });
 

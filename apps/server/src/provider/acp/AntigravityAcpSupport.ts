@@ -5,7 +5,7 @@ import {
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   type ProviderSendTurnInput,
   type RuntimeMode,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -39,7 +39,7 @@ export interface AntigravityAcpRuntimeInput extends Omit<
   readonly onAuthorizationUrl?: (url: string) => Effect.Effect<void, EffectAcpErrors.AcpError>;
   /**
    * Advertise `fs.readTextFile` and `fs.writeTextFile`. The agent then routes
-   * workspace reads and writes through T3, which turns each edit into a
+   * workspace reads and writes through Backplane, which turns each edit into a
    * `session/request_permission` with the file content, instead of writing
    * through its own tools. Chat sessions turn this on. Setup, probe, and text
    * generation helpers leave it off so they never touch a workspace.
@@ -109,7 +109,7 @@ export function antigravityModelOptions(
 /**
  * Resolves the model a turn should run on. A saved selection is reapplied
  * as-is. The provider default alias resolves to `defaultModel` when the
- * account offers it, so T3 can pick a newer model than the one Google marks
+ * account offers it, so Backplane can pick a newer model than the one Google marks
  * current. Otherwise the agent's current selection stands.
  */
 export function resolveAntigravityModel(input: {

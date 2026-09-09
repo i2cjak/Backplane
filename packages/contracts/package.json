@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/contracts",
+  "name": "@backplane/contracts",
   "version": "0.0.38",
   "private": true,
   "files": [

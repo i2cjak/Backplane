@@ -6,29 +6,29 @@ import {
   type ServerProviderSkill,
   type ToolActivityIcon,
   type TurnId,
-} from "@t3tools/contracts";
-import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { CodexArtifactTemplate } from "@t3tools/client-runtime/codex-artifact-templates";
+} from "@backplane/contracts";
+import { parseScopedThreadKey } from "@backplane/client-runtime/environment";
+import type { CodexArtifactTemplate } from "@backplane/client-runtime/codex-artifact-templates";
 import {
   resolveWorkEntryToolPresentation,
   resolveViewedImageAsset,
   workEntryViewedImagePath,
-} from "@t3tools/client-runtime/work-log/presentation";
-import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
-import type { AgentPanelModel } from "@t3tools/client-runtime/state/subagentRuntime";
+} from "@backplane/client-runtime/work-log/presentation";
+import { resolveWorkGroupScrollAnchor } from "@backplane/client-runtime/work-log/scroll-anchor";
+import type { AgentPanelModel } from "@backplane/client-runtime/state/subagentRuntime";
 import {
   emptyAgentPanelModel,
   formatSubagentTokenCount,
-} from "@t3tools/client-runtime/state/subagentRuntime";
+} from "@backplane/client-runtime/state/subagentRuntime";
 
 const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
 const NOOP_USE_ARTIFACT_TEMPLATE = () => {};
 const NOOP_OPEN_ATTACHMENT = (_attachment: ChatFileAttachment) => {};
-import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
-import { toolActivityFaviconUrl } from "@t3tools/shared/favicon";
-import { formatDuration } from "@t3tools/shared/orchestrationTiming";
-import { getProjectFaviconCacheKey } from "@t3tools/shared/projectFavicon";
+import { resolveChatListAnchoredEndSpace } from "@backplane/shared/chatList";
+import { toolActivityFaviconUrl } from "@backplane/shared/favicon";
+import { formatDuration } from "@backplane/shared/orchestrationTiming";
+import { getProjectFaviconCacheKey } from "@backplane/shared/projectFavicon";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
 import {
   createContext,
@@ -78,7 +78,7 @@ import {
 } from "../../lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "../../lib/syntaxHighlighting";
 import ChatMarkdown, { ChatMarkdownAssetImage } from "../ChatMarkdown";
-import { T3Wordmark } from "../T3Wordmark";
+import { BackplaneWordmark } from "../BackplaneWordmark";
 import {
   BotIcon,
   BrainIcon,
@@ -168,7 +168,7 @@ import {
 } from "~/lib/previewAnnotation";
 import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
-import { type TimestampFormat } from "@t3tools/contracts/settings";
+import { type TimestampFormat } from "@backplane/contracts/settings";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
 import {
   buildInlineTerminalContextText,
@@ -2707,7 +2707,7 @@ type WorkEntryIconName =
   | "search"
   | "square-pen"
   | "terminal"
-  | "t3-code"
+  | "backplane"
   | "wrench"
   | "x"
   | "zap";
@@ -2919,8 +2919,8 @@ function WorkEntryIcon({ name, className }: { name: WorkEntryIconName; className
       return <BrowserAppIcon className={className} />;
     case "computer":
       return <ComputerUseAppIcon className={className} />;
-    case "t3-code":
-      return <T3Wordmark className={className} aria-hidden />;
+    case "backplane":
+      return <BackplaneWordmark className={className} aria-hidden />;
     case "check":
       return <CheckIcon className={className} aria-hidden />;
     case "circle-alert":

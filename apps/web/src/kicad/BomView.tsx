@@ -1,4 +1,4 @@
-import type { KiCadBom } from "@t3tools/contracts";
+import type { KiCadBom } from "@backplane/contracts";
 import { Download, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 

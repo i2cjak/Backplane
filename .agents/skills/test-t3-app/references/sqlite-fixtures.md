@@ -1,6 +1,6 @@
 # SQLite fixtures
 
-Load this reference only when inspecting or seeding local T3 state directly.
+Load this reference only when inspecting or seeding local Backplane state directly.
 
 ## Select the correct database
 
@@ -13,7 +13,7 @@ Start the target runtime once before seeding so all migrations have run. Use an 
 List tables:
 
 ```bash
-node apps/server/scripts/t3-sqlite-state.ts query \
+node apps/server/scripts/backplane-sqlite-state.ts query \
   --base-dir <base-dir> \
   --sql "SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name"
 ```
@@ -21,7 +21,7 @@ node apps/server/scripts/t3-sqlite-state.ts query \
 Inspect current columns before writing a fixture:
 
 ```bash
-node apps/server/scripts/t3-sqlite-state.ts query \
+node apps/server/scripts/backplane-sqlite-state.ts query \
   --base-dir <base-dir> \
   --sql "PRAGMA table_info(projection_threads)"
 ```
@@ -29,9 +29,9 @@ node apps/server/scripts/t3-sqlite-state.ts query \
 Apply a SQL fixture from a file:
 
 ```bash
-node apps/server/scripts/t3-sqlite-state.ts exec \
+node apps/server/scripts/backplane-sqlite-state.ts exec \
   --base-dir <base-dir> \
-  --file /tmp/t3-seed.sql
+  --file /tmp/backplane-seed.sql
 ```
 
 Use one statement per invocation for both `query` and `exec`; the helper wraps writes in a transaction and prints the backup path after a successful mutation. Use a single insert with multiple value rows when a fixture needs several records.

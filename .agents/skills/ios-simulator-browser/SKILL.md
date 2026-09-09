@@ -1,6 +1,6 @@
 ---
 name: ios-simulator-browser
-description: Stream an explicit iOS Simulator through pinned serve-sim into the T3 Code in-app browser or another agent browser. Use on Apple Silicon macOS when the user should watch simulator verification live or when browser-visible simulator evidence is needed.
+description: Stream an explicit iOS Simulator through pinned serve-sim into the Backplane in-app browser or another agent browser. Use on Apple Silicon macOS when the user should watch simulator verification live or when browser-visible simulator evidence is needed.
 ---
 
 # iOS Simulator Browser
@@ -11,7 +11,7 @@ Use serve-sim as the shared visual feed for an iOS Simulator. Use `ios-debugger-
 
 serve-sim `0.1.45` requires Apple Silicon macOS, Xcode command-line tools, and Node.js 20 or newer. If the host is unsupported, continue with XcodeBuildMCP screenshots and report that live streaming was unavailable.
 
-When running inside T3 Code, use its product-native browser MCP to open the stream. Other agent hosts may use their own browser or preview surface.
+When running inside Backplane, use its product-native browser MCP to open the stream. Other agent hosts may use their own browser or preview surface.
 
 Keep serve-sim on its default `127.0.0.1` binding. Do not expose its preview to a LAN or tunnel unless the user explicitly requests that access and the network is trusted; the preview includes a token-gated shell-execution route.
 

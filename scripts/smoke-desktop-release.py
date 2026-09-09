@@ -179,8 +179,8 @@ def run_smoke(app_root: Path, timeout_seconds: float, headless: bool) -> int:
         environment = {
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": str(home),
-            "T3CODE_HOME": str(home),
-            "T3CODE_MODE": "desktop",
+            "BACKPLANE_HOME": str(home),
+            "BACKPLANE_MODE": "desktop",
             "XDG_CONFIG_HOME": str(xdg_config),
             "XDG_DATA_HOME": str(xdg_data),
             "XDG_CACHE_HOME": str(xdg_cache),

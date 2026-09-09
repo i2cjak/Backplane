@@ -1,6 +1,6 @@
 "use strict";
 
-// Ships the branded T3 mark to the Live Activity / widget extension.
+// Ships the branded Backplane mark to the Live Activity / widget extension.
 //
 // expo-widgets generates ExpoWidgetsTarget without a Resources build phase and
 // has no asset support, so this plugin (a) writes an SVG template image set into
@@ -22,8 +22,8 @@ const { addWidgetAssetCatalog } = require("./lib/addWidgetAssetCatalog.cjs");
 
 const TARGET_NAME = "ExpoWidgetsTarget";
 const CATALOG_NAME = "Assets.xcassets";
-const IMAGE_SET = "T3Mark.imageset";
-const SVG_NAME = "T3Mark.svg";
+const IMAGE_SET = "BackplaneMark.imageset";
+const SVG_NAME = "BackplaneMark.svg";
 
 const CATALOG_CONTENTS = JSON.stringify({ info: { author: "expo", version: 1 } }, null, 2) + "\n";
 const IMAGE_SET_CONTENTS =

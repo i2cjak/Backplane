@@ -1,4 +1,4 @@
-import type { EnvironmentId, ProviderDriverKind } from "@t3tools/contracts";
+import type { EnvironmentId, ProviderDriverKind } from "@backplane/contracts";
 import { FolderGit2Icon, FolderIcon, GitBranchIcon } from "lucide-react";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
@@ -37,7 +37,7 @@ export function ThreadCommandSubtitle(props: {
   environmentId: EnvironmentId;
   projectCwd: string | null;
   projectFaviconPath?: string | null;
-  projectIcon?: import("@t3tools/contracts").ProjectIconOverride | null;
+  projectIcon?: import("@backplane/contracts").ProjectIconOverride | null;
   projectTitle: string | null;
   branch: string | null;
   worktreePath: string | null;

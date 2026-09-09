@@ -1,6 +1,6 @@
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { planPinnedMove } from "@t3tools/client-runtime/state/thread-sort";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentThreadShell } from "@backplane/client-runtime/state/shell";
+import { planPinnedMove } from "@backplane/client-runtime/state/thread-sort";
+import type { EnvironmentId } from "@backplane/contracts";
 
 type OrderRow = Pick<
   EnvironmentThreadShell,

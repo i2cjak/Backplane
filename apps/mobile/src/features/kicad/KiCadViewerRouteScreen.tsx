@@ -1,7 +1,7 @@
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { kicadState } from "../../state/kicad";
-import { EnvironmentId } from "@t3tools/contracts";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { EnvironmentId } from "@backplane/contracts";
+import { squashAtomCommandFailure } from "@backplane/client-runtime/state/runtime";
 import * as Option from "effect/Option";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Linking, Pressable, View } from "react-native";
@@ -163,7 +163,7 @@ export function KiCadViewerRouteScreen({ route }: Props) {
             <>
               <Text className="text-center text-sm text-foreground-muted">{error}</Text>
               <Pressable className="bg-primary px-4 py-2" onPress={retry}>
-                <Text className="text-sm font-t3-bold text-primary-foreground">Retry</Text>
+                <Text className="text-sm font-backplane-bold text-primary-foreground">Retry</Text>
               </Pressable>
               <Text className="text-sm text-foreground-muted">
                 Use the back button to leave the viewer.

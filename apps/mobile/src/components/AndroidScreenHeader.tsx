@@ -77,13 +77,13 @@ export function AndroidScreenHeader(props: {
         ) : null}
 
         <View className={cn("min-w-0 flex-1", !props.onBack && "pl-1")}>
-          <Text numberOfLines={1} className="text-lg font-t3-bold text-foreground">
+          <Text numberOfLines={1} className="text-lg font-backplane-bold text-foreground">
             {props.title}
           </Text>
           {props.subtitle ? (
             <Text
               numberOfLines={1}
-              className="mt-px text-[13px] font-t3-medium text-foreground-muted"
+              className="mt-px text-[13px] font-backplane-medium text-foreground-muted"
             >
               {props.subtitle}
             </Text>

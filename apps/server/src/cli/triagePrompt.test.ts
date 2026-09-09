@@ -32,9 +32,11 @@ it("seed prompt names the context file and embeds the playbook", () => {
 it("launch prompt stays a single argv-safe line naming the prompt file", () => {
   // The launch argument goes through cmd.exe on Windows (.cmd shims), which
   // cannot carry newlines; the playbook itself must stay on disk.
-  const launch = buildTriageLaunchPrompt(String.raw`C:\Users\a b\.t3\userdata\triage\x\prompt.md`);
+  const launch = buildTriageLaunchPrompt(
+    String.raw`C:\Users\a b\.backplane\userdata\triage\x\prompt.md`,
+  );
   assert.notInclude(launch, "\n");
-  assert.include(launch, String.raw`C:\Users\a b\.t3\userdata\triage\x\prompt.md`);
+  assert.include(launch, String.raw`C:\Users\a b\.backplane\userdata\triage\x\prompt.md`);
   assert.isBelow(launch.length, 1_000);
 });
 
@@ -45,27 +47,27 @@ it("context file carries every path the playbook depends on", () => {
     releaseTag: "v0.0.33",
     os: "linux x64 (7.0.0)",
     nodeVersion: "v24.0.0",
-    launchedAs: "npx t3 triage",
+    launchedAs: "npx @backplane/cli triage",
     server: "running (pid 42, http://127.0.0.1:4501)",
     paths: {
-      stateDir: "/home/u/.t3/userdata",
-      dbPath: "/home/u/.t3/userdata/state.sqlite",
-      settingsPath: "/home/u/.t3/userdata/settings.json",
-      logsDir: "/home/u/.t3/userdata/logs",
-      serverLogPath: "/home/u/.t3/userdata/logs/server.log",
-      serverTracePath: "/home/u/.t3/userdata/logs/server.trace.ndjson",
-      providerEventLogPath: "/home/u/.t3/userdata/logs/provider/events.log",
-      terminalLogsDir: "/home/u/.t3/userdata/logs/terminals",
-      providerStatusCacheDir: "/home/u/.t3/caches",
-      secretsDir: "/home/u/.t3/userdata/secrets",
-      sourceCacheDir: "/home/u/.t3/source",
+      stateDir: "/home/u/.backplane/userdata",
+      dbPath: "/home/u/.backplane/userdata/state.sqlite",
+      settingsPath: "/home/u/.backplane/userdata/settings.json",
+      logsDir: "/home/u/.backplane/userdata/logs",
+      serverLogPath: "/home/u/.backplane/userdata/logs/server.log",
+      serverTracePath: "/home/u/.backplane/userdata/logs/server.trace.ndjson",
+      providerEventLogPath: "/home/u/.backplane/userdata/logs/provider/events.log",
+      terminalLogsDir: "/home/u/.backplane/userdata/logs/terminals",
+      providerStatusCacheDir: "/home/u/.backplane/caches",
+      secretsDir: "/home/u/.backplane/userdata/secrets",
+      sourceCacheDir: "/home/u/.backplane/source",
     },
   });
-  assert.include(context, "/home/u/.t3/userdata/state.sqlite");
-  assert.include(context, "/home/u/.t3/userdata/logs/server.trace.ndjson");
-  assert.include(context, "/home/u/.t3/userdata/logs/provider/events.log");
-  assert.include(context, "/home/u/.t3/userdata/secrets");
-  assert.include(context, "/home/u/.t3/source");
-  assert.include(context, "npx t3 triage");
+  assert.include(context, "/home/u/.backplane/userdata/state.sqlite");
+  assert.include(context, "/home/u/.backplane/userdata/logs/server.trace.ndjson");
+  assert.include(context, "/home/u/.backplane/userdata/logs/provider/events.log");
+  assert.include(context, "/home/u/.backplane/userdata/secrets");
+  assert.include(context, "/home/u/.backplane/source");
+  assert.include(context, "npx @backplane/cli triage");
   assert.include(context, "v0.0.33");
 });

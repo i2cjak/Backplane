@@ -3,7 +3,7 @@ import { Maximize, Minus, Plus } from "lucide-react";
 
 import { paneLayout, useBoardViewport, type BoardRect } from "./vendor/fabrication-viewport";
 
-/** Prism's fabrication camera and SVG pane, with T3 toolbar styling. */
+/** Prism's fabrication camera and SVG pane, with Backplane toolbar styling. */
 export function PrismGerberView({ svg, label }: { svg: string; label: string }) {
   const board = useMemo<BoardRect | null>(() => {
     const values = new DOMParser()

@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - Node VM fixture reads the shipped worker and WASM directly.
 import * as NodeFSP from "node:fs/promises";
 import * as NodeVM from "node:vm";
 import { expect, it } from "vite-plus/test";

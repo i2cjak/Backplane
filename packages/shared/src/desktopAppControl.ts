@@ -13,7 +13,7 @@ function shortHash(value: string): string {
 
 /**
  * Returns the local-only socket address shared by the desktop shell and CLI.
- * The state directory is hashed so custom T3 homes cannot exceed Unix socket
+ * The state directory is hashed so custom Backplane homes cannot exceed Unix socket
  * path limits.
  */
 export function resolveDesktopAppControlAddress(input: {
@@ -26,14 +26,14 @@ export function resolveDesktopAppControlAddress(input: {
   const stateHash = shortHash(input.stateDir);
   if (input.platform === "win32") {
     return {
-      address: `\\\\.\\pipe\\t3code-app-${stateHash}`,
+      address: `\\\\.\\pipe\\backplane-app-${stateHash}`,
       directory: null,
     };
   }
 
   const userKey =
     input.userId === undefined ? shortHash(input.stateDir).slice(0, 12) : input.userId;
-  const directory = input.joinPath(input.tempDir, `t3code-${userKey}`);
+  const directory = input.joinPath(input.tempDir, `backplane-${userKey}`);
   return {
     address: input.joinPath(directory, `${stateHash}.sock`),
     directory,

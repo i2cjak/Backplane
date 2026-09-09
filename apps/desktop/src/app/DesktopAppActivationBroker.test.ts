@@ -1,4 +1,4 @@
-import { ProjectId, ThreadId, type DesktopAppActivationRequest } from "@t3tools/contracts";
+import { ProjectId, ThreadId, type DesktopAppActivationRequest } from "@backplane/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { DesktopAppActivationBroker } from "./DesktopAppActivationBroker.ts";

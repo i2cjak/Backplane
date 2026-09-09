@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/tailscale",
+  "name": "@backplane/tailscale",
   "private": true,
   "type": "module",
   "exports": {
@@ -13,7 +13,7 @@
     "test": "vp test run"
   },
   "dependencies": {
-    "@t3tools/shared": "workspace:*",
+    "@backplane/shared": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

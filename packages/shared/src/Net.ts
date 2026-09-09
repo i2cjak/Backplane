@@ -60,7 +60,7 @@ export interface NetServiceShape {
  * NetService - Service tag for startup networking helpers.
  */
 export class NetService extends Context.Service<NetService, NetServiceShape>()(
-  "@t3tools/shared/Net/NetService",
+  "@backplane/shared/Net/NetService",
 ) {}
 
 /** @public Service construction is part of the canonical Effect module API. */

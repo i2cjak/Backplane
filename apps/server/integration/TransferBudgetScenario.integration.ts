@@ -11,7 +11,7 @@ import {
   ProjectId,
   ProviderDriverKind,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import * as Scope from "effect/Scope";

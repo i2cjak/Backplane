@@ -72,7 +72,9 @@ export function createKiCadModelCache(runExport = exportModel) {
         }
         if (entries.size >= 8)
           throw new Error("3D preview is busy. Try again after another export finishes.");
-        entry.directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-kicad-glb-"));
+        entry.directory = await NodeFSP.mkdtemp(
+          NodePath.join(NodeOS.tmpdir(), "backplane-kicad-glb-"),
+        );
         const output = NodePath.join(entry.directory, "board.glb");
         try {
           await runExport(board, output);

@@ -1,5 +1,5 @@
 import type { LegendListRef } from "@legendapp/list/react";
-import { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, MessageId, ThreadId } from "@backplane/contracts";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
@@ -308,8 +308,8 @@ function createSource({ reducedMotion = false } = {}) {
     setSourceTop: (value: number) => {
       sourceTop = value;
     },
-    highlight: () => highlights.get("t3-assistant-citation")?.values().next().value,
-    commentHighlight: () => highlights.get("t3-assistant-citation-comment"),
+    highlight: () => highlights.get("backplane-assistant-citation")?.values().next().value,
+    commentHighlight: () => highlights.get("backplane-assistant-citation-comment"),
     cleanup: () => {
       for (const cleanup of cleanups) cleanup();
     },
@@ -526,9 +526,9 @@ describe("assistant citation source lifecycle", () => {
     source.flushFrame();
     await source.finishScroll();
     const replacement = new Set<TestRange>();
-    source.highlights.set("t3-assistant-citation", replacement);
+    source.highlights.set("backplane-assistant-citation", replacement);
     source.cleanup();
-    expect(source.highlights.get("t3-assistant-citation")).toBe(replacement);
+    expect(source.highlights.get("backplane-assistant-citation")).toBe(replacement);
   });
 
   it("preserves a user's replacement selection in the native-selection fallback", async () => {
@@ -578,7 +578,7 @@ describe("assistant citation comment source lifecycle", () => {
     const getSelection = vi.fn(() => selection);
     source.root.ownerDocument.getSelection = getSelection;
     const navigationHighlight = new Set([new TestRange(source.text, () => rect(20))]);
-    source.highlights.set("t3-assistant-citation", navigationHighlight);
+    source.highlights.set("backplane-assistant-citation", navigationHighlight);
     const comment = source.mountComment();
 
     expect(source.commentHighlight()?.size).toBe(1);
@@ -594,7 +594,7 @@ describe("assistant citation comment source lifecycle", () => {
     comment.cleanup();
     comment.cleanup();
     expect(source.commentHighlight()).toBeUndefined();
-    expect(source.highlights.get("t3-assistant-citation")).toBe(navigationHighlight);
+    expect(source.highlights.get("backplane-assistant-citation")).toBe(navigationHighlight);
     expect(selection.ranges).toEqual([selectedRange]);
     expect(comment.onUnavailable).not.toHaveBeenCalled();
     source.mutation(source.root);
@@ -712,7 +712,7 @@ describe("assistant citation comment source lifecycle", () => {
     const comment = source.mountComment();
     const original = source.commentHighlight();
     const replacement = new Set([new TestRange(source.text, () => rect(90))]);
-    source.highlights.set("t3-assistant-citation-comment", replacement);
+    source.highlights.set("backplane-assistant-citation-comment", replacement);
 
     comment.cleanup();
 

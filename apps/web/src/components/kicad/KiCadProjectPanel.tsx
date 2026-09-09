@@ -1,5 +1,5 @@
-import type { KiCadViewerSession, ScopedThreadRef } from "@t3tools/contracts";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import type { KiCadViewerSession, ScopedThreadRef } from "@backplane/contracts";
+import { squashAtomCommandFailure } from "@backplane/client-runtime/state/runtime";
 import * as Option from "effect/Option";
 import { ExternalLink, LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -68,7 +68,7 @@ export function KiCadProjectPanel({ mode, threadRef, projectPath }: KiCadProject
     const targetOrigin = window.location.origin === "null" ? "*" : window.location.origin;
     frame.postMessage(
       {
-        type: "k3eda-theme",
+        type: "backplane-theme",
         dark: document.documentElement.classList.contains("dark"),
         variables,
       },
@@ -123,7 +123,7 @@ export function KiCadProjectPanel({ mode, threadRef, projectPath }: KiCadProject
     }
   }, [connection, openPreview, threadRef, viewerUrl]);
   return (
-    <PreviewPanelShell mode={mode} widthStorageKey="t3code:kicad-panel-width" defaultWidth={620}>
+    <PreviewPanelShell mode={mode} widthStorageKey="backplane:kicad-panel-width" defaultWidth={620}>
       <div className="flex h-full min-h-0 flex-col bg-background" data-kicad-panel>
         <div className="flex min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-2 border-b border-border px-3 text-xs">
           <span className="font-medium text-foreground">KiCad</span>

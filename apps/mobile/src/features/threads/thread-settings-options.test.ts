@@ -1,4 +1,4 @@
-import type { ProviderOptionDescriptor } from "@t3tools/contracts";
+import type { ProviderOptionDescriptor } from "@backplane/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { selectableChoices } from "./thread-settings-options";

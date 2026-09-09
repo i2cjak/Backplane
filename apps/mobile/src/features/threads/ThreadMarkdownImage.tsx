@@ -1,4 +1,4 @@
-import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
+import type { AssetResource, EnvironmentId } from "@backplane/contracts";
 import { createContext, useContext, useEffect, useId, useState } from "react";
 import {
   ActivityIndicator,

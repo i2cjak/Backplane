@@ -3,8 +3,8 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { expect, it } from "@effect/vitest";
-import { ProviderInstanceId } from "@t3tools/contracts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { ProviderInstanceId } from "@backplane/contracts";
+import { HostProcessPlatform } from "@backplane/shared/hostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -18,7 +18,7 @@ import { NoOpProviderEventLoggers, ProviderEventLoggers } from "../Layers/Provid
 import { CursorDriver } from "./CursorDriver.ts";
 
 const testLayer = ServerConfig.layerTest(process.cwd(), {
-  prefix: "t3-cursor-driver-copy-command-",
+  prefix: "backplane-cursor-driver-copy-command-",
 }).pipe(
   Layer.provideMerge(NodeServices.layer),
   Layer.provideMerge(ServerSettingsService.layerTest()),
@@ -45,7 +45,7 @@ it.layer(testLayer)("CursorDriver", (it) => {
     () =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
-        const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-cursor-driver-" });
+        const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "backplane-cursor-driver-" });
         const binaryPath = NodePath.join(tempDir, "Cursor Tools", "bin", "cursor-agent");
         yield* fs.makeDirectory(NodePath.dirname(binaryPath), { recursive: true });
         yield* fs.writeFileString(binaryPath, "#!/bin/sh\n");
@@ -84,7 +84,7 @@ it.layer(testLayer)("CursorDriver", (it) => {
         environment: [],
         config: {
           ...CursorDriver.defaultConfig(),
-          binaryPath: NodePath.join(NodeOS.tmpdir(), "t3-cursor-missing", "cursor-agent"),
+          binaryPath: NodePath.join(NodeOS.tmpdir(), "backplane-cursor-missing", "cursor-agent"),
         },
       });
       expect((yield* instance.snapshot.resolveMaintenance()).update).toBeNull();

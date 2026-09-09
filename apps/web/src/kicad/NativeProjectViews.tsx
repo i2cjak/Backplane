@@ -37,7 +37,7 @@ function NativeFrame({
   const ref = useRef<HTMLIFrameElement>(null);
   const ready = useRef(false);
   const sentRevision = useRef<string | undefined>(undefined);
-  const snapshot = { type: "k3eda-snapshot", kind: "native", sources, revision, active, probe };
+  const snapshot = { type: "backplane-snapshot", kind: "native", sources, revision, active, probe };
   const latest = useRef({ snapshot, onSelection, onProbe, onResult });
   latest.current = { snapshot, onSelection, onProbe, onResult };
   const send = () => {
@@ -52,14 +52,15 @@ function NativeFrame({
   useEffect(() => {
     const receive = (event: MessageEvent) => {
       if (event.source !== ref.current?.contentWindow || event.origin !== location.origin) return;
-      if (event.data?.type === "k3eda-runtime-ready") {
+      if (event.data?.type === "backplane-runtime-ready") {
         ready.current = true;
         sentRevision.current = undefined;
         send();
       }
-      if (event.data?.type === "k3eda-selection") latest.current.onSelection(event.data.selection);
-      if (event.data?.type === "k3eda-crossprobe") latest.current.onProbe(event.data.selection);
-      if (event.data?.type === "k3eda-probe-result")
+      if (event.data?.type === "backplane-selection")
+        latest.current.onSelection(event.data.selection);
+      if (event.data?.type === "backplane-crossprobe") latest.current.onProbe(event.data.selection);
+      if (event.data?.type === "backplane-probe-result")
         latest.current.onResult(Boolean(event.data.found), String(event.data.value));
     };
     window.addEventListener("message", receive);

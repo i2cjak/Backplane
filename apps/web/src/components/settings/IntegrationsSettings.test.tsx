@@ -1,4 +1,4 @@
-import { DEFAULT_CLIENT_SETTINGS, DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS, DEFAULT_UNIFIED_SETTINGS } from "@backplane/contracts";
 import {
   createMemoryHistory,
   createRootRoute,

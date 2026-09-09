@@ -15,7 +15,7 @@ const windowsHost = HostProcessPlatform.defaultValue() === "win32";
 const tempDirectories: string[] = [];
 
 const makeTempDirectory = (): string => {
-  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3code-logging-"));
+  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "backplane-logging-"));
   tempDirectories.push(directory);
   return directory;
 };

@@ -57,14 +57,14 @@ import {
 } from "./settingsSearch";
 import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";
 
-const T3ConnectSidebarSignIn = lazy(() =>
-  import("../clerk/T3ConnectSidebarSignIn").then((module) => ({
-    default: module.T3ConnectSidebarSignIn,
+const BackplaneConnectSidebarSignIn = lazy(() =>
+  import("../clerk/BackplaneConnectSidebarSignIn").then((module) => ({
+    default: module.BackplaneConnectSidebarSignIn,
   })),
 );
-const T3ConnectSidebarAvatar = lazy(() =>
-  import("../clerk/T3ConnectSidebarSignIn").then((module) => ({
-    default: module.T3ConnectSidebarAvatar,
+const BackplaneConnectSidebarAvatar = lazy(() =>
+  import("../clerk/BackplaneConnectSidebarSignIn").then((module) => ({
+    default: module.BackplaneConnectSidebarAvatar,
   })),
 );
 
@@ -459,14 +459,14 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       </SidebarContent>
       <SidebarFooter className="p-[var(--sidebar-content-inset)]">
         <Suspense fallback={null}>
-          <T3ConnectSidebarSignIn />
+          <BackplaneConnectSidebarSignIn />
         </Suspense>
         <div className="flex items-center gap-1">
           <div className="min-w-0 flex-1">
             <SidebarUtilityMenu />
           </div>
           <Suspense fallback={null}>
-            <T3ConnectSidebarAvatar />
+            <BackplaneConnectSidebarAvatar />
           </Suspense>
         </div>
       </SidebarFooter>

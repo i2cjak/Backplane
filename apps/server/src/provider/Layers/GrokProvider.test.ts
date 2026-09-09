@@ -7,7 +7,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
-import { GrokSettings } from "@t3tools/contracts";
+import { GrokSettings } from "@backplane/contracts";
 
 import {
   buildGrokModelCapabilities,
@@ -308,7 +308,7 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
       const snapshot = yield* Effect.scoped(
         Effect.gen(function* () {
           const fs = yield* FileSystem.FileSystem;
-          const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-grok-version-" });
+          const dir = yield* fs.makeTempDirectoryScoped({ prefix: "backplane-grok-version-" });
           const grokPath = writeFakeCli({
             directory: dir,
             name: "grok",
@@ -339,7 +339,7 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
   const writeFakeGrokCli = (input: { readonly modelsOutput: string; readonly acp: boolean }) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-grok-probe-" });
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "backplane-grok-probe-" });
       const mockAgentPath = NodePath.resolve(__dirname, "../../../scripts/acp-mock-agent.ts");
       return writeFakeCli({
         directory: dir,

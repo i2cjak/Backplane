@@ -1,4 +1,4 @@
-import type { EnvironmentTheme } from "@t3tools/contracts";
+import type { EnvironmentTheme } from "@backplane/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import * as Equal from "effect/Equal";
 import { useEffect, useRef, useSyncExternalStore } from "react";
@@ -24,7 +24,7 @@ function publishedThemeColors(
   colors: Readonly<Record<string, string>> | undefined,
 ): ThemeColors {
   // Seeds generate the base with the guided theme editor's generator, so a
-  // desktop theme arrives as a coherent T3 Code palette rather than a foreign
+  // desktop theme arrives as a coherent Backplane palette rather than a foreign
   // one — but only for the appearance they describe. A variant builds on that
   // appearance's stock defaults: the generator follows the seed canvas's
   // luminance, so dark seeds would give a light variant unreadable colors.
@@ -73,7 +73,7 @@ export function environmentThemeDefinition(theme: EnvironmentTheme): ThemeDefini
 
 /**
  * Published palettes this client can render. Reserved ids are dropped here rather
- * than rendered: a published `t3-iris.json` would show this palette on its
+ * than rendered: a published `backplane-iris.json` would show this palette on its
  * card while "Use" resolved the built-in, and a published `dark.json` would
  * capture everyone whose stored preference is the stock `"dark"`.
  */

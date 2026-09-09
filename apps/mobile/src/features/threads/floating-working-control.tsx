@@ -1,4 +1,4 @@
-import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import { formatDuration } from "@backplane/shared/orchestrationTiming";
 import { GlassContainer, GlassView } from "expo-glass-effect";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Text as SystemText, View } from "react-native";
@@ -182,7 +182,7 @@ function CompactingLabel() {
         tintColorClassName="foreground"
         type="monochrome"
       />
-      <Text className="font-t3-medium text-xs text-foreground">Compacting…</Text>
+      <Text className="font-backplane-medium text-xs text-foreground">Compacting…</Text>
     </View>
   );
 }
@@ -196,7 +196,7 @@ function FloatingStatusLabel(props: { readonly status: FloatingWorkingStatus }) 
         className="h-11 flex-row items-center gap-2 px-4"
       >
         <ActivityIndicator size="small" colorClassName="accent-icon-muted" />
-        <Text className="font-t3-medium text-xs text-foreground">{props.status.label}</Text>
+        <Text className="font-backplane-medium text-xs text-foreground">{props.status.label}</Text>
       </View>
     );
   }
@@ -220,7 +220,7 @@ function WorkingDuration(props: { readonly startedAt: string }) {
 
   return (
     <View accessible accessibilityLabel={label} className="h-11 flex-row items-center px-4">
-      <Text className="font-t3-medium text-xs text-foreground">Working for </Text>
+      <Text className="font-backplane-medium text-xs text-foreground">Working for </Text>
       <SystemText
         className="text-xs text-foreground"
         style={{ fontVariant: ["tabular-nums"], fontWeight: "500" }}

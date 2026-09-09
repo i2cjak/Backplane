@@ -22,7 +22,7 @@ updating the pin.
 The runtime archive must contain `bin/kicad-cli` and `manifest.json`. The
 manifest must have non-empty `sourceRepository`, `sourceCommit`, `version`,
 and `license` fields. The release build sets
-`T3CAD_REQUIRE_BUNDLED_KICAD=1`, so a missing or unverified runtime fails the
+`BACKPLANE_REQUIRE_BUNDLED_KICAD=1`, so a missing or unverified runtime fails the
 build instead of falling back to a developer's system KiCad.
 
 The packaged server receives the runtime directory through
@@ -34,11 +34,11 @@ not depend on a user's Python installation. Developers can use
 For a local Linux build, install the normal desktop prerequisites, then run:
 
 ```bash
-T3CAD_KICAD_RUNTIME=/path/to/stable-kicad-runtime \
-T3CAD_REQUIRE_BUNDLED_KICAD=1 \
-T3CAD_PYTHON_RUNTIME=/path/to/python-runtime \
-T3CAD_REQUIRE_BUNDLED_PYTHON=1 \
-T3CODE_DESKTOP_UPDATE_REPOSITORY=i2cjak/Backplane \
+BACKPLANE_KICAD_RUNTIME=/path/to/stable-kicad-runtime \
+BACKPLANE_REQUIRE_BUNDLED_KICAD=1 \
+BACKPLANE_PYTHON_RUNTIME=/path/to/python-runtime \
+BACKPLANE_REQUIRE_BUNDLED_PYTHON=1 \
+BACKPLANE_DESKTOP_UPDATE_REPOSITORY=i2cjak/Backplane \
 ./node_modules/.bin/vp run dist:desktop:artifact \
   --platform linux --target AppImage --arch x64 --build-version X.Y.Z
 ```

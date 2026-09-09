@@ -1,4 +1,4 @@
-import { derivePendingRequests } from "@t3tools/client-runtime/pending-requests";
+import { derivePendingRequests } from "@backplane/client-runtime/pending-requests";
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useMemo, useState } from "react";
 
@@ -6,7 +6,7 @@ import {
   ApprovalRequestId,
   type ProviderApprovalDecision,
   type UserInputQuestion,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import { Atom } from "effect/unstable/reactivity";
 
 import { threadEnvironment } from "../state/threads";

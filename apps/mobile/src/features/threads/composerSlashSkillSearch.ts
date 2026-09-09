@@ -1,4 +1,4 @@
-import type { ServerProviderSkill } from "@t3tools/contracts";
+import type { ServerProviderSkill } from "@backplane/contracts";
 
 export function matchesSlashSkillQuery(skill: ServerProviderSkill, query: string): boolean {
   if (!skill.enabled) return false;

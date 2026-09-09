@@ -1,4 +1,4 @@
-import type { HostPowerSnapshot } from "@t3tools/contracts";
+import type { HostPowerSnapshot } from "@backplane/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";

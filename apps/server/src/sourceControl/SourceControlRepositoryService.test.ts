@@ -8,7 +8,7 @@ import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
-import { GitCommandError, SourceControlProviderError } from "@t3tools/contracts";
+import { GitCommandError, SourceControlProviderError } from "@backplane/contracts";
 
 import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -17,9 +17,9 @@ import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.
 import * as SourceControlRepositoryService from "./SourceControlRepositoryService.ts";
 
 const CLONE_URLS = {
-  nameWithOwner: "octocat/t3code",
-  url: "https://github.com/octocat/t3code",
-  sshUrl: "git@github.com:octocat/t3code.git",
+  nameWithOwner: "octocat/backplane",
+  url: "https://github.com/octocat/backplane",
+  sshUrl: "git@github.com:octocat/backplane.git",
 };
 
 function makeProvider(
@@ -82,7 +82,9 @@ function makeLayer(input: {
     Layer.provide(
       ServerConfig.layerTest(
         process.cwd(),
-        input.fileSystem ? "/tmp/t3-source-control-repos" : { prefix: "t3-source-control-repos-" },
+        input.fileSystem
+          ? "/tmp/backplane-source-control-repos"
+          : { prefix: "backplane-source-control-repos-" },
       ),
     ),
   );
@@ -109,12 +111,12 @@ it.effect("looks up repositories through the requested provider without search",
     const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const result = yield* service.lookupRepository({
       provider: "github",
-      repository: "octocat/t3code",
+      repository: "octocat/backplane",
       cwd: "/workspace",
     });
 
     assert.deepStrictEqual(result, { provider: "github", ...CLONE_URLS });
-    assert.deepStrictEqual(calls, [{ cwd: "/workspace", repository: "octocat/t3code" }]);
+    assert.deepStrictEqual(calls, [{ cwd: "/workspace", repository: "octocat/backplane" }]);
   }).pipe(Effect.provide(makeLayer({ provider })));
 });
 
@@ -123,7 +125,7 @@ it.effect("preserves provider failures without deriving the repository message f
     provider: "github",
     operation: "getRepositoryCloneUrls",
     cwd: "/workspace",
-    repository: "octocat/t3code",
+    repository: "octocat/backplane",
     detail: "credential token abc123 was rejected",
   });
   const provider = makeProvider({
@@ -135,7 +137,7 @@ it.effect("preserves provider failures without deriving the repository message f
     const error = yield* Effect.flip(
       service.lookupRepository({
         provider: "github",
-        repository: "octocat/t3code",
+        repository: "octocat/backplane",
         cwd: "/workspace",
       }),
     );
@@ -156,16 +158,16 @@ it.effect("clones a looked-up repository into the requested destination", () =>
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const parent = yield* fs.makeTempDirectoryScoped({
-      prefix: "t3-source-control-clone-parent-",
+      prefix: "backplane-source-control-clone-parent-",
     });
-    const destinationPath = path.join(parent, "t3code");
+    const destinationPath = path.join(parent, "backplane");
     const cloneCalls: Array<{ cwd: string; args: ReadonlyArray<string> }> = [];
 
     yield* Effect.gen(function* () {
       const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
       const result = yield* service.cloneRepository({
         provider: "github",
-        repository: "octocat/t3code",
+        repository: "octocat/backplane",
         destinationPath,
         protocol: "https",
       });
@@ -178,7 +180,7 @@ it.effect("clones a looked-up repository into the requested destination", () =>
       assert.deepStrictEqual(cloneCalls, [
         {
           cwd: parent,
-          args: ["clone", CLONE_URLS.url, "t3code"],
+          args: ["clone", CLONE_URLS.url, "backplane"],
         },
       ]);
     }).pipe(
@@ -202,7 +204,7 @@ it.effect("preserves destination probe failures instead of treating them as miss
     _tag: "PermissionDenied",
     module: "FileSystem",
     method: "exists",
-    pathOrDescriptor: "/restricted/t3code",
+    pathOrDescriptor: "/restricted/backplane",
   });
 
   return Effect.gen(function* () {
@@ -210,7 +212,7 @@ it.effect("preserves destination probe failures instead of treating them as miss
     const error = yield* Effect.flip(
       service.cloneRepository({
         remoteUrl: CLONE_URLS.sshUrl,
-        destinationPath: "/restricted/t3code",
+        destinationPath: "/restricted/backplane",
       }),
     );
 
@@ -250,7 +252,7 @@ it.effect("publishes by creating the repository, adding a remote, and pushing up
     const result = yield* service.publishRepository({
       cwd: "/workspace",
       provider: "github",
-      repository: "octocat/t3code",
+      repository: "octocat/backplane",
       visibility: "private",
       remoteName: "origin",
       protocol: "ssh",
@@ -265,7 +267,7 @@ it.effect("publishes by creating the repository, adding a remote, and pushing up
       status: "pushed",
     });
     assert.deepStrictEqual(createCalls, [
-      { cwd: "/workspace", repository: "octocat/t3code", visibility: "private" },
+      { cwd: "/workspace", repository: "octocat/backplane", visibility: "private" },
     ]);
     assert.deepStrictEqual(remoteCalls, [
       { cwd: "/workspace", preferredName: "origin", url: CLONE_URLS.sshUrl },
@@ -305,7 +307,7 @@ it.effect("publishes to the remote name returned by ensureRemote", () => {
     const result = yield* service.publishRepository({
       cwd: "/workspace",
       provider: "github",
-      repository: "octocat/t3code",
+      repository: "octocat/backplane",
       visibility: "private",
       remoteName: "origin",
       protocol: "ssh",
@@ -341,7 +343,7 @@ it.effect("publish succeeds with status remote_added when the local repo has no 
     const result = yield* service.publishRepository({
       cwd: "/workspace",
       provider: "github",
-      repository: "octocat/t3code",
+      repository: "octocat/backplane",
       visibility: "private",
       remoteName: "origin",
       protocol: "ssh",

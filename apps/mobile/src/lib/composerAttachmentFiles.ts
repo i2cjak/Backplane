@@ -1,4 +1,4 @@
-export const COMPOSER_ATTACHMENT_DIRECTORY = "t3-composer-attachments";
+export const COMPOSER_ATTACHMENT_DIRECTORY = "backplane-composer-attachments";
 
 const UUID_PATTERN = "[a-f\\d]{8}-[a-f\\d]{4}-[a-f\\d]{4}-[a-f\\d]{4}-[a-f\\d]{12}";
 const GENERATED_FILE_NAME = new RegExp(`^${UUID_PATTERN}-`, "i");

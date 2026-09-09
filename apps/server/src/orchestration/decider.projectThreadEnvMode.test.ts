@@ -5,7 +5,7 @@ import {
   ProviderInstanceId,
   type ModelSelection,
   type OrchestrationEvent,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as NodeServices from "@effect/platform-node/NodeServices";

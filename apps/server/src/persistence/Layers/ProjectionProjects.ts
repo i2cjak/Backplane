@@ -6,7 +6,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 
-import { ModelSelection, ProjectIconOverride, ProjectScript } from "@t3tools/contracts";
+import { ModelSelection, ProjectIconOverride, ProjectScript } from "@backplane/contracts";
 import { toPersistenceSqlError } from "../Errors.ts";
 import {
   DeleteProjectionProjectInput,

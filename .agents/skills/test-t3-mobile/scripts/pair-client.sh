@@ -13,7 +13,7 @@ platform="$1"
 device_id="$2"
 server_port="$3"
 base_dir="$4"
-url_scheme="${5:-t3code-dev}"
+url_scheme="${5:-backplane-dev}"
 
 case "$platform" in
   ios)
@@ -31,7 +31,7 @@ repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
 if ! pairing_output="$({
-  T3CODE_PORT="$server_port" node apps/server/src/bin.ts auth pairing create \
+  BACKPLANE_PORT="$server_port" node apps/server/src/bin.ts auth pairing create \
     --base-dir "$base_dir" \
     --base-url "$mobile_origin" \
     --ttl 15m \
@@ -64,7 +64,7 @@ case "$platform" in
     # adb shell re-joins its arguments and evaluates them through the device
     # shell, so the deep link's `?`/`&` must be quoted once more for that shell.
     adb -s "$device_id" shell \
-      "am start -W -a android.intent.action.VIEW -d '$deep_link' com.t3tools.t3code.dev" \
+      "am start -W -a android.intent.action.VIEW -d '$deep_link' works.backplane.app.dev" \
       >/dev/null
     ;;
 esac

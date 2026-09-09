@@ -41,7 +41,7 @@ describe("resolveNativeReviewDiffView", () => {
     expect(resolvedView).not.toBeNull();
     expect(resolvedView).not.toBe(nativeView);
     expect(resolveNativeReviewDiffView()).toBe(resolvedView);
-    expect(expoMocks.requireNativeView).toHaveBeenCalledWith("T3ReviewDiffSurface");
+    expect(expoMocks.requireNativeView).toHaveBeenCalledWith("BackplaneReviewDiffSurface");
   });
 
   it("returns null when the view manager cannot be required", async () => {
@@ -59,7 +59,7 @@ describe("resolveNativeReviewDiffView", () => {
     expect(consoleError).toHaveBeenCalledWith(
       expect.objectContaining({
         _tag: "NativeViewResolutionError",
-        nativeModuleName: "T3ReviewDiffSurface",
+        nativeModuleName: "BackplaneReviewDiffSurface",
         cause,
       }),
     );
@@ -73,18 +73,18 @@ describe("isPendingNativeViewRegistration", () => {
 
     expect(
       isPendingNativeViewRegistration(
-        new Error("Unable to find the 'T3ReviewDiffSurface' view for this native tag"),
+        new Error("Unable to find the 'BackplaneReviewDiffSurface' view for this native tag"),
       ),
     ).toBe(true);
     expect(
       isPendingNativeViewRegistration(
-        new Error("Unable to find the 'T3ReviewDiffView' view for this native tag"),
+        new Error("Unable to find the 'BackplaneReviewDiffView' view for this native tag"),
       ),
     ).toBe(false);
     expect(
       isPendingNativeViewRegistration(
         new Error(
-          "Unable to find the class expo.modules.t3reviewdiff.T3ReviewDiffView view with tag 1150",
+          "Unable to find the class expo.modules.backplanereviewdiff.BackplaneReviewDiffView view with tag 1150",
         ),
       ),
     ).toBe(true);

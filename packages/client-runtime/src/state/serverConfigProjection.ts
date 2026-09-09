@@ -1,4 +1,4 @@
-import type { ServerConfig, ServerConfigStreamEvent } from "@t3tools/contracts";
+import type { ServerConfig, ServerConfigStreamEvent } from "@backplane/contracts";
 import * as Option from "effect/Option";
 
 export interface ServerConfigProjection {

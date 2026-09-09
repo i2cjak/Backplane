@@ -9,8 +9,8 @@ import {
   ProviderInstanceId,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
-import type { OrchestrationThread } from "@t3tools/contracts";
+} from "@backplane/contracts";
+import type { OrchestrationThread } from "@backplane/contracts";
 
 import { applyThreadDetailEvent } from "./threadReducer.ts";
 
@@ -57,7 +57,7 @@ describe("applyThreadDetailEvent", () => {
         type: "project.created",
         payload: {
           projectId: ProjectId.make("project-1"),
-          title: "T3 Code",
+          title: "Backplane",
           workspaceRoot: "/repo",
           repositoryIdentity: null,
           defaultModelSelection: null,
@@ -350,16 +350,16 @@ describe("applyThreadDetailEvent", () => {
       (field) => {
         const linkedPullRequest = {
           projectId: ProjectId.make("project-1"),
-          repository: "pingdotgg/t3code",
+          repository: "i2cjak/backplane",
           number: 42,
-          url: "https://github.com/pingdotgg/t3code/pull/42",
+          url: "https://github.com/i2cjak/backplane/pull/42",
         };
         const otherField =
           field === "linkedPullRequest" ? "branchPullRequest" : "linkedPullRequest";
         const otherPullRequest = {
           ...linkedPullRequest,
           number: 43,
-          url: "https://github.com/pingdotgg/t3code/pull/43",
+          url: "https://github.com/i2cjak/backplane/pull/43",
         };
         const linked = applyThreadDetailEvent(
           { ...baseThread, [otherField]: otherPullRequest },

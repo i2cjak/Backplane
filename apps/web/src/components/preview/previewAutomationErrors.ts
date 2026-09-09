@@ -7,7 +7,7 @@ import {
   PreviewTabId,
   ThreadId,
   TrimmedNonEmptyString,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import * as Schema from "effect/Schema";
 
 export interface PreviewAutomationOperationContext {

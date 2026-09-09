@@ -9,7 +9,7 @@ import {
   ThreadLinkedPullRequest,
   TurnId,
   ProviderInstanceId,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -58,9 +58,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       const sql = yield* SqlClient.SqlClient;
       const branchPullRequest = {
         projectId: asProjectId("project-1"),
-        repository: "pingdotgg/t3code",
+        repository: "i2cjak/backplane",
         number: 43,
-        url: "https://github.com/pingdotgg/t3code/pull/43",
+        url: "https://github.com/i2cjak/backplane/pull/43",
       };
 
       yield* sql`DELETE FROM projection_projects`;
@@ -124,7 +124,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           'default',
           NULL,
           NULL,
-          '{"projectId":"project-1","repository":"pingdotgg/t3code","number":42,"url":"https://github.com/pingdotgg/t3code/pull/42"}',
+          '{"projectId":"project-1","repository":"i2cjak/backplane","number":42,"url":"https://github.com/i2cjak/backplane/pull/42"}',
           ${encodeThreadLinkedPullRequest(branchPullRequest)},
           'turn-1',
           '2026-02-24T00:00:04.000Z',
@@ -333,9 +333,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           worktreePath: null,
           linkedPullRequest: {
             projectId: asProjectId("project-1"),
-            repository: "pingdotgg/t3code",
+            repository: "i2cjak/backplane",
             number: 42,
-            url: "https://github.com/pingdotgg/t3code/pull/42",
+            url: "https://github.com/i2cjak/backplane/pull/42",
           },
           branchPullRequest,
           latestTurn: {
@@ -463,9 +463,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           worktreePath: null,
           linkedPullRequest: {
             projectId: asProjectId("project-1"),
-            repository: "pingdotgg/t3code",
+            repository: "i2cjak/backplane",
             number: 42,
-            url: "https://github.com/pingdotgg/t3code/pull/42",
+            url: "https://github.com/i2cjak/backplane/pull/42",
           },
           branchPullRequest,
           latestTurn: {
@@ -773,9 +773,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       const sql = yield* SqlClient.SqlClient;
       const branchPullRequest = {
         projectId: asProjectId("project-archive-test"),
-        repository: "pingdotgg/t3code",
+        repository: "i2cjak/backplane",
         number: 43,
-        url: "https://github.com/pingdotgg/t3code/pull/43",
+        url: "https://github.com/i2cjak/backplane/pull/43",
       };
 
       yield* sql`DELETE FROM projection_projects`;

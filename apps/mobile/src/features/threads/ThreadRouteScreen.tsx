@@ -12,16 +12,16 @@ import {
   EnvironmentId,
   ThreadId,
   type ProjectScript,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import {
   requestOlderThreadTurns,
   threadHasOlderTurns,
-} from "@t3tools/client-runtime/state/threads";
+} from "@backplane/client-runtime/state/threads";
 import {
   projectScriptCwd,
   projectScriptRuntimeEnv,
   resolveProjectScripts,
-} from "@t3tools/shared/projectScripts";
+} from "@backplane/shared/projectScripts";
 import { Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWorkspaceState } from "../../state/workspace";

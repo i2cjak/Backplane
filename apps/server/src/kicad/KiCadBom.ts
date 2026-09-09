@@ -4,7 +4,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeUtil from "node:util";
-import type { KiCadBom } from "@t3tools/contracts";
+import type { KiCadBom } from "@backplane/contracts";
 import { discoverKiCadProject, resolveKiCadProjectFile } from "./KiCadProject.ts";
 import { resolveKiCadEnvironment, resolveKiCadExecutable } from "./KiCadExecutable.ts";
 import { copyKiCadMetadata } from "./KiCadMetadata.ts";
@@ -61,15 +61,17 @@ export function prepareBomProject(value: unknown) {
   const hasSettings = Array.isArray(settings.fields_ordered) && settings.fields_ordered.length > 0;
   const hasFormat = Object.keys(format).length > 0;
   const args: string[] = [];
-  if (hasSettings) args.push("--preset", "T3CAD saved settings");
-  if (hasFormat) args.push("--format-preset", "T3CAD saved format");
+  if (hasSettings) args.push("--preset", "Backplane saved settings");
+  if (hasFormat) args.push("--format-preset", "Backplane saved format");
   return {
     project: {
       ...project,
       schematic: {
         ...schematic,
-        ...(hasSettings ? { bom_presets: [{ ...settings, name: "T3CAD saved settings" }] } : {}),
-        ...(hasFormat ? { bom_fmt_presets: [{ ...format, name: "T3CAD saved format" }] } : {}),
+        ...(hasSettings
+          ? { bom_presets: [{ ...settings, name: "Backplane saved settings" }] }
+          : {}),
+        ...(hasFormat ? { bom_fmt_presets: [{ ...format, name: "Backplane saved format" }] } : {}),
       },
     },
     args,
@@ -112,7 +114,7 @@ export function createKiCadBomCache(run = runExport) {
         const prepared = prepareBomProject(
           projectAsset ? JSON.parse(await NodeFSP.readFile(projectAsset.absolutePath, "utf8")) : {},
         );
-        const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3cad-bom-"));
+        const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "backplane-bom-"));
         try {
           // Preserve relative sheet paths and project variables without writing alongside user files.
           for (const file of manifest.files.filter((item) => item.kind === "schematic")) {
@@ -127,7 +129,7 @@ export function createKiCadBomCache(run = runExport) {
             NodePath.join(directory, projectPath),
             JSON.stringify(prepared.project),
           );
-          const output = NodePath.join(directory, "t3cad-bom.csv");
+          const output = NodePath.join(directory, "backplane-bom.csv");
           await run(
             [
               "sch",

@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { View } from "react-native";
 
-import type { DailyTotals } from "@t3tools/shared/usageMerge";
+import type { DailyTotals } from "@backplane/shared/usageMerge";
 
 import { buildChartDays, type UsageChartMetric } from "./usageChartData";
 import { useProviderColors } from "./usageProviders";

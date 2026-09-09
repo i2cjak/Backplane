@@ -1,6 +1,6 @@
 // @effect-diagnostics globalDate:off
-import type { IosNotificationRegistration } from "@t3tools/contracts";
-import type { AgentAwarenessState } from "@t3tools/shared/agentAwareness";
+import type { IosNotificationRegistration } from "@backplane/contracts";
+import type { AgentAwarenessState } from "@backplane/shared/agentAwareness";
 import type { ApnsMessage } from "./ApnsTransport.ts";
 
 export interface RegisteredIosDevice extends IosNotificationRegistration {
@@ -14,7 +14,7 @@ export function makeDirectActivityPayload(
 ) {
   const running = states.filter(active).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const props = {
-    title: "T3CAD",
+    title: "Backplane",
     subtitle: running.length ? "Agent work in progress" : "Agent work finished",
     activeCount: running.length,
     updatedAt: new Date(timestamp * 1000).toISOString(),

@@ -7,7 +7,7 @@ import {
   type PreviewAutomationStreamEvent,
   type PreviewOpenInput,
   type PreviewSessionSnapshot,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";

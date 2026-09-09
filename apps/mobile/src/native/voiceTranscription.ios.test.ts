@@ -1,7 +1,7 @@
 import type { TranscriptionResult } from "@react-native-ai/apple/src/NativeAppleTranscription";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { VoiceTranscriptionError } from "@t3tools/client-runtime/voice-input";
+import { VoiceTranscriptionError } from "@backplane/client-runtime/voice-input";
 
 const mocks = vi.hoisted(() => ({
   isAvailable: vi.fn<(locale: string) => boolean>(),

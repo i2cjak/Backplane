@@ -3,7 +3,7 @@ import {
   type ConfirmDialogOptions,
   type ContextMenuItem,
   type DesktopBridge,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const showContextMenuFallbackMock =

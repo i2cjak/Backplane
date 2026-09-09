@@ -20,7 +20,7 @@ import { makeComponentLogger } from "./DesktopObservability.ts";
 // our own handler entry pointing at the current AppImage and claim the
 // scheme default via xdg-mime, exactly what the file manager's "set as
 // default" checkbox would record in mimeapps.list.
-export const URL_HANDLER_DESKTOP_ENTRY_NAME = "t3code-url-handler.desktop";
+export const URL_HANDLER_DESKTOP_ENTRY_NAME = "backplane-url-handler.desktop";
 
 const { logInfo, logWarning } = makeComponentLogger("desktop-linux-url-handler");
 
@@ -71,9 +71,7 @@ export function renderUrlHandlerDesktopEntry(input: {
   readonly displayName: string;
   readonly execTarget: string;
   readonly scheme: string;
-  readonly schemes?: readonly string[];
 }): string {
-  const schemes = input.schemes ?? [input.scheme];
   return [
     "[Desktop Entry]",
     "Type=Application",
@@ -82,7 +80,7 @@ export function renderUrlHandlerDesktopEntry(input: {
     "Terminal=false",
     "NoDisplay=true",
     "StartupNotify=false",
-    `MimeType=${schemes.map((scheme) => `x-scheme-handler/${scheme};`).join("")}`,
+    `MimeType=x-scheme-handler/${input.scheme};`,
     "",
   ].join("\n");
 }
@@ -92,7 +90,7 @@ export class DesktopLinuxUrlHandler extends Context.Service<
   {
     readonly register: Effect.Effect<void>;
   }
->()("@t3tools/desktop/app/DesktopLinuxUrlHandler") {}
+>()("@backplane/desktop/app/DesktopLinuxUrlHandler") {}
 
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
@@ -100,7 +98,6 @@ export const make = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 
   const scheme = ElectronProtocol.getDesktopScheme(environment.isDevelopment);
-  const schemes = ElectronProtocol.getDesktopSchemeAliases(environment.isDevelopment);
   const desktopEntryPath = environment.path.join(
     environment.linuxApplicationsDir,
     URL_HANDLER_DESKTOP_ENTRY_NAME,
@@ -117,7 +114,6 @@ export const make = Effect.gen(function* () {
         displayName: environment.displayName,
         execTarget,
         scheme,
-        schemes,
       }),
     );
   }).pipe(
@@ -134,25 +130,23 @@ export const make = Effect.gen(function* () {
 
   const setDefaultHandler = Effect.scoped(
     Effect.gen(function* () {
-      for (const registeredScheme of schemes) {
-        const command = ChildProcess.make(
-          "xdg-mime",
-          ["default", URL_HANDLER_DESKTOP_ENTRY_NAME, `x-scheme-handler/${registeredScheme}`],
-          {
-            stdin: "ignore",
-            stdout: "ignore",
-            stderr: "ignore",
-          },
-        );
-        const handle = yield* spawner.spawn(command);
-        const exitCode = yield* handle.exitCode;
-        if ((exitCode as unknown as number) !== 0) {
-          return yield* new DesktopLinuxUrlHandlerRegistrationError({
-            step: "set-default-handler",
-            scheme: registeredScheme,
-            exitCode: Number(exitCode),
-          });
-        }
+      const command = ChildProcess.make(
+        "xdg-mime",
+        ["default", URL_HANDLER_DESKTOP_ENTRY_NAME, `x-scheme-handler/${scheme}`],
+        {
+          stdin: "ignore",
+          stdout: "ignore",
+          stderr: "ignore",
+        },
+      );
+      const handle = yield* spawner.spawn(command);
+      const exitCode = yield* handle.exitCode;
+      if ((exitCode as unknown as number) !== 0) {
+        return yield* new DesktopLinuxUrlHandlerRegistrationError({
+          step: "set-default-handler",
+          scheme,
+          exitCode: Number(exitCode),
+        });
       }
     }),
   ).pipe(

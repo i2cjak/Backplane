@@ -6,7 +6,7 @@ import {
   type StaticScreenProps,
 } from "@react-navigation/native";
 import { SymbolView } from "../../components/AppSymbol";
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+import type { EnvironmentProject } from "@backplane/client-runtime/state/shell";
 import { useEffect, useRef } from "react";
 import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -242,7 +242,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
             {projectEmptyState.loading ? (
               <ActivityIndicator colorClassName={"accent-icon-muted"} />
             ) : null}
-            <Text className="text-center text-lg font-t3-bold text-foreground">
+            <Text className="text-center text-lg font-backplane-bold text-foreground">
               {projectEmptyState.title}
             </Text>
             <Text className="text-center text-sm leading-normal text-foreground-muted">
@@ -253,7 +253,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                 className="mt-1 rounded-full bg-primary px-4 py-2.5 active:opacity-70"
                 onPress={() => navigation.navigate("ConnectionsNew")}
               >
-                <Text className="text-sm font-t3-bold text-primary-foreground">
+                <Text className="text-sm font-backplane-bold text-primary-foreground">
                   Add environment
                 </Text>
               </Pressable>
@@ -262,7 +262,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                 className="mt-1 rounded-full bg-primary px-4 py-2.5 active:opacity-70"
                 onPress={() => navigation.dispatch(StackActions.push("AddProject"))}
               >
-                <Text className="text-sm font-t3-bold text-primary-foreground">
+                <Text className="text-sm font-backplane-bold text-primary-foreground">
                   Add new project
                 </Text>
               </Pressable>
@@ -293,7 +293,9 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                       />
                     </View>
                     <View className="min-w-0 flex-1">
-                      <Text className="text-base leading-snug font-t3-bold">{scope.title}</Text>
+                      <Text className="text-base leading-snug font-backplane-bold">
+                        {scope.title}
+                      </Text>
                       <Text
                         className="text-xs leading-snug text-foreground-muted"
                         ellipsizeMode="middle"

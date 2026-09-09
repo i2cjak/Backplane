@@ -8,7 +8,7 @@ import {
   GROVE_THEME,
   IRIS_THEME,
   OCEAN_THEME,
-  T3_CHAT_THEME,
+  BACKPLANE_CHAT_THEME,
   RESERVED_THEME_IDS,
   THEME_COLOR_ROLES,
   type ThemeAppearance,
@@ -16,23 +16,30 @@ import {
   type ThemeColors,
   type ThemeDefinition,
   type ThemeVariants,
-} from "@t3tools/shared/themePalettes";
+} from "@backplane/shared/themePalettes";
 
-export { EMBER_THEME, GROVE_THEME, IRIS_THEME, OCEAN_THEME, T3_CHAT_THEME, THEME_COLOR_ROLES };
+export {
+  EMBER_THEME,
+  GROVE_THEME,
+  IRIS_THEME,
+  OCEAN_THEME,
+  BACKPLANE_CHAT_THEME,
+  THEME_COLOR_ROLES,
+};
 export type { ThemeAppearance, ThemeColorRole, ThemeColors, ThemeDefinition, ThemeVariants };
 
-export const T3_CHAT_THEME_ID = "t3-chat" as const;
+export const BACKPLANE_CHAT_THEME_ID = "backplane-chat" as const;
 const GROVE_THEME_ID = "grove" as const;
 export const OCEAN_THEME_ID = "ocean" as const;
 const EMBER_THEME_ID = "ember" as const;
 const IRIS_THEME_ID = "iris" as const;
 export const THEME_FILE_VERSION = 1 as const;
-export const CUSTOM_THEMES_STORAGE_KEY = "t3code:themes:v1";
-export const THEME_FOLLOW_SYSTEM_STORAGE_KEY = "t3code:theme-follow-system";
-export const THEME_APPEARANCE_MODE_STORAGE_KEY = "t3code:theme-appearance-mode";
-export const THEME_HALVES_STORAGE_KEY = "t3code:theme-halves:v1";
+export const CUSTOM_THEMES_STORAGE_KEY = "backplane:themes:v1";
+export const THEME_FOLLOW_SYSTEM_STORAGE_KEY = "backplane:theme-follow-system";
+export const THEME_APPEARANCE_MODE_STORAGE_KEY = "backplane:theme-appearance-mode";
+export const THEME_HALVES_STORAGE_KEY = "backplane:theme-halves:v1";
 
-const LEGACY_T3_CHAT_DARK_THEME_ID = "t3-chat-dark";
+const LEGACY_BACKPLANE_CHAT_DARK_THEME_ID = "backplane-chat-dark";
 
 export const ThemePreference = Schema.String;
 export type ThemePreference = typeof ThemePreference.Type;
@@ -290,15 +297,15 @@ export function subscribeToCustomThemes(listener: () => void): () => void {
   };
 }
 
-// Earlier builds shipped every maintainer theme under a t3- prefix; only the
-// genuinely T3-branded palette keeps it. Stored preferences and mixes with the
+// Earlier builds shipped every maintainer theme under a backplane- prefix; only the
+// genuinely Backplane-branded palette keeps it. Stored preferences and mixes with the
 // old ids stay readable through this alias table.
 const LEGACY_THEME_ID_ALIASES: Readonly<Record<string, string>> = {
-  [LEGACY_T3_CHAT_DARK_THEME_ID]: T3_CHAT_THEME_ID,
-  "t3-grove": GROVE_THEME_ID,
-  "t3-ocean": OCEAN_THEME_ID,
-  "t3-ember": EMBER_THEME_ID,
-  "t3-iris": IRIS_THEME_ID,
+  [LEGACY_BACKPLANE_CHAT_DARK_THEME_ID]: BACKPLANE_CHAT_THEME_ID,
+  "backplane-grove": GROVE_THEME_ID,
+  "backplane-ocean": OCEAN_THEME_ID,
+  "backplane-ember": EMBER_THEME_ID,
+  "backplane-iris": IRIS_THEME_ID,
 };
 
 function normalizeThemeId(themeId: string): string {
@@ -311,157 +318,157 @@ function normalizeThemeId(themeId: string): string {
  * still carries the appearance hint getThemePreferenceMode reads.
  */
 export function canonicalThemePreference(theme: string): string {
-  return theme === LEGACY_T3_CHAT_DARK_THEME_ID ? theme : normalizeThemeId(theme);
+  return theme === LEGACY_BACKPLANE_CHAT_DARK_THEME_ID ? theme : normalizeThemeId(theme);
 }
 
 function themeIdFromPreference(theme: ThemePreference): string {
   return normalizeThemeId(theme);
 }
 
-// Older builds stored the dark T3 Chat palette as a separate theme. Keep
+// Older builds stored the dark Backplane Chat palette as a separate theme. Keep
 // those preferences readable while mapping them to the dark variant.
 function legacyThemeMode(theme: ThemePreference): ThemeAppearance | null {
-  return theme === LEGACY_T3_CHAT_DARK_THEME_ID ? "dark" : null;
+  return theme === LEGACY_BACKPLANE_CHAT_DARK_THEME_ID ? "dark" : null;
 }
 
 /**
- * The palette T3 Code wears with no theme installed, captured from the app's
+ * The palette Backplane wears with no theme installed, captured from the app's
  * stock tokens (index.css) so a draft seeded from the default look paints the
  * pixels the user is already seeing. Alpha-bearing tokens are flattened over
  * their real backdrops (canvas, or the sidebar for its rows) because theme
  * colors are stored as opaque OKLCH tokens.
  */
-const T3_CODE_LIGHT_THEME_COLORS: ThemeColors = {
-  canvas: "#fcfcfc",
-  chrome: "#fcfcfc",
-  toolbar: "#fcfcfc",
-  toolbarForeground: "#27272a",
-  toolbarBorder: "#e4e4e7",
+const BACKPLANE_CODE_LIGHT_THEME_COLORS: ThemeColors = {
+  canvas: "#f5f6ef",
+  chrome: "#f5f6ef",
+  toolbar: "#f5f6ef",
+  toolbarForeground: "#22281e",
+  toolbarBorder: "#d1d7c8",
   toolbarControl: "#ffffff",
-  toolbarControlForeground: "#27272a",
-  toolbarControlHover: "#f4f4f5",
+  toolbarControlForeground: "#22281e",
+  toolbarControlHover: "#e6e9de",
   surface: "#ffffff",
-  surfaceRaised: "#fcfcfc",
+  surfaceRaised: "#f5f6ef",
   surfaceOverlay: "#ffffff",
-  text: "#27272a",
-  textMuted: "#71717b",
-  border: "#e4e4e7",
-  input: "#d4d4d8",
-  focus: "#525252",
-  accent: "#525252",
+  text: "#22281e",
+  textMuted: "#626b59",
+  border: "#d1d7c8",
+  input: "#a7afa0",
+  focus: "#385526",
+  accent: "#385526",
   accentForeground: "#ffffff",
-  secondary: "#fafafa",
-  secondaryForeground: "#27272a",
-  muted: "#fafafa",
-  mutedForeground: "#71717b",
-  placeholder: "#71717b",
-  secondaryLabel: "#71717b",
-  iconMuted: "#71717b",
+  secondary: "#eef1e6",
+  secondaryForeground: "#22281e",
+  muted: "#eef1e6",
+  mutedForeground: "#626b59",
+  placeholder: "#626b59",
+  secondaryLabel: "#626b59",
+  iconMuted: "#626b59",
   error: "#fb2c36",
   errorForeground: "#c10007",
   errorSurface: "#fcebec",
   warning: "#fe9a00",
   warningForeground: "#bb4d00",
   warningSurface: "#fcf4e8",
-  update: "#525252",
-  updateForeground: "#525252",
-  updateSurface: "#e5e5e5",
-  accentSurface: "#f4f4f5",
-  accentSurfaceForeground: "#18181b",
-  messageSurface: "#f4f4f5",
-  messageForeground: "#27272a",
-  messageAction: "#525252",
+  update: "#385526",
+  updateForeground: "#385526",
+  updateSurface: "#e0e9d5",
+  accentSurface: "#e6e9de",
+  accentSurfaceForeground: "#22281e",
+  messageSurface: "#e6e9de",
+  messageForeground: "#22281e",
+  messageAction: "#385526",
   messageActionForeground: "#ffffff",
-  messageActionHover: "#404040",
+  messageActionHover: "#2b441e",
   codeBackground: "#ffffff",
-  codeForeground: "#27272a",
-  sidebar: "#fafafa",
-  sidebarForeground: "#27272a",
-  sidebarMutedForeground: "#71717b",
-  sidebarControlSurface: "#f4f4f5",
-  sidebarRowHover: "#fcfcfc",
+  codeForeground: "#22281e",
+  sidebar: "#eef1e6",
+  sidebarForeground: "#22281e",
+  sidebarMutedForeground: "#626b59",
+  sidebarControlSurface: "#e6e9de",
+  sidebarRowHover: "#f5f6ef",
   sidebarRowActive: "#ffffff",
   sidebarRowSelected: "#ffffff",
-  sidebarBorder: "#e4e4e7",
-  terminalBackground: "#fcfcfc",
-  terminalForeground: "#27272a",
+  sidebarBorder: "#d1d7c8",
+  terminalBackground: "#f5f6ef",
+  terminalForeground: "#22281e",
   terminalCursor: "#26384e",
   terminalSelection: "#d0d6dd",
   terminalScrollbar: "#d6d6d6",
   terminalScrollbarHover: "#bdbdbd",
 };
 
-const T3_CODE_DARK_THEME_COLORS: ThemeColors = {
-  canvas: "#0a0a0a",
-  chrome: "#0a0a0a",
-  toolbar: "#0a0a0a",
-  toolbarForeground: "#f5f5f5",
-  toolbarBorder: "#191919",
-  toolbarControl: "#111111",
-  toolbarControlForeground: "#f5f5f5",
-  toolbarControlHover: "#141414",
-  surface: "#111111",
-  surfaceRaised: "#111111",
-  surfaceOverlay: "#111111",
-  text: "#f5f5f5",
-  textMuted: "#818181",
-  border: "#191919",
-  input: "#1e1e1e",
-  focus: "#a3a3a3",
-  accent: "#a3a3a3",
-  accentForeground: "#ffffff",
-  secondary: "#111111",
-  secondaryForeground: "#f5f5f5",
-  muted: "#111111",
-  mutedForeground: "#818181",
-  placeholder: "#818181",
-  secondaryLabel: "#818181",
-  iconMuted: "#818181",
+const BACKPLANE_CODE_DARK_THEME_COLORS: ThemeColors = {
+  canvas: "#111410",
+  chrome: "#111410",
+  toolbar: "#111410",
+  toolbarForeground: "#e6e9de",
+  toolbarBorder: "#353c2e",
+  toolbarControl: "#1a1e17",
+  toolbarControlForeground: "#e6e9de",
+  toolbarControlHover: "#22281e",
+  surface: "#1a1e17",
+  surfaceRaised: "#1a1e17",
+  surfaceOverlay: "#1a1e17",
+  text: "#e6e9de",
+  textMuted: "#a7afa0",
+  border: "#353c2e",
+  input: "#555b50",
+  focus: "#d6edaf",
+  accent: "#d6edaf",
+  accentForeground: "#111410",
+  secondary: "#1a1e17",
+  secondaryForeground: "#e6e9de",
+  muted: "#1a1e17",
+  mutedForeground: "#a7afa0",
+  placeholder: "#a7afa0",
+  secondaryLabel: "#a7afa0",
+  iconMuted: "#a7afa0",
   error: "#fb414a",
   errorForeground: "#ff6467",
   errorSurface: "#301214",
   warning: "#fe9a00",
   warningForeground: "#ffb900",
   warningSurface: "#312108",
-  update: "#a3a3a3",
-  updateForeground: "#d4d4d4",
-  updateSurface: "#262626",
-  accentSurface: "#141414",
-  accentSurfaceForeground: "#f5f5f5",
-  messageSurface: "#141414",
-  messageForeground: "#f5f5f5",
-  messageAction: "#a3a3a3",
-  messageActionForeground: "#ffffff",
-  messageActionHover: "#bdbdbd",
-  codeBackground: "#111111",
-  codeForeground: "#f5f5f5",
-  sidebar: "#000000",
-  sidebarForeground: "#f1f3f7",
-  sidebarMutedForeground: "#a3a3a3",
-  sidebarControlSurface: "#0a0a0a",
-  sidebarRowHover: "#131313",
-  sidebarRowActive: "#1a1b1b",
-  sidebarRowSelected: "#111111",
-  sidebarBorder: "#141414",
-  terminalBackground: "#0a0a0a",
-  terminalForeground: "#f5f5f5",
-  terminalCursor: "#b4cbff",
-  terminalSelection: "#343a47",
-  terminalScrollbar: "#222222",
-  terminalScrollbarHover: "#363636",
+  update: "#d6edaf",
+  updateForeground: "#d6edaf",
+  updateSurface: "#263222",
+  accentSurface: "#22281e",
+  accentSurfaceForeground: "#e6e9de",
+  messageSurface: "#22281e",
+  messageForeground: "#e6e9de",
+  messageAction: "#d6edaf",
+  messageActionForeground: "#111410",
+  messageActionHover: "#e6f4cf",
+  codeBackground: "#1a1e17",
+  codeForeground: "#e6e9de",
+  sidebar: "#111410",
+  sidebarForeground: "#e6e9de",
+  sidebarMutedForeground: "#a7afa0",
+  sidebarControlSurface: "#111410",
+  sidebarRowHover: "#22281e",
+  sidebarRowActive: "#2b3425",
+  sidebarRowSelected: "#1a1e17",
+  sidebarBorder: "#22281e",
+  terminalBackground: "#111410",
+  terminalForeground: "#e6e9de",
+  terminalCursor: "#d6edaf",
+  terminalSelection: "#3d4b32",
+  terminalScrollbar: "#353c2e",
+  terminalScrollbarHover: "#555b50",
 };
 
 /**
- * The standard T3 Code look as a theme palette, for seeding a new theme when
+ * The standard Backplane look as a theme palette, for seeding a new theme when
  * no theme is installed. Distinct from {@link getDefaultThemeColors}, which
- * carries the flagship T3 Chat palette used to fill roles omitted by theme
+ * carries the flagship Backplane Chat palette used to fill roles omitted by theme
  * files.
  */
 export function getStandardThemeColors(appearance: ThemeAppearance): ThemeColors {
   if (appearance === "dark") {
-    return (standardDarkThemeColors ??= decodeThemeColors(T3_CODE_DARK_THEME_COLORS));
+    return (standardDarkThemeColors ??= decodeThemeColors(BACKPLANE_CODE_DARK_THEME_COLORS));
   }
-  return (standardLightThemeColors ??= decodeThemeColors(T3_CODE_LIGHT_THEME_COLORS));
+  return (standardLightThemeColors ??= decodeThemeColors(BACKPLANE_CODE_LIGHT_THEME_COLORS));
 }
 
 type ThemeRgbColor = {
@@ -717,7 +724,7 @@ function solveOklchLightness(
 }
 
 /**
- * The status colors T3 Code shows without a theme, read from the app's own
+ * The status colors Backplane shows without a theme, read from the app's own
  * tokens (red-500 / amber-500 families). Generated palettes fall back to
  * these instead of the flagship theme's, so an imported or created theme
  * never inherits a brand tint on destructive buttons and warnings.
@@ -978,7 +985,7 @@ function readableThemeText(
 
 // Match the perceived strength of the stock palettes rather than choosing an
 // arbitrary foreground mix. These are the measured contrast ratios of zinc-500
-// on the standard light canvas and #818181 on the standard dark canvas.
+// on the standard light canvas and #a7afa0 on the standard dark canvas.
 const STANDARD_LIGHT_MUTED_CONTRAST = 4.705;
 const STANDARD_DARK_MUTED_CONTRAST = 5.082;
 
@@ -995,7 +1002,7 @@ function standardMutedThemeText(
 
 /** Theme-file defaults follow the flagship palette for the requested mode. */
 export function getDefaultThemeColors(appearance: ThemeAppearance): ThemeColors {
-  return appearance === "dark" ? T3_CHAT_THEME.variants!.dark! : T3_CHAT_THEME.colors;
+  return appearance === "dark" ? BACKPLANE_CHAT_THEME.variants!.dark! : BACKPLANE_CHAT_THEME.colors;
 }
 
 /**

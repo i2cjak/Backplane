@@ -29,7 +29,7 @@ Review changed TypeScript for the conventions below. They apply when a pull requ
 
 - Import Effect modules from their subpaths as namespaces: `import * as Effect from "effect/Effect"`, `import * as Layer from "effect/Layer"`. Flag named imports from the bare `"effect"` package.
 - At a service boundary, import the local service module as a namespace and use its public shape: `WorkspacePaths.WorkspacePaths`, `WorkspacePaths.make`, `WorkspacePaths.layer`. Flag aliases such as `import { layer as workspacePathsLayer }` that erase the namespace.
-- Named imports stay correct for whole packages such as `@t3tools/contracts` and for modules used only for a pure helper, error, schema, config value, or type. Do not request `import type * as Contracts`.
+- Named imports stay correct for whole packages such as `@backplane/contracts` and for modules used only for a pure helper, error, schema, config value, or type. Do not request `import type * as Contracts`.
 - When a barrel exposes a whole service module, prefer `export * as TokenStore from "./tokenStore.ts"` over individually renamed `make` and `layer` exports.
 
 ## Service definition

@@ -1,4 +1,4 @@
-import { RelayAuthInvalidError } from "@t3tools/contracts/relay";
+import { RelayAuthInvalidError } from "@backplane/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
 
 import {

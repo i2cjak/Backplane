@@ -18,13 +18,13 @@ def main():
     root = args.workspace.resolve(strict=True)
     if not root.is_dir():
         parser.error("workspace must be a directory")
-    config_path = root / ".k3eda.json"
+    config_path = root / ".backplane.json"
     if config_path.is_symlink():
-        parser.error(".k3eda.json must not be a symlink")
+        parser.error(".backplane.json must not be a symlink")
     try:
         config = json.loads(config_path.read_text()) if config_path.exists() else {}
         if not isinstance(config, dict):
-            raise ValueError(".k3eda.json must contain an object")
+            raise ValueError(".backplane.json must contain an object")
     except (ValueError, OSError) as error:
         parser.error(str(error))
     found = {"pcb": [], "schematic": [], "gerbers": set()}
@@ -68,7 +68,7 @@ def main():
     if args.write:
         if not any(getattr(args, key) is not None for key in ("pcb", "schematic", "gerbers")):
             parser.error("--write requires at least one explicit selection")
-        temporary = root / ".k3eda.json.tmp"
+        temporary = root / ".backplane.json.tmp"
         with temporary.open("x") as output:
             json.dump(config, output, indent=2)
             output.write("\n")

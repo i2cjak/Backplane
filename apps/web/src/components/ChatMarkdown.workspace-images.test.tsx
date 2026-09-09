@@ -1,4 +1,4 @@
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId } from "@backplane/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -121,10 +121,10 @@ describe("ChatMarkdown workspace images", () => {
   });
 
   it("loads every Windows workspace path form through a signed asset URL", () => {
-    const imagePath = "C:/Users/shawn/project/.t3/workspace-image.svg";
+    const imagePath = "C:/Users/shawn/project/.backplane/workspace-image.svg";
     const html = render(
       [
-        "![relative](.t3/workspace-image.svg)",
+        "![relative](.backplane/workspace-image.svg)",
         `![absolute](${imagePath})`,
         `![file URL](file:///${imagePath})`,
         "![UNC file URL](file://server/share/workspace-image.svg)",
@@ -135,7 +135,7 @@ describe("ChatMarkdown workspace images", () => {
       {
         _tag: "media-file",
         threadId: threadRef.threadId,
-        path: "C:\\Users\\shawn\\project\\.t3\\workspace-image.svg",
+        path: "C:\\Users\\shawn\\project\\.backplane\\workspace-image.svg",
       },
       { _tag: "media-file", threadId: threadRef.threadId, path: imagePath },
       { _tag: "media-file", threadId: threadRef.threadId, path: imagePath },
@@ -185,7 +185,8 @@ describe("ChatMarkdown workspace images", () => {
   });
 
   it("keeps a tall image placeholder and loaded image at the same proportional bounds", () => {
-    const markdown = '<img src=".t3/workspace-image.svg" alt="sized" width="96" height="128">';
+    const markdown =
+      '<img src=".backplane/workspace-image.svg" alt="sized" width="96" height="128">';
     const loadedStyle = firstInlineStyle(render(markdown));
     testState.assetState = "loading";
     const loadingStyle = firstInlineStyle(render(markdown));
@@ -203,7 +204,7 @@ describe("ChatMarkdown workspace images", () => {
     ["width", "max-width", "min(100%, 30rem, 300px)"],
     ["height", "max-height", "min(30rem, 300px)"],
   ])("treats a lone authored %s as a cap", (axis, constraint, expectedValue) => {
-    const markdown = `<img src=".t3/workspace-image.svg" alt="sized" ${axis}="300">`;
+    const markdown = `<img src=".backplane/workspace-image.svg" alt="sized" ${axis}="300">`;
     const loadedStyle = firstInlineStyle(render(markdown));
 
     expect(loadedStyle).not.toHaveProperty(axis);
@@ -212,7 +213,7 @@ describe("ChatMarkdown workspace images", () => {
 
   it("keeps images that share a line inline and lets a standalone one reserve a slot", () => {
     const html = render(
-      "![remote](https://example.com/badge.svg) ![workspace](.t3/workspace-image.svg)",
+      "![remote](https://example.com/badge.svg) ![workspace](.backplane/workspace-image.svg)",
     );
 
     // Two images in one paragraph are badges: neither reserves a slot.
@@ -223,7 +224,7 @@ describe("ChatMarkdown workspace images", () => {
     expect(html).not.toContain("invisible");
 
     const centeredHtml = render(
-      '<p align="center"><img src=".t3/workspace-image.svg" alt="logo"></p>',
+      '<p align="center"><img src=".backplane/workspace-image.svg" alt="logo"></p>',
     );
     const frame = /<span[^>]*role="status"[^>]*>/.exec(centeredHtml)?.[0];
 
@@ -232,14 +233,14 @@ describe("ChatMarkdown workspace images", () => {
   });
 
   it("reserves a slot for an image that is the only content of its link", () => {
-    const html = render("[![shot](.t3/workspace-image.svg)](https://example.com)");
+    const html = render("[![shot](.backplane/workspace-image.svg)](https://example.com)");
 
     expect(html).toContain("aspect-video");
   });
 
   it.each([
-    ["a link", "Figure: [![shot](.t3/workspace-image.svg)](https://example.com)"],
-    ["emphasis", "**![shot](.t3/workspace-image.svg)** caption"],
+    ["a link", "Figure: [![shot](.backplane/workspace-image.svg)](https://example.com)"],
+    ["emphasis", "**![shot](.backplane/workspace-image.svg)** caption"],
   ])("keeps an image wrapped in %s inline when text shares its block", (_wrapper, markdown) => {
     expect(render(markdown)).not.toContain("aspect-video");
   });
@@ -254,7 +255,7 @@ describe("ChatMarkdown workspace images", () => {
   it("sizes the slot from server-reported dimensions so a portrait image never grows", () => {
     testState.imageDimensions = { width: 720, height: 1400 };
 
-    const style = firstInlineStyle(render("![shot](.t3/workspace-image.svg)"));
+    const style = firstInlineStyle(render("![shot](.backplane/workspace-image.svg)"));
 
     expect(style).toMatchObject({ width: "720px", "aspect-ratio": "720 / 1400" });
   });
@@ -281,14 +282,14 @@ describe("ChatMarkdown workspace images", () => {
     testState.imageDimensions = { width: 720, height: 1400 };
 
     const style = firstInlineStyle(
-      render('<img src=".t3/workspace-image.svg" alt="sized" width="96" height="128">'),
+      render('<img src=".backplane/workspace-image.svg" alt="sized" width="96" height="128">'),
     );
 
     expect(style).toMatchObject({ width: "96px", "aspect-ratio": "96 / 128" });
   });
 
   it("reserves a slot for an image that is alone in a list item", () => {
-    expect(render("- ![shot](.t3/workspace-image.svg)")).toContain("aspect-video");
+    expect(render("- ![shot](.backplane/workspace-image.svg)")).toContain("aspect-video");
   });
 
   it("retains an authored SVG fragment on the signed URL", () => {
@@ -352,7 +353,7 @@ describe("ChatMarkdown workspace images", () => {
       const frame = /<span[^>]*role="(?:status|alert)"[^>]*>/.exec(html)?.[0] ?? "";
       return /class="([^"]*)"/.exec(frame)?.[1]?.split(" ") ?? [];
     };
-    const markdown = "![shot](.t3/workspace-image.svg)";
+    const markdown = "![shot](.backplane/workspace-image.svg)";
 
     testState.assetState = "loading";
     const loadingUrl = frameClassName(render(markdown));

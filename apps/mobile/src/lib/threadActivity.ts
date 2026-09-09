@@ -1,8 +1,8 @@
 import {
   requestKindFromRequestType,
   type PendingApproval,
-} from "@t3tools/client-runtime/pending-requests";
-import { isToolLifecycleItemType } from "@t3tools/contracts";
+} from "@backplane/client-runtime/pending-requests";
+import { isToolLifecycleItemType } from "@backplane/contracts";
 import type {
   OrchestrationLatestTurn,
   OrchestrationThread,
@@ -10,8 +10,8 @@ import type {
   ToolLifecycleItemType,
   TurnId,
   UserInputQuestion,
-} from "@t3tools/contracts";
-import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+} from "@backplane/contracts";
+import { formatDuration } from "@backplane/shared/orchestrationTiming";
 import {
   commandDetailRepeatsCommand,
   extractCommandOutputText,
@@ -29,14 +29,14 @@ import {
   workLogEntryIsToolLike,
   type ToolGroupSummaryKind,
   type WorkLogToolLifecycleStatus,
-} from "@t3tools/client-runtime/work-log/presentation";
-import { extractToolActivityPresentation } from "@t3tools/client-runtime/work-log/tool-presentation";
-import { commandProgramName } from "@t3tools/client-runtime/work-log/command-label";
+} from "@backplane/client-runtime/work-log/presentation";
+import { extractToolActivityPresentation } from "@backplane/client-runtime/work-log/tool-presentation";
+import { commandProgramName } from "@backplane/client-runtime/work-log/command-label";
 
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
 
-export type { PendingApproval, PendingUserInput } from "@t3tools/client-runtime/pending-requests";
+export type { PendingApproval, PendingUserInput } from "@backplane/client-runtime/pending-requests";
 
 export interface PendingUserInputDraftAnswer {
   readonly selectedOptionValues?: ReadonlyArray<string>;
@@ -87,9 +87,9 @@ export interface WorkLogEntry {
   changedFiles?: ReadonlyArray<string>;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
-  toolSurface?: import("@t3tools/contracts").ToolActivitySurface;
-  toolIcon?: import("@t3tools/contracts").ToolActivityIcon;
-  toolSource?: import("@t3tools/contracts").ToolActivitySource;
+  toolSurface?: import("@backplane/contracts").ToolActivitySurface;
+  toolIcon?: import("@backplane/contracts").ToolActivityIcon;
+  toolSource?: import("@backplane/contracts").ToolActivitySource;
   itemType?: ToolLifecycleItemType;
   requestKind?: PendingApproval["requestKind"];
   toolLifecycleStatus?: WorkLogToolLifecycleStatus;
@@ -162,7 +162,7 @@ export type ThreadFeedEntry =
       readonly summaryKind: ToolGroupSummaryKind;
       readonly toolSurface?: WorkLogEntry["toolSurface"];
       readonly toolIcon?: WorkLogEntry["toolIcon"];
-      readonly summaryToolIcon?: "browser" | "t3-code";
+      readonly summaryToolIcon?: "browser" | "backplane";
       readonly hasFailure: boolean;
       readonly live: boolean;
       readonly shimmer: boolean;

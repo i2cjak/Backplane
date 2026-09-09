@@ -77,7 +77,7 @@ describe("attachmentStore", () => {
 
   it("resolves attachment path by id using the extension that exists on disk", () => {
     const attachmentsDir = NodeFS.mkdtempSync(
-      NodePath.join(NodeOS.tmpdir(), "t3code-attachment-store-"),
+      NodePath.join(NodeOS.tmpdir(), "backplane-attachment-store-"),
     );
     try {
       const attachmentId = "thread-1-attachment";
@@ -96,7 +96,7 @@ describe("attachmentStore", () => {
 
   it("returns null when no attachment file exists for the id", () => {
     const attachmentsDir = NodeFS.mkdtempSync(
-      NodePath.join(NodeOS.tmpdir(), "t3code-attachment-store-"),
+      NodePath.join(NodeOS.tmpdir(), "backplane-attachment-store-"),
     );
     try {
       const resolved = resolveAttachmentPathById({
@@ -111,7 +111,7 @@ describe("attachmentStore", () => {
 
   it("resolves generic attachments without scanning the attachment directory", () => {
     const attachmentsDir = NodeFS.mkdtempSync(
-      NodePath.join(NodeOS.tmpdir(), "t3code-file-attachment-"),
+      NodePath.join(NodeOS.tmpdir(), "backplane-file-attachment-"),
     );
     try {
       const attachmentId = "thread-1-00000000-0000-4000-8000-000000000001-zip";
@@ -126,7 +126,7 @@ describe("attachmentStore", () => {
 
   it("plans pending attachment claims with direct filename lookups", () => {
     const attachmentsDir = NodeFS.mkdtempSync(
-      NodePath.join(NodeOS.tmpdir(), "t3code-attachment-claim-"),
+      NodePath.join(NodeOS.tmpdir(), "backplane-attachment-claim-"),
     );
     try {
       const uuid = "00000000-0000-4000-8000-000000000001";
@@ -155,7 +155,7 @@ describe("attachmentStore", () => {
 
   it("rejects thread-owned attachments even when thread segments collide", () => {
     const attachmentsDir = NodeFS.mkdtempSync(
-      NodePath.join(NodeOS.tmpdir(), "t3code-attachment-ownership-"),
+      NodePath.join(NodeOS.tmpdir(), "backplane-attachment-ownership-"),
     );
     try {
       const attachmentId = "a-b-00000000-0000-4000-8000-000000000003";
@@ -172,7 +172,7 @@ describe("attachmentStore", () => {
 
   it("removes expired pending and partial files without touching thread attachments", () => {
     const attachmentsDir = NodeFS.mkdtempSync(
-      NodePath.join(NodeOS.tmpdir(), "t3code-attachment-sweep-"),
+      NodePath.join(NodeOS.tmpdir(), "backplane-attachment-sweep-"),
     );
     try {
       const now = 1_800_000_000_000;

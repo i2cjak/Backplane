@@ -14,9 +14,9 @@ describe("owned attachment paths", () => {
     "file:///var/mobile/Containers/Data/Application/",
     "file:///Users/dev/Library/Developer/CoreSimulator/Devices/device/data/Containers/Data/Application/",
   ])("resolves saved files after an iOS container move under %s", (prefix) => {
-    const oldUri = `${prefix}${OLD_CONTAINER}/Documents/t3-composer-attachments/${FILE_NAME}`;
+    const oldUri = `${prefix}${OLD_CONTAINER}/Documents/backplane-composer-attachments/${FILE_NAME}`;
     const documentUri = `${prefix}${CURRENT_CONTAINER}/Documents/`;
-    const currentUri = `${documentUri}t3-composer-attachments/${FILE_NAME}`;
+    const currentUri = `${documentUri}backplane-composer-attachments/${FILE_NAME}`;
 
     expect(resolveOwnedComposerAttachmentFileUri(oldUri, documentUri)).toBe(currentUri);
     expect(composerAttachmentFileReferenceKey(oldUri)).toBe(
@@ -25,9 +25,9 @@ describe("owned attachment paths", () => {
   });
 
   it("recognizes the private/var alias without changing the stored filename", () => {
-    const oldUri = `file:///private/var/mobile/Containers/Data/Application/${OLD_CONTAINER}/Documents/t3-composer-attachments/${FILE_NAME}`;
+    const oldUri = `file:///private/var/mobile/Containers/Data/Application/${OLD_CONTAINER}/Documents/backplane-composer-attachments/${FILE_NAME}`;
     const documentUri = `file:///var/mobile/Containers/Data/Application/${CURRENT_CONTAINER}/Documents/`;
-    const currentUri = `${documentUri}t3-composer-attachments/${FILE_NAME}`;
+    const currentUri = `${documentUri}backplane-composer-attachments/${FILE_NAME}`;
 
     expect(resolveOwnedComposerAttachmentFileUri(oldUri, documentUri)).toBe(currentUri);
     expect(composerAttachmentFileReferenceKey(oldUri)).toBe(
@@ -36,15 +36,15 @@ describe("owned attachment paths", () => {
   });
 
   it.each([
-    `file:///private/var/mobile/Containers/Shared/FileProvider/other/Documents/t3-composer-attachments/${FILE_NAME}`,
-    `file:///var/mobile/Containers/Shared/AppGroup/other/t3-composer-attachments/${FILE_NAME}`,
+    `file:///private/var/mobile/Containers/Shared/FileProvider/other/Documents/backplane-composer-attachments/${FILE_NAME}`,
+    `file:///var/mobile/Containers/Shared/AppGroup/other/backplane-composer-attachments/${FILE_NAME}`,
     `file:///var/mobile/Containers/Data/Application/${OLD_CONTAINER}/Documents/report.pdf`,
-    `file:///var/mobile/Containers/Data/Application/${OLD_CONTAINER}/Documents/t3-composer-attachments/report.pdf`,
-    `file:///downloads/t3-composer-attachments/${FILE_NAME}`,
-    `content://shared/t3-composer-attachments/${FILE_NAME}`,
-    `https://example.com/t3-composer-attachments/${FILE_NAME}`,
-    `file:///var/mobile/Containers/Data/Application/${OLD_CONTAINER}/Documents/t3-composer-attachments/..%2F..%2Fsender.pdf`,
-    `file:///var/mobile/Containers/Data/Application/${OLD_CONTAINER}/Documents/t3-composer-attachments/${FILE_NAME}%2Fnested.pdf`,
+    `file:///var/mobile/Containers/Data/Application/${OLD_CONTAINER}/Documents/backplane-composer-attachments/report.pdf`,
+    `file:///downloads/backplane-composer-attachments/${FILE_NAME}`,
+    `content://shared/backplane-composer-attachments/${FILE_NAME}`,
+    `https://example.com/backplane-composer-attachments/${FILE_NAME}`,
+    `file:///var/mobile/Containers/Data/Application/${OLD_CONTAINER}/Documents/backplane-composer-attachments/..%2F..%2Fsender.pdf`,
+    `file:///var/mobile/Containers/Data/Application/${OLD_CONTAINER}/Documents/backplane-composer-attachments/${FILE_NAME}%2Fnested.pdf`,
   ])("does not rebase an external or escaped path: %s", (uri) => {
     expect(
       resolveOwnedComposerAttachmentFileUri(

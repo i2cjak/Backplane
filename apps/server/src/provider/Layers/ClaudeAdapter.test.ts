@@ -20,8 +20,8 @@ import {
   type RuntimeMode,
   ThreadId,
   ProviderInstanceId,
-} from "@t3tools/contracts";
-import { createModelSelection } from "@t3tools/shared/model";
+} from "@backplane/contracts";
+import { createModelSelection } from "@backplane/shared/model";
 import { assert, describe, it } from "@effect/vitest";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -56,7 +56,7 @@ const encodeUnknownJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.U
 
 // Test-local service tag so the rest of the file can keep using `yield* ClaudeAdapter`.
 class ClaudeAdapter extends Context.Service<ClaudeAdapter, ClaudeAdapterShape>()(
-  "t3/provider/Layers/ClaudeAdapter.test/ClaudeAdapter",
+  "@backplane/cli/provider/Layers/ClaudeAdapter.test/ClaudeAdapter",
 ) {}
 
 class FakeClaudeQuery implements AsyncIterable<SDKMessage> {
@@ -394,7 +394,7 @@ describe("ClaudeAdapterLive", () => {
         preset: "claude_code",
         append: buildRuntimeInstructions({ harness: "Claude Code" }),
       });
-      assert.include(createInput?.options.additionalDirectories, kiStackSkillsDirectory);
+      assert.include(createInput?.options.additionalDirectories ?? [], kiStackSkillsDirectory);
       assert.equal(createInput?.options.permissionMode, "bypassPermissions");
       assert.equal(createInput?.options.allowDangerouslySkipPermissions, true);
     }).pipe(
@@ -3538,8 +3538,8 @@ describe("ClaudeAdapterLive", () => {
           type: "system",
           subtype: "code_change_published",
           provider: "github",
-          url: "https://github.com/pingdotgg/t3code/pull/1",
-          repo: "pingdotgg/t3code",
+          url: "https://github.com/i2cjak/backplane/pull/1",
+          repo: "i2cjak/backplane",
           identifier: "1",
           session_id: "session",
           uuid: "ccp",

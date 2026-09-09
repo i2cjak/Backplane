@@ -11,7 +11,7 @@ We are not actively accepting contributions right now.
 
 You can still report a bug or open a PR, but please do so knowing there is a high chance we close it, defer it forever, or never look at it.
 
-Feature requests and proposals belong in [Ideas discussions](https://github.com/pingdotgg/t3code/discussions/categories/ideas), not issues.
+Feature requests and proposals belong in [Ideas discussions](https://github.com/i2cjak/backplane/discussions/categories/ideas), not issues.
 
 If that sounds annoying, that is because it is. This project is still early and we are trying to keep scope, quality, and direction under control.
 

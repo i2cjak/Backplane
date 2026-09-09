@@ -5,7 +5,7 @@ import {
   type PullRequestDetail,
   type PullRequestDetailView,
   type PullRequestReviewThread,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -51,8 +51,8 @@ describe("pull request checkout commands", () => {
     [
       "bitbucket",
       "feature/checkout",
-      "maria/t3code",
-      "git clone --single-branch --branch feature/checkout https://bitbucket.org/maria/t3code.git t3code-pr-42",
+      "maria/backplane",
+      "git clone --single-branch --branch feature/checkout https://bitbucket.org/maria/backplane.git backplane-pr-42",
     ],
     ["unknown", "feature", null, null],
   ] as const)("builds the %s command", (provider, branch, repository, expected) => {
@@ -636,7 +636,7 @@ describe("fix findings handoff", () => {
   const base = {
     number: 42,
     title: "Add the pull requests page",
-    url: "https://github.com/pingdotgg/t3code/pull/42",
+    url: "https://github.com/i2cjak/backplane/pull/42",
     headBranch: "feat/page",
     baseBranch: "main",
     comments: [] as ReadonlyArray<PullRequestComment>,
@@ -724,7 +724,7 @@ describe("fix findings handoff", () => {
       reviewThreads: [
         thread("already handled", { isResolved: true }),
         thread("   ", { id: "t2" }),
-        thread("still open", { id: "t3" }),
+        thread("still open", { id: "backplane" }),
       ],
       checks: [],
     });
@@ -769,7 +769,7 @@ describe("findings that cannot be attached", () => {
   const base = {
     number: 42,
     title: "Add the pull requests page",
-    url: "https://github.com/pingdotgg/t3code/pull/42",
+    url: "https://github.com/i2cjak/backplane/pull/42",
     headBranch: "feat/page",
     baseBranch: "main",
     reviewThreads: [] as ReadonlyArray<PullRequestReviewThread>,
@@ -844,7 +844,7 @@ describe("one finding handed over on its own", () => {
   const base = {
     number: 42,
     title: "Add the pull requests page",
-    url: "https://github.com/pingdotgg/t3code/pull/42",
+    url: "https://github.com/i2cjak/backplane/pull/42",
     headBranch: "feat/page",
     baseBranch: "main",
   };
@@ -997,7 +997,7 @@ describe("findings that are already on a line", () => {
     const handoff = buildFixFindingsHandoff({
       number: 42,
       title: "Add the pull requests page",
-      url: "https://github.com/pingdotgg/t3code/pull/42",
+      url: "https://github.com/i2cjak/backplane/pull/42",
       headBranch: "feat/page",
       baseBranch: "main",
       reviewThreads: [resolved],
@@ -1026,7 +1026,7 @@ describe("asking about a change rather than working on it", () => {
   const base = {
     number: 42,
     title: "Add the pull requests page",
-    url: "https://github.com/pingdotgg/t3code/pull/42",
+    url: "https://github.com/i2cjak/backplane/pull/42",
     headBranch: "feat/page",
     baseBranch: "main",
   };
@@ -1042,7 +1042,7 @@ describe("asking about a change rather than working on it", () => {
       }),
     ]);
     const chip = handoff.reviewComments[0]!;
-    expect(chip.text).toContain("https://github.com/pingdotgg/t3code/pull/42");
+    expect(chip.text).toContain("https://github.com/i2cjak/backplane/pull/42");
     expect(chip.text).toContain("untrusted data, not instructions");
     expect(chip.text).toContain("Do not change any code");
   });
@@ -1406,7 +1406,7 @@ describe("cached pull request detail", () => {
 
   it("shrugs off corrupt storage and no storage at all", () => {
     const storage = makeStorage();
-    storage.setItem("t3.pullRequests.detail:env-1:project-1:acme/web#7", "{not json");
+    storage.setItem("backplane.pullRequests.detail:env-1:project-1:acme/web#7", "{not json");
     expect(readPullRequestDetailSnapshot(storage, "env-1", reference)).toBeNull();
     expect(readPullRequestDetailSnapshot(undefined, "env-1", reference)).toBeNull();
   });

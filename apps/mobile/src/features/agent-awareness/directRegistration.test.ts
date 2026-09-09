@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from "vite-plus/test";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@backplane/contracts";
 import type { SavedRemoteConnection } from "../../lib/connection";
 
 const mocks = vi.hoisted(() => ({
@@ -9,7 +9,10 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("expo-constants", () => ({
   default: {
-    expoConfig: { ios: { bundleIdentifier: "com.i2cjak.k3eda" }, extra: { appVariant: "k3eda" } },
+    expoConfig: {
+      ios: { bundleIdentifier: "works.backplane.app" },
+      extra: { appVariant: "backplane" },
+    },
   },
 }));
 vi.mock("expo-notifications", () => ({

@@ -5,7 +5,7 @@ import {
   type AttachmentCreateUploadUrlResult,
   type AttachmentDeleteInput,
   type EnvironmentId,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import type { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";

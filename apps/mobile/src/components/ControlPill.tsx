@@ -113,7 +113,7 @@ export function ControlPill(props: {
     props.className,
   );
   const labelClassName = cn(
-    "text-center text-xs font-t3-bold",
+    "text-center text-xs font-backplane-bold",
     variant === "primary"
       ? props.disabled
         ? "text-foreground-muted"

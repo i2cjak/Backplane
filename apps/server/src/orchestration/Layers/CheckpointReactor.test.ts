@@ -9,7 +9,7 @@ import {
   ProviderRuntimeEvent,
   ProviderSession,
   ProviderInstanceId,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import {
   CommandId,
   CheckpointRef,
@@ -19,7 +19,7 @@ import {
   ProjectId,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
@@ -222,7 +222,7 @@ function runGit(cwd: string, args: ReadonlyArray<string>) {
 }
 
 function createGitRepository() {
-  const cwd = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-checkpoint-handler-"));
+  const cwd = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "backplane-checkpoint-handler-"));
   runGit(cwd, ["init", "--initial-branch=main"]);
   runGit(cwd, ["config", "user.email", "test@example.com"]);
   runGit(cwd, ["config", "user.name", "Test User"]);
@@ -333,7 +333,7 @@ describe("CheckpointReactor", () => {
     );
 
     const ServerConfigLayer = ServerConfig.layerTest(process.cwd(), {
-      prefix: "t3-checkpoint-reactor-test-",
+      prefix: "backplane-checkpoint-reactor-test-",
     });
     const pullRequestRefreshes: number[] = [];
     const refreshAfterTurn = Effect.sync(() => void pullRequestRefreshes.push(1));
@@ -860,8 +860,8 @@ describe("CheckpointReactor", () => {
     const pullRequestRefreshCalls: string[] = [];
     const harness = await createHarness({
       seedFilesystemCheckpoints: false,
-      threadBranch: "t3code/feature",
-      localStatusRefName: "t3code/feature",
+      threadBranch: "@backplane/cli/feature",
+      localStatusRefName: "@backplane/cli/feature",
       pullRequestRefreshCalls,
     });
 
@@ -887,8 +887,8 @@ describe("CheckpointReactor", () => {
       const harness = yield* Effect.promise(() =>
         createHarness({
           seedFilesystemCheckpoints: false,
-          threadBranch: "t3code/feature",
-          localStatusRefName: "t3code/feature",
+          threadBranch: "@backplane/cli/feature",
+          localStatusRefName: "@backplane/cli/feature",
           pullRequestRefresh: Deferred.succeed(lookupStarted, undefined).pipe(
             Effect.andThen(Deferred.await(finishLookup)),
           ),
@@ -927,8 +927,8 @@ describe("CheckpointReactor", () => {
     const pullRequestRefreshCalls: string[] = [];
     const harness = await createHarness({
       seedFilesystemCheckpoints: false,
-      threadBranch: "t3code/original-branch",
-      localStatusRefName: "t3code/renamed-by-agent",
+      threadBranch: "@backplane/cli/original-branch",
+      localStatusRefName: "@backplane/cli/renamed-by-agent",
       pullRequestRefreshCalls,
     });
 
@@ -974,8 +974,8 @@ describe("CheckpointReactor", () => {
   it("adopts a drifted checkout as the thread branch on a dedicated worktree", async () => {
     const harness = await createHarness({
       seedFilesystemCheckpoints: false,
-      threadBranch: "t3code/original-branch",
-      localStatusRefName: "t3code/renamed-by-agent",
+      threadBranch: "@backplane/cli/original-branch",
+      localStatusRefName: "@backplane/cli/renamed-by-agent",
     });
 
     harness.provider.emit({
@@ -994,20 +994,20 @@ describe("CheckpointReactor", () => {
       (event) =>
         event.type === "thread.meta-updated" &&
         (event as unknown as { payload: { branch?: string } }).payload.branch ===
-          "t3code/renamed-by-agent",
+          "@backplane/cli/renamed-by-agent",
     );
 
     const snapshot = await harness.readModel();
     const thread = snapshot.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
-    expect(thread?.branch).toBe("t3code/renamed-by-agent");
+    expect(thread?.branch).toBe("@backplane/cli/renamed-by-agent");
   });
 
   it("does not adopt a drifted checkout when the worktree is shared by another thread", async () => {
     const pullRequestRefreshCalls: string[] = [];
     const harness = await createHarness({
       seedFilesystemCheckpoints: false,
-      threadBranch: "t3code/original-branch",
-      localStatusRefName: "t3code/renamed-by-agent",
+      threadBranch: "@backplane/cli/original-branch",
+      localStatusRefName: "@backplane/cli/renamed-by-agent",
       secondThreadSharingWorktree: true,
       pullRequestRefreshCalls,
     });
@@ -1026,15 +1026,15 @@ describe("CheckpointReactor", () => {
 
     const snapshot = await harness.readModel();
     const thread = snapshot.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
-    expect(thread?.branch).toBe("t3code/original-branch");
+    expect(thread?.branch).toBe("@backplane/cli/original-branch");
     expect(pullRequestRefreshCalls).toEqual([]);
   });
 
   it("does not adopt a temporary placeholder checkout as the thread branch", async () => {
     const harness = await createHarness({
       seedFilesystemCheckpoints: false,
-      threadBranch: "t3code/original-branch",
-      localStatusRefName: "t3code/0a1b2c3d",
+      threadBranch: "@backplane/cli/original-branch",
+      localStatusRefName: "@backplane/cli/0a1b2c3d",
     });
 
     harness.provider.emit({
@@ -1051,15 +1051,15 @@ describe("CheckpointReactor", () => {
 
     const snapshot = await harness.readModel();
     const thread = snapshot.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
-    expect(thread?.branch).toBe("t3code/original-branch");
+    expect(thread?.branch).toBe("@backplane/cli/original-branch");
   });
 
   it("ignores auxiliary thread turn completion while primary turn is active", async () => {
     const pullRequestRefreshCalls: string[] = [];
     const harness = await createHarness({
       seedFilesystemCheckpoints: false,
-      threadBranch: "t3code/feature",
-      localStatusRefName: "t3code/feature",
+      threadBranch: "@backplane/cli/feature",
+      localStatusRefName: "@backplane/cli/feature",
       pullRequestRefreshCalls,
     });
     const createdAt = "2026-01-01T00:00:00.000Z";
@@ -1511,7 +1511,7 @@ describe("CheckpointReactor", () => {
 
   it("continues processing runtime events after a single checkpoint runtime failure", async () => {
     const nonRepositorySessionCwd = NodeFS.mkdtempSync(
-      NodePath.join(NodeOS.tmpdir(), "t3-checkpoint-runtime-non-repo-"),
+      NodePath.join(NodeOS.tmpdir(), "backplane-checkpoint-runtime-non-repo-"),
     );
     tempDirs.push(nonRepositorySessionCwd);
 

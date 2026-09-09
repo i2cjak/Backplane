@@ -7,7 +7,7 @@ import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 import { hotSwappableAtomRuntime } from "./hot-swappable-atom-runtime";
 
 class RuntimeValue extends Context.Service<RuntimeValue, { readonly value: string }>()(
-  "t3/mobile/test/RuntimeValue",
+  "backplane/mobile/test/RuntimeValue",
 ) {}
 
 function runtimeLayer(value: string, events: string[]) {

@@ -8,7 +8,7 @@ import bundle from "./kistack.bundle.json" with { type: "json" };
 export const kiStackSkillsDirectory = NodePath.join(
   NodeOS.homedir(),
   ".cache",
-  "t3cad",
+  "backplane",
   "kistack",
   bundle.revision,
 );
@@ -31,7 +31,7 @@ export async function installKiStackSkills(directory = kiStackSkillsDirectory): 
 export function buildKiStackInstructions(directory = kiStackSkillsDirectory): string {
   return [
     "<kistack_skills>",
-    `T3CAD includes KiStack by American Embedded (${bundle.source}, revision ${bundle.revision}). These skills are always available in every project.`,
+    `Backplane includes KiStack by American Embedded (${bundle.source}, revision ${bundle.revision}). These skills are always available in every project.`,
     "For relevant electronics work, read the matching SKILL.md before working and follow its workflow. Resolve referenced scripts and documents relative to that skill's directory. User instructions take precedence. Other installed skills remain available.",
     ...bundle.skills.map(
       (skill) =>

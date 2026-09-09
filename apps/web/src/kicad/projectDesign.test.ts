@@ -1,5 +1,5 @@
 import { expect, it } from "vite-plus/test";
-import type { KiCadProjectFile } from "@t3tools/contracts";
+import type { KiCadProjectFile } from "@backplane/contracts";
 import { resolveProjectDesign } from "./projectDesign";
 const file = (path: string): KiCadProjectFile => ({
   path,

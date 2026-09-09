@@ -6,7 +6,7 @@ import { vi } from "vite-plus/test";
 import { describe, expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
-import { verifyDpopProof } from "@t3tools/shared/dpop";
+import { verifyDpopProof } from "@backplane/shared/dpop";
 
 import {
   createDpopProof,
@@ -91,7 +91,7 @@ describe("mobile DPoP", () => {
 
   it.effect("rejects malformed persisted proof keys", () =>
     Effect.gen(function* () {
-      secureStore.set("t3code.cloud.dpop-proof-key", `{"kty":"EC","crv":"P-256","d":42}`);
+      secureStore.set("backplane.cloud.dpop-proof-key", `{"kty":"EC","crv":"P-256","d":42}`);
 
       const error = yield* loadOrCreateDpopProofKeyPair().pipe(Effect.flip);
 

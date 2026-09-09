@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { ProjectEntry } from "@t3tools/contracts";
+import type { ProjectEntry } from "@backplane/contracts";
 
 import { buildFileTree, defaultExpandedTreePaths, flattenFileTree } from "./fileTree";
 

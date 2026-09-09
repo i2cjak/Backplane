@@ -147,10 +147,10 @@ jobs:
       - name: Build installer
         shell: bash
         env:
-          T3CAD_KICAD_RUNTIME: apps/desktop/prod-resources/kicad-runtime
-          T3CAD_REQUIRE_BUNDLED_KICAD: "1"
-          T3CAD_PYTHON_RUNTIME: apps/desktop/prod-resources/python-runtime
-          T3CAD_REQUIRE_BUNDLED_PYTHON: "1"
+          BACKPLANE_KICAD_RUNTIME: apps/desktop/prod-resources/kicad-runtime
+          BACKPLANE_REQUIRE_BUNDLED_KICAD: "1"
+          BACKPLANE_PYTHON_RUNTIME: apps/desktop/prod-resources/python-runtime
+          BACKPLANE_REQUIRE_BUNDLED_PYTHON: "1"
         run: ./node_modules/.bin/vp run dist:desktop:artifact --platform ${{ matrix.platform }} --target ${{ matrix.target }} --arch ${{ matrix.arch }} --build-version ${{ steps.meta.outputs.version }}
 
       - name: Verify bundled runtimes and checksum installer

@@ -6,7 +6,7 @@ import type {
   ResourceTelemetryAggregate,
   ResourceTelemetryProcess,
   ResourceTelemetryProcessCategory,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 
@@ -30,7 +30,7 @@ export interface TelemetryCounters {
   readonly backend: GroupCounters;
   readonly electron: GroupCounters;
   readonly monitor: GroupCounters;
-  readonly allT3: GroupCounters;
+  readonly allBackplane: GroupCounters;
 }
 
 export interface ProcessDelta {
@@ -63,7 +63,7 @@ export interface MergeProcessesResult {
     readonly backend: ResourceTelemetryAggregate;
     readonly electron: ResourceTelemetryAggregate;
     readonly monitor: ResourceTelemetryAggregate;
-    readonly allT3: ResourceTelemetryAggregate;
+    readonly allBackplane: ResourceTelemetryAggregate;
   };
   readonly deltas: ReadonlyArray<ProcessDelta>;
 }
@@ -80,7 +80,7 @@ export const emptyTelemetryCounters = (): TelemetryCounters => ({
   backend: emptyGroupCounters(),
   electron: emptyGroupCounters(),
   monitor: emptyGroupCounters(),
-  allT3: emptyGroupCounters(),
+  allBackplane: emptyGroupCounters(),
 });
 
 export function processIdentityKey(pid: number, startTimeMs: number): string {
@@ -292,7 +292,7 @@ function applyLifecycleCounters(input: {
   let backend = input.counters.backend;
   let electron = input.counters.electron;
   let monitor = input.counters.monitor;
-  let allT3 = input.counters.allT3;
+  let allBackplane = input.counters.allBackplane;
   for (const processDelta of input.deltas) {
     const group = categoryGroup(processDelta.category);
     switch (group) {
@@ -306,7 +306,7 @@ function applyLifecycleCounters(input: {
         monitor = incrementCounters(monitor, processDelta);
         break;
     }
-    allT3 = incrementCounters(allT3, processDelta);
+    allBackplane = incrementCounters(allBackplane, processDelta);
   }
 
   for (const [identityKey, current] of input.current) {
@@ -323,7 +323,7 @@ function applyLifecycleCounters(input: {
         monitor = incrementCounters(monitor, { processStarts: 1 });
         break;
     }
-    allT3 = incrementCounters(allT3, { processStarts: 1 });
+    allBackplane = incrementCounters(allBackplane, { processStarts: 1 });
   }
 
   for (const [identityKey, previous] of input.previous) {
@@ -340,10 +340,10 @@ function applyLifecycleCounters(input: {
         monitor = incrementCounters(monitor, { processExits: 1 });
         break;
     }
-    allT3 = incrementCounters(allT3, { processExits: 1 });
+    allBackplane = incrementCounters(allBackplane, { processExits: 1 });
   }
 
-  return { backend, electron, monitor, allT3 };
+  return { backend, electron, monitor, allBackplane };
 }
 
 function aggregate(
@@ -601,7 +601,7 @@ export function mergeProcesses(input: MergeProcessesInput): MergeProcessesResult
       backend: aggregate(backendProcesses, counters.backend),
       electron: aggregate(electronProcesses, counters.electron),
       monitor: aggregate(monitorProcesses, counters.monitor),
-      allT3: aggregate(ordered, counters.allT3),
+      allBackplane: aggregate(ordered, counters.allBackplane),
     },
     deltas: processDeltas,
   };

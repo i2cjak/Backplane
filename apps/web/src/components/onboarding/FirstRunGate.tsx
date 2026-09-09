@@ -114,7 +114,7 @@ export function FirstRunGate({
   // A workspace still counts as fresh when its only content is the server's
   // own cwd auto-bootstrap: web mode creates a project + thread from cwd at
   // startup (`autoBootstrapProjectFromCwd` defaults on there), so "no
-  // projects at all" would mean `npx t3` users never see the wizard. Any
+  // projects at all" would mean `npx backplane` users never see the wizard. Any
   // other project, more than one thread, or state in a non-primary
   // environment is real user state — the aggregate hooks span every
   // environment, and a saved remote's project must never read as "the

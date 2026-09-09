@@ -1,5 +1,5 @@
 {
-  "name": "T3 Code Dev",
+  "name": "Backplane Dev",
   "image": "debian:bookworm",
   "features": {
     "ghcr.io/devcontainers/features/git:1": {},

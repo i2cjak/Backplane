@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import { EnvironmentId, ThreadId, type IosNotificationRegistration } from "@t3tools/contracts";
-import type { AgentAwarenessState } from "@t3tools/shared/agentAwareness";
+import { EnvironmentId, ThreadId, type IosNotificationRegistration } from "@backplane/contracts";
+import type { AgentAwarenessState } from "@backplane/shared/agentAwareness";
 import {
   createDirectIosPush,
   makeDirectActivityPayload,
@@ -9,7 +9,7 @@ import {
 
 const registration: IosNotificationRegistration = {
   deviceId: "phone",
-  bundleId: "com.i2cjak.k3eda",
+  bundleId: "works.backplane.app",
   apsEnvironment: "production",
   pushToken: "a".repeat(64),
   activityToken: "b".repeat(64),

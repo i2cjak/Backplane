@@ -19,7 +19,7 @@ before an upload finishes requires you to attach that file again.
 You can drag or paste images into the web or desktop composer. HEIC and HEIF
 photos are converted to JPEG there and when selected from the iOS photo library;
 the image limit applies after conversion. On mobile, you can also send files to
-T3 Code through another app's system share sheet.
+Backplane through another app's system share sheet.
 
 See [images and videos](#images-and-videos-in-messages) for previewing and saving media.
 
@@ -27,7 +27,7 @@ See [images and videos](#images-and-videos-in-messages) for previewing and savin
 
 Mobile keeps local copies of draft attachments, so you can preview them and queue
 messages while disconnected. Uploads resume when you reconnect. Drafts and queued
-messages survive app restarts. Signing out of T3 Connect keeps that work on your
+messages survive app restarts. Signing out of Backplane Connect keeps that work on your
 device until you sign back into the same account.
 
 ## Custom models
@@ -38,7 +38,7 @@ uses its account catalog and does not support custom models.
 
 ## Model defaults
 
-T3 Code remembers your provider, model, and model options for new threads. A
+Backplane remembers your provider, model, and model options for new threads. A
 project's configured model takes precedence; resetting that project setting
 returns to the remembered selection.
 
@@ -91,7 +91,7 @@ Later transcription works offline for that language. Recordings can be up to fiv
 minutes long. Canceling, leaving the screen, or an audio interruption discards the
 recording and preserves your existing draft.
 
-Transcription runs on your device. T3 Code deletes the temporary audio after
+Transcription runs on your device. Backplane deletes the temporary audio after
 transcription or cancellation; only the message text is sent when you submit.
 
 ## Commands and skills
@@ -103,7 +103,7 @@ provider. On mobile, both are also available before starting a thread on
 The slash menu also includes skills unless you turn off **Settings → General →
 Show skills in slash menu**. Only skills enabled for the provider are listed.
 
-Provider commands must start the message to run. T3 Code commands such as
+Provider commands must start the message to run. Backplane commands such as
 `/model` and `/plan`, and skill mentions, work on any line.
 
 Send `/compact` in an existing conversation to reduce context usage when the
@@ -132,7 +132,7 @@ styles, or images from neighboring files.
 
 On web and desktop, HTML and PDF files open as rendered pages. Switch an HTML
 file to source view to read its markup; a link to a specific line opens source
-automatically. HTML previews cannot access your T3 Code session.
+automatically. HTML previews cannot access your Backplane session.
 
 On mobile, select a PDF attachment or link to open it. iOS uses the native viewer;
 Android opens the system chooser.

@@ -1,4 +1,4 @@
-import type { EnvironmentThreadSearchMatch } from "@t3tools/client-runtime/state/thread-search";
+import type { EnvironmentThreadSearchMatch } from "@backplane/client-runtime/state/thread-search";
 
 import { AppText as Text } from "../../components/AppText";
 import { cn } from "../../lib/cn";
@@ -61,7 +61,7 @@ export function ThreadSearchMatchExcerpt(props: {
     >
       <Text
         className={cn(
-          props.compact ? "text-sm font-t3-medium" : "text-xs font-t3-medium",
+          props.compact ? "text-sm font-backplane-medium" : "text-xs font-backplane-medium",
           props.selected
             ? "text-user-bubble-foreground"
             : isUser
@@ -75,7 +75,7 @@ export function ThreadSearchMatchExcerpt(props: {
         <Text
           className={cn(
             props.compact ? "text-sm" : "text-xs",
-            part.highlighted && "font-t3-bold",
+            part.highlighted && "font-backplane-bold",
             props.selected
               ? "text-user-bubble-foreground"
               : part.highlighted

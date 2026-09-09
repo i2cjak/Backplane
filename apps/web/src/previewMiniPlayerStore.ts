@@ -1,5 +1,5 @@
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import { scopedThreadKey } from "@backplane/client-runtime/environment";
+import type { ScopedThreadRef } from "@backplane/contracts";
 import { create } from "zustand";
 
 export interface PreviewMiniPlayerPosition {

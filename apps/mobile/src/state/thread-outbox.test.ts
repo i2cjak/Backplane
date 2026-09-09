@@ -6,7 +6,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import { AtomRegistry } from "effect/unstable/reactivity";
 import { onTestFinished, vi } from "vite-plus/test";
 
@@ -336,8 +336,8 @@ describe("thread outbox", () => {
           name: "photo.png",
           mimeType: "image/png",
           sizeBytes: 3,
-          fileUri: "file:///documents/t3-composer-attachments/photo.png",
-          previewUri: "file:///documents/t3-composer-attachments/photo.png",
+          fileUri: "file:///documents/backplane-composer-attachments/photo.png",
+          previewUri: "file:///documents/backplane-composer-attachments/photo.png",
           uploadedAttachmentId: "pending-photo-png",
           uploadEnvironmentId: EnvironmentId.make("environment-1"),
         },

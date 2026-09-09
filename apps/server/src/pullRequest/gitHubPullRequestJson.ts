@@ -28,8 +28,8 @@ import type {
   PullRequestLabelCandidateList,
   PullRequestState,
   PullRequestThreadComment,
-} from "@t3tools/contracts";
-import { decodeJsonResult } from "@t3tools/shared/schemaJson";
+} from "@backplane/contracts";
+import { decodeJsonResult } from "@backplane/shared/schemaJson";
 
 import { dedupeChecks } from "./pullRequestChecks.ts";
 
@@ -103,7 +103,7 @@ const RawListItemSchema = Schema.Struct({
   labels: Schema.optional(Schema.Array(RawLabelSchema)),
   /**
    * Every check of the head commit, which is the only rollup `gh pr list --json` can give: there
-   * is no field for the one-word verdict. Measured against `pingdotgg/t3code`, asking for it costs
+   * is no field for the one-word verdict. Measured against `i2cjak/backplane`, asking for it costs
    * 0.6s -> 7.9s at a hundred rows and 0.9s -> 2.1s at thirty, for 425 KB of checks a listing
    * reduces to one word. The listing pays it because the alternative is a request per row; the
    * cross-repository search below asks GitHub for the verdict itself instead.

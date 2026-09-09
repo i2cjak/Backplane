@@ -15,7 +15,7 @@ import {
   MIN_CODE_FONT_SIZE,
   MIN_INTERFACE_FONT_SIZE,
   MIN_PROMPT_FONT_SIZE,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 
 export const DEFAULT_SANS_FONT_STACK = '"Berkeley Mono", monospace';
 
@@ -23,7 +23,7 @@ export const DEFAULT_SANS_FONT_STACK = '"Berkeley Mono", monospace';
 // proportional system UI font, which would break every code surface.
 export const DEFAULT_CODE_FONT_STACK = '"Berkeley Mono", monospace';
 
-export const TYPOGRAPHY_ADVANCED_STORAGE_KEY = "t3code:typography-advanced";
+export const TYPOGRAPHY_ADVANCED_STORAGE_KEY = "backplane:typography-advanced";
 
 /**
  * Simple typography treats the terminal as another monospace surface. In

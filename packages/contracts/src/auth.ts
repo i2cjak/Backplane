@@ -118,7 +118,7 @@ export const AuthTokenExchangeGrantType =
   "urn:ietf:params:oauth:grant-type:token-exchange" as const;
 export const AuthAccessTokenType = "urn:ietf:params:oauth:token-type:access_token" as const;
 export const AuthEnvironmentBootstrapTokenType =
-  "urn:t3:params:oauth:token-type:environment-bootstrap" as const;
+  "urn:backplane:params:oauth:token-type:environment-bootstrap" as const;
 
 /**
  * Server-advertised auth capabilities for a specific execution environment.

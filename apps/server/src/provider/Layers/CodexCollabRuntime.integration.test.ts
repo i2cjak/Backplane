@@ -14,7 +14,7 @@ import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
-import { type ProviderApprovalDecision, type ProviderEvent, ThreadId } from "@t3tools/contracts";
+import { type ProviderApprovalDecision, type ProviderEvent, ThreadId } from "@backplane/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -24,7 +24,7 @@ import { assert, describe } from "vite-plus/test";
 
 import wireFixture from "../testFixtures/codexMultiAgentWire.json" with { type: "json" };
 import { makeCodexSessionRuntime } from "./CodexSessionRuntime.ts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessPlatform } from "@backplane/shared/hostProcess";
 
 const ROOT = wireFixture.rootThreadId;
 const [CHILD_A, CHILD_B] = wireFixture.childThreadIds as [string, string];
@@ -203,7 +203,7 @@ describe("CodexSessionRuntime collab integration", () => {
         binaryPath: peerPath,
         cwd: NodeOS.tmpdir(),
         runtimeMode: "full-access",
-        environment: { ...process.env, T3_CODEX_COLLAB_SCRIPT: scriptPath },
+        environment: { ...process.env, BACKPLANE_CODEX_COLLAB_SCRIPT: scriptPath },
       });
       const metadataFiber = yield* runtime.events.pipe(
         Stream.filter(
@@ -295,7 +295,7 @@ describe("CodexSessionRuntime collab integration", () => {
         binaryPath: peerPath,
         cwd: NodeOS.tmpdir(),
         runtimeMode: "full-access",
-        environment: { ...process.env, T3_CODEX_COLLAB_SCRIPT: scriptPath },
+        environment: { ...process.env, BACKPLANE_CODEX_COLLAB_SCRIPT: scriptPath },
       });
       const eventsFiber = yield* runtime.events.pipe(
         Stream.takeUntil(
@@ -374,7 +374,7 @@ describe("CodexSessionRuntime collab integration", () => {
             binaryPath: peerPath,
             cwd: NodeOS.tmpdir(),
             runtimeMode: "full-access",
-            environment: { ...process.env, T3_CODEX_COLLAB_SCRIPT: scriptPath },
+            environment: { ...process.env, BACKPLANE_CODEX_COLLAB_SCRIPT: scriptPath },
           });
           const eventsFiber = yield* runtime.events.pipe(
             Stream.takeUntil(
@@ -413,7 +413,7 @@ describe("CodexSessionRuntime collab integration", () => {
         binaryPath: peerPath,
         cwd: NodeOS.tmpdir(),
         runtimeMode: "full-access",
-        environment: { ...process.env, T3_CODEX_COLLAB_SCRIPT: scriptPath },
+        environment: { ...process.env, BACKPLANE_CODEX_COLLAB_SCRIPT: scriptPath },
       });
 
       const eventsFiber = yield* runtime.events.pipe(
@@ -555,7 +555,7 @@ describe("CodexSessionRuntime collab integration", () => {
         binaryPath: peerPath,
         cwd: NodeOS.tmpdir(),
         runtimeMode: "full-access",
-        environment: { ...process.env, T3_CODEX_COLLAB_SCRIPT: scriptPath },
+        environment: { ...process.env, BACKPLANE_CODEX_COLLAB_SCRIPT: scriptPath },
       });
 
       // Wait for both children's turnStarted signals to be processed before
@@ -633,7 +633,7 @@ describe("CodexSessionRuntime collab integration", () => {
         binaryPath: peerPath,
         cwd: NodeOS.tmpdir(),
         runtimeMode: "full-access",
-        environment: { ...process.env, T3_CODEX_COLLAB_SCRIPT: scriptPath },
+        environment: { ...process.env, BACKPLANE_CODEX_COLLAB_SCRIPT: scriptPath },
       });
 
       yield* runtime.start();
@@ -730,7 +730,7 @@ describe("CodexSessionRuntime collab integration", () => {
           binaryPath: peerPath,
           cwd: NodeOS.tmpdir(),
           runtimeMode: "auto",
-          environment: { ...process.env, T3_CODEX_COLLAB_SCRIPT: scriptPath },
+          environment: { ...process.env, BACKPLANE_CODEX_COLLAB_SCRIPT: scriptPath },
         });
         const approvalRequested = yield* Deferred.make<ProviderEvent>();
         const turnCompleted = yield* Deferred.make<void>();

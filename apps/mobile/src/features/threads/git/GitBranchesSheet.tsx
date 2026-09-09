@@ -1,4 +1,4 @@
-import { sanitizeFeatureBranchName } from "@t3tools/shared/git";
+import { sanitizeFeatureBranchName } from "@backplane/shared/git";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useState } from "react";
 import { Platform, Pressable, ScrollView, View } from "react-native";
@@ -69,7 +69,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
         contentContainerClassName="gap-4 px-5 pt-2"
       >
         <View className="gap-2 rounded-[18px] border border-border bg-card px-4 py-4">
-          <Text className="text-foreground-secondary text-2xs font-t3-bold tracking-[1px] uppercase">
+          <Text className="text-foreground-secondary text-2xs font-backplane-bold tracking-[1px] uppercase">
             New branch
           </Text>
           <TextInput
@@ -95,7 +95,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
         </View>
 
         <View className="gap-2 rounded-[18px] border border-border bg-card px-4 py-4">
-          <Text className="text-foreground-secondary text-2xs font-t3-bold tracking-[1px] uppercase">
+          <Text className="text-foreground-secondary text-2xs font-backplane-bold tracking-[1px] uppercase">
             New worktree
           </Text>
           <TextInput
@@ -132,7 +132,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
         </View>
 
         <View className="gap-2">
-          <Text className="text-foreground-secondary text-2xs font-t3-bold tracking-[1px] uppercase">
+          <Text className="text-foreground-secondary text-2xs font-backplane-bold tracking-[1px] uppercase">
             Existing branches
           </Text>
           {branchesLoading ? (
@@ -170,7 +170,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
                 }}
               >
                 <View className="absolute inset-0 rounded-[18px] bg-card" />
-                <Text className="text-foreground text-base font-t3-bold">{branch.name}</Text>
+                <Text className="text-foreground text-base font-backplane-bold">{branch.name}</Text>
                 <Text className="text-foreground-secondary text-xs font-medium">{subtitle}</Text>
               </Pressable>
             );

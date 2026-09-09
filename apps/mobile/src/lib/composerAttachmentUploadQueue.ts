@@ -1,5 +1,5 @@
-import { EnvironmentId, type ServerConfig } from "@t3tools/contracts";
-import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
+import { EnvironmentId, type ServerConfig } from "@backplane/contracts";
+import { clampFileAttachmentUploadBytes } from "@backplane/client-runtime/state/attachments";
 
 import type { DraftComposerAttachment } from "./composerImages";
 

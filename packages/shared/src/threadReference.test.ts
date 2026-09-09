@@ -8,7 +8,7 @@ describe("resolveThreadReferenceCopyTarget", () => {
       resolveThreadReferenceCopyTarget({
         threadId: "thread-1",
         openPanelPullRequestUrl: null,
-        linkedPullRequestUrl: "https://github.com/t3/pr/12",
+        linkedPullRequestUrl: "https://github.com/backplane/pr/12",
       }),
     ).toBeNull();
   });
@@ -17,12 +17,12 @@ describe("resolveThreadReferenceCopyTarget", () => {
     expect(
       resolveThreadReferenceCopyTarget({
         threadId: "thread-1",
-        openPanelPullRequestUrl: "https://github.com/t3/pr/14",
-        linkedPullRequestUrl: "https://github.com/t3/pr/12",
+        openPanelPullRequestUrl: "https://github.com/backplane/pr/14",
+        linkedPullRequestUrl: "https://github.com/backplane/pr/12",
       }),
     ).toMatchObject({
       kind: "pull-request",
-      value: "https://github.com/t3/pr/14",
+      value: "https://github.com/backplane/pr/14",
       successTitle: "PR link copied",
     });
   });
@@ -31,11 +31,11 @@ describe("resolveThreadReferenceCopyTarget", () => {
     expect(
       resolveThreadReferenceCopyTarget({
         threadId: "thread-1",
-        linkedPullRequestUrl: "https://github.com/t3/pr/12",
+        linkedPullRequestUrl: "https://github.com/backplane/pr/12",
       }),
     ).toMatchObject({
       kind: "pull-request",
-      value: "https://github.com/t3/pr/12",
+      value: "https://github.com/backplane/pr/12",
       successTitle: "PR link copied",
     });
   });

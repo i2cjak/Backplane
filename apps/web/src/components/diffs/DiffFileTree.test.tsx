@@ -64,7 +64,7 @@ describe("diff tree file activation", () => {
     });
   }
 
-  // Exercise T3's capture handler before the real Pierre model's selection transition.
+  // Exercise Backplane's capture handler before the real Pierre model's selection transition.
   // Only DOM hit testing is represented here; native pointer/keyboard dispatch and diff
   // geometry are verified separately in the integrated client.
   async function activate(path: string, modifiers: Partial<MouseEvent<HTMLElement>> = {}) {

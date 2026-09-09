@@ -1,5 +1,5 @@
 import { useIsFocused } from "@react-navigation/native";
-import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
+import type { AssetResource, EnvironmentId } from "@backplane/contracts";
 import { useEffect, useEffectEvent, useState } from "react";
 import { Alert, Keyboard } from "react-native";
 

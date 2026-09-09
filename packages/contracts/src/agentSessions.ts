@@ -34,7 +34,7 @@ export type AgentSessionScanInput = typeof AgentSessionScanInput.Type;
 
 /**
  * A directory that at least one agent CLI has run in, suitable for import as a
- * T3 Code project. `alreadyImported` marks candidates that already have an
+ * Backplane project. `alreadyImported` marks candidates that already have an
  * active project rooted at the same path.
  */
 export const AgentSessionProjectCandidate = Schema.Struct({

@@ -16396,7 +16396,7 @@ var wa = class i {
         (this.pins = e.pins?.map((r) => new Xs(r, this)) ?? []));
       for (let r of e.instances?.projects ?? [])
         for (let n of r?.paths ?? []) {
-          let s = new t3();
+          let s = new backplane();
           ((s.path = n.path), (s.page = n.page), this.instances.set(s.path, s));
         }
     }
@@ -16466,7 +16466,7 @@ var wa = class i {
       a(this, "SchematicSheetPin");
     }
   },
-  t3 = class {
+  backplane = class {
     static {
       a(this, "SchematicSheetInstance");
     }
@@ -40055,7 +40055,7 @@ var Yr = class {
       return e.indexOf("Cu") !== -1;
     }
   },
-  T3 = class extends Yr {
+  Backplane = class extends Yr {
     static {
       a(this, "FootprintInteractiveItem");
     }
@@ -40179,7 +40179,7 @@ var Yr = class {
     }
     visitFootprint(e) {
       let t = e.bbox;
-      return (this.interactive_items.push(new T3(t, 4, null, e, new Set())), !0);
+      return (this.interactive_items.push(new Backplane(t, 4, null, e, new Set())), !0);
     }
     visitGraphicItem(e) {
       return !0;

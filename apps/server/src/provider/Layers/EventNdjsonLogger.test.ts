@@ -3,7 +3,7 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
-import { ThreadId } from "@t3tools/contracts";
+import { ThreadId } from "@backplane/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -61,7 +61,7 @@ describe("EventNdjsonLogger", () => {
     const secret = "secret-circular-event-value";
 
     return Effect.gen(function* () {
-      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-provider-log-"));
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "backplane-provider-log-"));
       const basePath = NodePath.join(tempDir, "provider-native.ndjson");
       const circular: Record<string, unknown> = { secret };
       circular.self = circular;
@@ -83,7 +83,7 @@ describe("EventNdjsonLogger", () => {
 
   it.effect("writes effect-style lines to thread-scoped files", () =>
     Effect.gen(function* () {
-      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-provider-log-"));
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "backplane-provider-log-"));
       const basePath = NodePath.join(tempDir, "provider-native.ndjson");
 
       try {
@@ -131,7 +131,9 @@ describe("EventNdjsonLogger", () => {
     "falls back to a global segment when orchestration thread id is missing or invalid",
     () =>
       Effect.gen(function* () {
-        const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-provider-log-"));
+        const tempDir = NodeFS.mkdtempSync(
+          NodePath.join(NodeOS.tmpdir(), "backplane-provider-log-"),
+        );
         const basePath = NodePath.join(tempDir, "provider-canonical.ndjson");
 
         try {
@@ -166,7 +168,7 @@ describe("EventNdjsonLogger", () => {
 
   it.effect("shares one thread writer across native and canonical streams", () =>
     Effect.gen(function* () {
-      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-provider-log-"));
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "backplane-provider-log-"));
       const basePath = NodePath.join(tempDir, "events.log");
 
       try {
@@ -202,7 +204,7 @@ describe("EventNdjsonLogger", () => {
 
   it.effect("keeps shared store views non-owning when one adapter closes", () =>
     Effect.gen(function* () {
-      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-provider-log-"));
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "backplane-provider-log-"));
       const basePath = NodePath.join(tempDir, "events.log");
 
       try {
@@ -239,7 +241,7 @@ describe("EventNdjsonLogger", () => {
 
   it.effect("flushes an active batch without a permanent polling loop", () =>
     Effect.gen(function* () {
-      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-provider-log-"));
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "backplane-provider-log-"));
       const basePath = NodePath.join(tempDir, "events.log");
       const threadPath = ownedLogPath(basePath, "thread-batched");
 
@@ -261,7 +263,7 @@ describe("EventNdjsonLogger", () => {
 
   it.effect("does not strand a later batch after an interrupted write", () =>
     Effect.gen(function* () {
-      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-provider-log-"));
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "backplane-provider-log-"));
       const basePath = NodePath.join(tempDir, "events.log");
       const threadPath = ownedLogPath(basePath, "thread-interrupted");
 
@@ -288,7 +290,7 @@ describe("EventNdjsonLogger", () => {
 
   it.effect("drops transient provider events before serialization", () =>
     Effect.gen(function* () {
-      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-provider-log-"));
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "backplane-provider-log-"));
       const basePath = NodePath.join(tempDir, "events.log");
 
       try {
@@ -377,7 +379,7 @@ describe("EventNdjsonLogger", () => {
 
   it.effect("keeps OpenCode tool input, final output, and errors in native logs", () =>
     Effect.gen(function* () {
-      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-provider-log-"));
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "backplane-provider-log-"));
       const basePath = NodePath.join(tempDir, "events.log");
       const threadId = ThreadId.make("thread-tool-lifecycle");
 
@@ -422,7 +424,7 @@ describe("EventNdjsonLogger", () => {
 
   it.effect("contains hostile event accessors inside guarded serialization", () =>
     Effect.gen(function* () {
-      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-provider-log-"));
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "backplane-provider-log-"));
       const basePath = NodePath.join(tempDir, "events.log");
 
       try {
@@ -455,7 +457,7 @@ describe("EventNdjsonLogger", () => {
 
   it.effect("serializes concurrent first writes for the same segment", () =>
     Effect.gen(function* () {
-      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-provider-log-"));
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "backplane-provider-log-"));
       const basePath = NodePath.join(tempDir, "provider-canonical.ndjson");
 
       try {
@@ -497,7 +499,7 @@ describe("EventNdjsonLogger", () => {
 
   it.effect("rotates per-thread files when max size is exceeded", () =>
     Effect.gen(function* () {
-      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-provider-log-"));
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "backplane-provider-log-"));
       const basePath = NodePath.join(tempDir, "provider-native.ndjson");
 
       try {
@@ -548,7 +550,7 @@ describe("EventNdjsonLogger", () => {
 
   it.effect("enforces aggregate age and byte retention on startup", () =>
     Effect.gen(function* () {
-      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-provider-log-"));
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "backplane-provider-log-"));
       const basePath = NodePath.join(tempDir, "events.log");
       const expiredPath = ownedLogPath(basePath, "expired");
       const oldPath = ownedLogPath(basePath, "old");
@@ -592,7 +594,7 @@ describe("EventNdjsonLogger", () => {
 
   it.effect("does not prune an active thread sink during an unrelated flush", () =>
     Effect.gen(function* () {
-      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-provider-log-"));
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "backplane-provider-log-"));
       const basePath = NodePath.join(tempDir, "events.log");
       const activePath = ownedLogPath(basePath, "active");
 
@@ -655,7 +657,7 @@ describe("EventNdjsonLogger", () => {
 
   it.effect("reports logical provider log writes to resource attribution", () =>
     Effect.gen(function* () {
-      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-provider-log-"));
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "backplane-provider-log-"));
       const basePath = NodePath.join(tempDir, "provider-native.ndjson");
 
       try {

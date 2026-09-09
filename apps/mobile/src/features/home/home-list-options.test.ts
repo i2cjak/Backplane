@@ -1,7 +1,7 @@
 import {
   DEFAULT_SIDEBAR_PROJECT_SORT_ORDER,
   DEFAULT_SIDEBAR_THREAD_SORT_ORDER,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { hasCustomHomeListOptions, type HomeListOptions } from "./home-list-options";

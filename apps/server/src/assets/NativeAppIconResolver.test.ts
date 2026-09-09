@@ -5,7 +5,7 @@ import * as Layer from "effect/Layer";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/unstable/process";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessPlatform } from "@backplane/shared/hostProcess";
 
 import * as ServerConfig from "../config.ts";
 import * as NativeAppIconResolver from "./NativeAppIconResolver.ts";
@@ -40,7 +40,7 @@ describe("resolveNativeAppIcon", () => {
       }),
     );
     const configLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
-      prefix: "t3-native-app-icon-test-",
+      prefix: "backplane-native-app-icon-test-",
     });
     const dependencies = Layer.mergeAll(
       configLayer,

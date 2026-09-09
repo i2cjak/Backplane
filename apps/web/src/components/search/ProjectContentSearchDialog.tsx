@@ -1,5 +1,5 @@
 import { Spinner } from "~/components/ui/spinner";
-import type { ProjectContentMatch } from "@t3tools/contracts";
+import type { ProjectContentMatch } from "@backplane/contracts";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 

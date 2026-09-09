@@ -1,11 +1,11 @@
 # Source control
 
-T3 Code integrates with GitHub, GitLab, Bitbucket, and Azure DevOps to clone and publish
+Backplane integrates with GitHub, GitLab, Bitbucket, and Azure DevOps to clone and publish
 repositories, create pull requests, and review changes.
 
 ## Connect an account
 
-Install Git and configure authentication on the machine running your T3 Code server. For a remote
+Install Git and configure authentication on the machine running your Backplane server. For a remote
 environment, do this on the remote machine. After signing in, open **Settings → Source Control**
 and choose **Rescan**.
 
@@ -30,15 +30,15 @@ glab auth login
 Set an access token in the server's environment:
 
 ```bash
-export T3CODE_BITBUCKET_ACCESS_TOKEN="your-access-token"
+export BACKPLANE_BITBUCKET_ACCESS_TOKEN="your-access-token"
 ```
 
 Or use an Atlassian account email and API token with read/write access to repositories and pull
 requests, plus user read access (`read:user:bitbucket`):
 
 ```bash
-export T3CODE_BITBUCKET_EMAIL="you@example.com"
-export T3CODE_BITBUCKET_API_TOKEN="your-token"
+export BACKPLANE_BITBUCKET_EMAIL="you@example.com"
+export BACKPLANE_BITBUCKET_API_TOKEN="your-token"
 ```
 
 The access token takes precedence if both are configured. Restart the server after changing these
@@ -64,7 +64,7 @@ make your first commit before pushing.
 
 ## Create a pull request
 
-Use a thread's Git actions to commit, push, and create a pull request. T3 Code can generate commit
+Use a thread's Git actions to commit, push, and create a pull request. Backplane can generate commit
 messages, review titles, and descriptions from your changes.
 
 Choose the writing style and model in **Settings → Source Control**. **Repository conventions**

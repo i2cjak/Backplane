@@ -1,4 +1,4 @@
-import { EnvironmentId, KiCadProjectManifest, KiCadViewerSession } from "@t3tools/contracts";
+import { EnvironmentId, KiCadProjectManifest, KiCadViewerSession } from "@backplane/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";

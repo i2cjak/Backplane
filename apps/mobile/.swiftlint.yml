@@ -1,14 +1,14 @@
 included:
-  - ios/T3Code
-  - modules/t3-composer-editor/ios
-  - modules/t3-native-controls/ios
-  - modules/t3-terminal/ios
-  - modules/t3-review-diff/ios
+  - ios/Backplane
+  - modules/backplane-composer-editor/ios
+  - modules/backplane-native-controls/ios
+  - modules/backplane-terminal/ios
+  - modules/backplane-review-diff/ios
 
 excluded:
   - ios/Pods
   - ios/build
-  - modules/t3-terminal/Vendor
+  - modules/backplane-terminal/Vendor
 
 reporter: xcode
 

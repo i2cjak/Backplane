@@ -33,7 +33,7 @@ const attachment = {
   mimeType: "video/quicktime",
   sizeBytes: 12,
   fileUri:
-    "file:///var/mobile/Containers/Data/Application/11111111-1111-4111-8111-111111111111/Documents/t3-composer-attachments/33333333-3333-4333-8333-333333333333-clip.mov",
+    "file:///var/mobile/Containers/Data/Application/11111111-1111-4111-8111-111111111111/Documents/backplane-composer-attachments/33333333-3333-4333-8333-333333333333-clip.mov",
 };
 
 beforeEach(() => {

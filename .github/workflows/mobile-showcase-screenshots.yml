@@ -24,11 +24,11 @@ on:
       theme:
         description: Palette to capture (all multiplies the run by six)
         required: true
-        default: t3-code
+        default: backplane
         type: choice
         options:
-          - t3-code
-          - t3-chat
+          - backplane
+          - backplane-chat
           - grove
           - ocean
           - ember
@@ -65,9 +65,9 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=@t3tools/mobile...
-              - --filter=@t3tools/scripts...
-              - --filter=t3...
+              - --filter=@backplane/mobile...
+              - --filter=@backplane/scripts...
+              - --filter=@backplane/cli...
 
       - name: Expose pnpm
         run: |
@@ -99,7 +99,7 @@ jobs:
     # one native build is shared between them.
     timeout-minutes: ${{ inputs.theme == 'all' && 300 || 60 }}
     env:
-      T3_SHOWCASE_ANDROID_ABI: x86_64
+      BACKPLANE_SHOWCASE_ANDROID_ABI: x86_64
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -116,9 +116,9 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=@t3tools/mobile...
-              - --filter=@t3tools/scripts...
-              - --filter=t3...
+              - --filter=@backplane/mobile...
+              - --filter=@backplane/scripts...
+              - --filter=@backplane/cli...
 
       - name: Expose pnpm
         run: |

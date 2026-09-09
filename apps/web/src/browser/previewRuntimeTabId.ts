@@ -1,4 +1,4 @@
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { ScopedThreadRef } from "@backplane/contracts";
 
 /**
  * The server only guarantees preview tab ids are unique within one process.

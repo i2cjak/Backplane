@@ -1,4 +1,4 @@
-import type { OrchestrationThreadShell } from "@t3tools/contracts";
+import type { OrchestrationThreadShell } from "@backplane/contracts";
 
 export interface SettlementPullRequest {
   readonly state: "open" | "closed" | "merged";

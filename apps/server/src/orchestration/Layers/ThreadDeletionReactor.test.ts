@@ -4,7 +4,7 @@ import {
   EventId,
   type OrchestrationEvent,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import { it as effectIt } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";

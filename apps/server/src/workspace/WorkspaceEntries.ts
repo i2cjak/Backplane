@@ -17,10 +17,10 @@ import type {
   ProjectSearchContentsResult,
   ProjectSearchEntriesInput,
   ProjectSearchEntriesResult,
-} from "@t3tools/contracts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { isExplicitRelativePath, isWindowsAbsolutePath } from "@t3tools/shared/path";
-import { normalizeSearchQuery } from "@t3tools/shared/searchRanking";
+} from "@backplane/contracts";
+import { HostProcessPlatform } from "@backplane/shared/hostProcess";
+import { isExplicitRelativePath, isWindowsAbsolutePath } from "@backplane/shared/path";
+import { normalizeSearchQuery } from "@backplane/shared/searchRanking";
 
 import { expandHomePathWith } from "../pathExpansion.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
@@ -101,7 +101,7 @@ export class WorkspaceEntries extends Context.Service<
     ) => Effect.Effect<ProjectSearchContentsResult, WorkspaceEntriesError>;
     readonly refresh: (cwd: string) => Effect.Effect<void>;
   }
->()("t3/workspace/WorkspaceEntries") {}
+>()("@backplane/cli/workspace/WorkspaceEntries") {}
 
 const resolveBrowseTarget = Effect.fn("WorkspaceEntries.resolveBrowseTarget")(function* (
   input: FilesystemBrowseInput,

@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessPlatform } from "@backplane/shared/hostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -11,7 +11,7 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import * as NodeNet from "node:net";
 
-import { buildRemoteStopScript, buildRemoteT3RunnerScript } from "./tunnel.ts";
+import { buildRemoteStopScript, buildRemoteBackplaneRunnerScript } from "./tunnel.ts";
 
 const Started = Schema.Struct({
   pid: Schema.Number,
@@ -30,11 +30,11 @@ describe.skipIf(HostProcessPlatform.defaultValue() === "win32")(
           const fs = yield* FileSystem.FileSystem;
           const path = yield* Path.Path;
           const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-          const fixture = yield* fs.makeTempDirectoryScoped({ prefix: "t3-runner-" });
+          const fixture = yield* fs.makeTempDirectoryScoped({ prefix: "backplane-runner-" });
           const bin = path.join(fixture, "bin");
           const cliPath = path.join(fixture, "installed cli.mjs");
           const callsPath = path.join(fixture, "package-manager-calls.jsonl");
-          const packageSpec = "t3@0.0.35";
+          const packageSpec = "@backplane/cli@0.0.35";
           yield* fs.makeDirectory(bin);
           yield* fs.symlink(process.execPath, path.join(bin, "node"));
           yield* fs.writeFileString(
@@ -48,7 +48,7 @@ const server = net.createServer((socket) => {
 process.on("SIGTERM", () => server.close(() => {
   process.stdout.write("graceful shutdown\\n");
 }));
-server.listen(Number(process.env.T3_TEST_PORT ?? 0), "127.0.0.1", () => {
+server.listen(Number(process.env.BACKPLANE_TEST_PORT ?? 0), "127.0.0.1", () => {
   process.stdout.write(JSON.stringify({
     pid: process.pid,
     port: server.address().port,
@@ -64,11 +64,11 @@ server.listen(Number(process.env.T3_TEST_PORT ?? 0), "127.0.0.1", () => {
 const fs = require("node:fs");
 const childProcess = require("node:child_process");
 const args = process.argv.slice(2);
-fs.appendFileSync(process.env.T3_TEST_CALLS, JSON.stringify(args) + "\\n");
+fs.appendFileSync(process.env.BACKPLANE_TEST_CALLS, JSON.stringify(args) + "\\n");
 if (args.includes("--package")) {
-  process.stdout.write(process.env.T3_TEST_CLI + "\\n");
+  process.stdout.write(process.env.BACKPLANE_TEST_CLI + "\\n");
 } else {
-  const child = childProcess.spawn(process.execPath, [process.env.T3_TEST_CLI, ...args], { stdio: "inherit" });
+  const child = childProcess.spawn(process.execPath, [process.env.BACKPLANE_TEST_CLI, ...args], { stdio: "inherit" });
   child.once("exit", (code) => { process.exitCode = code ?? 1; });
 }
 `,
@@ -82,13 +82,13 @@ if (args.includes("--package")) {
                   cwd: fixture,
                   env: {
                     PATH: bin,
-                    T3_TEST_CLI: cliPath,
-                    T3_TEST_CALLS: callsPath,
-                    T3_TEST_PORT: String(port),
+                    BACKPLANE_TEST_CLI: cliPath,
+                    BACKPLANE_TEST_CALLS: callsPath,
+                    BACKPLANE_TEST_PORT: String(port),
                   },
                   detached: false,
                   stdin: Stream.make(
-                    new TextEncoder().encode(buildRemoteT3RunnerScript({ packageSpec })),
+                    new TextEncoder().encode(buildRemoteBackplaneRunnerScript({ packageSpec })),
                   ),
                 }),
               );
@@ -158,7 +158,7 @@ if (args.includes("--package")) {
             "--",
             "sh",
             "-c",
-            "command -v t3",
+            "command -v backplane",
           ];
           assert.deepEqual(calls, [expectedCall, expectedCall]);
         }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
@@ -176,7 +176,7 @@ describe.skipIf(HostProcessPlatform.defaultValue() === "win32")(
           const fs = yield* FileSystem.FileSystem;
           const path = yield* Path.Path;
           const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-          const fixture = yield* fs.makeTempDirectoryScoped({ prefix: "t3-stop-" });
+          const fixture = yield* fs.makeTempDirectoryScoped({ prefix: "backplane-stop-" });
           const signalPath = path.join(fixture, "signals");
           const child = yield* spawner.spawn(
             ChildProcess.make(
@@ -232,14 +232,14 @@ server.listen(0, "127.0.0.1", () => {
           // Redirect only the state directory. Never use the developer's SSH state.
           const isolatedScript = script.replace(
             /^STATE_DIR=.*$/mu,
-            'STATE_DIR="$T3_TEST_STATE_DIR"',
+            'STATE_DIR="$BACKPLANE_TEST_STATE_DIR"',
           );
           assert.notEqual(isolatedScript, script);
           const runStop = Effect.fn("test.remoteStop")(function* () {
             const stop = yield* spawner.spawn(
               ChildProcess.make("/bin/sh", ["-s"], {
                 cwd: fixture,
-                env: { T3_TEST_STATE_DIR: fixture },
+                env: { BACKPLANE_TEST_STATE_DIR: fixture },
                 stdin: Stream.make(new TextEncoder().encode(isolatedScript)),
               }),
             );
@@ -314,11 +314,11 @@ describe.skipIf(HostProcessPlatform.defaultValue() === "win32")(
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-        const fixture = yield* fs.makeTempDirectoryScoped({ prefix: "t3-runner-install-" });
+        const fixture = yield* fs.makeTempDirectoryScoped({ prefix: "backplane-runner-install-" });
         const bin = path.join(fixture, "bin");
         const cliPath = path.join(fixture, "installed cli.mjs");
         const callsPath = path.join(fixture, "installer-calls.jsonl");
-        const packageSpec = "t3@0.0.39-nightly.20260905.1286";
+        const packageSpec = "@backplane/cli@0.0.39-nightly.20260905.1286";
         const args = ["serve", "a path with spaces"];
         yield* fs.makeDirectory(bin);
         yield* fs.symlink(process.execPath, path.join(bin, "node"));
@@ -334,10 +334,10 @@ process.stdout.write(JSON.stringify(process.argv.slice(2)) + "\\n");
           path.join(bin, packageManager),
           `#!/usr/bin/env node
 const fs = require("node:fs");
-fs.appendFileSync(process.env.T3_TEST_CALLS, JSON.stringify(process.argv.slice(2)) + "\\n");
-const mode = process.env.T3_TEST_MODE;
+fs.appendFileSync(process.env.BACKPLANE_TEST_CALLS, JSON.stringify(process.argv.slice(2)) + "\\n");
+const mode = process.env.BACKPLANE_TEST_MODE;
 if (mode === "success" || mode === "failed-with-path") {
-  process.stdout.write(process.env.T3_TEST_CLI + "\\n");
+  process.stdout.write(process.env.BACKPLANE_TEST_CLI + "\\n");
 }
 if (mode === "etarget" || mode === "failed-with-path") {
   process.stderr.write("npm error code ETARGET\\nnpm error notarget No matching version found.\\n");
@@ -349,7 +349,7 @@ if (mode === "etarget" || mode === "failed-with-path") {
 `,
         );
         yield* fs.chmod(path.join(bin, packageManager), 0o700);
-        if (mode === "existing-cli") yield* fs.symlink(cliPath, path.join(bin, "t3"));
+        if (mode === "existing-cli") yield* fs.symlink(cliPath, path.join(bin, "backplane"));
 
         const child = yield* spawner.spawn(
           ChildProcess.make("/bin/sh", ["-s", "--", ...args], {
@@ -357,13 +357,13 @@ if (mode === "etarget" || mode === "failed-with-path") {
             extendEnv: false,
             env: {
               PATH: bin,
-              T3_TEST_MODE: mode,
-              T3_TEST_CLI: cliPath,
-              T3_TEST_CALLS: callsPath,
+              BACKPLANE_TEST_MODE: mode,
+              BACKPLANE_TEST_CLI: cliPath,
+              BACKPLANE_TEST_CALLS: callsPath,
             },
             stdin: Stream.make(
               new TextEncoder().encode(
-                buildRemoteT3RunnerScript({
+                buildRemoteBackplaneRunnerScript({
                   packageSpec,
                   ...(mode === "node-override" ? { nodeScriptPath: cliPath } : {}),
                 }),
@@ -396,7 +396,7 @@ if (mode === "etarget" || mode === "failed-with-path") {
           assert.notInclude(stderr, "Install a C toolchain");
         } else if (missingExecutable) {
           assert.include(stderr, `Remote host installed ${packageSpec}`);
-          assert.include(stderr, "npm produced no t3 executable");
+          assert.include(stderr, "npm produced no backplane executable");
           assert.include(stderr, "Install a C toolchain");
         } else {
           assert.equal(stderr, "");
@@ -409,7 +409,7 @@ if (mode === "etarget" || mode === "failed-with-path") {
           "--",
           "sh",
           "-c",
-          "command -v t3",
+          "command -v backplane",
         ];
         const usesInstaller = mode !== "existing-cli" && mode !== "node-override";
         const calls = yield* fs.readFileString(callsPath);

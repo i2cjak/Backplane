@@ -1,5 +1,5 @@
-import { httpHeaderRedactionLayer } from "@t3tools/shared/httpObservability";
-import { makeLocalFileTracer, makeTraceSink } from "@t3tools/shared/observability";
+import { httpHeaderRedactionLayer } from "@backplane/shared/httpObservability";
+import { makeLocalFileTracer, makeTraceSink } from "@backplane/shared/observability";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as References from "effect/References";
@@ -52,7 +52,7 @@ export const ObservabilityLive = Layer.unwrap(
                 resource: {
                   serviceName: config.otlpServiceName,
                   attributes: {
-                    "service.runtime": "t3-server",
+                    "service.runtime": "backplane-server",
                     "service.mode": config.mode,
                   },
                 },
@@ -83,7 +83,7 @@ export const ObservabilityLive = Layer.unwrap(
             resource: {
               serviceName: config.otlpServiceName,
               attributes: {
-                "service.runtime": "t3-server",
+                "service.runtime": "backplane-server",
                 "service.mode": config.mode,
               },
             },

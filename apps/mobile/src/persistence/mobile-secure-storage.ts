@@ -26,7 +26,7 @@ export class MobileSecureStorage extends Context.Service<
     readonly setItem: (key: string, value: string) => Effect.Effect<void, MobileSecureStorageError>;
     readonly removeItem: (key: string) => Effect.Effect<void, MobileSecureStorageError>;
   }
->()("@t3tools/mobile/persistence/MobileSecureStorage") {}
+>()("@backplane/mobile/persistence/MobileSecureStorage") {}
 
 export const make = MobileSecureStorage.of({
   getItem: Effect.fn("MobileSecureStorage.getItem")((key) =>

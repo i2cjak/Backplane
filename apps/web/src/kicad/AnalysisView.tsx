@@ -46,7 +46,7 @@ function downloadSpec(json: string) {
   const url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = "t3cad-antenna-problem.json";
+  anchor.download = "backplane-antenna-problem.json";
   anchor.click();
   URL.revokeObjectURL(url);
 }

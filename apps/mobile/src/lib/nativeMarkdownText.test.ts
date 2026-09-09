@@ -8,7 +8,7 @@ import {
   nativeMarkdownListItemBlocks,
   nativeMarkdownTextRuns,
   nativeMarkdownWithPreservedSoftBreaks,
-} from "@t3tools/mobile-markdown-text/markdown";
+} from "@backplane/mobile-markdown-text/markdown";
 
 describe("nativeMarkdownTextRuns", () => {
   it("links a path-shaped code span without changing the same path in prose", () => {

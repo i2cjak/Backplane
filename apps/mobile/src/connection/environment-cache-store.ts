@@ -1,14 +1,14 @@
 import {
   ConnectionPersistenceError,
   EnvironmentCacheStore,
-} from "@t3tools/client-runtime/platform";
+} from "@backplane/client-runtime/platform";
 import {
   type EnvironmentId,
   OrchestrationShellSnapshot,
   OrchestrationThreadDetailSnapshot,
   ServerConfig,
   VcsListRefsResult,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";

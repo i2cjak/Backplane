@@ -7,7 +7,7 @@ import {
   type OrchestrationEvent,
   type OrchestrationThread,
   type OrchestrationThreadActivity,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { buildThreadFeed, type ThreadFeedActivity } from "../../mobile/src/lib/threadActivity.ts";

@@ -1,4 +1,4 @@
-import type { PreviewAnnotationPayload } from "@t3tools/contracts";
+import type { PreviewAnnotationPayload } from "@backplane/contracts";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {

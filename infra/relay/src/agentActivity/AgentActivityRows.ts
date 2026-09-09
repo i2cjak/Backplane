@@ -1,5 +1,5 @@
-import type { RelayAgentActivityState } from "@t3tools/contracts/relay";
-import { RelayAgentActivityState as RelayAgentActivityStateSchema } from "@t3tools/contracts/relay";
+import type { RelayAgentActivityState } from "@backplane/contracts/relay";
+import { RelayAgentActivityState as RelayAgentActivityStateSchema } from "@backplane/contracts/relay";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -89,7 +89,7 @@ export class AgentActivityRows extends Context.Service<
       readonly threadId: string;
     }) => Effect.Effect<RelayAgentActivityState | null, AgentActivityRowListPersistenceError>;
   }
->()("t3code-relay/agentActivity/AgentActivityRows") {}
+>()("backplane-relay/agentActivity/AgentActivityRows") {}
 
 const decodeJsonString = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown));
 

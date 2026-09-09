@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/marketing",
+  "name": "@backplane/marketing",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
     "typecheck": "astro check"
   },
   "dependencies": {
-    "@t3tools/shared": "workspace:*",
+    "@backplane/shared": "workspace:*",
     "astro": "^7.0.3",
     "sharp": "0.34.5"
   },

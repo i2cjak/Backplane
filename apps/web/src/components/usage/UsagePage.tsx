@@ -4,7 +4,7 @@ import {
   USAGE_CONTRACT_VERSION,
   type EnvironmentId,
   type UsageProviderKind,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import {
   CircleAlertIcon,
   ChevronDownIcon,
@@ -17,7 +17,7 @@ import {
   isCompatibleUsageContractVersion,
   type DailyTotals,
   type HourlyTotals,
-} from "@t3tools/shared/usageMerge";
+} from "@backplane/shared/usageMerge";
 
 import { isElectron } from "../../env";
 import { cn } from "../../lib/utils";
@@ -36,7 +36,7 @@ import {
   formatTokens,
   formatUsd,
   makeWindow,
-} from "@t3tools/shared/usageFormat";
+} from "@backplane/shared/usageFormat";
 import { Button } from "../ui/button";
 import {
   Menu,

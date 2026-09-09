@@ -27,7 +27,7 @@ function listJson(entries: ReadonlyArray<Record<string, unknown>>): string {
     entries.map((entry) => ({
       number: 1,
       title: "Add the pull requests page",
-      url: "https://github.com/pingdotgg/t3code/pull/1",
+      url: "https://github.com/i2cjak/backplane/pull/1",
       headRefName: "feat/page",
       baseRefName: "main",
       createdAt: "2026-07-01T00:00:00Z",
@@ -149,12 +149,12 @@ describe("pull request search decoding", () => {
           nodes: rollupStates.map((state, index) => ({
             number: index + 1,
             title: "Add the pull requests page",
-            url: "https://github.com/pingdotgg/t3code/pull/1",
+            url: "https://github.com/i2cjak/backplane/pull/1",
             headRefName: "feat/page",
             baseRefName: "main",
             createdAt: "2026-07-01T00:00:00Z",
             updatedAt: "2026-07-02T00:00:00Z",
-            repository: { nameWithOwner: "pingdotgg/t3code" },
+            repository: { nameWithOwner: "i2cjak/backplane" },
             commits: {
               nodes: [{ commit: { statusCheckRollup: state === null ? null : { state } } }],
             },
@@ -187,7 +187,7 @@ describe("pull request detail decoding", () => {
   const detailJson = JSON.stringify({
     number: 7,
     title: "Detail",
-    url: "https://github.com/pingdotgg/t3code/pull/7",
+    url: "https://github.com/i2cjak/backplane/pull/7",
     headRefName: "feat/detail",
     baseRefName: "main",
     createdAt: "2026-07-01T00:00:00Z",

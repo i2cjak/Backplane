@@ -15,7 +15,7 @@ import {
   type RuntimeTaskStatus,
   type ThreadId,
   type TurnCompletedPayload,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -791,7 +791,7 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
               // leaf directory holding only uploads.
               const runtime = yield* options.makeRuntime({
                 cwd,
-                clientInfo: { name: "t3-code", version: "0.0.0" },
+                clientInfo: { name: "backplane", version: "0.0.0" },
                 clientFileSystem: true,
                 additionalDirectories: [serverConfig.attachmentsDir],
                 ...(Option.isSome(cursor) ? { resumeSessionId: cursor.value.sessionId } : {}),
@@ -799,7 +799,7 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
                   ? [
                       {
                         type: "http",
-                        name: "t3-code",
+                        name: "backplane",
                         url: mcp.endpoint,
                         headers: [{ name: "Authorization", value: mcp.authorizationHeader }],
                       },

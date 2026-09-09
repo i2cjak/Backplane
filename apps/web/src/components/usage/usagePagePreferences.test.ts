@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 import { readUsagePagePreferences, saveUsagePagePreferences } from "./usagePagePreferences";
 
-const key = "t3code:usage-page-preferences:v1";
+const key = "backplane:usage-page-preferences:v1";
 let values: Map<string, string>;
 let storage: Pick<Storage, "getItem" | "setItem">;
 

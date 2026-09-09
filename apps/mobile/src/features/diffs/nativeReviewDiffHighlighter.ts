@@ -84,8 +84,8 @@ const NATIVE_REVIEW_DIFF_TOKENIZE_MAX_LINE_LENGTH = 1_000;
 const NATIVE_REVIEW_DIFF_TOKENIZE_MAX_CHARACTERS = 8_000;
 
 const NATIVE_REVIEW_DIFF_THEME_NAME_BY_SCHEME = {
-  dark: "t3-pierre-dark",
-  light: "t3-pierre-light",
+  dark: "backplane-pierre-dark",
+  light: "backplane-pierre-light",
 } as const;
 
 const PIERRE_LIGHT_SHIKI_THEME = {

@@ -7,7 +7,7 @@ import {
   type AuthSessionState,
   type OrchestrationShellSnapshot,
   type OrchestrationThreadDetailSnapshot,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -59,7 +59,7 @@ const AUTH = {
   policy: "remote-reachable",
   bootstrapMethods: ["one-time-token"],
   sessionMethods: ["dpop-access-token"],
-  sessionCookieName: "t3_session",
+  sessionCookieName: "backplane_session",
 } satisfies AuthSessionState["auth"];
 const SESSION = {
   authenticated: true,

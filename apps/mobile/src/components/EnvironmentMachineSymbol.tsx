@@ -1,4 +1,4 @@
-import type { EnvironmentMachineKind } from "@t3tools/contracts";
+import type { EnvironmentMachineKind } from "@backplane/contracts";
 import type { SFSymbol } from "expo-symbols";
 
 import { SymbolView } from "./AppSymbol";

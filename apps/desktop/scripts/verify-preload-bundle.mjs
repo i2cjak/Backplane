@@ -86,7 +86,7 @@ const createSandboxModules = (exposedGlobals) => {
 const executeBundle = (source, sandboxModules) => {
   const sandboxProcess = {
     contextIsolated: true,
-    // oxlint-disable-next-line t3code/no-global-process-runtime -- This standalone CI verifier supplies the preload's host platform without loading Effect.
+    // oxlint-disable-next-line backplane/no-global-process-runtime -- This standalone CI verifier supplies the preload's host platform without loading Effect.
     platform: process.platform,
     versions: { electron: electronVersion },
   };

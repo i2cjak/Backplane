@@ -5,7 +5,7 @@ import type {
   TerminalSessionSnapshot,
   TerminalSummary,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import {
   appendOutput,
   DEFAULT_MAX_TERMINAL_BUFFER_BYTES,

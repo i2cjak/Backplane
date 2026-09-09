@@ -8,11 +8,11 @@ import { useEnvironmentThemeDefinitions } from "./useEnvironmentTheme";
 import { useTheme } from "./useTheme";
 
 /**
- * Scoped per environment: each machine's `t3 theme set` is its own act, so
+ * Scoped per environment: each machine's `backplane theme set` is its own act, so
  * hopping between primary environments neither replays one environment's
  * theme over the user's pick nor swallows another's.
  */
-const APPLIED_DEFAULT_THEME_STORAGE_PREFIX = "t3code:default-theme-applied:v2:";
+const APPLIED_DEFAULT_THEME_STORAGE_PREFIX = "backplane:default-theme-applied:v2:";
 
 /**
  * One generation per set: keyed on when the theme was set, not just its
@@ -63,7 +63,7 @@ function writeAppliedGeneration(storageKey: string, generation: string): void {
 }
 
 /**
- * Applies the environment's theme (`t3 theme set <id>`). Each set switches
+ * Applies the environment's theme (`backplane theme set <id>`). Each set switches
  * this client once — live when connected, on the next connect otherwise —
  * and then steps aside: a theme the user picks in Settings afterwards wins
  * until the environment's theme is set again. The environment's own published

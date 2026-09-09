@@ -7,7 +7,7 @@ import * as Path from "effect/Path";
 import { HttpClient, HttpRouter } from "effect/unstable/http";
 
 import { makeMockUpdateRouteLayer } from "./mock-update-server.ts";
-import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
+import { symlinksSupported } from "@backplane/shared/testing/symlinks";
 
 const withMockUpdateServer = <A, E, R>(rootRealPath: string, effect: Effect.Effect<A, E, R>) =>
   effect.pipe(

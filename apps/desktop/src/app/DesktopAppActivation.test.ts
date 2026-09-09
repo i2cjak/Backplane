@@ -9,9 +9,9 @@ import {
   ThreadId,
   type DesktopAppActivationRequest,
   type DesktopAppActivationResponse,
-} from "@t3tools/contracts";
-import { resolveDesktopAppControlAddress } from "@t3tools/shared/desktopAppControl";
-import { HostProcessPlatform, HostProcessUserId } from "@t3tools/shared/hostProcess";
+} from "@backplane/contracts";
+import { resolveDesktopAppControlAddress } from "@backplane/shared/desktopAppControl";
+import { HostProcessPlatform, HostProcessUserId } from "@backplane/shared/hostProcess";
 import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { afterEach, describe, expect } from "vite-plus/test";
@@ -67,7 +67,9 @@ describe("desktop app control server", () => {
       const platform = yield* HostProcessPlatform;
       const userId = yield* HostProcessUserId;
       yield* Effect.promise(async () => {
-        const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-app-control-test-"));
+        const root = await NodeFSP.mkdtemp(
+          NodePath.join(NodeOS.tmpdir(), "backplane-app-control-test-"),
+        );
         const target = makeTarget(NodePath.join(root, "userdata"), platform, userId);
         const received: DesktopAppActivationRequest[] = [];
         const server = await startDesktopAppControlServer({
@@ -106,7 +108,9 @@ describe("desktop app control server", () => {
       const platform = yield* HostProcessPlatform;
       const userId = yield* HostProcessUserId;
       yield* Effect.promise(async () => {
-        const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-app-cancel-test-"));
+        const root = await NodeFSP.mkdtemp(
+          NodePath.join(NodeOS.tmpdir(), "backplane-app-cancel-test-"),
+        );
         const target = makeTarget(NodePath.join(root, "userdata"), platform, userId);
         let resolveCanceled: (requestId: string) => void = () => undefined;
         const canceled = new Promise<string>((resolve) => {

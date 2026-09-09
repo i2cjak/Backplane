@@ -69,7 +69,7 @@ export default defineConfig({
       "apps/mobile/uniwind-types.d.ts",
     ],
     plugins: ["eslint", "oxc", "react", "unicorn", "typescript"],
-    jsPlugins: ["./oxlint-plugin-t3code/index.ts"],
+    jsPlugins: ["./oxlint-plugin-backplane/index.ts"],
     categories: {
       correctness: "warn",
       suspicious: "warn",
@@ -106,9 +106,9 @@ export default defineConfig({
         {
           paths: [
             {
-              name: "@t3tools/client-runtime",
+              name: "@backplane/client-runtime",
               message:
-                "Import from an explicit @t3tools/client-runtime/* subpath. The package has no root export.",
+                "Import from an explicit @backplane/client-runtime/* subpath. The package has no root export.",
             },
             {
               name: "@pierre/diffs/react",
@@ -119,21 +119,21 @@ export default defineConfig({
           ],
         },
       ],
-      "t3code/no-global-process-runtime": "error",
-      "t3code/no-inline-schema-compile": "warn",
-      "t3code/no-manual-effect-runtime-in-tests": "error",
-      "t3code/no-native-title-tooltip": "error",
-      "t3code/namespace-node-imports": "error",
+      "backplane/no-global-process-runtime": "error",
+      "backplane/no-inline-schema-compile": "warn",
+      "backplane/no-manual-effect-runtime-in-tests": "error",
+      "backplane/no-native-title-tooltip": "error",
+      "backplane/namespace-node-imports": "error",
     },
     overrides: [
       {
         // The one place that reads the host platform to seed the injected references.
         files: ["packages/shared/src/hostProcess.ts"],
-        rules: { "t3code/no-global-process-runtime": "off" },
+        rules: { "backplane/no-global-process-runtime": "off" },
       },
       {
         files: ["apps/mobile/src/**"],
-        rules: { "t3code/no-mobile-uniwind-theme-escape-hatches": "error" },
+        rules: { "backplane/no-mobile-uniwind-theme-escape-hatches": "error" },
       },
       {
         // Reviewed native and third-party interop boundaries that cannot consume a className.
@@ -159,11 +159,14 @@ export default defineConfig({
           "apps/mobile/src/features/threads/thread-list-items.tsx",
           "apps/mobile/src/features/threads/thread-list-v2-items.tsx",
           "apps/mobile/src/lib/useMobileNavigationTheme.ts",
-          "apps/mobile/src/native/T3ComposerEditor.ios.tsx",
-          "apps/mobile/src/native/T3ComposerEditor.native.tsx",
+          "apps/mobile/src/native/BackplaneComposerEditor.ios.tsx",
+          "apps/mobile/src/native/BackplaneComposerEditor.native.tsx",
         ],
         rules: {
-          "t3code/no-mobile-uniwind-theme-escape-hatches": ["error", { allowUniwindTheme: true }],
+          "backplane/no-mobile-uniwind-theme-escape-hatches": [
+            "error",
+            { allowUniwindTheme: true },
+          ],
         },
       },
       // Legacy manual Effect runners tracked as debt: no net-new occurrences.
@@ -186,7 +189,7 @@ export default defineConfig({
         "apps/server/src/provider/acp/CursorAcpSupport.test.ts": 1,
       }).map(([file, maxOccurrences]) => {
         const rule: ["error", { maxOccurrences: number }] = ["error", { maxOccurrences }];
-        return { files: [file], rules: { "t3code/no-manual-effect-runtime-in-tests": rule } };
+        return { files: [file], rules: { "backplane/no-manual-effect-runtime-in-tests": rule } };
       }),
     ],
     options: {

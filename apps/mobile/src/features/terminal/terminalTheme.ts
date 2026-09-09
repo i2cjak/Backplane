@@ -1,4 +1,4 @@
-import { BUILT_IN_THEMES, getThemeColorsForAppearance } from "@t3tools/shared/themePalettes";
+import { BUILT_IN_THEMES, getThemeColorsForAppearance } from "@backplane/shared/themePalettes";
 
 import {
   getMobileThemeVariables,
@@ -83,7 +83,7 @@ export function getMobileTerminalTheme(
   scheme: TerminalAppearanceScheme,
 ): TerminalTheme {
   const base = getPierreTerminalTheme(scheme);
-  if (themeId === "t3-code") return base;
+  if (themeId === "backplane") return base;
 
   const theme = BUILT_IN_THEMES.find((candidate) => candidate.id === themeId) ?? BUILT_IN_THEMES[0];
   const palette = getThemeColorsForAppearance(theme, scheme) ?? theme.colors;

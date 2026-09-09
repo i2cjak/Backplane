@@ -2,7 +2,7 @@ import type {
   ApprovalRequestId,
   ProviderApprovalDecision,
   ProviderApprovalOption,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import { Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
@@ -31,10 +31,10 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
   // behind this card, so a translucent surface bleeds messages through it.
   return (
     <View className="gap-2.5 rounded-[20px] border border-border bg-card-alt p-4">
-      <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">
+      <Text className="font-backplane-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">
         Approval needed
       </Text>
-      <Text className="font-t3-bold text-lg text-foreground">
+      <Text className="font-backplane-bold text-lg text-foreground">
         {props.approval.appName ?? props.approval.requestKind}
       </Text>
       {props.approval.detail ? (
@@ -62,10 +62,10 @@ export function PendingApprovalCard(props: PendingApprovalCardProps) {
             <Text
               className={`text-sm ${
                 option.decision === "accept"
-                  ? "font-t3-extrabold text-primary-foreground"
+                  ? "font-backplane-extrabold text-primary-foreground"
                   : option.decision === "decline"
-                    ? "font-t3-bold text-danger-foreground"
-                    : "font-t3-bold text-foreground"
+                    ? "font-backplane-bold text-danger-foreground"
+                    : "font-backplane-bold text-foreground"
               }`}
             >
               {option.label}

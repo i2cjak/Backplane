@@ -4,8 +4,8 @@ import type {
   PreviewSessionSnapshot,
   ProjectId,
   PullRequestState,
-} from "@t3tools/contracts";
-import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
+} from "@backplane/contracts";
+import { getTerminalLabel } from "@backplane/shared/terminalLabels";
 import {
   Bot,
   CircuitBoard,

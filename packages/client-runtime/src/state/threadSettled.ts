@@ -1,5 +1,5 @@
 // @effect-diagnostics globalDate:off -- UI snooze presets use local calendar boundaries and Intl labels.
-import type { OrchestrationThreadShell } from "@t3tools/contracts";
+import type { OrchestrationThreadShell } from "@backplane/contracts";
 
 /**
  * A queued turn start lives for at most this long: session adoption takes

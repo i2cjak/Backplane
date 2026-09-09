@@ -3,7 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   resolveMarkdownLinkIcon,
   resolveMarkdownLinkPresentation,
-} from "@t3tools/mobile-markdown-text/links";
+} from "@backplane/mobile-markdown-text/links";
 
 describe("resolveMarkdownLinkIcon", () => {
   it("gives GitHub hosts the brand mark and everything else the generic glyph", () => {

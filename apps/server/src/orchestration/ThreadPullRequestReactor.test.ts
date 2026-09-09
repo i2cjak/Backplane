@@ -12,7 +12,7 @@ import {
   type PullRequestRef,
   type PullRequestSummary,
   type ThreadLinkedPullRequest,
-} from "@t3tools/contracts";
+} from "@backplane/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";

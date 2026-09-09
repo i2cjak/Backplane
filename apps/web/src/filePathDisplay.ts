@@ -3,8 +3,8 @@ import {
   formatFilePathPosition,
   splitFilePathPosition,
   stripSlashPrefixedWindowsDrive,
-} from "@t3tools/client-runtime/markdown-links";
-import { isWindowsAbsolutePath } from "@t3tools/shared/path";
+} from "@backplane/client-runtime/markdown-links";
+import { isWindowsAbsolutePath } from "@backplane/shared/path";
 
 function normalizePathSeparators(path: string): string {
   return path.replaceAll("\\", "/");

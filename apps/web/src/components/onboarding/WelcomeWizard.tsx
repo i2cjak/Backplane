@@ -7,13 +7,13 @@ import type {
   ScopedProjectRef,
   ServerConfig,
   ServerProvider,
-} from "@t3tools/contracts";
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+} from "@backplane/contracts";
+import { scopeProjectRef, scopeThreadRef } from "@backplane/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import { CommandId, ProviderDriverKind, ThreadId } from "@t3tools/contracts";
+} from "@backplane/client-runtime/state/runtime";
+import { CommandId, ProviderDriverKind, ThreadId } from "@backplane/contracts";
 import * as Schema from "effect/Schema";
 import {
   ArrowRightIcon,
@@ -33,7 +33,7 @@ import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { mountOnboardingTheme } from "../../hooks/useTheme";
 import { hasCloudPublicConfig } from "../../cloud/publicConfig";
-import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
+import { useBackplaneConnectAuthPrompt } from "../clerk/useBackplaneConnectAuthPrompt";
 import { useCompleteOnboarding } from "../../onboarding/firstRun";
 import {
   partitionOnboardingProjects,
@@ -119,9 +119,9 @@ export function WelcomeWizard({
 }: {
   /**
    * Whether the "Local Only" card is offered. True whenever the app is served
-   * by an authenticated primary server — desktop, `npx t3`, or a dev server —
+   * by an authenticated primary server — desktop, `npx backplane`, or a dev server —
    * since that server is "this machine" regardless of the hostname the app
-   * was opened from. Only hosted-static (app.t3.codes) has no local server.
+   * was opened from. Only hosted-static (app.backplane.works) has no local server.
    */
   readonly localAvailable: boolean;
   readonly onDone: (projectRef?: ScopedProjectRef) => void;
@@ -331,7 +331,7 @@ function ConnectionStep({
         {cloudEnabled ? (
           <ConnectionOption
             icon={CloudIcon}
-            title="T3 Connect"
+            title="Backplane Connect"
             description="Your computers, wherever you are"
             detail="Sign in"
             selected={choice === "connect"}
@@ -411,14 +411,14 @@ function ConnectionOption({
   );
 }
 
-// ── Step 2: T3 Connect (sign in, then connect machines) ──────
+// ── Step 2: Backplane Connect (sign in, then connect machines) ──────
 
-const CONNECT_LOGIN_COMMAND = "npx t3 connect";
+const CONNECT_LOGIN_COMMAND = "npx @backplane/cli connect";
 
 /**
  * Sign-in and machine-connection combined: signed out shows the Clerk prompt,
  * signed in forks on account state — zero connected machines blocks on the
- * `npx t3 connect` command and auto-advance is left to the user pressing
+ * `npx @backplane/cli connect` command and auto-advance is left to the user pressing
  * Continue once their machine appears; existing machines show a confirmation
  * list with the command folded away. There is deliberately no "primary
  * machine" selection.
@@ -433,7 +433,7 @@ function ConnectMachinesStep({
   // Mirrors ManagedRelayAuthProvider: a pending Clerk session must not read
   // as signed-out mid-transition.
   const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
-  const { openAuthPrompt } = useT3ConnectAuthPrompt();
+  const { openAuthPrompt } = useBackplaneConnectAuthPrompt();
   const { environments } = useEnvironments();
   const primaryEnvironment = usePrimaryEnvironment();
   const savedEnvironments = environments.filter(isOnboardingRelayEnvironment);
@@ -445,13 +445,13 @@ function ConnectMachinesStep({
   );
 
   if (!isLoaded) {
-    return <StepShell title="Sign in to T3 Connect" onBack={onBack} />;
+    return <StepShell title="Sign in to Backplane Connect" onBack={onBack} />;
   }
 
   if (!isSignedIn) {
     return (
       <StepShell
-        title="Sign in to T3 Connect"
+        title="Sign in to Backplane Connect"
         description="Connect your computers with one account."
         onBack={onBack}
       >
@@ -467,7 +467,7 @@ function ConnectMachinesStep({
       title={hasRemoteMachines ? "Your computers" : "Connect your computer"}
       description={
         hasRemoteMachines
-          ? "Connected to your T3 account."
+          ? "Connected to your Backplane account."
           : "Run this command on the computer with your code."
       }
       onBack={onBack}
@@ -539,7 +539,7 @@ function ConnectMachinesStep({
 // ── Step 2′: Direct pairing ──────────────────────────────────
 
 /**
- * Server-minted pairing, D-B treatment: numbered steps, `t3 pair` on the
+ * Server-minted pairing, D-B treatment: numbered steps, `backplane pair` on the
  * server, paste the URL here. Registers the remote environment in this
  * browser's catalog (same path the hosted /pair surface uses).
  */
@@ -589,7 +589,7 @@ function PairDirectStep({
           <p className="text-sm text-muted-foreground">
             <span className="font-mono text-muted-foreground/70">01</span> Run this on your server
           </p>
-          <CommandBlock command="npx t3 pair" className="mt-2" />
+          <CommandBlock command="npx @backplane/cli pair" className="mt-2" />
           <p className="mt-2 text-xs text-muted-foreground">
             Start the installed Backplane app or server first. Add{" "}
             <code className="font-mono">--tailscale</code> to use your tailnet.

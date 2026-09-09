@@ -1,4 +1,4 @@
-import { GrokSettings, ProviderDriverKind } from "@t3tools/contracts";
+import { GrokSettings, ProviderDriverKind } from "@backplane/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";

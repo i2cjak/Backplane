@@ -11,11 +11,11 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { createModelSelection } from "@t3tools/shared/model";
+import { HostProcessPlatform } from "@backplane/shared/hostProcess";
+import { createModelSelection } from "@backplane/shared/model";
 import { expect } from "vite-plus/test";
 
-import { CursorSettings, ProviderInstanceId } from "@t3tools/contracts";
+import { CursorSettings, ProviderInstanceId } from "@backplane/contracts";
 
 import * as ServerConfig from "../config.ts";
 import * as TextGeneration from "./TextGeneration.ts";
@@ -27,7 +27,7 @@ const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 const mockAgentPath = NodePath.join(__dirname, "../../scripts/acp-mock-agent.ts");
 
 const CursorTextGenerationTestLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
-  prefix: "t3code-cursor-text-generation-test-",
+  prefix: "backplane-cursor-text-generation-test-",
 }).pipe(Layer.provideMerge(NodeServices.layer));
 
 function makeAcpAgentWrapper(dir: string, env: Record<string, string>): string {
@@ -47,7 +47,9 @@ function withFakeAcpAgent<A, E, R>(
   effectFn: (textGeneration: TextGeneration.TextGeneration["Service"]) => Effect.Effect<A, E, R>,
 ) {
   return Effect.gen(function* () {
-    const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3code-cursor-text-acp-"));
+    const tempDir = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "backplane-cursor-text-acp-"),
+    );
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         NodeFS.rmSync(tempDir, { recursive: true, force: true });
@@ -81,14 +83,14 @@ function waitForFileContent(path: string): Effect.Effect<string> {
 it.layer(CursorTextGenerationTestLayer)("CursorTextGeneration", (it) => {
   it.effect("uses ACP model config options instead of raw CLI model ids", () => {
     const requestLogDir = NodeFS.mkdtempSync(
-      NodePath.join(NodeOS.tmpdir(), "t3code-cursor-text-log-"),
+      NodePath.join(NodeOS.tmpdir(), "backplane-cursor-text-log-"),
     );
     const requestLogPath = NodePath.join(requestLogDir, "requests.ndjson");
 
     return withFakeAcpAgent(
       {
-        T3_ACP_REQUEST_LOG_PATH: requestLogPath,
-        T3_ACP_PROMPT_RESPONSE_TEXT: JSON.stringify({
+        BACKPLANE_ACP_REQUEST_LOG_PATH: requestLogPath,
+        BACKPLANE_ACP_PROMPT_RESPONSE_TEXT: JSON.stringify({
           subject: "Add generated commit message",
           body: "- verify cursor acp model config path",
         }),
@@ -179,7 +181,7 @@ it.layer(CursorTextGenerationTestLayer)("CursorTextGeneration", (it) => {
   it.effect("accepts json objects with extra assistant text around them", () =>
     withFakeAcpAgent(
       {
-        T3_ACP_PROMPT_RESPONSE_TEXT:
+        BACKPLANE_ACP_PROMPT_RESPONSE_TEXT:
           'Sure, here is the JSON:\n```json\n{\n  "subject": "Update README dummy comment with attribution and date",\n  "body": ""\n}\n```\nDone.',
       },
       (textGeneration) =>
@@ -204,7 +206,7 @@ it.layer(CursorTextGenerationTestLayer)("CursorTextGeneration", (it) => {
   it.effect("generates thread titles through Cursor ACP text generation", () =>
     withFakeAcpAgent(
       {
-        T3_ACP_PROMPT_RESPONSE_TEXT: JSON.stringify({
+        BACKPLANE_ACP_PROMPT_RESPONSE_TEXT: JSON.stringify({
           title: '"Trim reconnect spinner status after resume."',
         }),
       },
@@ -230,14 +232,14 @@ it.layer(CursorTextGenerationTestLayer)("CursorTextGeneration", (it) => {
     "closes the ACP child process after text generation completes",
     () => {
       const exitLogDir = NodeFS.mkdtempSync(
-        NodePath.join(NodeOS.tmpdir(), "t3code-cursor-text-exit-log-"),
+        NodePath.join(NodeOS.tmpdir(), "backplane-cursor-text-exit-log-"),
       );
       const exitLogPath = NodePath.join(exitLogDir, "exit.log");
 
       return withFakeAcpAgent(
         {
-          T3_ACP_EXIT_LOG_PATH: exitLogPath,
-          T3_ACP_PROMPT_RESPONSE_TEXT: JSON.stringify({
+          BACKPLANE_ACP_EXIT_LOG_PATH: exitLogPath,
+          BACKPLANE_ACP_PROMPT_RESPONSE_TEXT: JSON.stringify({
             subject: "Close runtime after generation",
             body: "",
           }),

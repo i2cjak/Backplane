@@ -1,8 +1,8 @@
 import { beforeEach, vi } from "vite-plus/test";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import type { EnvironmentId } from "@t3tools/contracts";
-import { ManagedRelay } from "@t3tools/client-runtime/relay";
+import type { EnvironmentId } from "@backplane/contracts";
+import { ManagedRelay } from "@backplane/client-runtime/relay";
 import * as Layer from "effect/Layer";
 import { HttpClient } from "effect/unstable/http";
 
