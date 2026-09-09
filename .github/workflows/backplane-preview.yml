@@ -2,12 +2,30 @@ name: Backplane preview
 
 on:
   workflow_dispatch:
+    inputs:
+      platform:
+        description: Desktop platforms to build
+        required: false
+        type: choice
+        options:
+          - all
+          - mac
+        default: all
+      arch:
+        description: macOS architectures to build
+        required: false
+        type: choice
+        options:
+          - all
+          - arm64
+          - x64
+        default: all
 
 permissions:
   contents: read
 
 concurrency:
-  group: backplane-preview
+  group: ${{ inputs.platform == 'mac' && format('backplane-preview-mac-{0}', inputs.arch) || 'backplane-preview' }}
   cancel-in-progress: false
 
 jobs:
@@ -37,10 +55,12 @@ jobs:
     uses: ./.github/workflows/backplane-kicad-runtimes.yml
     with:
       platform: mac
+      arch: ${{ inputs.arch }}
 
   desktop_linux:
     name: Build Linux desktop preview
     needs: prepare
+    if: inputs.platform == 'all'
     uses: ./.github/workflows/backplane-desktop.yml
     with:
       platform: linux
@@ -54,12 +74,7 @@ jobs:
     needs: [prepare, runtimes]
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - arch: arm64
-            runner: macos-14
-          - arch: x64
-            runner: macos-15-intel
+      matrix: ${{ fromJSON(inputs.arch == 'arm64' && '{"include":[{"arch":"arm64","runner":"macos-14"}]}' || inputs.arch == 'x64' && '{"include":[{"arch":"x64","runner":"macos-15-intel"}]}' || '{"include":[{"arch":"arm64","runner":"macos-14"},{"arch":"x64","runner":"macos-15-intel"}]}') }}
     uses: ./.github/workflows/backplane-desktop.yml
     with:
       platform: mac
