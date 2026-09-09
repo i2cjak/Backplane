@@ -1,0 +1,69 @@
+name: Backplane preview
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backplane-preview
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Resolve preview version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve preview version
+        id: version
+        shell: bash
+        run: |
+          node <<'JS'
+          const fs = require('node:fs');
+          const parts = require('./apps/desktop/package.json').version.split('-')[0].split('.').map(Number);
+          parts[2] += 1;
+          const base = parts.join('.');
+          const date = new Date().toISOString().slice(0, 10).replaceAll('-', '');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${base}-nightly.${date}.0\n`);
+          JS
+
+  runtimes:
+    name: Build macOS KiCad runtimes
+    needs: prepare
+    uses: ./.github/workflows/backplane-kicad-runtimes.yml
+    with:
+      platform: mac
+
+  desktop_linux:
+    name: Build Linux desktop preview
+    needs: prepare
+    uses: ./.github/workflows/backplane-desktop.yml
+    with:
+      platform: linux
+      arch: x64
+      runner: ubuntu-24.04
+      target: AppImage
+      version: ${{ needs.prepare.outputs.version }}
+
+  desktop_mac:
+    name: Build macOS ${{ matrix.arch }} desktop preview
+    needs: [prepare, runtimes]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-14
+          - arch: x64
+            runner: macos-15-intel
+    uses: ./.github/workflows/backplane-desktop.yml
+    with:
+      platform: mac
+      arch: ${{ matrix.arch }}
+      runner: ${{ matrix.runner }}
+      target: dmg
+      version: ${{ needs.prepare.outputs.version }}
