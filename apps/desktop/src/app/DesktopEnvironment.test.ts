@@ -40,6 +40,23 @@ const makeEnvironment = (
   DesktopEnvironment.DesktopEnvironment.pipe(Effect.provide(makeEnvironmentLayer(overrides, env)));
 
 describe("DesktopEnvironment", () => {
+  it.effect("keeps inherited T3 Code state outside Backplane paths", () =>
+    Effect.gen(function* () {
+      const environment = yield* makeEnvironment(
+        { platform: "linux", homeDirectory: "/home/alice", isPackaged: true },
+        {
+          T3CODE_HOME: "/home/alice/.t3",
+          XDG_CONFIG_HOME: "/home/alice/.config",
+        },
+      );
+
+      assert.equal(environment.baseDir, "/home/alice/.backplane");
+      assert.equal(environment.stateDir, "/home/alice/.backplane/userdata");
+      assert.equal(environment.appDataDirectory, "/home/alice/.config");
+      assert.equal(environment.userDataDirName, "backplane");
+    }),
+  );
+
   it.effect("derives state paths and development identity inside Effect", () =>
     Effect.gen(function* () {
       const environment = yield* makeEnvironment(

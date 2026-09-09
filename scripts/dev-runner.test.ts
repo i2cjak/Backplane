@@ -1227,6 +1227,8 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         readonly backplaneHome: string | undefined;
         readonly cwd: string;
         readonly ambientHome: string | undefined;
+        readonly mode?: "dev" | "dev:web" | "dev:server" | "dev:desktop";
+        readonly upstreamHome?: string;
       }) =>
         Effect.gen(function* () {
           let captured: Record<string, string | undefined> | undefined;
@@ -1244,19 +1246,64 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
 
           yield* runDevRunnerWithInput({
             ...devServerInput,
+            mode: input.mode ?? devServerInput.mode,
             backplaneHome: input.backplaneHome,
           }).pipe(
             Effect.provide(Layer.mergeAll(emptyConfigLayer, netServiceLayer, spawnerLayer)),
             Effect.provideService(HostProcessPlatform, "linux"),
             Effect.provideService(HostProcessWorkingDirectory, input.cwd),
-            Effect.provideService(
-              HostProcessEnvironment,
-              input.ambientHome === undefined ? {} : { BACKPLANE_HOME: input.ambientHome },
-            ),
+            Effect.provideService(HostProcessEnvironment, {
+              BACKPLANE_HOME: input.ambientHome,
+              T3CODE_HOME: input.upstreamHome,
+            }),
           );
 
           return captured?.BACKPLANE_HOME;
         });
+
+      for (const mode of ["dev", "dev:web", "dev:server", "dev:desktop"] as const) {
+        it.effect(`ignores T3CODE_HOME when choosing ${mode} state`, () =>
+          Effect.gen(function* () {
+            const home = yield* spawnedHome({
+              mode,
+              backplaneHome: undefined,
+              cwd: NodeOS.tmpdir(),
+              ambientHome: undefined,
+              upstreamHome: "/home/user/.t3",
+            });
+            assert.equal(home, undefined);
+          }),
+        );
+
+        it.effect(`uses BACKPLANE_HOME independently of T3CODE_HOME in ${mode}`, () =>
+          Effect.gen(function* () {
+            const path = yield* Path.Path;
+            const home = yield* spawnedHome({
+              mode,
+              backplaneHome: undefined,
+              cwd: NodeOS.tmpdir(),
+              ambientHome: "/tmp/backplane-custom",
+              upstreamHome: "/home/user/.t3",
+            });
+            assert.equal(home, path.resolve("/tmp/backplane-custom"));
+          }),
+        );
+
+        it.effect(`keeps ${mode} worktree state ahead of both installed app homes`, () =>
+          Effect.gen(function* () {
+            const path = yield* Path.Path;
+            const root = yield* makeWorktree;
+            const home = yield* spawnedHome({
+              mode,
+              backplaneHome: undefined,
+              cwd: root,
+              ambientHome: "/home/user/.backplane",
+              upstreamHome: "/home/user/.t3",
+            });
+            assert.equal(home, path.join(path.resolve(root), ".backplane"));
+          }).pipe(Effect.scoped),
+        );
+      }
 
       it.effect("prefers an explicit --home-dir over the worktree default", () =>
         Effect.gen(function* () {

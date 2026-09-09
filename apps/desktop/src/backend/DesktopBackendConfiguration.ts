@@ -85,6 +85,9 @@ const DESKTOP_BACKEND_ENV_NAMES = [
   "BACKPLANE_DESKTOP_HTTPS_ENDPOINTS",
   "BACKPLANE_TAILSCALE_SERVE",
   "BACKPLANE_TAILSCALE_SERVE_PORT",
+  // A T3 Code launcher can leave its legacy state-home override in the
+  // parent environment. Never let it reach a Backplane backend child.
+  "T3CODE_HOME",
 ] as const;
 
 // Sensitive env vars that the WSL backend needs but Windows process.env won't
@@ -698,17 +701,15 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
     }
   }
 
-  // Build an explicit copy of process.env minus BACKPLANE_HOME (dev-runner
-  // exports the Windows-side base dir for the primary; if it leaks into
-  // the WSL backend the Linux side ends up sharing C:\Users\...\.backplane via
-  // /mnt/c, which means both backends read/write the same database and
-  // their env-ids collide).
-  const parentEnvWithoutBackplaneHome: Record<string, string | undefined> = {};
+  // Build an explicit copy of process.env minus both state-home overrides.
+  // The Windows BACKPLANE_HOME would point Linux at /mnt/c and share the
+  // primary's database. Strip the legacy upstream override at this boundary too.
+  const parentEnvWithoutStateHomes: Record<string, string | undefined> = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (key === "BACKPLANE_HOME") continue;
-    parentEnvWithoutBackplaneHome[key] = value;
+    if (key === "BACKPLANE_HOME" || key === "T3CODE_HOME") continue;
+    parentEnvWithoutStateHomes[key] = value;
   }
-  const wslEnv = mergeWslEnv(parentEnvWithoutBackplaneHome.WSLENV, forwardedEnvNames);
+  const wslEnv = mergeWslEnv(parentEnvWithoutStateHomes.WSLENV, forwardedEnvNames);
 
   const baseConfig = {
     executablePath: "wsl.exe",
@@ -716,13 +717,14 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
       preflight._tag === "Ready" ? preflight.windowsEntryPath : environment.backendEntryPath,
     cwd: environment.backendCwd,
     env: {
-      ...parentEnvWithoutBackplaneHome,
+      ...parentEnvWithoutStateHomes,
       ...backendChildEnvPatch(),
       ...forwardedEnv,
       ...(wslEnv !== undefined ? { WSLENV: wslEnv } : {}),
     },
-    // env is already a complete process.env minus BACKPLANE_HOME; pass it
-    // verbatim instead of letting the spawner re-merge process.env on top.
+    // env is already a complete process.env minus both state-home overrides;
+    // pass it verbatim instead of letting the spawner re-merge process.env on
+    // top.
     extendEnv: false,
     bootstrap,
     bootstrapDelivery: "stdin" as const,
@@ -774,6 +776,9 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
       "--exec",
       "env",
       `PATH=${launchPath}`,
+      // WSL can also supply distro-side values; use its own default state home.
+      "T3CODE_HOME=",
+      "BACKPLANE_HOME=",
       preflight.nodePath,
       preflight.linuxEntryPath,
       "--bootstrap-fd",

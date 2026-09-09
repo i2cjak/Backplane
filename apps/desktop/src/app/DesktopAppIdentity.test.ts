@@ -110,6 +110,7 @@ const withIdentity = <A, E, R>(
     readonly calls?: ElectronAppCalls;
     readonly environment?: TestEnvironmentInput;
     readonly legacyPathExists?: boolean;
+    readonly legacyPathProbeCalls?: { count: number };
     readonly packageJson?: string;
     readonly pngIconPath?: Option.Option<string>;
   } = {},
@@ -125,7 +126,13 @@ const withIdentity = <A, E, R>(
       DesktopAppIdentity.layer.pipe(
         Layer.provideMerge(
           FileSystem.layerNoop({
-            exists: () => Effect.succeed(input.legacyPathExists === true),
+            exists: () =>
+              Effect.sync(() => {
+                if (input.legacyPathProbeCalls !== undefined) {
+                  input.legacyPathProbeCalls.count += 1;
+                }
+                return input.legacyPathExists === true;
+              }),
             readFileString: () =>
               Effect.succeed(input.packageJson ?? '{"backplaneCommitHash":"abcdef1234567890"}'),
           }),
@@ -139,18 +146,20 @@ const withIdentity = <A, E, R>(
 };
 
 describe("DesktopAppIdentity", () => {
-  it.effect("uses its own userData even when another application has legacy data", () =>
-    withIdentity(
+  it.effect("uses its own userData without probing an existing legacy profile", () => {
+    const legacyPathProbeCalls = { count: 0 };
+    return withIdentity(
       Effect.gen(function* () {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         assert.equal(
           yield* identity.resolveUserDataPath,
           "/Users/alice/Library/Application Support/backplane",
         );
+        assert.equal(legacyPathProbeCalls.count, 0);
       }),
-      { legacyPathExists: true },
-    ),
-  );
+      { legacyPathExists: true, legacyPathProbeCalls },
+    );
+  });
 
   it.effect("configures app identity from the environment commit override", () => {
     const calls: ElectronAppCalls = {

@@ -267,6 +267,24 @@ describe("DesktopBackendConfiguration", () => {
     ),
   );
 
+  it.effect("clears a legacy T3 Code state-home override from the primary child", () =>
+    withHarness(
+      Effect.gen(function* () {
+        const previousT3Home = process.env.T3CODE_HOME;
+        process.env.T3CODE_HOME = "/home/user/.t3";
+        try {
+          const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+          const config = yield* configuration.resolvePrimary;
+
+          assert.property(config.env, "T3CODE_HOME");
+          assert.isUndefined(config.env.T3CODE_HOME);
+        } finally {
+          restoreEnv("T3CODE_HOME", previousT3Home);
+        }
+      }),
+    ),
+  );
+
   it.effect("does not inject packaged runtime paths into development backends", () =>
     withHarness(
       Effect.gen(function* () {
@@ -733,55 +751,69 @@ describe("DesktopBackendConfiguration", () => {
         const linuxEntryPath = `${linuxAppRoot}/apps/server/dist/bin.mjs`;
         const resolvedPath = "/home/test user/bin:/opt/test's tools/bin:/usr/bin:/bin";
         const devServerUrl = "http://127.0.0.1:5733/dev%20assets/?label=hello%20world";
-        const config = yield* Effect.gen(function* () {
-          const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
-          return yield* configuration.resolveWsl({ port: 5000, distro: "Ubuntu" });
-        }).pipe(
-          Effect.provide(
-            DesktopBackendConfiguration.layer.pipe(
-              Layer.provideMerge(serverExposureLayer),
-              Layer.provideMerge(DesktopAppSettings.layerTest()),
-              Layer.provideMerge(DesktopWslServerTree.layerTest()),
-              Layer.provideMerge(
-                DesktopWslEnvironment.layerTest({
-                  isAvailable: true,
-                  distros: [{ name: "Ubuntu", isDefault: true, version: 2 }],
-                  windowsToWslPath: () => Option.some(linuxAppRoot),
-                  ensureNodePty: () => ({ ok: true, nodePath, resolvedPath }),
-                  getDistroIp: () => Option.some("172.27.0.99"),
-                }),
-              ),
-              Layer.provideMerge(
-                makeEnvironmentLayer(baseDir, {
-                  appPath: baseDir,
-                  devServerUrl,
-                  isPackaged: true,
-                  platform: "win32",
-                  resourcesPath: baseDir,
-                }),
+        const previousT3Home = process.env.T3CODE_HOME;
+        const previousBackplaneHome = process.env.BACKPLANE_HOME;
+        process.env.T3CODE_HOME = "C:\\Users\\test\\.t3";
+        process.env.BACKPLANE_HOME = "C:\\Users\\test\\.backplane";
+        try {
+          const config = yield* Effect.gen(function* () {
+            const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+            return yield* configuration.resolveWsl({ port: 5000, distro: "Ubuntu" });
+          }).pipe(
+            Effect.provide(
+              DesktopBackendConfiguration.layer.pipe(
+                Layer.provideMerge(serverExposureLayer),
+                Layer.provideMerge(DesktopAppSettings.layerTest()),
+                Layer.provideMerge(DesktopWslServerTree.layerTest()),
+                Layer.provideMerge(
+                  DesktopWslEnvironment.layerTest({
+                    isAvailable: true,
+                    distros: [{ name: "Ubuntu", isDefault: true, version: 2 }],
+                    windowsToWslPath: () => Option.some(linuxAppRoot),
+                    ensureNodePty: () => ({ ok: true, nodePath, resolvedPath }),
+                    getDistroIp: () => Option.some("172.27.0.99"),
+                  }),
+                ),
+                Layer.provideMerge(
+                  makeEnvironmentLayer(baseDir, {
+                    appPath: baseDir,
+                    devServerUrl,
+                    isPackaged: true,
+                    platform: "win32",
+                    resourcesPath: baseDir,
+                  }),
+                ),
               ),
             ),
-          ),
-        );
+          );
 
-        assert.equal(config.bootstrapDelivery, "stdin");
-        assert.deepEqual(config.args, [
-          "-d",
-          "Ubuntu",
-          "--exec",
-          "env",
-          "PATH=/home/test user's/.nvm/versions/node/v22.0.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/test user/bin:/opt/test's tools/bin:/usr/bin:/bin",
-          nodePath,
-          linuxEntryPath,
-          "--bootstrap-fd",
-          "0",
-          "--dev-url",
-          devServerUrl,
-        ]);
-        assert.notInclude(config.args, "bash");
-        assert.notInclude(config.args, "/bin/sh");
-        assert.notInclude(config.args, "-c");
-        assert.isTrue(Option.isNone(config.preflightFailure));
+          assert.equal(config.bootstrapDelivery, "stdin");
+          assert.notProperty(config.bootstrap, "backplaneHome");
+          assert.deepEqual(config.args, [
+            "-d",
+            "Ubuntu",
+            "--exec",
+            "env",
+            "PATH=/home/test user's/.nvm/versions/node/v22.0.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/test user/bin:/opt/test's tools/bin:/usr/bin:/bin",
+            "T3CODE_HOME=",
+            "BACKPLANE_HOME=",
+            nodePath,
+            linuxEntryPath,
+            "--bootstrap-fd",
+            "0",
+            "--dev-url",
+            devServerUrl,
+          ]);
+          assert.isUndefined(config.env.T3CODE_HOME);
+          assert.isUndefined(config.env.BACKPLANE_HOME);
+          assert.notInclude(config.args, "bash");
+          assert.notInclude(config.args, "/bin/sh");
+          assert.notInclude(config.args, "-c");
+          assert.isTrue(Option.isNone(config.preflightFailure));
+        } finally {
+          restoreEnv("T3CODE_HOME", previousT3Home);
+          restoreEnv("BACKPLANE_HOME", previousBackplaneHome);
+        }
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 

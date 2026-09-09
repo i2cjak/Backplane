@@ -25,7 +25,7 @@ cd ~/Applications/backplane-kicad
 This starts KiCad's schematic and PCB editor. It is separate from the Backplane
 viewer.
 
-Backplane uses its own `~/.backplane` data directory, desktop profile, and `backplane://` links. It installs alongside T3 Code without sharing application state.
+Backplane uses its own `~/.backplane` data directory, desktop profile, and `backplane://` links. It installs alongside T3 Code without sharing or importing its sessions and settings. To choose a different data directory, set `BACKPLANE_HOME` before launching Backplane. `T3CODE_HOME` is ignored.
 
 ## Android
 
