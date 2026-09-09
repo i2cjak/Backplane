@@ -53,12 +53,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: .pipeline
-          sparse-checkout: .github/workflows
+          sparse-checkout: |
+            .github/workflows
+            scripts
       - uses: actions/cache@v4
         id: cache
         with:
           path: release
-          key: kicad-${{ matrix.asset }}-1c193606-${{ hashFiles('.pipeline/.github/workflows/backplane-kicad-runtimes.yml') }}
+          key: kicad-${{ matrix.asset }}-1c193606-${{ hashFiles('.pipeline/.github/workflows/backplane-kicad-runtimes.yml', '.pipeline/scripts/smoke-kicad-native.py') }}
       - name: Check out source
         if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/checkout@v4
@@ -155,6 +157,8 @@ jobs:
           clone kicad-packages3D "$KICAD_3DMODELS_COMMIT"
           clone kicad-templates "$KICAD_TEMPLATES_COMMIT"
           find "$root/kicad-symbols" -maxdepth 1 -type f -name '*.kicad_sym' -exec cp -a {} stage/share/kicad/symbols/ \;
+          find "$root/kicad-symbols" -maxdepth 1 -type d -name '*.kicad_symdir' -exec cp -a {} stage/share/kicad/symbols/ \;
+          test -n "$(find stage/share/kicad/symbols -name '*.kicad_sym' -print -quit)"
           find "$root/kicad-footprints" -maxdepth 1 -type d -name '*.pretty' -exec cp -a {} stage/share/kicad/footprints/ \;
           find "$root/kicad-packages3D" -maxdepth 1 -type d -name '*.3dshapes' -exec cp -a {} stage/share/kicad/3dmodels/ \;
           cp "$root/kicad-symbols/sym-lib-table" stage/share/kicad/template/
@@ -169,6 +173,16 @@ jobs:
 
           done
           rm -rf "$root"
+
+      - name: Set up native IPC test client
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install native IPC test dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: python -m pip install protobuf==5.29.6 pynng==0.9.0 grpcio-tools==1.71.0
 
       - name: Configure and build macOS runtime
         if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'macOS'
@@ -246,8 +260,8 @@ jobs:
               cp "$notice" "release/$archive_root/licenses/dependencies/$dependency.txt"
             done
             if [ -d "vcpkg_installed/x64-windows/tools/python3" ]; then
-              mkdir -p "release/$archive_root/lib/python"
-              cp -a vcpkg_installed/x64-windows/tools/python3/Lib/. "release/$archive_root/lib/python/"
+              mkdir -p "release/$archive_root/lib/python3"
+              cp -a vcpkg_installed/x64-windows/tools/python3/. "release/$archive_root/lib/python3/"
               printf 'Python runtime source: vcpkg manifest python3\n' > "release/$archive_root/PYTHON_RUNTIME.txt"
             fi
           fi
@@ -261,6 +275,7 @@ jobs:
           printf 'Backplane KiCad native runtime\nSource commit: %s\nEntry point: bin/kicad-cli%s\n' "$(git rev-parse HEAD)" "$extension" > "release/$archive_root/RUNTIME_MANIFEST.txt"
           "$PWD/release/$archive_root/bin/kicad-cli$extension" --version
           "$PWD/release/$archive_root/bin/kicad-cli$extension" api-server --help
+          python .pipeline/scripts/smoke-kicad-native.py "$PWD" "$PWD/release/$archive_root/bin/kicad-cli$extension"
           (cd release && tar -czf "$archive_root.tar.gz" "$archive_root")
           rm -rf "release/$archive_root"
           if command -v shasum >/dev/null; then
