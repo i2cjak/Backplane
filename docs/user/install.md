@@ -25,6 +25,12 @@ cd ~/Applications/backplane-kicad
 This starts KiCad's schematic and PCB editor. It is separate from the Backplane
 viewer.
 
+## iOS
+
+Existing iOS testers can install the update through the
+[k3eda app in TestFlight](https://testflight.apple.com/v1/app/6809006324).
+The installed app is named Backplane and connects to your Backplane server.
+
 ## First run
 
 Open **Settings → Providers**, enable your coding provider, and follow its
@@ -40,7 +46,7 @@ Download the newer AppImage from the same releases page, close Backplane, and
 replace the previous AppImage. Your saved threads and settings remain in your
 user data directory.
 
-The initial release supports Linux x64. Native Windows and macOS installers and
-Backplane mobile store releases are not available yet.
+Desktop releases currently support Linux x64. Native Windows and macOS
+installers are not available yet.
 
 For source builds, see the [development instructions](../../README.md#develop).
