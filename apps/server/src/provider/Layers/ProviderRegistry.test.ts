@@ -55,6 +55,7 @@ import {
   writeProviderStatusCache,
 } from "../providerStatusCache.ts";
 import { COMPACT_SLASH_COMMAND } from "../providerSnapshot.ts";
+import { mergeKiStackProviderSkills } from "../KiStackSkills.ts";
 import type { ProviderInstance } from "../ProviderDriver.ts";
 import * as ProviderInstanceRegistry from "../Services/ProviderInstanceRegistry.ts";
 import * as ProviderRegistry from "../Services/ProviderRegistry.ts";
@@ -62,6 +63,10 @@ import { makeManualOnlyProviderMaintenanceCapabilities } from "../providerMainte
 const decodeServerSettings = Schema.decodeSync(ServerSettings);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const encodedDefaultServerSettings = encodeServerSettings(DEFAULT_SERVER_SETTINGS);
+const withKiStackSkills = (provider: ServerProvider): ServerProvider => ({
+  ...provider,
+  skills: mergeKiStackProviderSkills(provider.skills),
+});
 
 const defaultClaudeSettings: ClaudeSettings = Schema.decodeSync(ClaudeSettings)({});
 const defaultCodexSettings: CodexSettings = Schema.decodeSync(CodexSettings)({});
@@ -578,15 +583,41 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         const result = upsertProviderWorkspaceSnapshot(provider, "/project", scopedSnapshot);
 
         assert.deepStrictEqual(result.slashCommands, provider.slashCommands);
-        assert.deepStrictEqual(result.skills, provider.skills);
+        assert.deepStrictEqual(result.skills[0], provider.skills[0]);
+        assert.ok(result.skills.some((skill) => skill.name === "kicad-layout"));
         assert.deepStrictEqual(result.workspaceSnapshots, [
           {
             cwd: "/project",
             checkedAt: scopedSnapshot.checkedAt,
             slashCommands: scopedSnapshot.slashCommands,
-            skills: scopedSnapshot.skills,
+            skills: mergeKiStackProviderSkills(scopedSnapshot.skills),
           },
         ]);
+      });
+
+      it("keeps a native skill when KiStack uses the same name", () => {
+        const provider = {
+          instanceId: ProviderInstanceId.make("codex"),
+          driver: ProviderDriverKind.make("codex"),
+          status: "ready",
+          enabled: true,
+          installed: true,
+          auth: { status: "authenticated" },
+          checkedAt: "2026-03-25T00:00:00.000Z",
+          version: "1.0.0",
+          models: [],
+          slashCommands: [],
+          skills: [{ name: "kicad-layout", path: "/native/SKILL.md", enabled: true }],
+        } satisfies ServerProvider;
+        const result = upsertProviderWorkspaceSnapshot(provider, "/project", provider);
+        const layoutSkills = result.skills.filter((skill) => skill.name === "kicad-layout");
+        const nativeLayout = provider.skills[0]!;
+
+        assert.deepStrictEqual(layoutSkills, [nativeLayout]);
+        assert.deepStrictEqual(
+          result.workspaceSnapshots?.[0]?.skills.filter((skill) => skill.name === "kicad-layout"),
+          [nativeLayout],
+        );
       });
 
       it("preserves previously discovered provider models when a refresh returns none", () => {
@@ -1407,7 +1438,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           ).pipe(Scope.provide(scope));
           yield* Effect.gen(function* () {
             const registry = yield* ProviderRegistry.ProviderRegistry;
-            assert.deepStrictEqual(yield* registry.getProviders, [initialProvider]);
+            assert.deepStrictEqual(yield* registry.getProviders, [
+              withKiStackSkills(initialProvider),
+            ]);
             assert.strictEqual(yield* Ref.get(refreshCalls), 0);
           }).pipe(Effect.provide(runtimeServices));
         }),
@@ -1550,10 +1583,13 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             const published = yield* Fiber.join(workspaceUpdate);
             assert.strictEqual(published._tag, "Some");
             const providers = yield* registry.getProviders;
-            assert.deepStrictEqual(providers[0]?.skills, machineProvider.skills);
+            assert.deepStrictEqual(
+              providers[0]?.skills,
+              mergeKiStackProviderSkills(machineProvider.skills),
+            );
             assert.deepStrictEqual(
               providers[0]?.workspaceSnapshots?.[0]?.skills,
-              scopedProvider.skills,
+              mergeKiStackProviderSkills(scopedProvider.skills),
             );
             yield* registry.refreshWorkspaceSnapshot({ instanceId, cwd: "/workspace" });
             assert.strictEqual(yield* Ref.get(snapshotCalls), 2);
@@ -1738,7 +1774,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             );
             assert.deepStrictEqual(
               recoveredProviders.find((provider) => provider.instanceId === codexInstanceId),
-              codexProvider,
+              withKiStackSkills(codexProvider),
             );
 
             yield* Ref.set(catalogSnapshot, changedCatalogProvider);
@@ -1750,7 +1786,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             );
             assert.deepStrictEqual(
               changedProviders.find((provider) => provider.instanceId === codexInstanceId),
-              codexProvider,
+              withKiStackSkills(codexProvider),
             );
           }).pipe(Effect.provide(runtimeServices));
 
@@ -1865,7 +1901,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             const cachedProvider = yield* readProviderStatusCache(filePath);
 
             assert.deepStrictEqual(cachedProvider, {
-              ...refreshedProvider,
+              ...withKiStackSkills(refreshedProvider),
               models: [...initialProvider.models],
             });
           }).pipe(Effect.provide(runtimeServices));
@@ -2079,10 +2115,14 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           yield* Effect.gen(function* () {
             const registry = yield* ProviderRegistry.ProviderRegistry;
 
-            assert.deepStrictEqual(yield* registry.getProviders, [cachedProvider]);
-            assert.deepStrictEqual(yield* registry.refresh(codexDriver), [cachedProvider]);
+            assert.deepStrictEqual(yield* registry.getProviders, [
+              withKiStackSkills(cachedProvider),
+            ]);
+            assert.deepStrictEqual(yield* registry.refresh(codexDriver), [
+              withKiStackSkills(cachedProvider),
+            ]);
             assert.deepStrictEqual(yield* registry.refreshInstance(codexInstanceId), [
-              cachedProvider,
+              withKiStackSkills(cachedProvider),
             ]);
           }).pipe(Effect.provide(runtimeServices));
         }),
@@ -2190,7 +2230,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
 
           yield* Effect.gen(function* () {
             const registry = yield* ProviderRegistry.ProviderRegistry;
-            assert.deepStrictEqual(yield* registry.getProviders, [codexProvider]);
+            assert.deepStrictEqual(yield* registry.getProviders, [
+              withKiStackSkills(codexProvider),
+            ]);
 
             yield* Ref.set(failNextList, true);
             yield* PubSub.publish(changes, undefined);

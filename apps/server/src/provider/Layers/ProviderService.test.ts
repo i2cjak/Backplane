@@ -78,6 +78,7 @@ import * as ServerSettings from "../../serverSettings.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import { makeAdapterRegistryMock } from "../testUtils/providerAdapterRegistryMock.ts";
 import * as ProjectionSnapshotQuery from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import bundle from "../kistack.bundle.json" with { type: "json" };
 
 const defaultServerSettingsLayer = ServerSettings.ServerSettingsService.layerTest();
 const serverConfigTestLayer = ServerConfig.layerTest(process.cwd(), process.cwd()).pipe(
@@ -640,7 +641,7 @@ kistackRefreshFixture.layer("KiStack refresh", (it) => {
   );
 });
 
-let kistackSnapshot = { revision: "dynamic-kistack-v1", instructions: "<kistack-v1>" };
+let kistackSnapshot = { revision: bundle.revision, instructions: "<kistack-v1>" };
 const kistackInstructionsFixture = makeProviderServiceLayer({
   refreshKiStackSkills: async () => {},
   getKiStackInstructionsSnapshot: () => kistackSnapshot,
@@ -2172,7 +2173,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
       const turnText = turnInput.input ?? "";
       assert.equal(turnText.startsWith("use this screenshot"), true);
       assert.include(turnText, '[Attached image "screenshot.png" is saved at: ');
-      assert.equal(turnText.endsWith(`${attachment.id}.png]`), true);
+      assert.include(turnText, `${attachment.id}.png]`);
 
       // An attachment-only turn stays valid and the injected line becomes the
       // whole input text, so the agent still learns the path.
@@ -3241,10 +3242,10 @@ citations.layer("ProviderServiceLive assistant citations", (it) => {
         yield* provider.sendTurn({ threadId, input });
       }
 
-      assert.deepStrictEqual(
-        citations.codex.sendTurn.mock.calls.map(([input]) => input.input),
-        prompts,
-      );
+      const sentPrompts = citations.codex.sendTurn.mock.calls.map(([input]) => input.input ?? "");
+      assert.equal(sentPrompts.length, prompts.length);
+      assert.equal(sentPrompts[0]?.startsWith(`${prompts[0]}\n\n<kistack_skills>`), true);
+      assert.equal(sentPrompts[1], prompts[1]);
       yield* provider.stopSession({ threadId });
     }),
   );

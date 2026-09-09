@@ -5,6 +5,7 @@ import * as NodePath from "node:path";
 import * as NodeCrypto from "node:crypto";
 import { Schema } from "effect";
 import { parse as parseYaml } from "yaml";
+import type { ServerProviderSkill } from "@backplane/contracts";
 import bundle from "./kistack.bundle.json" with { type: "json" };
 
 const repository = "American-Embedded/kistack";
@@ -46,6 +47,8 @@ const bundledMetadata: Metadata = {
   skills: bundle.skills,
   files: Object.keys(bundle.files),
 };
+const bundledSkillNames = new Set(bundledMetadata.skills.map((skill) => skill.name));
+const legacyBundledRevisions = new Set(["97934211326a03c0541b784c616c6582cdc14107"]);
 const isRevision = (value: string) => /^[0-9a-f]{40}$/.test(value);
 function safePath(path: string): boolean {
   return (
@@ -53,6 +56,11 @@ function safePath(path: string): boolean {
     !Array.from(path).some((character) => character.charCodeAt(0) < 32) &&
     !path.split("/").some((part) => !part || part === "." || part === "..")
   );
+}
+
+function includesBundledCatalog(metadata: Metadata): boolean {
+  const skillNames = new Set(metadata.skills.map((skill) => skill.name));
+  return [...bundledSkillNames].every((name) => skillNames.has(name));
 }
 
 async function installBundledFiles(directory: string): Promise<void> {
@@ -143,7 +151,10 @@ export function createKiStackSkills(options: {
         JSON.parse(await NodeFSP.readFile(NodePath.join(root, activeFileName), "utf8")),
       );
       const cached = await loadSnapshot(pointer.sha);
-      if (cached) {
+      if (
+        cached &&
+        (!legacyBundledRevisions.has(cached.revision) || includesBundledCatalog(cached))
+      ) {
         active = cached;
         return;
       }
@@ -319,6 +330,9 @@ export function createKiStackSkills(options: {
     get directory() {
       return directory();
     },
+    get skills() {
+      return active.skills;
+    },
     buildInstructions: () => instructions(active, directory()),
   };
 }
@@ -342,6 +356,44 @@ export async function refreshKiStackSkills(): Promise<void> {
   await defaultSkills.refresh();
   kiStackSkillsDirectory = defaultSkills.directory;
 }
+
+function providerSkills(
+  skills: ReadonlyArray<Metadata["skills"][number]>,
+  directory: string,
+): ReadonlyArray<ServerProviderSkill> {
+  return skills.map((skill) => ({
+    name: skill.name,
+    description: skill.description,
+    path: NodePath.join(directory, skill.path),
+    scope: "system",
+    enabled: true,
+  }));
+}
+
+/** The app-owned KiStack catalog exposed alongside each provider's skills. */
+export function getKiStackProviderSkills(): ReadonlyArray<ServerProviderSkill> {
+  return providerSkills(defaultSkills.skills, defaultSkills.directory);
+}
+
+export function isKiStackProviderSkill(
+  skill: Pick<ServerProviderSkill, "path" | "scope">,
+): boolean {
+  return (
+    skill.scope === "system" && skill.path.replaceAll("\\", "/").includes("/backplane/kistack/")
+  );
+}
+
+export function mergeKiStackProviderSkills(
+  skills: ReadonlyArray<ServerProviderSkill>,
+): ReadonlyArray<ServerProviderSkill> {
+  const nativeSkills = skills.filter((skill) => !isKiStackProviderSkill(skill));
+  const names = new Set(nativeSkills.map((skill) => skill.name.trim().toLowerCase()));
+  return [
+    ...nativeSkills,
+    ...getKiStackProviderSkills().filter((skill) => !names.has(skill.name.toLowerCase())),
+  ];
+}
+
 export function buildKiStackInstructions(directory?: string): string {
   return directory === undefined
     ? defaultSkills.buildInstructions()

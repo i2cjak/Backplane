@@ -6,17 +6,20 @@ import { expect, it } from "vite-plus/test";
 import {
   buildKiStackInstructions,
   createKiStackSkills,
+  getKiStackProviderSkills,
   installKiStackSkills,
+  isKiStackProviderSkill,
+  mergeKiStackProviderSkills,
 } from "./KiStackSkills.ts";
 import bundle from "./kistack.bundle.json" with { type: "json" };
 
-it("installs all nine skills and supporting files offline, and repairs missing resources", async () => {
+it("installs all bundled skills and supporting files offline, and repairs missing resources", async () => {
   const directory = await NodeFSP.mkdtemp(
     NodePath.join(NodeOS.tmpdir(), "backplane-kistack-test-"),
   );
   try {
     await installKiStackSkills(directory);
-    expect(bundle.skills).toHaveLength(9);
+    expect(bundle.skills).toHaveLength(10);
     for (const [relative, contents] of Object.entries(bundle.files)) {
       expect(await NodeFSP.readFile(NodePath.join(directory, relative), "utf8")).toBe(contents);
     }
@@ -50,6 +53,77 @@ it("reports installation errors instead of advertising unavailable skills", asyn
     expect(await NodeFSP.readFile(file, "utf8")).toBe("existing");
   } finally {
     await NodeFSP.rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("exposes KiStack skills in the provider catalog without replacing native skills", () => {
+  const native = {
+    name: "kicad-pcb",
+    description: "Provider copy",
+    path: "/provider/skills/kicad-pcb/SKILL.md",
+    enabled: true,
+  } as const;
+  const merged = mergeKiStackProviderSkills([native]);
+  expect(merged[0]).toEqual(native);
+  expect(merged.filter((skill) => skill.name === "kicad-pcb")).toHaveLength(1);
+  expect(merged.map((skill) => skill.name)).toContain("kicad-layout");
+  expect(getKiStackProviderSkills().every((skill) => skill.scope === "system")).toBe(true);
+});
+
+it("replaces stale app catalog rows when a KiStack revision changes", () => {
+  const stale = {
+    name: "kicad-layout",
+    description: "Old catalog entry",
+    path: "/home/test/.cache/backplane/kistack/old/skills/layout/SKILL.md",
+    scope: "system",
+    enabled: true,
+  } as const;
+  const merged = mergeKiStackProviderSkills([stale]);
+  expect(isKiStackProviderSkill(stale)).toBe(true);
+  expect(merged.find((skill) => skill.name === stale.name)?.path).not.toBe(stale.path);
+  expect(merged.some((skill) => skill.path === stale.path)).toBe(false);
+});
+
+it("replaces an older cached catalog when the bundled skill set grows", async () => {
+  const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "backplane-kistack-upgrade-"));
+  const oldRevision = "97934211326a03c0541b784c616c6582cdc14107";
+  try {
+    await installKiStackSkills(root);
+    const oldDirectory = NodePath.join(root, oldRevision);
+    await NodeFSP.mkdir(oldDirectory, { recursive: true });
+    const metadata = {
+      revision: oldRevision,
+      skills: bundle.skills.filter((skill) => skill.name !== "kicad-layout"),
+      files: Object.keys(bundle.files).filter((file) => file !== "skills/layout/SKILL.md"),
+    };
+    for (const file of metadata.files) {
+      await NodeFSP.mkdir(NodePath.dirname(NodePath.join(oldDirectory, file)), {
+        recursive: true,
+      });
+      const contents = bundle.files[file as keyof typeof bundle.files];
+      if (contents === undefined) throw new Error(`Missing bundled file: ${file}`);
+      await NodeFSP.writeFile(NodePath.join(oldDirectory, file), contents);
+    }
+    await NodeFSP.writeFile(
+      NodePath.join(oldDirectory, ".backplane-kistack.json"),
+      JSON.stringify(metadata),
+    );
+    await NodeFSP.writeFile(
+      NodePath.join(root, ".backplane-active.json"),
+      JSON.stringify({ sha: oldRevision }),
+    );
+
+    const instance = createKiStackSkills({
+      cacheDirectory: root,
+      fetchImpl: async () => {
+        throw new Error("network");
+      },
+    });
+    await instance.install();
+    expect(instance.revision).toBe(bundle.revision);
+    expect(instance.skills.map((skill) => skill.name)).toContain("kicad-layout");
+  } finally {
+    await NodeFSP.rm(root, { recursive: true, force: true });
   }
 });
 

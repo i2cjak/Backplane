@@ -75,7 +75,6 @@ import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as ProjectionSnapshotQuery from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
-import bundle from "../kistack.bundle.json" with { type: "json" };
 import {
   buildKiStackInstructions,
   getKiStackRevision,
@@ -1453,8 +1452,18 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       metricProvider = routed.adapter.provider;
       metricModel = input.modelSelection?.model;
       const kiStackSnapshot = getKiStackInstructionsSnapshot();
-      const knownKiStackRevision = kiStackRevisionByThread.get(input.threadId) ?? bundle.revision;
-      const canAppendKiStackInstructions = input.input !== undefined || attachments.length > 0;
+      // The per-thread map records what this service has actually delivered
+      // to the provider session. Falling back to the bundled revision makes a
+      // newly started or resumed session look initialized when the live
+      // catalog happens to have that same revision, so its first turn skips
+      // the developer instructions entirely.
+      const knownKiStackRevision = kiStackRevisionByThread.get(input.threadId);
+      // Provider slash commands (including fallback compaction commands) are
+      // protocol input, not user prompts. Appending developer instructions to
+      // them can change their native semantics.
+      const isProviderSlashCommand = input.input?.trimStart().startsWith("/") === true;
+      const canAppendKiStackInstructions =
+        !isProviderSlashCommand && (input.input !== undefined || attachments.length > 0);
       const dispatchInput =
         kiStackSnapshot.revision !== knownKiStackRevision && canAppendKiStackInstructions
           ? {
