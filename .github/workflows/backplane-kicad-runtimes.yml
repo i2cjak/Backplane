@@ -80,8 +80,14 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'macOS'
         shell: bash
         run: |
-          brew update
-          brew install python@3.12 pixman cmake ninja ccache pkg-config boost cairo curl eigen fontconfig freetype glew glm harfbuzz libgit2 openssl@3 protobuf rapidjson swig zstd wxwidgets ngspice libngspice opencascade yaml-cpp libarchive nng
+          if ! brew install python@3.12; then
+            # Intel runners can have Python.org's 3.12 framework links already
+            # occupying /usr/local/bin. Homebrew has still installed the
+            # formula, so repair that known link conflict before continuing.
+            brew list --versions python@3.12 >/dev/null || exit 1
+            brew link --overwrite python@3.12
+          fi
+          brew install pixman cmake ninja ccache pkg-config boost cairo curl eigen fontconfig freetype glew glm harfbuzz libgit2 openssl@3 protobuf rapidjson swig zstd wxwidgets ngspice libngspice opencascade yaml-cpp libarchive nng
 
       - name: Restore vcpkg binary cache
         if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
@@ -189,7 +195,7 @@ jobs:
         shell: bash
         run: |
           python_framework="$(brew --prefix python@3.12)/Frameworks/Python.framework"
-          cmake -S . -B build/native -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PWD/stage" -DPYTHON_FRAMEWORK_HELPER=1 -DKICAD_APPLE_MAKE_RELOCATEABLE_BUNDLE=ON -DPYTHON_FRAMEWORK="$python_framework" -DPYTHON_INCLUDE_DIR="$python_framework/Versions/3.12/include/python3.12" -DPYTHON_LIBRARY="$python_framework/Versions/3.12/lib/libpython3.12.dylib" -DCMAKE_OSX_ARCHITECTURES=${{ matrix.cmake_arch }} -DKICAD_BUILD_QA_TESTS=OFF -DKICAD_BUILD_I18N=OFF -DKICAD_USE_SENTRY=OFF -DKICAD_SCRIPTING_WXPYTHON=OFF -DKICAD_USE_PCH=OFF -DKICAD_IPC_API=ON -DPYTHON_EXECUTABLE="$python_framework/Versions/3.12/bin/python3.12" -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          cmake -S . -B build/native -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PWD/stage" -DPYTHON_FRAMEWORK_HELPER=1 -DKICAD_APPLE_MAKE_RELOCATEABLE_BUNDLE=ON -DPYTHON_FRAMEWORK="$python_framework" -DPYTHON_INCLUDE_DIR="$python_framework/Versions/3.12/include/python3.12" -DPYTHON_LIBRARY="$python_framework/Versions/3.12/lib/libpython3.12.dylib" -DNGSPICE_ROOT_DIR="$(brew --prefix libngspice)" -DNGSPICE_LIB_NAME=libngspice.dylib -DCMAKE_OSX_ARCHITECTURES=${{ matrix.cmake_arch }} -DKICAD_BUILD_QA_TESTS=OFF -DKICAD_BUILD_I18N=OFF -DKICAD_USE_SENTRY=OFF -DKICAD_SCRIPTING_WXPYTHON=OFF -DKICAD_USE_PCH=OFF -DKICAD_IPC_API=ON -DPYTHON_EXECUTABLE="$python_framework/Versions/3.12/bin/python3.12" -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           cmake --build build/native --parallel 3
           cmake --install build/native
 

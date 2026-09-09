@@ -44,7 +44,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y libsecret-1-dev pkg-config xvfb xauth
+          sudo apt-get install --no-install-recommends -y libsecret-1-dev pkg-config imagemagick xvfb xauth
       - uses: actions/download-artifact@v4
         if: runner.os == 'Windows'
         with:
