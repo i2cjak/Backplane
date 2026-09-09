@@ -2,7 +2,7 @@ name: Backplane release
 
 on:
   push:
-    tags: ["v*.*.*"]
+    tags: ["v*.*.*", "!v*-nightly.*"]
   workflow_dispatch:
     inputs:
       version:

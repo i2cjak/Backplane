@@ -55,7 +55,7 @@ async function hasFile(root, predicate) {
   return false;
 }
 
-export async function validateResources(resources, sourceDir, platform) {
+export async function validateResources(resources, sourceDir, platform, arch) {
   const pythonName = platform === "win" ? "python.exe" : "python3";
   const kicadName = platform === "win" ? "kicad-cli.exe" : "kicad-cli";
   const python = join(resources, "python", "bin", pythonName);
@@ -106,6 +106,18 @@ export async function validateResources(resources, sourceDir, platform) {
     "-c",
     "import json, math, xml.etree.ElementTree; print('bundled Python ready')",
   ]);
+  if (arch) {
+    const machine = execFileSync(
+      python,
+      ["-I", "-c", "import platform; print(platform.machine())"],
+      { encoding: "utf8" },
+    )
+      .trim()
+      .toLowerCase();
+    const accepted = arch === "arm64" ? ["arm64", "aarch64"] : ["x86_64", "amd64", "x64"];
+    if (!accepted.includes(machine))
+      throw new Error(`Packaged Python architecture ${machine} does not match requested ${arch}`);
+  }
   command(kicad, ["--version"]);
   command(kicad, ["api-server", "--help"]);
   console.log(
@@ -140,6 +152,7 @@ async function unpackArtifact(artifact, platform, temp) {
 
 export async function verifyNightlyDesktop({
   platform,
+  arch,
   artifact,
   sourceDir = join(repoRoot, "apps/desktop/prod-resources"),
 }) {
@@ -147,7 +160,7 @@ export async function verifyNightlyDesktop({
   try {
     const extractedRoot = await unpackArtifact(resolve(artifact), platform, temp);
     const resources = await findResources(extractedRoot);
-    await validateResources(resources, resolve(sourceDir), platform);
+    await validateResources(resources, resolve(sourceDir), platform, arch);
     if (platform === "linux")
       command(process.env.PYTHON ?? "python3", [
         join(repoRoot, "scripts/smoke-desktop-release.py"),
@@ -163,6 +176,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
   const { values } = parseArgs({
     options: {
       platform: { type: "string" },
+      arch: { type: "string" },
       artifact: { type: "string" },
       "source-dir": { type: "string" },
     },
@@ -173,6 +187,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
     );
   await verifyNightlyDesktop({
     platform: values.platform,
+    arch: values.arch,
     artifact: values.artifact,
     sourceDir: values["source-dir"],
   });

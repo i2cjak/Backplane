@@ -59,6 +59,10 @@ jobs:
           node-version-file: package.json
           cache: true
           run-install: true
+      - name: Check release behavior
+        run: |
+          node --test scripts/collect-nightly-assets.test.mjs scripts/verify-nightly-desktop.test.mjs
+          vp test run scripts/build-desktop-artifact.test.ts scripts/merge-update-manifests.test.ts apps/server/src/kicad/KiCadExecutable.test.ts apps/server/src/provider/RuntimeInstructions.test.ts
       - name: Build Linux terminal binary for Windows WSL
         run: |
           pty_pkg="$(node -e "console.log(require.resolve('node-pty/package.json', {paths: ['./apps/server']}))")"
@@ -154,7 +158,7 @@ jobs:
             win) artifacts=(release/*.exe); prefix=();;
           esac
           test "${#artifacts[@]}" = 1
-          "${prefix[@]}" node scripts/verify-nightly-desktop.mjs --platform '${{ matrix.platform }}' --artifact "${artifacts[0]}"
+          "${prefix[@]}" node scripts/verify-nightly-desktop.mjs --platform '${{ matrix.platform }}' --arch '${{ matrix.arch }}' --artifact "${artifacts[0]}"
       - name: Verify and collect release assets
         run: node scripts/collect-nightly-assets.mjs --platform ${{ matrix.platform }} --arch ${{ matrix.arch }}
       - uses: actions/upload-artifact@v4

@@ -39,6 +39,17 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 360
     steps:
+      - name: Configure cache locations
+        shell: bash
+        run: |
+          node <<'JS'
+          const fs = require('node:fs');
+          for (const [name, directory] of [['CCACHE_DIR','ccache'],['VCPKG_DEFAULT_BINARY_CACHE','vcpkg-binary-cache']]) {
+            const path = `${process.env.RUNNER_TEMP}/${directory}`;
+            fs.mkdirSync(path,{recursive:true});
+            fs.appendFileSync(process.env.GITHUB_ENV,`${name}=${path}\n`);
+          }
+          JS
       - uses: actions/checkout@v4
         with:
           path: .pipeline
@@ -68,12 +79,23 @@ jobs:
         shell: bash
         run: |
           brew update
-          brew install python@3.12 pixman cmake ninja ccache pkg-config boost cairo curl eigen fontconfig freetype glew glm harfbuzz libgit2 openssl@3 protobuf rapidjson swig zstd wxwidgets ngspice opencascade yaml-cpp libarchive nng
+          brew install python@3.12 pixman cmake ninja ccache pkg-config boost cairo curl eigen fontconfig freetype glew glm harfbuzz libgit2 openssl@3 protobuf rapidjson swig zstd wxwidgets ngspice libngspice opencascade yaml-cpp libarchive nng
+
+      - name: Restore vcpkg binary cache
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg-binary-cache
+          key: backplane-kicad-vcpkg-1c193606eddedbf98f8c9af5100b5e8f79da603d-${{ github.run_id }}
+          restore-keys: |
+            backplane-kicad-vcpkg-1c193606eddedbf98f8c9af5100b5e8f79da603d-
 
       - name: Install Windows dependencies
         if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
           choco install ninja ccache -y --no-progress
           git clone --depth 1 https://github.com/microsoft/vcpkg.git "$env:RUNNER_TEMP/vcpkg"
           & "$env:RUNNER_TEMP/vcpkg/bootstrap-vcpkg.bat" -disableMetrics
@@ -87,13 +109,12 @@ jobs:
 
       - name: Restore native compiler cache
         if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/cache@v4
+        id: compiler-cache
+        uses: actions/cache/restore@v4
         with:
           path: |
-            ~/.cache/ccache
-            ~/Library/Caches/ccache
-            ${{ env.LOCALAPPDATA }}\ccache
-          key: backplane-kicad-ccache-${{ matrix.asset }}-${{ github.sha }}
+            ${{ runner.temp }}/ccache
+          key: backplane-kicad-ccache-${{ matrix.asset }}-${{ github.sha }}-${{ github.run_id }}
           restore-keys: |
             backplane-kicad-ccache-${{ matrix.asset }}-
 
@@ -101,13 +122,13 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true' && runner.os != 'Windows'
         shell: bash
         run: |
-          ccache --max-size=4G
+          ccache --max-size=2G
 
       - name: Configure compiler cache (Windows)
         if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
         shell: pwsh
         run: |
-          ccache --max-size=4G
+          ccache --max-size=2G
 
       - name: Fetch pinned official KiCad libraries
         if: steps.cache.outputs.cache-hit != 'true'
@@ -163,7 +184,7 @@ jobs:
         shell: pwsh
         run: |
           $vcpkg = "$env:RUNNER_TEMP/vcpkg"
-          cmake -S . -B build/native -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$pwd/stage" -DCMAKE_TOOLCHAIN_FILE="$vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows -DKICAD_BUILD_QA_TESTS=OFF -DKICAD_BUILD_I18N=OFF -DKICAD_USE_SENTRY=OFF -DKICAD_SCRIPTING_WXPYTHON=OFF -DKICAD_USE_PCH=OFF -DKICAD_IPC_API=ON
+          cmake -S . -B build/native -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$pwd/stage" -DCMAKE_TOOLCHAIN_FILE="$vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows -DKICAD_BUILD_QA_TESTS=OFF -DKICAD_BUILD_I18N=OFF -DKICAD_USE_SENTRY=OFF -DKICAD_SCRIPTING_WXPYTHON=OFF -DKICAD_USE_PCH=OFF -DKICAD_IPC_API=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           cmake --build build/native --parallel 3
           cmake --install build/native
 
@@ -257,3 +278,18 @@ jobs:
           path: |
             release/*.tar.gz
             release/*.sha256
+
+      - name: Save vcpkg binary cache
+        if: always() && steps.vcpkg-cache.outputs.cache-primary-key != ''
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg-binary-cache
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+
+      - name: Save native compiler cache
+        if: always() && steps.compiler-cache.outputs.cache-primary-key != ''
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/ccache
+          key: ${{ steps.compiler-cache.outputs.cache-primary-key }}

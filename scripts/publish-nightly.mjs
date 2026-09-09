@@ -42,23 +42,42 @@ await writeFile("release-publish/SHA256SUMS", `${sums.join("\n")}\n`);
 const notes = `Automated Backplane nightly from ${sha}.\n\nDownload the AppImage for Linux, DMG for your Mac, EXE for Windows, or APK for Android. Desktop installers include the Backplane server, modified KiCad, Python, and standard KiCad libraries. Android connects to a Backplane server.\n\nWindows and macOS installers are unsigned. Android uses the permanent Backplane release key. Nightlies are prereleases; the desktop updater stays on the Backplane nightly channel.\n\nKiCad source and license information: https://github.com/i2cjak/Backplane_KiCad/releases. Each runtime manifest identifies its source revision. Verify downloads with SHA256SUMS.\n`;
 await writeFile(`${process.env.RUNNER_TEMP}/backplane-nightly-notes.md`, notes);
 const gh = (args) => execFileSync("gh", args, { stdio: "inherit" });
-// Upload into a draft so an interrupted upload cannot expose a partial nightly.
-gh([
-  "release",
-  "create",
-  tag,
-  ...files.map((name) => `release-publish/${name}`),
-  "release-publish/SHA256SUMS",
-  "--repo",
-  repo,
-  "--target",
-  sha,
-  "--title",
-  `Backplane Nightly ${version}`,
-  "--notes-file",
-  `${process.env.RUNNER_TEMP}/backplane-nightly-notes.md`,
-  "--generate-notes",
-  "--draft",
-  "--prerelease",
-]);
+// Resume an interrupted upload only while the release is still a draft.
+let existing;
+try {
+  existing = JSON.parse(
+    execFileSync(
+      "gh",
+      ["release", "view", tag, "--repo", repo, "--json", "isDraft,targetCommitish"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    ),
+  );
+} catch (error) {
+  if (error.status !== 1) throw error;
+}
+if (existing && (!existing.isDraft || existing.targetCommitish !== sha)) {
+  throw new Error("Refusing to overwrite a published nightly or a draft from another commit");
+}
+const assets = [...files.map((name) => `release-publish/${name}`), "release-publish/SHA256SUMS"];
+if (existing) {
+  gh(["release", "upload", tag, ...assets, "--repo", repo, "--clobber"]);
+} else {
+  gh([
+    "release",
+    "create",
+    tag,
+    ...assets,
+    "--repo",
+    repo,
+    "--target",
+    sha,
+    "--title",
+    `Backplane Nightly ${version}`,
+    "--notes-file",
+    `${process.env.RUNNER_TEMP}/backplane-nightly-notes.md`,
+    "--generate-notes",
+    "--draft",
+    "--prerelease",
+  ]);
+}
 gh(["release", "edit", tag, "--repo", repo, "--draft=false", "--prerelease", "--latest=false"]);
