@@ -40,12 +40,26 @@ const makeEnvironment = (
   DesktopEnvironment.DesktopEnvironment.pipe(Effect.provide(makeEnvironmentLayer(overrides, env)));
 
 describe("DesktopEnvironment", () => {
+  it.effect("isolates a packaged Linux app from an inherited T3 Code home", () =>
+    Effect.gen(function* () {
+      const environment = yield* makeEnvironment(
+        { platform: "linux", homeDirectory: "/home/alice", isPackaged: true },
+        { T3CODE_HOME: "/home/alice/.t3", XDG_CONFIG_HOME: "/home/alice/.config" },
+      );
+
+      assert.equal(environment.baseDir, "/home/alice/.backplane");
+      assert.equal(environment.stateDir, "/home/alice/.backplane/userdata");
+      assert.equal(environment.appDataDirectory, "/home/alice/.config");
+      assert.equal(environment.userDataDirName, "backplane");
+    }),
+  );
+
   it.effect("derives state paths and development identity inside Effect", () =>
     Effect.gen(function* () {
       const environment = yield* makeEnvironment(
         {},
         {
-          T3CODE_HOME: " /tmp/t3 ",
+          BACKPLANE_HOME: " /tmp/t3 ",
           T3CODE_COMMIT_HASH: " 0123456789abcdef ",
           T3CODE_PORT: "4949",
           VITE_DEV_SERVER_URL: "http://localhost:5173",
@@ -92,7 +106,7 @@ describe("DesktopEnvironment", () => {
       const environment = yield* makeEnvironment(
         {},
         {
-          T3CODE_HOME: "/tmp/t3",
+          BACKPLANE_HOME: "/tmp/t3",
         },
       );
 
@@ -130,8 +144,8 @@ describe("DesktopEnvironment", () => {
       );
       const production = yield* makeEnvironment();
 
-      assert.equal(development.stateDir, "/Users/alice/.t3/dev");
-      assert.equal(production.stateDir, "/Users/alice/.t3/userdata");
+      assert.equal(development.stateDir, "/Users/alice/.backplane/dev");
+      assert.equal(production.stateDir, "/Users/alice/.backplane/userdata");
     }),
   );
 

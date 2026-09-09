@@ -85,6 +85,9 @@ const DESKTOP_BACKEND_ENV_NAMES = [
   "T3CODE_DESKTOP_HTTPS_ENDPOINTS",
   "T3CODE_TAILSCALE_SERVE",
   "T3CODE_TAILSCALE_SERVE_PORT",
+  // The desktop bootstrap carries the authoritative state directory. Leaving
+  // this inherited value in place lets the server CLI override that payload.
+  "T3CODE_HOME",
 ] as const;
 
 // Sensitive env vars that the WSL backend needs but Windows process.env won't
@@ -525,10 +528,15 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       cwd: environment.backendCwd,
       env: {
         ...backendChildEnvPatch(),
+        // An explicit base directory resolves to userdata. Keep that value in
+        // the child environment so the server preserves the desktop choice.
+        ...(environment.stateDir === environment.path.join(environment.baseDir, "userdata")
+          ? { T3CODE_HOME: environment.baseDir }
+          : {}),
         ELECTRON_RUN_AS_NODE: "1",
         ...resolveBundledRuntimeEnvironment(environment),
       },
-      // Primary wants process.env (PATH, dev-runner's T3CODE_HOME, etc.).
+      // Preserve the parent environment, with backend settings overridden above.
       extendEnv: true,
       bootstrap,
       bootstrapDelivery: "fd3",
@@ -573,9 +581,10 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
     mode: "desktop" as const,
     noBrowser: true,
     port: input.port,
-    // Omit t3Home so the Linux backend uses its own home dir instead of
-    // the Windows-side baseDir (which would be a /mnt/c path and share
-    // the SQLite file with the primary).
+    // Resolve this in the Linux server, where ~ is the distro user's home.
+    // Passing the Windows-side baseDir would share the SQLite file with the
+    // primary.
+    t3Home: "~/.backplane",
     host: wslBindHost,
     desktopBootstrapToken: input.bootstrapToken,
     // PortSchema rejects 0, so when tailscale serve is disabled we still
@@ -670,17 +679,17 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
     }
   }
 
-  // Build an explicit copy of process.env minus T3CODE_HOME (dev-runner
+  // Build an explicit copy of process.env minus state-home overrides (dev-runner
   // exports the Windows-side base dir for the primary; if it leaks into
   // the WSL backend the Linux side ends up sharing C:\Users\...\.t3 via
   // /mnt/c, which means both backends read/write the same database and
   // their env-ids collide).
-  const parentEnvWithoutT3Home: Record<string, string | undefined> = {};
+  const parentEnvWithoutStateHome: Record<string, string | undefined> = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (key === "T3CODE_HOME") continue;
-    parentEnvWithoutT3Home[key] = value;
+    if (key === "T3CODE_HOME" || key === "BACKPLANE_HOME") continue;
+    parentEnvWithoutStateHome[key] = value;
   }
-  const wslEnv = mergeWslEnv(parentEnvWithoutT3Home.WSLENV, forwardedEnvNames);
+  const wslEnv = mergeWslEnv(parentEnvWithoutStateHome.WSLENV, forwardedEnvNames);
 
   const baseConfig = {
     executablePath: "wsl.exe",
@@ -688,12 +697,12 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
       preflight._tag === "Ready" ? preflight.windowsEntryPath : environment.backendEntryPath,
     cwd: environment.backendCwd,
     env: {
-      ...parentEnvWithoutT3Home,
+      ...parentEnvWithoutStateHome,
       ...backendChildEnvPatch(),
       ...forwardedEnv,
       ...(wslEnv !== undefined ? { WSLENV: wslEnv } : {}),
     },
-    // env is already a complete process.env minus T3CODE_HOME; pass it
+    // env is already a complete process.env minus state-home overrides; pass it
     // verbatim instead of letting the spawner re-merge process.env on top.
     extendEnv: false,
     bootstrap,
@@ -746,6 +755,8 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
       "--exec",
       "env",
       `PATH=${launchPath}`,
+      "T3CODE_HOME=",
+      "BACKPLANE_HOME=",
       preflight.nodePath,
       preflight.linuxEntryPath,
       "--bootstrap-fd",

@@ -24,8 +24,10 @@ Add `--browser` to open a browser automatically.
 
 ### State and ports
 
-Linked worktrees default to their own `.t3/userdata`, even when `T3CODE_HOME` is set.
-The main checkout defaults to `~/.t3/dev/userdata`. An explicit `--home-dir` wins in both cases.
+Linked worktrees default to their own `.t3/userdata`, ahead of ambient home variables.
+Desktop runs use `BACKPLANE_HOME` and otherwise default to `~/.backplane/dev` in
+the main checkout. Server/web runs use `T3CODE_HOME` and otherwise default to
+`~/.t3/dev/userdata`. An explicit `--home-dir` wins in both cases.
 Never run a development server against the live `~/.t3/userdata`.
 See [test data](../../AGENTS.md#test-data) for copying a consistent database snapshot.
 

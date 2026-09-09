@@ -19,10 +19,8 @@ export const APP_DISPLAY_NAME = isDevelopment ? "Backplane (Dev)" : "Backplane";
 export const APP_BUNDLE_ID = isDevelopment
   ? `com.i2cjak.backplane.dev.${devBundleIdSuffix || "local"}`
   : "com.i2cjak.backplane";
-const APP_PROTOCOL_SCHEMES = isDevelopment
-  ? ["backplane-dev", "t3code-dev"]
-  : ["backplane", "t3code"];
-const LAUNCHER_VERSION = 15;
+const APP_PROTOCOL_SCHEMES = isDevelopment ? ["backplane-dev"] : ["backplane"];
+const LAUNCHER_VERSION = 16;
 const developmentMacIconPngPath = NodePath.join(
   repoRoot,
   "assets",
@@ -116,7 +114,7 @@ export function makeDevelopmentLauncherScript({
   const envEntries = [
     ["VITE_DEV_SERVER_URL", environment.VITE_DEV_SERVER_URL],
     ["T3CODE_PORT", environment.T3CODE_PORT],
-    ["T3CODE_HOME", environment.T3CODE_HOME],
+    ["BACKPLANE_HOME", environment.BACKPLANE_HOME],
     ["T3CODE_COMMIT_HASH", environment.T3CODE_COMMIT_HASH],
     ["T3CODE_OTLP_TRACES_URL", environment.T3CODE_OTLP_TRACES_URL],
     ["T3CODE_OTLP_EXPORT_INTERVAL_MS", environment.T3CODE_OTLP_EXPORT_INTERVAL_MS],

@@ -318,12 +318,14 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       }),
     );
 
-    it.effect("pins desktop dev to a stable backend port and websocket url", () =>
+    it.effect("pins desktop dev to its own home and a stable backend port and websocket url", () =>
       Effect.gen(function* () {
         const path = yield* Path.Path;
         const env = yield* createDevRunnerEnv({
           mode: "dev:desktop",
           baseEnv: {
+            T3CODE_HOME: "/home/user/.t3",
+            BACKPLANE_HOME: "/tmp/ambient-backplane",
             T3CODE_PORT: "13773",
             T3CODE_MODE: "web",
             T3CODE_NO_BROWSER: "0",
@@ -342,7 +344,8 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           devUrl: undefined,
         });
 
-        assert.equal(env.T3CODE_HOME, path.resolve("/tmp/my-t3"));
+        assert.equal(env.BACKPLANE_HOME, path.resolve("/tmp/my-t3"));
+        assert.equal(env.T3CODE_HOME, undefined);
         assert.equal(env.PORT, "5733");
         assert.equal(env.VITE_DEV_SERVER_URL, "http://127.0.0.1:5733");
         assert.equal(env.HOST, "127.0.0.1");
@@ -1224,6 +1227,8 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         readonly t3Home: string | undefined;
         readonly cwd: string;
         readonly ambientHome: string | undefined;
+        readonly mode?: "dev:server" | "dev:desktop";
+        readonly backplaneHome?: string;
       }) =>
         Effect.gen(function* () {
           let captured: Record<string, string | undefined> | undefined;
@@ -1239,18 +1244,63 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
             }),
           );
 
-          yield* runDevRunnerWithInput({ ...devServerInput, t3Home: input.t3Home }).pipe(
+          yield* runDevRunnerWithInput({
+            ...devServerInput,
+            mode: input.mode ?? "dev:server",
+            t3Home: input.t3Home,
+          }).pipe(
             Effect.provide(Layer.mergeAll(emptyConfigLayer, netServiceLayer, spawnerLayer)),
             Effect.provideService(HostProcessPlatform, "linux"),
             Effect.provideService(HostProcessWorkingDirectory, input.cwd),
-            Effect.provideService(
-              HostProcessEnvironment,
-              input.ambientHome === undefined ? {} : { T3CODE_HOME: input.ambientHome },
-            ),
+            Effect.provideService(HostProcessEnvironment, {
+              T3CODE_HOME: input.ambientHome,
+              BACKPLANE_HOME: input.backplaneHome,
+            }),
           );
 
-          return captured?.T3CODE_HOME;
+          return input.mode === "dev:desktop" ? captured?.BACKPLANE_HOME : captured?.T3CODE_HOME;
         });
+
+      it.effect("ignores the T3 Code home for desktop runs outside a worktree", () =>
+        Effect.gen(function* () {
+          const home = yield* spawnedHome({
+            mode: "dev:desktop",
+            t3Home: undefined,
+            cwd: NodeOS.tmpdir(),
+            ambientHome: "/home/user/.t3",
+          });
+          assert.equal(home, undefined);
+        }),
+      );
+
+      it.effect("uses BACKPLANE_HOME for desktop runs outside a worktree", () =>
+        Effect.gen(function* () {
+          const path = yield* Path.Path;
+          const home = yield* spawnedHome({
+            mode: "dev:desktop",
+            t3Home: undefined,
+            cwd: NodeOS.tmpdir(),
+            ambientHome: "/home/user/.t3",
+            backplaneHome: "/tmp/backplane",
+          });
+          assert.equal(home, path.resolve("/tmp/backplane"));
+        }),
+      );
+
+      it.effect("keeps desktop worktree state ahead of both installed app homes", () =>
+        Effect.gen(function* () {
+          const path = yield* Path.Path;
+          const root = yield* makeWorktree;
+          const home = yield* spawnedHome({
+            mode: "dev:desktop",
+            t3Home: undefined,
+            cwd: root,
+            ambientHome: "/home/user/.t3",
+            backplaneHome: "/home/user/.backplane",
+          });
+          assert.equal(home, path.join(path.resolve(root), ".t3"));
+        }).pipe(Effect.scoped),
+      );
 
       it.effect("prefers an explicit --home-dir over the worktree default", () =>
         Effect.gen(function* () {

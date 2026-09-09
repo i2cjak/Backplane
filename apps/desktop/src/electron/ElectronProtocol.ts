@@ -11,8 +11,6 @@ import * as Electron from "electron";
 export const DESKTOP_HOST = "app";
 export const DESKTOP_PRODUCTION_SCHEME = "backplane";
 export const DESKTOP_DEVELOPMENT_SCHEME = "backplane-dev";
-export const DESKTOP_LEGACY_PRODUCTION_SCHEME = "t3code";
-export const DESKTOP_LEGACY_DEVELOPMENT_SCHEME = "t3code-dev";
 
 export function getDesktopScheme(isDevelopment: boolean): string {
   return isDevelopment ? DESKTOP_DEVELOPMENT_SCHEME : DESKTOP_PRODUCTION_SCHEME;
@@ -27,9 +25,7 @@ export function getDesktopUrl(isDevelopment: boolean): string {
 }
 
 export function getDesktopSchemeAliases(isDevelopment: boolean): readonly string[] {
-  return isDevelopment
-    ? [DESKTOP_DEVELOPMENT_SCHEME, DESKTOP_LEGACY_DEVELOPMENT_SCHEME]
-    : [DESKTOP_PRODUCTION_SCHEME, DESKTOP_LEGACY_PRODUCTION_SCHEME];
+  return [getDesktopScheme(isDevelopment)];
 }
 
 export class ElectronProtocolRegistrationError extends Schema.TaggedErrorClass<ElectronProtocolRegistrationError>()(
@@ -89,12 +85,7 @@ export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrat
   // origins are not known when this response policy is created, so restrict
   // connections by the network schemes the client supports instead of by host.
   const connectSources = ["'self'", "http:", "https:", "ws:", "wss:"];
-  const schemeSources =
-    input.scheme === DESKTOP_PRODUCTION_SCHEME
-      ? [DESKTOP_PRODUCTION_SCHEME, DESKTOP_LEGACY_PRODUCTION_SCHEME]
-      : input.scheme === DESKTOP_DEVELOPMENT_SCHEME
-        ? [DESKTOP_DEVELOPMENT_SCHEME, DESKTOP_LEGACY_DEVELOPMENT_SCHEME]
-        : [input.scheme];
+  const schemeSources = [input.scheme];
 
   return [
     "default-src 'self'",
@@ -137,26 +128,6 @@ export function registerDesktopSchemePrivilegesSync(): void {
     },
     {
       scheme: DESKTOP_DEVELOPMENT_SCHEME,
-      privileges: {
-        standard: true,
-        secure: true,
-        supportFetchAPI: true,
-        corsEnabled: true,
-        stream: true,
-      },
-    },
-    {
-      scheme: DESKTOP_LEGACY_PRODUCTION_SCHEME,
-      privileges: {
-        standard: true,
-        secure: true,
-        supportFetchAPI: true,
-        corsEnabled: true,
-        stream: true,
-      },
-    },
-    {
-      scheme: DESKTOP_LEGACY_DEVELOPMENT_SCHEME,
       privileges: {
         standard: true,
         secure: true,
@@ -251,30 +222,16 @@ export const make = Effect.gen(function* () {
       yield* Effect.acquireRelease(
         Effect.try({
           try: () => {
-            const aliases =
-              input.scheme === DESKTOP_PRODUCTION_SCHEME
-                ? [DESKTOP_PRODUCTION_SCHEME, DESKTOP_LEGACY_PRODUCTION_SCHEME]
-                : input.scheme === DESKTOP_DEVELOPMENT_SCHEME
-                  ? [DESKTOP_DEVELOPMENT_SCHEME, DESKTOP_LEGACY_DEVELOPMENT_SCHEME]
-                  : [input.scheme];
-            for (const scheme of aliases) {
-              Electron.protocol.handle(scheme, (request) =>
-                proxyRequest(request, input.targetOrigin, contentSecurityPolicy),
-              );
-            }
+            Electron.protocol.handle(input.scheme, (request) =>
+              proxyRequest(request, input.targetOrigin, contentSecurityPolicy),
+            );
           },
           catch: (cause) => new ElectronProtocolRegistrationError({ scheme: input.scheme, cause }),
         }).pipe(Effect.andThen(Ref.set(registered, true))),
         () =>
           Effect.try({
             try: () => {
-              const aliases =
-                input.scheme === DESKTOP_PRODUCTION_SCHEME
-                  ? [DESKTOP_PRODUCTION_SCHEME, DESKTOP_LEGACY_PRODUCTION_SCHEME]
-                  : input.scheme === DESKTOP_DEVELOPMENT_SCHEME
-                    ? [DESKTOP_DEVELOPMENT_SCHEME, DESKTOP_LEGACY_DEVELOPMENT_SCHEME]
-                    : [input.scheme];
-              for (const scheme of aliases) Electron.protocol.unhandle(scheme);
+              Electron.protocol.unhandle(input.scheme);
             },
             catch: (cause) =>
               new ElectronProtocolUnregistrationError({

@@ -16,7 +16,7 @@ describe("electron development launcher", () => {
       environment: {
         VITE_DEV_SERVER_URL: "http://127.0.0.1:8526",
         T3CODE_PORT: "16566",
-        T3CODE_HOME: "/tmp/t3",
+        BACKPLANE_HOME: "/tmp/backplane",
       },
     });
 
@@ -25,6 +25,10 @@ describe("electron development launcher", () => {
       "if [ -z \"${VITE_DEV_SERVER_URL:-}\" ]; then export VITE_DEV_SERVER_URL='http://127.0.0.1:8526'; fi",
     );
     assert.notInclude(script, "\nexport VITE_DEV_SERVER_URL=");
+    assert.include(
+      script,
+      "if [ -z \"${BACKPLANE_HOME:-}\" ]; then export BACKPLANE_HOME='/tmp/backplane'; fi",
+    );
     assert.include(
       script,
       "exec '/repo/node_modules/electron/Electron' --t3code-dev-root='/repo/apps/desktop' '/repo/apps/desktop/dist-electron/main.cjs' \"$@\"",

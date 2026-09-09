@@ -795,12 +795,12 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         iconSize: 80,
         iconTextSize: 12,
       });
-      // Linux must register the renderer schemes so the generated .desktop
-      // entry advertises MimeType=x-scheme-handler/t3code; for OAuth deep links.
+      // Linux must register only Backplane renderer schemes so its generated
+      // .desktop entry cannot claim the upstream T3 handlers.
       assert.deepStrictEqual((linux.linux as Record<string, unknown>).protocols, [
         {
           name: "Backplane",
-          schemes: ["backplane", "backplane-dev", "t3code", "t3code-dev"],
+          schemes: ["backplane", "backplane-dev"],
         },
       ]);
       assert.deepStrictEqual(mac.files, [...DESKTOP_FILE_EXCLUSIONS, ...MAC_FILE_EXCLUSIONS]);
@@ -1839,7 +1839,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.deepStrictEqual(mac.protocols, [
         {
           name: "Backplane",
-          schemes: ["backplane", "backplane-dev", "t3code", "t3code-dev"],
+          schemes: ["backplane", "backplane-dev"],
         },
       ]);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),

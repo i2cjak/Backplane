@@ -55,7 +55,7 @@ const makeEnvironmentLayer = (baseDir: string, isDevelopment = true) =>
       Layer.mergeAll(
         NodeServices.layer,
         DesktopConfig.layerTest({
-          T3CODE_HOME: baseDir,
+          BACKPLANE_HOME: baseDir,
           VITE_DEV_SERVER_URL: isDevelopment ? "http://127.0.0.1:5733" : undefined,
         }),
       ),

@@ -2824,7 +2824,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       protocols: [
         {
           name: "Backplane",
-          schemes: [DESKTOP_PROTOCOL, `${DESKTOP_PROTOCOL}-dev`, "t3code", "t3code-dev"],
+          schemes: [DESKTOP_PROTOCOL, `${DESKTOP_PROTOCOL}-dev`],
         },
       ],
       ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
@@ -2872,7 +2872,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       protocols: [
         {
           name: "Backplane",
-          schemes: [DESKTOP_PROTOCOL, `${DESKTOP_PROTOCOL}-dev`, "t3code", "t3code-dev"],
+          schemes: [DESKTOP_PROTOCOL, `${DESKTOP_PROTOCOL}-dev`],
         },
       ],
       desktop: {

@@ -60,6 +60,7 @@ function makeEnvironmentLayer(
     readonly resourcesPath?: string;
     readonly appVersion?: string;
     readonly processArch?: NodeJS.Architecture;
+    readonly implicitBaseDir?: boolean;
   },
 ) {
   return DesktopEnvironment.layer({
@@ -77,7 +78,7 @@ function makeEnvironmentLayer(
       Layer.mergeAll(
         NodeServices.layer,
         DesktopConfig.layerTest({
-          T3CODE_HOME: baseDir,
+          ...(options?.implicitBaseDir ? {} : { BACKPLANE_HOME: baseDir }),
           T3CODE_PORT: "9999",
           T3CODE_MODE: "desktop",
           T3CODE_DESKTOP_LAN_HOST: "192.168.1.50",
@@ -251,6 +252,7 @@ describe("DesktopBackendConfiguration", () => {
         assert.isUndefined(first.env.T3CODE_PORT);
         assert.isUndefined(first.env.T3CODE_MODE);
         assert.isUndefined(first.env.T3CODE_DESKTOP_LAN_HOST);
+        assert.equal(first.env.T3CODE_HOME, environment.baseDir);
         assert.equal(first.env.BACKPLANE_KICAD_ROOT, "/missing/resources/kicad");
         assert.equal(first.env.BACKPLANE_PYTHON, "/missing/resources/python/bin/python3");
 
@@ -276,6 +278,30 @@ describe("DesktopBackendConfiguration", () => {
         assert.isUndefined(config.env.BACKPLANE_PYTHON);
       }),
       { isPackaged: false, resourcesPath: "/dev/resources" },
+    ),
+  );
+
+  it.effect("leaves implicit development state eligible for the server dev directory", () =>
+    withHarness(
+      Effect.gen(function* () {
+        const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+        const config = yield* configuration.resolvePrimary;
+        assert.isUndefined(config.env.T3CODE_HOME);
+      }),
+      { isPackaged: false, devServerUrl: "http://127.0.0.1:5733", implicitBaseDir: true },
+    ),
+  );
+
+  it.effect("preserves an explicit development base directory in the backend", () =>
+    withHarness(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+        const config = yield* configuration.resolvePrimary;
+        assert.equal(environment.stateDir, `${environment.baseDir}/userdata`);
+        assert.equal(config.env.T3CODE_HOME, environment.baseDir);
+      }),
+      { isPackaged: false, devServerUrl: "http://127.0.0.1:5733" },
     ),
   );
 
@@ -746,6 +772,8 @@ describe("DesktopBackendConfiguration", () => {
           "--exec",
           "env",
           "PATH=/home/test user's/.nvm/versions/node/v22.0.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/test user/bin:/opt/test's tools/bin:/usr/bin:/bin",
+          "T3CODE_HOME=",
+          "BACKPLANE_HOME=",
           nodePath,
           linuxEntryPath,
           "--bootstrap-fd",
@@ -933,6 +961,7 @@ describe("DesktopBackendConfiguration", () => {
           // Binds to 0.0.0.0 inside WSL so the backend is reachable via
           // both wslhost-forwarded localhost and the distro's eth0 IP.
           assert.equal(config.bootstrap.host, "0.0.0.0");
+          assert.equal(config.bootstrap.t3Home, "~/.backplane");
           assert.equal(config.bootstrap.tailscaleServeEnabled, false);
           assert.notProperty(config.bootstrap, "desktopTelemetryFd");
           assert.notProperty(config.bootstrap, "resourceMonitorPath");
