@@ -79,8 +79,9 @@ async function installBundledFiles(directory: string): Promise<void> {
 function instructions(metadata: Metadata, directory: string): string {
   return [
     "<kistack_skills>",
+    "Before doing any work related to any skill listed below, you MUST read that skill's complete SKILL.md and follow its instructions and workflow. Apply every relevant skill, even when the user does not explicitly name it. Do not skip a relevant skill because you already know how to do the task.",
     `Backplane includes KiStack by American Embedded (${source}, revision ${metadata.revision}). These skills are always available in every project.`,
-    "For relevant electronics work, read the matching SKILL.md before working and follow its workflow. Resolve referenced scripts and documents relative to that skill's directory. User instructions take precedence. Other installed skills remain available.",
+    "Resolve referenced scripts and documents relative to that skill's directory. User instructions take precedence. Other installed skills remain available.",
     ...metadata.skills.map(
       (skill) =>
         `- ${skill.name}: ${skill.description} Read ${JSON.stringify(NodePath.join(directory, skill.path))}`,
