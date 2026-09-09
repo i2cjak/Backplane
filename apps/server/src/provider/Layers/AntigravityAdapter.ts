@@ -125,6 +125,7 @@ function mapAntigravityError(threadId: ThreadId, method: string, cause: EffectAc
 
 export interface AntigravityAdapterOptions {
   readonly instanceId: ProviderInstanceId;
+  readonly environment?: NodeJS.ProcessEnv;
   readonly makeRuntime: (
     input: Omit<AntigravityAcpRuntimeInput, "spawn" | "childProcessSpawner" | "onAuthorizationUrl">,
   ) => Effect.Effect<Runtime, EffectAcpErrors.AcpError | ProviderSetupError, Scope.Scope>;
@@ -1082,7 +1083,11 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
                   ...prompt,
                   {
                     type: "text",
-                    text: buildRuntimeInstructions({ harness: "Antigravity", model }),
+                    text: buildRuntimeInstructions({
+                      harness: "Antigravity",
+                      model,
+                      environment: options.environment,
+                    }),
                   },
                 ],
               },

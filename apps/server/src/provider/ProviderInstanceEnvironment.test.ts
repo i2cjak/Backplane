@@ -65,4 +65,12 @@ describe("mergeProviderInstanceEnvironment", () => {
       PATH: "/bin",
     });
   });
+
+  it("resolves KiCad settings from the effective instance environment", () => {
+    const environment = mergeProviderInstanceEnvironment(
+      [{ name: "KICAD_CLI", value: "/srv/kicad-cli", sensitive: false }],
+      { KICAD_CLI: "/usr/bin/kicad-cli" },
+    );
+    expect(environment.KICAD_CLI).toBe("/srv/kicad-cli");
+  });
 });

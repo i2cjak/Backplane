@@ -301,6 +301,7 @@ export const AntigravityDriver: ProviderDriver<AntigravitySettings, AntigravityD
       );
       const adapter = yield* makeAntigravityAdapter(settings, {
         instanceId,
+        environment: processEnvironment,
         makeRuntime,
         withProcess: authFlow.withProcess,
         defaultModel,

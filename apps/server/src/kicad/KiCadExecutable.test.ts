@@ -4,12 +4,44 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { expect, it } from "vite-plus/test";
 
-import { resolveKiCadEnvironment, resolveKiCadExecutable } from "./KiCadExecutable.ts";
+import {
+  resolveKiCadEnvironment,
+  resolveKiCadExecutable,
+  resolveKiCadRuntime,
+} from "./KiCadExecutable.ts";
 
 it("honours an explicit Backplane override", () => {
   expect(resolveKiCadExecutable({ BACKPLANE_KICAD_CLI: "/opt/backplane/kicad-cli" })).toBe(
     "/opt/backplane/kicad-cli",
   );
+});
+
+it("does not identify an explicit executable override without a verified manifest", () => {
+  expect(
+    resolveKiCadRuntime({ BACKPLANE_KICAD_CLI: "/opt/custom/kicad-cli" }).fork,
+  ).toBeUndefined();
+});
+
+it("recognises the selected executable only beside a matching fork manifest", () => {
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "backplane-kicad-manifest-"));
+  const executable = NodePath.join(root, "bin", "kicad-cli");
+  NodeFS.mkdirSync(NodePath.dirname(executable), { recursive: true });
+  NodeFS.writeFileSync(executable, "");
+  NodeFS.writeFileSync(
+    NodePath.join(root, "manifest.json"),
+    JSON.stringify({
+      version: "10.0.6",
+      sourceRepository: "https://github.com/i2cjak/Backplane_KiCad",
+      sourceCommit: "0123456789abcdef0123456789abcdef01234567",
+    }),
+  );
+  try {
+    const fork = resolveKiCadRuntime({ BACKPLANE_KICAD_CLI: executable }).fork;
+    expect(fork?.version).toBe("10.0.6");
+    expect(fork?.guideUrl).toContain(fork?.sourceCommit ?? "");
+  } finally {
+    NodeFS.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 it("prefers the packaged resources runtime", () => {
@@ -74,4 +106,13 @@ it("points bundled KiCad at its standard libraries while preserving overrides", 
   } finally {
     NodeFS.rmSync(root, { recursive: true, force: true });
   }
+});
+
+it("puts the selected executable directory first and removes duplicate PATH entries", () => {
+  const executable = "/opt/kicad/bin/kicad-cli";
+  const resolved = resolveKiCadEnvironment({
+    PATH: `/usr/bin${NodePath.delimiter}/opt/kicad/bin${NodePath.delimiter}/usr/bin`,
+    BACKPLANE_KICAD_CLI: executable,
+  });
+  expect(resolved.PATH).toBe(`/opt/kicad/bin${NodePath.delimiter}/usr/bin`);
 });

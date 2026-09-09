@@ -1,13 +1,14 @@
 import type { ProviderInstanceEnvironment } from "@backplane/contracts";
 
 import { expandHomePath } from "../pathExpansion.ts";
+import { resolveKiCadEnvironment } from "../kicad/KiCadExecutable.ts";
 
 export function mergeProviderInstanceEnvironment(
   environment: ProviderInstanceEnvironment | undefined,
   baseEnv: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
   if (!environment || environment.length === 0) {
-    return baseEnv;
+    return resolveKiCadEnvironment(baseEnv);
   }
 
   const next: NodeJS.ProcessEnv = { ...baseEnv };
@@ -18,5 +19,5 @@ export function mergeProviderInstanceEnvironment(
         ? expandHomePath(variable.value)
         : variable.value;
   }
-  return next;
+  return resolveKiCadEnvironment(next);
 }

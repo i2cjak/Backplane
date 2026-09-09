@@ -1,6 +1,10 @@
 # View KiCad projects
 
-Backplane includes KiStack's nine electronics skills automatically for every project and agent provider. Ask your agent to use them for schematics, symbols, footprints, BOM review, PCB review, exports, Gerbers, panelization, or product renders. No separate skill installation is needed. Tools required by a workflow, such as KiCad or Blender, must still be installed on the connected environment.
+Backplane includes KiStack's nine electronics skills automatically for every project and agent provider. Ask your agent to use them for schematics, symbols, footprints, BOM review, PCB review, exports, Gerbers, panelization, or product renders. No separate skill installation is needed. The full desktop installer includes KiCad and Python. Other workflow tools, such as Blender, may still need installation on the connected environment.
+
+Agents receive the selected KiCad executable and guidance for exports, ERC/DRC checks, and, when a matching Backplane fork is present, its headless API. The bundled CLI is placed first on the agent's executable search path. Explicit `BACKPLANE_KICAD_CLI` or `KICAD_CLI` settings take precedence; instructions identify that selected executable instead. Advanced IPC scripts may require an isolated Python environment and bindings generated from the linked fork revision.
+
+This follows the connected environment: a phone or remote browser uses the KiCad available on its server, not a KiCad installation on the device. Restart Backplane after an upgrade so agent processes receive the updated runtime.
 
 Open **KiCad** from a thread's right-panel add menu to inspect its PCB, schematic, Gerber layers, and 3D board using KiCAD-Prism's viewers. The panel follows the thread's workspace or worktree. It reads saved files without locking them; you can continue editing in KiCad or through your agent.
 

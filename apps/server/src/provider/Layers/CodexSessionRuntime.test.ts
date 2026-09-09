@@ -89,6 +89,22 @@ describe("buildTurnStartParams", () => {
     NodeAssert.doesNotMatch(JSON.stringify(directDiagnostics), new RegExp(secret));
   });
 
+  it.effect("describes the KiCad executable from the agent instance environment", () =>
+    Effect.gen(function* () {
+      const params = yield* buildTurnStartParams({
+        threadId: "provider-thread-1",
+        runtimeMode: "full-access",
+        prompt: "Export this board",
+        interactionMode: "default",
+        environment: { KICAD_CLI: "/srv/custom tools/kicad-cli" },
+      });
+      NodeAssert.match(
+        params.collaborationMode?.settings.developer_instructions ?? "",
+        /\/srv\/custom tools\/kicad-cli/,
+      );
+    }),
+  );
+
   it("includes plan collaboration mode when requested", () => {
     const params = Effect.runSync(
       buildTurnStartParams({

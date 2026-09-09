@@ -61,8 +61,75 @@ export function resolveKiCadEnvironment(env: NodeJS.ProcessEnv = process.env): N
     KICAD10_TEMPLATE_DIR: NodePath.join(runtimeRoot, "share", "kicad", "template"),
   } as const;
   const resolved = { ...env };
+  const executableDirectory = NodePath.dirname(executable);
+  if (NodePath.isAbsolute(executable)) {
+    const pathKey = Object.keys(resolved).find((key) => key.toLowerCase() === "path") ?? "PATH";
+    const entries = (resolved[pathKey] ?? "").split(NodePath.delimiter).filter(Boolean);
+    resolved[pathKey] = [...new Set([executableDirectory, ...entries])].join(NodePath.delimiter);
+  }
   for (const [name, directory] of Object.entries(bundled)) {
     if (resolved[name] === undefined && NodeFS.existsSync(directory)) resolved[name] = directory;
   }
   return resolved;
+}
+
+export interface KiCadRuntime {
+  readonly executable: string;
+  readonly environment: NodeJS.ProcessEnv;
+  readonly fork?: KiCadForkMetadata | undefined;
+}
+
+export interface KiCadForkMetadata {
+  readonly version: string;
+  readonly sourceRepository: string;
+  readonly sourceCommit: string;
+  readonly guideUrl: string;
+  readonly examplesUrl: string;
+}
+
+function readForkMetadata(executable: string): KiCadForkMetadata | undefined {
+  if (!NodePath.isAbsolute(executable)) return undefined;
+  const binDirectory = NodePath.dirname(executable);
+  for (const directory of [binDirectory, NodePath.dirname(binDirectory)]) {
+    const manifestPath = NodePath.join(directory, "manifest.json");
+    try {
+      const raw = JSON.parse(NodeFS.readFileSync(manifestPath, "utf8")) as {
+        version?: unknown;
+        sourceRepository?: unknown;
+        sourceCommit?: unknown;
+      };
+      const sourceRepository = typeof raw.sourceRepository === "string" ? raw.sourceRepository : "";
+      const sourceCommit = typeof raw.sourceCommit === "string" ? raw.sourceCommit : "";
+      const version = typeof raw.version === "string" ? raw.version : "";
+      if (
+        version &&
+        /^https:\/\/github\.com\/i2cjak\/Backplane_KiCad\/?$/.test(
+          sourceRepository.replace(/\/$/, ""),
+        ) &&
+        /^[0-9a-f]{40}$/i.test(sourceCommit)
+      ) {
+        const base = `https://github.com/i2cjak/Backplane_KiCad/tree/${sourceCommit}`;
+        return {
+          version,
+          sourceRepository,
+          sourceCommit,
+          guideUrl: `${base}/BACKPLANE_IPC.md`,
+          examplesUrl: `${base}/scripts`,
+        };
+      }
+    } catch {
+      // Continue walking; a runtime may have its manifest one directory up.
+    }
+  }
+  return undefined;
+}
+
+/** Resolve the executable and child environment used by an agent instance. */
+export function resolveKiCadRuntime(env: NodeJS.ProcessEnv = process.env): KiCadRuntime {
+  const executable = resolveKiCadExecutable(env);
+  return {
+    executable,
+    environment: resolveKiCadEnvironment(env),
+    fork: readForkMetadata(executable),
+  };
 }
