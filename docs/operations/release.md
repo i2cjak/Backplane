@@ -3,22 +3,18 @@
 The [nightly workflow](../../.github/workflows/backplane-nightly.yml) runs daily
 at 02:23 UTC on the default branch and can also be dispatched manually. Scheduled
 runs skip commits already released. It publishes a dated GitHub prerelease only
-after Linux x64, Windows x64, macOS arm64/x64, and Android finish successfully.
-Installers, updater metadata, and SHA-256 checksums live on that release; failed
-runs leave the previous published nightly available. Windows and macOS builds
-are initially unsigned.
+after the Linux x64 AppImage and signed Android APK finish successfully. The
+release contains those two installers, the Linux updater metadata, and SHA-256
+checksums; failed runs leave the previous published nightly available.
 
 Nightlies use the KiCad revision and asset mapping in
-`assets/runtime/kicad.json`. Linux uses the existing published archive; Windows and macOS are built by
-`backplane-kicad-runtimes.yml` from the same pinned public source. Verified
-native archives are cached by source revision and workflow contents, then passed
-to packaging as artifacts in the same run. No write access to the source
-repository is required. The downloader verifies archive checksums and
-the bundled source manifest. Python archives and checksums are pinned per target
-under `assets/runtime/`. Update those pins only after the matching runtime builds
-have passed. Missing runtimes fail packaging; nightlies never substitute system
-KiCad. Runtime sources, standard libraries, and licenses are distributed through
-Backplane_KiCad releases.
+`assets/runtime/kicad.json`. Linux uses the existing published archive. The
+downloader verifies archive checksums and the bundled source manifest. Python
+archives and checksums are pinned per target under `assets/runtime/`. Update
+those pins only after the matching runtime builds have passed. Missing runtimes
+fail packaging; nightlies never substitute system KiCad. Manual native
+workflows remain available for macOS and Windows builds but are not part of the
+nightly release.
 
 Android uses a permanent PKCS12 release key stored in repository secrets:
 `BACKPLANE_ANDROID_KEYSTORE_BASE64`, `BACKPLANE_ANDROID_KEYSTORE_PASSWORD`,

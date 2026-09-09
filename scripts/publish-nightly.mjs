@@ -17,18 +17,7 @@ if (
 )
   throw new Error("Invalid Backplane release identity");
 const files = (await readdir("release-publish")).sort();
-for (const pattern of [
-  /\.AppImage$/,
-  /-arm64\.dmg$/,
-  /-x64\.dmg$/,
-  /-arm64\.zip$/,
-  /-x64\.zip$/,
-  /\.exe$/,
-  /\.apk$/,
-  /^nightly-linux\.yml$/,
-  /^nightly-mac\.yml$/,
-  /^nightly\.yml$/,
-]) {
+for (const pattern of [/\.AppImage$/, /\.apk$/, /^nightly-linux\.yml$/]) {
   if (!files.some((name) => pattern.test(name)))
     throw new Error(`Incomplete nightly: missing ${pattern}`);
 }
@@ -39,7 +28,14 @@ for (const name of files) {
   sums.push(`${hash.digest("hex")}  ${name}`);
 }
 await writeFile("release-publish/SHA256SUMS", `${sums.join("\n")}\n`);
-const notes = `Automated Backplane nightly from ${sha}.\n\nDownload the AppImage for Linux, DMG for your Mac, EXE for Windows, or APK for Android. Desktop installers include the Backplane server, modified KiCad, Python, and standard KiCad libraries. Android connects to a Backplane server.\n\nWindows and macOS installers are unsigned. Android uses the permanent Backplane release key. Nightlies are prereleases; the desktop updater stays on the Backplane nightly channel.\n\nKiCad source and license information: https://github.com/i2cjak/Backplane_KiCad/releases. Each runtime manifest identifies its source revision. Verify downloads with SHA256SUMS.\n`;
+const notes = `Automated Backplane nightly from ${sha}.
+
+Download the Linux x64 AppImage or signed Android APK. The Linux desktop includes the Backplane server, modified KiCad, Python, and standard KiCad libraries. Android connects to a Backplane server.
+
+Nightlies are prereleases; the Linux desktop updater stays on the Backplane nightly channel.
+
+KiCad source and license information: https://github.com/i2cjak/Backplane_KiCad/releases. The bundled runtime manifest identifies its source revision. Verify downloads with SHA256SUMS.
+`;
 await writeFile(`${process.env.RUNNER_TEMP}/backplane-nightly-notes.md`, notes);
 const gh = (args) => execFileSync("gh", args, { stdio: "inherit" });
 // Resume an interrupted upload only while the release is still a draft.

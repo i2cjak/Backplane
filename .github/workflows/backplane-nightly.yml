@@ -48,7 +48,7 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\ntag=v${version}\nandroid_code=${code}\n`);
           JS
 
-  wsl:
+  validate:
     needs: prepare
     if: needs.prepare.outputs.build == 'true'
     runs-on: ubuntu-24.04
@@ -61,28 +61,10 @@ jobs:
           run-install: true
       - name: Check release behavior
         run: |
-          node --test scripts/collect-nightly-assets.test.mjs scripts/verify-nightly-desktop.test.mjs
+          node --test scripts/collect-nightly-assets.test.mjs scripts/publish-nightly.test.mjs scripts/verify-nightly-desktop.test.mjs
           vp test run scripts/build-desktop-artifact.test.ts scripts/merge-update-manifests.test.ts apps/server/src/kicad/KiCadExecutable.test.ts apps/server/src/provider/RuntimeInstructions.test.ts
-      - name: Build Linux terminal binary for Windows WSL
-        run: |
-          pty_pkg="$(node -e "console.log(require.resolve('node-pty/package.json', {paths: ['./apps/server']}))")"
-          pty_dir="$(dirname "$pty_pkg")"
-          (cd "$pty_dir" && npx --yes node-gyp rebuild)
-          mkdir -p wsl-prebuild
-          cp "$pty_dir/build/Release/pty.node" wsl-prebuild/pty.node
-      - uses: actions/upload-artifact@v4
-        with:
-          name: wsl-node-pty
-          path: wsl-prebuild/pty.node
-          retention-days: 1
-
-  runtimes:
-    needs: prepare
-    if: needs.prepare.outputs.build == 'true'
-    uses: ./.github/workflows/backplane-kicad-runtimes.yml
-
   desktop_linux:
-    needs: [prepare, wsl]
+    needs: [prepare, validate]
     if: needs.prepare.outputs.build == 'true'
     uses: ./.github/workflows/backplane-desktop.yml
     with:
@@ -90,33 +72,6 @@ jobs:
       arch: x64
       runner: ubuntu-24.04
       target: AppImage
-      version: ${{ needs.prepare.outputs.version }}
-
-  desktop_native:
-    needs: [prepare, wsl, runtimes]
-    if: needs.prepare.outputs.build == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: mac
-            arch: arm64
-            runner: macos-15
-            target: dmg
-          - platform: mac
-            arch: x64
-            runner: macos-15-intel
-            target: dmg
-          - platform: win
-            arch: x64
-            runner: windows-2025
-            target: nsis
-    uses: ./.github/workflows/backplane-desktop.yml
-    with:
-      platform: ${{ matrix.platform }}
-      arch: ${{ matrix.arch }}
-      runner: ${{ matrix.runner }}
-      target: ${{ matrix.target }}
       version: ${{ needs.prepare.outputs.version }}
 
   android:
@@ -129,7 +84,7 @@ jobs:
     secrets: inherit
 
   publish:
-    needs: [prepare, desktop_linux, desktop_native, android]
+    needs: [prepare, desktop_linux, android]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -145,10 +100,6 @@ jobs:
           pattern: nightly-*
           path: release-publish
           merge-multiple: true
-      - name: Merge macOS update feeds
-        run: |
-          node scripts/merge-update-manifests.ts --platform mac release-publish/nightly-mac.yml release-publish/nightly-mac-x64.yml
-          rm release-publish/nightly-mac-x64.yml
       - name: Publish complete nightly
         env:
           GH_TOKEN: ${{ github.token }}
