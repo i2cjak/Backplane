@@ -1,10 +1,35 @@
 # Backplane releases
 
-`.github/workflows/backplane-release.yml` is the desktop publishing workflow
-for this fork. The initial supported target is the Linux x64 AppImage. It
-downloads a pinned stable Backplane KiCad runtime, verifies its SHA-256, stages
-it under `resources/kicad`, builds the installer, verifies its bundled runtimes,
-and creates a draft GitHub Release. Review the artifacts before publishing the draft.
+The [nightly workflow](../../.github/workflows/backplane-nightly.yml) runs daily
+at 02:23 UTC on the default branch and can also be dispatched manually. Scheduled
+runs skip commits already released. It publishes a dated GitHub prerelease only
+after Linux x64, Windows x64, macOS arm64/x64, and Android finish successfully.
+Installers, updater metadata, and SHA-256 checksums live on that release; failed
+runs leave the previous published nightly available. Windows and macOS builds
+are initially unsigned.
+
+Nightlies use the KiCad revision and asset mapping in
+`assets/runtime/kicad.json`. Linux uses the existing published archive; Windows and macOS are built by
+`backplane-kicad-runtimes.yml` from the same pinned public source. Verified
+native archives are cached by source revision and workflow contents, then passed
+to packaging as artifacts in the same run. No write access to the source
+repository is required. The downloader verifies archive checksums and
+the bundled source manifest. Python archives and checksums are pinned per target
+under `assets/runtime/`. Update those pins only after the matching runtime builds
+have passed. Missing runtimes fail packaging; nightlies never substitute system
+KiCad. Runtime sources, standard libraries, and licenses are distributed through
+Backplane_KiCad releases.
+
+Android uses a permanent PKCS12 release key stored in repository secrets:
+`BACKPLANE_ANDROID_KEYSTORE_BASE64`, `BACKPLANE_ANDROID_KEYSTORE_PASSWORD`,
+`BACKPLANE_ANDROID_KEY_ALIAS`, and `BACKPLANE_ANDROID_KEY_PASSWORD`. Keep a secure
+backup: changing the key prevents updates over existing signed installations.
+An earlier debug-signed local APK must be uninstalled once before installing the
+release-signed APK. The APK runs independently of Metro and connects to a
+Backplane server; it does not run desktop KiCad on the phone.
+
+The [stable workflow](../../.github/workflows/backplane-release.yml) remains a
+manual/tag-driven Linux release that creates a draft for maintainer review.
 
 Configure the KiCad repository variables from a release of `i2cjak/Backplane_KiCad`:
 

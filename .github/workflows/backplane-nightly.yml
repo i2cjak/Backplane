@@ -1,0 +1,203 @@
+name: Backplane nightly
+
+on:
+  schedule:
+    - cron: "23 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backplane-nightly
+  cancel-in-progress: false
+
+env:
+  NODE_OPTIONS: --max-old-space-size=8192
+  BACKPLANE_DESKTOP_UPDATE_REPOSITORY: i2cjak/Backplane
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      build: ${{ steps.changes.outputs.build }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      android_code: ${{ steps.version.outputs.android_code }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v7
+        id: changes
+        with:
+          script: |
+            const {shouldReleaseNightly} = require('./.github/scripts/check-nightly-release.cjs');
+            const build = context.eventName === 'workflow_dispatch' || await shouldReleaseNightly({github, context, core});
+            core.setOutput('build', String(build));
+      - name: Resolve nightly version
+        id: version
+        shell: bash
+        run: |
+          node <<'JS'
+          const fs = require('node:fs');
+          const parts = require('./apps/desktop/package.json').version.split('-')[0].split('.').map(Number);
+          parts[2] += 1;
+          const base = parts.join('.');
+          const date = new Date().toISOString().slice(0,10).replaceAll('-','');
+          const version = `${base}-nightly.${date}.${process.env.GITHUB_RUN_NUMBER}`;
+          const code = Math.floor(Date.now()/1000) - 1704067200;
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\ntag=v${version}\nandroid_code=${code}\n`);
+          JS
+
+  wsl:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+      - name: Build Linux terminal binary for Windows WSL
+        run: |
+          pty_pkg="$(node -e "console.log(require.resolve('node-pty/package.json', {paths: ['./apps/server']}))")"
+          pty_dir="$(dirname "$pty_pkg")"
+          (cd "$pty_dir" && npx --yes node-gyp rebuild)
+          mkdir -p wsl-prebuild
+          cp "$pty_dir/build/Release/pty.node" wsl-prebuild/pty.node
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wsl-node-pty
+          path: wsl-prebuild/pty.node
+          retention-days: 1
+
+  runtimes:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    uses: ./.github/workflows/backplane-kicad-runtimes.yml
+
+  desktop:
+    needs: [prepare, wsl, runtimes]
+    if: needs.prepare.outputs.build == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            arch: x64
+            runner: ubuntu-24.04
+            target: AppImage
+          - platform: mac
+            arch: arm64
+            runner: macos-15
+            target: dmg
+          - platform: mac
+            arch: x64
+            runner: macos-15-intel
+            target: dmg
+          - platform: win
+            arch: x64
+            runner: windows-2025
+            target: nsis
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+      - name: Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libsecret-1-dev pkg-config xvfb xauth
+      - uses: actions/download-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: wsl-node-pty
+          path: wsl-prebuild
+      - uses: actions/download-artifact@v4
+        if: matrix.platform != 'linux'
+        with:
+          name: kicad-runtime-${{ matrix.platform }}-${{ matrix.arch }}
+          path: native-runtime
+      - name: Download verified KiCad runtime
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/stage-kicad-runtime.mjs --platform ${{ matrix.platform }} --arch ${{ matrix.arch }}
+      - name: Download verified Python runtime
+        run: bash scripts/stage-python-runtime.sh --platform ${{ matrix.platform }} --arch ${{ matrix.arch }} --destination apps/desktop/prod-resources/python-runtime
+      - name: Build full desktop installer
+        env:
+          BACKPLANE_KICAD_RUNTIME: apps/desktop/prod-resources/kicad-runtime
+          BACKPLANE_REQUIRE_BUNDLED_KICAD: "1"
+          BACKPLANE_PYTHON_RUNTIME: apps/desktop/prod-resources/python-runtime
+          BACKPLANE_REQUIRE_BUNDLED_PYTHON: "1"
+          USE_HARD_LINKS: "true"
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          NIGHTLY_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          args=(--platform '${{ matrix.platform }}' --arch '${{ matrix.arch }}' --target '${{ matrix.target }}' --build-version "$NIGHTLY_VERSION")
+          if [[ '${{ matrix.platform }}' == win ]]; then args+=(--wsl-prebuild "$GITHUB_WORKSPACE/wsl-prebuild/pty.node"); fi
+          vp run dist:desktop:artifact "${args[@]}"
+      - name: Verify packaged runtimes
+        run: |
+          case '${{ matrix.platform }}' in
+            linux) artifacts=(release/*.AppImage); prefix=(xvfb-run --auto-servernum);;
+            mac) artifacts=(release/*.zip); prefix=();;
+            win) artifacts=(release/*.exe); prefix=();;
+          esac
+          test "${#artifacts[@]}" = 1
+          "${prefix[@]}" node scripts/verify-nightly-desktop.mjs --platform '${{ matrix.platform }}' --artifact "${artifacts[0]}"
+      - name: Verify and collect release assets
+        run: node scripts/collect-nightly-assets.mjs --platform ${{ matrix.platform }} --arch ${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nightly-desktop-${{ matrix.platform }}-${{ matrix.arch }}
+          path: release-publish/*
+          compression-level: 0
+          retention-days: 3
+          if-no-files-found: error
+
+  android:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    uses: ./.github/workflows/backplane-android.yml
+    with:
+      version: ${{ needs.prepare.outputs.version }}
+      version_code: ${{ needs.prepare.outputs.android_code }}
+    secrets: inherit
+
+  publish:
+    needs: [prepare, desktop, android]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: nightly-*
+          path: release-publish
+          merge-multiple: true
+      - name: Merge macOS update feeds
+        run: |
+          node scripts/merge-update-manifests.ts --platform mac release-publish/nightly-mac.yml release-publish/nightly-mac-x64.yml
+          rm release-publish/nightly-mac-x64.yml
+      - name: Publish complete nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: node scripts/publish-nightly.mjs

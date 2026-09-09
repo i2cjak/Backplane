@@ -1,0 +1,259 @@
+name: Backplane KiCad runtimes
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+# Keep these jobs separate from the Linux workflow.  A macOS bundle and an
+# MSVC install tree cannot be produced correctly from Linux/WSL, and each
+# native runner is also the only reliable host for its relocation smoke test.
+concurrency:
+  group: backplane-kicad-runtimes
+  cancel-in-progress: false
+
+jobs:
+  native-runtime:
+    name: ${{ matrix.asset }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            asset: backplane-kicad-macos-arm64
+            cmake_arch: arm64
+            platform: mac
+            arch: arm64
+          - os: macos-15-intel
+            asset: backplane-kicad-macos-x86_64
+            cmake_arch: x86_64
+            platform: mac
+            arch: x64
+          - os: windows-2022
+            asset: backplane-kicad-windows-x86_64
+            cmake_arch: x64
+            platform: win
+            arch: x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: .pipeline
+          sparse-checkout: .github/workflows
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: release
+          key: kicad-${{ matrix.asset }}-1c193606-${{ hashFiles('.pipeline/.github/workflows/backplane-kicad-runtimes.yml') }}
+      - name: Check out source
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: i2cjak/Backplane_KiCad
+          ref: 1c193606eddedbf98f8c9af5100b5e8f79da603d
+          fetch-depth: 1
+          clean: false
+          lfs: true
+
+      - name: Verify source revision
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = 1c193606eddedbf98f8c9af5100b5e8f79da603d
+
+      - name: Install macOS dependencies
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'macOS'
+        shell: bash
+        run: |
+          brew update
+          brew install python@3.12 pixman cmake ninja ccache pkg-config boost cairo curl eigen fontconfig freetype glew glm harfbuzz libgit2 openssl@3 protobuf rapidjson swig zstd wxwidgets ngspice opencascade yaml-cpp libarchive nng
+
+      - name: Install Windows dependencies
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install ninja ccache -y --no-progress
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "$env:RUNNER_TEMP/vcpkg"
+          & "$env:RUNNER_TEMP/vcpkg/bootstrap-vcpkg.bat" -disableMetrics
+          & "$env:RUNNER_TEMP/vcpkg/vcpkg.exe" install --triplet x64-windows --x-manifest-root="$pwd"
+
+      - name: Initialize MSVC x64 environment
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Restore native compiler cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/ccache
+            ~/Library/Caches/ccache
+            ${{ env.LOCALAPPDATA }}\ccache
+          key: backplane-kicad-ccache-${{ matrix.asset }}-${{ github.sha }}
+          restore-keys: |
+            backplane-kicad-ccache-${{ matrix.asset }}-
+
+      - name: Configure compiler cache
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os != 'Windows'
+        shell: bash
+        run: |
+          ccache --max-size=4G
+
+      - name: Configure compiler cache (Windows)
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ccache --max-size=4G
+
+      - name: Fetch pinned official KiCad libraries
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          KICAD_LIBRARY_TAG: 10.0.6
+          KICAD_SYMBOLS_COMMIT: 7800d91437ce44e2ed0928f2ad31a287457b8a68
+          KICAD_FOOTPRINTS_COMMIT: 819223b66f96508feaeaa305301b5e6bb5c1038b
+          KICAD_3DMODELS_COMMIT: e62ed1fc7862da83f789bd562671b5e4b82afcdf
+          KICAD_TEMPLATES_COMMIT: 3ed4538b0f965d821df63a5fffc4441e723cfe7f
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/kicad-libraries"
+          mkdir -p "$root" stage/share/kicad/{symbols,footprints,3dmodels,template} stage/licenses/kicad-libraries
+          clone() {
+            name="$1"; commit="$2"
+            git clone --depth 1 --no-tags --branch "$KICAD_LIBRARY_TAG" "https://gitlab.com/kicad/libraries/$name.git" "$root/$name"
+            test "$(git -C "$root/$name" rev-parse HEAD)" = "$commit"
+            [ "$name" = kicad-packages3D ] && git -C "$root/$name" lfs pull
+            printf 'repository=https://gitlab.com/kicad/libraries/%s.git\nref=%s\ncommit=%s\n' "$name" "$KICAD_LIBRARY_TAG" "$commit" > "$root/$name/BACKPLANE_SOURCE.txt"
+          }
+          clone kicad-symbols "$KICAD_SYMBOLS_COMMIT"
+          clone kicad-footprints "$KICAD_FOOTPRINTS_COMMIT"
+          clone kicad-packages3D "$KICAD_3DMODELS_COMMIT"
+          clone kicad-templates "$KICAD_TEMPLATES_COMMIT"
+          find "$root/kicad-symbols" -maxdepth 1 -type f -name '*.kicad_sym' -exec cp -a {} stage/share/kicad/symbols/ \;
+          find "$root/kicad-footprints" -maxdepth 1 -type d -name '*.pretty' -exec cp -a {} stage/share/kicad/footprints/ \;
+          find "$root/kicad-packages3D" -maxdepth 1 -type d -name '*.3dshapes' -exec cp -a {} stage/share/kicad/3dmodels/ \;
+          cp "$root/kicad-symbols/sym-lib-table" stage/share/kicad/template/
+          cp "$root/kicad-footprints/fp-lib-table" stage/share/kicad/template/
+          cp -a "$root/kicad-templates/Projects/." stage/share/kicad/template/
+          find "$root/kicad-templates/Worksheets" -type f -name '*.kicad_wks' -exec cp {} stage/share/kicad/template/ \;
+          cp -a stage/share/kicad/template/. stage/share/kicad/
+          for name in kicad-symbols kicad-footprints kicad-packages3D kicad-templates; do
+            mkdir -p "stage/licenses/kicad-libraries/$name"
+            cp "$root/$name/BACKPLANE_SOURCE.txt" "stage/licenses/kicad-libraries/$name/"
+            find "$root/$name" -maxdepth 1 -type f \( -iname 'LICENSE*' -o -iname 'COPYING*' -o -iname 'NOTICE*' -o -iname 'README*' \) -exec cp {} "stage/licenses/kicad-libraries/$name/" \;
+
+          done
+          rm -rf "$root"
+
+      - name: Configure and build macOS runtime
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'macOS'
+        shell: bash
+        run: |
+          python_framework="$(brew --prefix python@3.12)/Frameworks/Python.framework"
+          cmake -S . -B build/native -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PWD/stage" -DPYTHON_FRAMEWORK_HELPER=1 -DKICAD_APPLE_MAKE_RELOCATEABLE_BUNDLE=ON -DPYTHON_FRAMEWORK="$python_framework" -DPYTHON_INCLUDE_DIR="$python_framework/Versions/3.12/include/python3.12" -DPYTHON_LIBRARY="$python_framework/Versions/3.12/lib/libpython3.12.dylib" -DCMAKE_OSX_ARCHITECTURES=${{ matrix.cmake_arch }} -DKICAD_BUILD_QA_TESTS=OFF -DKICAD_BUILD_I18N=OFF -DKICAD_USE_SENTRY=OFF -DKICAD_SCRIPTING_WXPYTHON=OFF -DKICAD_USE_PCH=OFF -DKICAD_IPC_API=ON -DPYTHON_EXECUTABLE="$python_framework/Versions/3.12/bin/python3.12" -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          cmake --build build/native --parallel 3
+          cmake --install build/native
+
+      - name: Configure and build Windows runtime
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vcpkg = "$env:RUNNER_TEMP/vcpkg"
+          cmake -S . -B build/native -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$pwd/stage" -DCMAKE_TOOLCHAIN_FILE="$vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows -DKICAD_BUILD_QA_TESTS=OFF -DKICAD_BUILD_I18N=OFF -DKICAD_USE_SENTRY=OFF -DKICAD_SCRIPTING_WXPYTHON=OFF -DKICAD_USE_PCH=OFF -DKICAD_IPC_API=ON
+          cmake --build build/native --parallel 3
+          cmake --install build/native
+
+      - name: Assemble and smoke test native archive
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$RUNNER_OS" in
+            macOS) source_bin="stage/KiCad.app/Contents/MacOS/kicad-cli"; source_root="stage/KiCad.app"; extension="";;
+            Windows) source_bin="stage/bin/kicad-cli.exe"; source_root="stage"; extension=".exe";;
+          esac
+          test -x "$source_bin" || test -f "$source_bin"
+          if [ "$RUNNER_OS" = macOS ]; then
+            # Keep KiCad.app intact: its binaries use @executable_path and
+            # @rpath references relative to Contents/MacOS and Frameworks.
+            mkdir -p "$source_root/Contents/SharedSupport"
+            mv stage/share/kicad "$source_root/Contents/SharedSupport/kicad"
+            mkdir -p stage/licenses/dependencies
+            brew info --json=v2 --installed > stage/licenses/dependencies/homebrew-sources.json
+            for prefix in "$(brew --prefix)"/Cellar/*/*; do
+              dependency="$(basename "$(dirname "$prefix")")"
+              mkdir -p "stage/licenses/dependencies/$dependency"
+              find "$prefix" -maxdepth 2 -type f \( -iname 'LICENSE*' -o -iname 'COPYING*' \) -exec cp {} "stage/licenses/dependencies/$dependency/" \;
+            done
+            codesign --force --deep --sign - "$source_root"
+          fi
+          version="$("$source_bin" --version | head -n 1 | tr ' /' '__')"
+          test "$version" = 10.0.6
+          archive_root="${{ matrix.asset }}-${version}"
+          mkdir -p "release/$archive_root/bin" "release/$archive_root/licenses"
+          cp -a stage/licenses/. "release/$archive_root/licenses/"
+          if [ "$RUNNER_OS" = macOS ]; then
+            mv "$source_root" "release/$archive_root/KiCad.app"
+            ln -s KiCad.app/Contents/SharedSupport "release/$archive_root/share"
+            mkdir -p "release/$archive_root/bin"
+            cat > "release/$archive_root/bin/kicad-cli" <<'LAUNCHER'
+          #!/usr/bin/env sh
+          set -eu
+          root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+          export KICAD10_SYMBOL_DIR="${KICAD10_SYMBOL_DIR-$root/KiCad.app/Contents/SharedSupport/kicad/symbols}"
+          export KICAD10_FOOTPRINT_DIR="${KICAD10_FOOTPRINT_DIR-$root/KiCad.app/Contents/SharedSupport/kicad/footprints}"
+          export KICAD10_3DMODEL_DIR="${KICAD10_3DMODEL_DIR-$root/KiCad.app/Contents/SharedSupport/kicad/3dmodels}"
+          export KICAD10_TEMPLATE_DIR="${KICAD10_TEMPLATE_DIR-$root/KiCad.app/Contents/SharedSupport/kicad/template}"
+          exec "$root/KiCad.app/Contents/MacOS/kicad-cli" "$@"
+          LAUNCHER
+            chmod +x "release/$archive_root/bin/kicad-cli"
+          else
+            mv stage/share "release/$archive_root/"
+            cp -a stage/bin/. "release/$archive_root/bin/"
+            if [ -d stage/lib ]; then cp -a stage/lib "release/$archive_root/"; fi
+            cp -a vcpkg_installed/x64-windows/bin/. "release/$archive_root/bin/"
+            for crt in "$VCToolsRedistDir"/x64/Microsoft.VC*.CRT; do
+              if [ -d "$crt" ]; then cp "$crt"/*.dll "release/$archive_root/bin/"; fi
+            done
+            mkdir -p "release/$archive_root/licenses/dependencies"
+            find vcpkg_installed/x64-windows/share -name copyright -type f | while IFS= read -r notice; do
+              dependency="$(basename "$(dirname "$notice")")"
+              cp "$notice" "release/$archive_root/licenses/dependencies/$dependency.txt"
+            done
+            if [ -d "vcpkg_installed/x64-windows/tools/python3" ]; then
+              mkdir -p "release/$archive_root/lib/python"
+              cp -a vcpkg_installed/x64-windows/tools/python3/Lib/. "release/$archive_root/lib/python/"
+              printf 'Python runtime source: vcpkg manifest python3\n' > "release/$archive_root/PYTHON_RUNTIME.txt"
+            fi
+          fi
+          cp LICENSE* AUTHORS.txt README.md "release/$archive_root/licenses/"
+          git rev-parse HEAD > "release/$archive_root/SOURCE_COMMIT"
+          git describe --tags --always > "release/$archive_root/SOURCE_VERSION"
+          git archive --format=tar.gz --prefix="${archive_root}-source/" HEAD > "release/${archive_root}-source.tar.gz"
+          cat > "release/$archive_root/manifest.json" <<MANIFEST
+          {"sourceRepository":"https://github.com/i2cjak/Backplane_KiCad","sourceCommit":"$(git rev-parse HEAD)","version":"$version","platform":"${{ matrix.asset }}","entrypoint":"bin/kicad-cli${extension}","license":"GPL-3.0-or-later"}
+          MANIFEST
+          printf 'Backplane KiCad native runtime\nSource commit: %s\nEntry point: bin/kicad-cli%s\n' "$(git rev-parse HEAD)" "$extension" > "release/$archive_root/RUNTIME_MANIFEST.txt"
+          "$PWD/release/$archive_root/bin/kicad-cli$extension" --version
+          "$PWD/release/$archive_root/bin/kicad-cli$extension" api-server --help
+          (cd release && tar -czf "$archive_root.tar.gz" "$archive_root")
+          rm -rf "release/$archive_root"
+          if command -v shasum >/dev/null; then
+            (cd release && shasum -a 256 "$archive_root.tar.gz" > "$archive_root.sha256")
+          else
+            (cd release && sha256sum "$archive_root.tar.gz" > "$archive_root.sha256")
+          fi
+
+      - name: Upload native runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kicad-runtime-${{ matrix.platform }}-${{ matrix.arch }}
+          compression-level: 0
+          retention-days: 3
+          path: |
+            release/*.tar.gz
+            release/*.sha256

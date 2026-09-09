@@ -1,0 +1,12 @@
+{
+  "repository": "i2cjak/Backplane_KiCad",
+  "tag": "backplane-kicad-v10.0.6-2",
+  "version": "10.0.6",
+  "sourceCommit": "1c193606eddedbf98f8c9af5100b5e8f79da603d",
+  "assets": {
+    "linux-x64": "backplane-kicad-linux-x86_64-10.0.6.tar.gz",
+    "mac-arm64": "backplane-kicad-macos-arm64-10.0.6.tar.gz",
+    "mac-x64": "backplane-kicad-macos-x86_64-10.0.6.tar.gz",
+    "win-x64": "backplane-kicad-windows-x86_64-10.0.6.tar.gz"
+  }
+}

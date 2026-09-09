@@ -1,0 +1,16 @@
+{
+  "runtime": "python-build-standalone",
+  "version": "3.13.15",
+  "release": "20260901",
+  "platform": "mac",
+  "arch": "x64",
+  "installOnly": {
+    "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.13.15%2B20260901-x86_64-apple-darwin-install_only.tar.gz",
+    "sha256": "49f0d97f506b855eed60b74a8ac138595c5b39799a6aa5e0d7ca8abe1019a4d4"
+  },
+  "fullBuild": {
+    "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.13.15%2B20260901-x86_64-apple-darwin-pgo%2Blto-full.tar.zst",
+    "sha256": "9ed4c06a2f276f523638b3c9a420fad932dcb1e8f0c740da47d7701281dc065a"
+  },
+  "licenseDirectory": "python/licenses"
+}

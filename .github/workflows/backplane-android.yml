@@ -1,0 +1,135 @@
+name: Backplane Android nightly
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Android versionName, including an optional nightly suffix
+        required: true
+        type: string
+      version_code:
+        description: Monotonically increasing Android versionCode
+        required: true
+        type: string
+    secrets:
+      BACKPLANE_ANDROID_KEYSTORE_BASE64:
+        required: true
+      BACKPLANE_ANDROID_KEYSTORE_PASSWORD:
+        required: true
+      BACKPLANE_ANDROID_KEY_ALIAS:
+        required: true
+      BACKPLANE_ANDROID_KEY_PASSWORD:
+        required: true
+    outputs:
+      artifact_name:
+        description: Uploaded APK artifact name
+        value: "${{ jobs.build.outputs.artifact_name }}"
+      version:
+        description: Android versionName used by the build
+        value: "${{ jobs.build.outputs.version }}"
+      version_code:
+        description: Android versionCode used by the build
+        value: "${{ jobs.build.outputs.version_code }}"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backplane-android-nightly
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Signed universal APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    outputs:
+      artifact_name: ${{ steps.meta.outputs.artifact_name }}
+      version: ${{ steps.meta.outputs.version }}
+      version_code: ${{ steps.meta.outputs.version_code }}
+    env:
+      APP_VARIANT: production
+      BACKPLANE_RELEASE_VERSION: ${{ inputs.version }}
+      BACKPLANE_RELEASE_VERSION_CODE: ${{ inputs.version_code }}
+      NODE_OPTIONS: --max-old-space-size=8192
+      BACKPLANE_ANDROID_PACKAGE: works.backplane.app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate build inputs
+        id: meta
+        shell: bash
+        env:
+          BUILD_VERSION: ${{ inputs.version }}
+          BUILD_VERSION_CODE: ${{ inputs.version_code }}
+        run: |
+          set -euo pipefail
+          [[ "$BUILD_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || {
+            echo "Invalid Android version: $BUILD_VERSION" >&2
+            exit 1
+          }
+          [[ "$BUILD_VERSION_CODE" =~ ^[1-9][0-9]*$ ]] || {
+            echo "version_code must be a positive integer: $BUILD_VERSION_CODE" >&2
+            exit 1
+          }
+          artifact_name="nightly-android"
+          echo "artifact_name=$artifact_name" >> "$GITHUB_OUTPUT"
+          echo "version=$BUILD_VERSION" >> "$GITHUB_OUTPUT"
+          echo "version_code=$BUILD_VERSION_CODE" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@backplane/mobile...
+
+      - name: Expose pnpm
+        run: |
+          pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
+          vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
+          echo "$vp_pnpm_bin" >> "$GITHUB_PATH"
+          "$vp_pnpm_bin/pnpm" --version
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.BACKPLANE_ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PATH: ${{ runner.temp }}/backplane-nightly-release.jks
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_BASE64"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          test -s "$KEYSTORE_PATH"
+
+      - name: Build signed Android APK
+        working-directory: apps/mobile
+        env:
+          BACKPLANE_ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/backplane-nightly-release.jks
+          BACKPLANE_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.BACKPLANE_ANDROID_KEYSTORE_PASSWORD }}
+          BACKPLANE_ANDROID_KEY_ALIAS: ${{ secrets.BACKPLANE_ANDROID_KEY_ALIAS }}
+          BACKPLANE_ANDROID_KEY_PASSWORD: ${{ secrets.BACKPLANE_ANDROID_KEY_PASSWORD }}
+        run: bash scripts/build-android-nightly.sh
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.artifact_name }}
+          path: apps/mobile/android/app/build/outputs/apk/release/Backplane-${{ inputs.version }}-android.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove signing keystore
+        if: always()
+        run: rm -f "${{ runner.temp }}/backplane-nightly-release.jks"

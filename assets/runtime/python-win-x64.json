@@ -1,0 +1,16 @@
+{
+  "runtime": "python-build-standalone",
+  "version": "3.13.15",
+  "release": "20260901",
+  "platform": "win",
+  "arch": "x64",
+  "installOnly": {
+    "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.13.15%2B20260901-x86_64-pc-windows-msvc-install_only.tar.gz",
+    "sha256": "9bcc038a0bf180612ed56dec93d4977d035e80b8d9320ef51a38c287baf134b7"
+  },
+  "fullBuild": {
+    "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.13.15%2B20260901-x86_64-pc-windows-msvc-pgo-full.tar.zst",
+    "sha256": "b8630abcc99a26f3c3ed4022664d9c741fc14a6b8fbfc88a489b25f8de67f85e"
+  },
+  "licenseDirectory": "python/licenses"
+}

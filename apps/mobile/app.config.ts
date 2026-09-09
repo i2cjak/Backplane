@@ -13,6 +13,12 @@ const isIosPersonalTeamBuild = repoEnv.BACKPLANE_IOS_PERSONAL_TEAM === "1";
 const runtimeVersionPolicy =
   process.env.MOBILE_VERSION_POLICY ??
   (APP_VARIANT === "development" ? "appVersion" : "fingerprint");
+const buildVersion = repoEnv.BACKPLANE_RELEASE_VERSION?.trim() || "1.0.4";
+const buildVersionCode = repoEnv.BACKPLANE_RELEASE_VERSION_CODE?.trim();
+
+if (buildVersionCode !== undefined && !/^[1-9][0-9]*$/.test(buildVersionCode)) {
+  throw new Error("BACKPLANE_RELEASE_VERSION_CODE must be a positive integer.");
+}
 
 const personalTeamBundleIdentifier = repoEnv.BACKPLANE_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();
 const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
@@ -167,7 +173,7 @@ const config: ExpoConfig = {
   slug: "backplane",
   platforms: ["ios", "android"],
   scheme: variant.scheme,
-  version: "1.0.4",
+  version: buildVersion,
   runtimeVersion: {
     // Development manifests resolve on every launch, so avoid fingerprint's
     // expensive native-project calculation there. Preview and production stay
@@ -220,6 +226,7 @@ const config: ExpoConfig = {
   android: {
     icon: variant.assets.appIcon,
     package: variant.androidPackage,
+    ...(buildVersionCode ? { versionCode: Number(buildVersionCode) } : {}),
     adaptiveIcon: {
       backgroundColor: variant.assets.androidAdaptiveBackgroundColor,
       foregroundImage: variant.assets.androidAdaptiveForeground,
@@ -326,6 +333,7 @@ const config: ExpoConfig = {
     "./plugins/withIosSceneLifecycle.cjs",
     "./plugins/withAndroidCleartextTraffic.cjs",
     "./plugins/withAndroidGradleHeap.cjs",
+    "./plugins/withAndroidReleaseSigning.cjs",
     "./plugins/withAndroidModernPopupMenu.cjs",
     "./plugins/withAndroidModernAlertDialog.cjs",
     "./plugins/withAndroidPredictiveBackCompat.cjs",
