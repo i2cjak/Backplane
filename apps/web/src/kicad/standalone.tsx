@@ -4,7 +4,6 @@ import {
   Box,
   CircuitBoard,
   FileText,
-  Image,
   Layers3,
   RefreshCw,
   Radio,
@@ -59,8 +58,6 @@ const tabs = [
   { id: "3d", label: "3D", icon: Box },
   { id: "gerbers", label: "Gerbers", icon: Layers3 },
   { id: "step", label: "STEP", icon: Box },
-  { id: "enclosure", label: "FreeCAD", icon: Box },
-  { id: "product", label: "Blender", icon: Image },
 ] as const;
 const optionalTabs = [
   { id: "bom", label: "BOM", icon: List },
@@ -343,83 +340,87 @@ function App() {
         >
           <RefreshCw size={15} />
         </button>
-        <nav className="design-navigation" aria-label="Design navigation">
-          <div
-            className="design-tabs"
-            role="tablist"
-            aria-label="KiCad views"
-            onKeyDown={(event) => {
-              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-              const buttons = Array.from(
-                event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
-              );
-              const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-              if (index < 0) return;
-              event.preventDefault();
-              const next =
-                event.key === "Home"
-                  ? 0
-                  : event.key === "End"
-                    ? buttons.length - 1
-                    : (index + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) %
-                      buttons.length;
-              buttons[next]?.focus();
-              buttons[next]?.click();
-            }}
-          >
-            {allTabs
-              .filter((tab) => tabs.some((base) => base.id === tab.id) || openTabs.includes(tab.id))
-              .map(({ id, label, icon: Icon }) => (
-                <div key={id} className="design-tab-wrap">
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={id === view}
-                    aria-controls="design-canvas"
-                    tabIndex={id === view ? 0 : -1}
-                    className="design-tab"
-                    onClick={() => chooseView(id)}
-                  >
-                    <Icon size={15} strokeWidth={1.7} />
-                    {label}
-                  </button>
-                  {openTabs.includes(id) && (
-                    <button
-                      type="button"
-                      className="design-tab-close"
-                      aria-label={`Close ${label}`}
-                      onClick={() => {
-                        setOpenTabs((old) => old.filter((tab) => tab !== id));
-                        if (view === id) chooseView("pcb");
-                      }}
-                    >
-                      <X size={11} />
-                    </button>
-                  )}
-                </div>
-              ))}
-          </div>
-          <div className="design-tools">
-            <select
-              aria-label="Open optional viewer tab"
-              value=""
-              onChange={(event) => {
-                const next = optionalTabs.find((tab) => tab.id === event.target.value)?.id;
-                if (!next) return;
-                setOpenTabs((old) => (old.includes(next) ? old : [...old, next]));
-                chooseView(next);
+        {view !== "enclosure" && view !== "product" ? (
+          <nav className="design-navigation" aria-label="Design navigation">
+            <div
+              className="design-tabs"
+              role="tablist"
+              aria-label="KiCad views"
+              onKeyDown={(event) => {
+                if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                const buttons = Array.from(
+                  event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+                );
+                const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+                if (index < 0) return;
+                event.preventDefault();
+                const next =
+                  event.key === "Home"
+                    ? 0
+                    : event.key === "End"
+                      ? buttons.length - 1
+                      : (index + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) %
+                        buttons.length;
+                buttons[next]?.focus();
+                buttons[next]?.click();
               }}
             >
-              <option value="">Tools</option>
-              {optionalTabs.map((tab) => (
-                <option key={tab.id} value={tab.id}>
-                  {tab.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDown size={12} aria-hidden="true" />
-          </div>
-        </nav>
+              {allTabs
+                .filter(
+                  (tab) => tabs.some((base) => base.id === tab.id) || openTabs.includes(tab.id),
+                )
+                .map(({ id, label, icon: Icon }) => (
+                  <div key={id} className="design-tab-wrap">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={id === view}
+                      aria-controls="design-canvas"
+                      tabIndex={id === view ? 0 : -1}
+                      className="design-tab"
+                      onClick={() => chooseView(id)}
+                    >
+                      <Icon size={15} strokeWidth={1.7} />
+                      {label}
+                    </button>
+                    {openTabs.includes(id) && (
+                      <button
+                        type="button"
+                        className="design-tab-close"
+                        aria-label={`Close ${label}`}
+                        onClick={() => {
+                          setOpenTabs((old) => old.filter((tab) => tab !== id));
+                          if (view === id) chooseView("pcb");
+                        }}
+                      >
+                        <X size={11} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+            </div>
+            <div className="design-tools">
+              <select
+                aria-label="Open optional viewer tab"
+                value=""
+                onChange={(event) => {
+                  const next = optionalTabs.find((tab) => tab.id === event.target.value)?.id;
+                  if (!next) return;
+                  setOpenTabs((old) => (old.includes(next) ? old : [...old, next]));
+                  chooseView(next);
+                }}
+              >
+                <option value="">Tools</option>
+                {optionalTabs.map((tab) => (
+                  <option key={tab.id} value={tab.id}>
+                    {tab.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={12} aria-hidden="true" />
+            </div>
+          </nav>
+        ) : null}
       </header>
       {view !== "analysis" && view !== "enclosure" && view !== "product" && (
         <div className="design-filebar">

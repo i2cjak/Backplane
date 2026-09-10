@@ -6,7 +6,7 @@ Backplane inspects whatever `.backplane.json` points at. The coding agent drives
 
 Swap a server, rename the MCP key, or add another domain. Keep the inspect pointers. That is the same move as driving KiCad with your own MCP instead of Backplane's stock KiCad path.
 
-The KiCad panel, including the FreeCAD and Blender tabs, only rereads saved files. It does not launch those apps. Attach an MCP in the agent's config and Backplane starts it with the provider session. Backplane does not vendor a KiCad, FreeCAD, or Blender MCP.
+FreeCAD and Blender inspect sit next to KiCad in the right-panel add menu. They only reread saved files. They do not launch those apps. Attach an MCP in the agent's config and Backplane starts it with the provider session. Backplane does not vendor a KiCad, FreeCAD, or Blender MCP. Extra CAD domains stay in the `drivers` map until they earn their own add-menu row.
 
 ## Driver contract
 

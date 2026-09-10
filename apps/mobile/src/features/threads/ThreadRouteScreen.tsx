@@ -652,38 +652,59 @@ function ThreadRouteContent(
   };
   const threadCenterHeaderItems = useThreadGitCenterHeaderItems(threadGitControlProps);
   const baseCompactRightHeaderItems = useThreadGitRightHeaderItems(threadGitControlProps);
-  const openKiCad = useCallback(() => {
-    if (!selectedThread || selectedThreadCwd === null) return;
-    void navigation.navigate("KiCadViewer", {
-      environmentId: String(selectedThread.environmentId),
-      threadId: String(selectedThread.id),
-      cwd: selectedThreadCwd,
-    });
-  }, [navigation, selectedThread, selectedThreadCwd]);
-  const kiCadHeaderItem = useMemo(
+  const openCadInspect = useCallback(
+    (view: "pcb" | "enclosure" | "product", title: string) => {
+      if (!selectedThread || selectedThreadCwd === null) return;
+      void navigation.navigate("KiCadViewer", {
+        environmentId: String(selectedThread.environmentId),
+        threadId: String(selectedThread.id),
+        cwd: selectedThreadCwd,
+        view,
+        title,
+      });
+    },
+    [navigation, selectedThread, selectedThreadCwd],
+  );
+  const cadInspectHeaderItems = useMemo(
     () =>
-      withNativeGlassHeaderItem({
-        accessibilityLabel: "Open KiCad viewer",
-        icon: { name: "cpu", type: "sfSymbol" as const },
-        identifier: "thread-kicad",
-        onPress: openKiCad,
-        type: "button" as const,
-      }),
-    [openKiCad],
+      [
+        withNativeGlassHeaderItem({
+          accessibilityLabel: "Open KiCad viewer",
+          icon: { name: "cpu", type: "sfSymbol" as const },
+          identifier: "thread-kicad",
+          onPress: () => openCadInspect("pcb", "KiCad"),
+          type: "button" as const,
+        }),
+        withNativeGlassHeaderItem({
+          accessibilityLabel: "Open FreeCAD viewer",
+          icon: { name: "cube", type: "sfSymbol" as const },
+          identifier: "thread-freecad",
+          onPress: () => openCadInspect("enclosure", "FreeCAD"),
+          type: "button" as const,
+        }),
+        withNativeGlassHeaderItem({
+          accessibilityLabel: "Open Blender viewer",
+          icon: { name: "photo", type: "sfSymbol" as const },
+          identifier: "thread-blender",
+          onPress: () => openCadInspect("product", "Blender"),
+          type: "button" as const,
+        }),
+      ] as const,
+    [openCadInspect],
   );
   const compactRightHeaderItems = useMemo(
     () =>
       selectedThreadCwd === null
         ? baseCompactRightHeaderItems
-        : [...baseCompactRightHeaderItems, kiCadHeaderItem],
-    [baseCompactRightHeaderItems, kiCadHeaderItem, selectedThreadCwd],
+        : [...baseCompactRightHeaderItems, ...cadInspectHeaderItems],
+    [baseCompactRightHeaderItems, cadInspectHeaderItems, selectedThreadCwd],
   );
   const splitCenterHeaderItems = useMemo(
     () =>
       selectedThreadCwd === null
         ? threadCenterHeaderItems
-        : [...threadCenterHeaderItems, kiCadHeaderItem],
-    [kiCadHeaderItem, selectedThreadCwd, threadCenterHeaderItems],
+        : [...threadCenterHeaderItems, ...cadInspectHeaderItems],
+    [cadInspectHeaderItems, selectedThreadCwd, threadCenterHeaderItems],
   );
   const splitLeftHeaderItems = useMemo<NativeHeaderItems>(
     () => [
@@ -746,7 +767,17 @@ function ThreadRouteContent(
       actions.push({
         accessibilityLabel: "Open KiCad viewer",
         icon: "cpu",
-        onPress: openKiCad,
+        onPress: () => openCadInspect("pcb", "KiCad"),
+      });
+      actions.push({
+        accessibilityLabel: "Open FreeCAD viewer",
+        icon: "cube",
+        onPress: () => openCadInspect("enclosure", "FreeCAD"),
+      });
+      actions.push({
+        accessibilityLabel: "Open Blender viewer",
+        icon: "photo",
+        onPress: () => openCadInspect("product", "Blender"),
       });
     }
     if (selectedThreadProject?.workspaceRoot) {
@@ -777,7 +808,7 @@ function ThreadRouteContent(
     handleToggleInspector,
     props.onReturnToThread,
     selectedThreadCwd,
-    openKiCad,
+    openCadInspect,
     selectedThreadProject?.workspaceRoot,
   ]);
 
