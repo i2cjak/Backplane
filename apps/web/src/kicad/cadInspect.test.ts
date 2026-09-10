@@ -3,7 +3,6 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   CAD_INSPECT_SURFACES,
   KICAD_INNER_TABS,
-  KICAD_OPTIONAL_TABS,
   cadInspectLabelForKind,
   cadInspectOpenHint,
   cadInspectViewForKind,
@@ -16,7 +15,6 @@ import {
   productInspectSolids,
   productInspectStills,
   readViewerView,
-  viewerHashView,
 } from "./cadInspect.ts";
 
 describe("cadInspect surfaces", () => {
@@ -37,9 +35,7 @@ describe("cadInspect surfaces", () => {
       "gerbers",
       "step",
     ]);
-    expect([...KICAD_INNER_TABS, ...KICAD_OPTIONAL_TABS].map((tab) => tab.label)).not.toContain(
-      "FreeCAD",
-    );
+    expect(KICAD_INNER_TABS.map((tab) => tab.label)).not.toContain("FreeCAD");
     expect(isSiblingInspectView("enclosure")).toBe(true);
     expect(isSiblingInspectView("pcb")).toBe(false);
     expect(inspectSurfaceKind("product")).toBe("blender");
@@ -47,7 +43,7 @@ describe("cadInspect surfaces", () => {
   });
 
   it("switches sibling inspect via hash or search without falling back to PCB", () => {
-    expect(viewerHashView("enclosure")).toBe("enclosure");
+    expect(readViewerView("#view=enclosure")).toBe("enclosure");
     expect(readViewerView("#view=product")).toBe("product");
     expect(readViewerView("", "?view=enclosure")).toBe("enclosure");
     expect(readViewerView("#view=enclosure", "?view=pcb")).toBe("enclosure");

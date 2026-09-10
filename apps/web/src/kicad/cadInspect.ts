@@ -58,13 +58,6 @@ export const KICAD_INNER_TABS = [
   { id: "step", label: "STEP" },
 ] as const;
 
-export const KICAD_OPTIONAL_TABS = [
-  { id: "bom", label: "BOM" },
-  { id: "footprint", label: "Footprints" },
-  { id: "symbol", label: "Symbols" },
-  { id: "analysis", label: "Analysis" },
-] as const;
-
 export function isSiblingInspectView(
   view: string | null | undefined,
 ): view is "enclosure" | "product" {
@@ -77,22 +70,6 @@ export function inspectSurfaceKind(view: string | null | undefined): CadInspectK
   return "kicad";
 }
 
-export function viewerHashView(
-  value: string | null,
-): CadInspectView | "schematic" | "3d" | "step" | "gerbers" | undefined {
-  if (
-    value === "pcb" ||
-    value === "enclosure" ||
-    value === "product" ||
-    value === "schematic" ||
-    value === "3d" ||
-    value === "step" ||
-    value === "gerbers"
-  )
-    return value;
-  return undefined;
-}
-
 function viewParam(source: string, leading: "#" | "?"): string | null {
   const body = source.startsWith(leading) ? source.slice(1) : source;
   return new URLSearchParams(body).get("view");
@@ -103,12 +80,10 @@ export function readViewerView(hash: string, search = ""): string | undefined {
   const value = viewParam(hash, "#") ?? viewParam(search, "?");
   if (!value) return undefined;
   if (isSiblingInspectView(value)) return value;
-  if (
-    KICAD_INNER_TABS.some((tab) => tab.id === value) ||
-    KICAD_OPTIONAL_TABS.some((tab) => tab.id === value)
-  )
+  if (KICAD_INNER_TABS.some((tab) => tab.id === value)) return value;
+  if (value === "bom" || value === "footprint" || value === "symbol" || value === "analysis")
     return value;
-  return viewerHashView(value);
+  return undefined;
 }
 
 export function cadInspectViewerSearch(view: CadInspectView): string {
