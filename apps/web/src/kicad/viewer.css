@@ -38,16 +38,8 @@ body,
   min-width: 0;
   flex: 1;
 }
-.design-eyebrow {
-  display: block;
-  color: var(--muted-foreground);
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  line-height: 1.5;
-}
 .design-identity h1 {
-  margin: 2px 0 0;
+  margin: 0;
   font-size: 15px;
   font-weight: 550;
   letter-spacing: -0.025em;
@@ -90,10 +82,11 @@ body,
 .design-navigation {
   display: flex;
   align-items: stretch;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--design-line);
+  padding: 0 0 0 12px;
   flex-shrink: 0;
   gap: 8px;
+  min-width: 0;
+  flex: 1;
 }
 .design-tabs {
   display: flex;
@@ -121,7 +114,7 @@ body,
   white-space: nowrap;
   padding: 14px 11px;
   color: var(--muted-foreground);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   transition:
     color 160ms,
@@ -177,7 +170,7 @@ body,
   cursor: pointer;
   background: transparent;
   padding: 10px 22px 10px 8px;
-  font-size: 11px;
+  font-size: 12px;
   width: 67px;
 }
 .design-tools svg {
@@ -214,7 +207,7 @@ body,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 12px;
 }
 .design-file-identity select {
   width: 100%;
@@ -222,12 +215,12 @@ body,
   background: transparent;
   border: 0;
   padding: 4px 0;
-  font-size: 11px;
+  font-size: 12px;
   text-overflow: ellipsis;
 }
 .design-source {
   color: var(--muted-foreground);
-  font-size: 10px;
+  font-size: 12px;
   white-space: nowrap;
 }
 .design-text-button {
@@ -238,7 +231,7 @@ body,
   border: 1px solid var(--design-line);
   border-radius: 6px;
   padding: 5px 8px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted-foreground);
   transition:
     color 140ms,
@@ -253,10 +246,15 @@ body,
   border-left: 1px solid var(--design-line);
   background: var(--design-surface);
   color: var(--foreground);
-  padding: 9px 8px;
+  padding: 10px 8px;
+}
+.design-layer-heading {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 8px;
 }
 .design-layer-title {
-  padding: 0 4px 7px;
+  padding: 0 4px;
   color: var(--foreground);
   font-size: 11px;
   font-weight: 600;
@@ -267,7 +265,7 @@ body,
 .design-layer-section h2 {
   margin: 0 4px 3px;
   color: var(--muted-foreground);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -277,10 +275,28 @@ body,
   align-items: center;
   gap: 6px;
   min-width: 0;
-  padding: 3px 4px;
+  padding: 5px 4px;
   color: var(--muted-foreground);
   cursor: pointer;
-  font-size: 10px;
+  font-size: 12px;
+}
+.design-layer-presets {
+  display: flex;
+  gap: 4px;
+}
+.design-layer-preset {
+  flex: 1;
+  min-height: 28px;
+  border: 1px solid var(--design-line);
+  border-radius: 4px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.design-layer-preset:hover,
+.design-layer-preset[aria-pressed="true"] {
+  border-color: var(--design-highlight);
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--design-highlight) 14%, transparent);
 }
 .design-layer-row:hover {
   background: var(--background);
@@ -431,13 +447,14 @@ body,
   gap: 7px;
   min-width: 0;
   flex: 1;
+  min-width: 32px;
   color: var(--muted-foreground);
 }
 .design-search input {
   min-width: 0;
   width: 100%;
   padding: 5px 0;
-  font-size: 11px;
+  font-size: 12px;
   background: transparent;
   color: var(--foreground);
   outline: none;
@@ -450,7 +467,7 @@ body,
   align-items: center;
   gap: 5px;
   color: var(--muted-foreground);
-  font-size: 10px;
+  font-size: 12px;
   white-space: nowrap;
 }
 .design-inspectbar input[type="checkbox"] {
@@ -495,14 +512,12 @@ body,
   .design-header {
     padding: 10px 12px;
     gap: 9px;
+    flex-wrap: wrap;
   }
   .design-mark {
     width: 32px;
     height: 32px;
     border-radius: 8px;
-  }
-  .design-eyebrow {
-    font-size: 8px;
   }
   .design-identity h1 {
     font-size: 14px;
@@ -511,8 +526,11 @@ body,
     display: none;
   }
   .design-navigation {
-    padding: 0 6px;
+    flex: 1 0 100%;
+    width: 100%;
+    padding: 0;
     gap: 2px;
+    order: 3;
   }
   .design-tab {
     padding: 13px 8px;

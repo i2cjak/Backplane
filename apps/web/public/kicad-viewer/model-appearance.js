@@ -1,5 +1,28 @@
-import { MeshBasicMaterial, Mesh } from "three";
+import {
+  DataTexture,
+  Mesh,
+  MeshToonMaterial,
+  RGBAFormat,
+  NearestFilter,
+  UnsignedByteType,
+} from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+
+// A shared, nearest-filtered ramp makes every surface use the same restrained
+// four-band cel treatment. Keeping one texture avoids a material-sized lookup
+// allocation for the thousands of component meshes in a typical board model.
+const CEL_RAMP = new DataTexture(
+  new Uint8Array([76, 84, 94, 255, 142, 151, 162, 255, 198, 205, 211, 255, 236, 240, 242, 255]),
+  4,
+  1,
+  RGBAFormat,
+  UnsignedByteType,
+);
+CEL_RAMP.magFilter = NearestFilter;
+CEL_RAMP.minFilter = NearestFilter;
+CEL_RAMP.generateMipmaps = false;
+CEL_RAMP.needsUpdate = true;
+CEL_RAMP.userData.shared = true;
 
 // KiCad emits one primitive per copper face. Batch only static board surfaces;
 // component models and their hierarchy are left intact.
@@ -37,22 +60,32 @@ function batchBoardSurfaces(content) {
   }
 }
 
-// KiCad's exporter already supplies the display colors and alpha. Basic
-// materials keep those values exact while avoiding lighting, tone mapping,
-// and PBR work for every retained mesh.
+// KiCad's exporter already supplies the display colors and alpha. Toon
+// materials keep those values while adding fixed, banded graphic lighting;
+// there is no environment, shadow map, or PBR work per retained mesh.
 export function prepareBoardModel(content) {
   batchBoardSurfaces(content);
   const replacements = new Map();
   const flat = (source) => {
-    if (source.isMeshBasicMaterial) {
-      source.toneMapped = false;
-      return source;
-    }
     if (replacements.has(source)) return replacements.get(source);
-    const material = new MeshBasicMaterial();
-    // BasicMaterial.copy preserves color, opacity, alpha maps, side, and
-    // the texture maps supported by an unlit material.
-    MeshBasicMaterial.prototype.copy.call(material, source);
+    const parameters = {
+      color: source.color,
+      map: source.map ?? null,
+      alphaMap: source.alphaMap ?? null,
+      opacity: source.opacity,
+      transparent: source.transparent,
+      alphaTest: source.alphaTest,
+      depthWrite: source.depthWrite,
+      side: source.side,
+      vertexColors: source.vertexColors === true,
+      wireframe: source.wireframe === true,
+      gradientMap: CEL_RAMP,
+    };
+    if (source.emissive?.isColor) parameters.emissive = source.emissive;
+    if (source.emissiveMap?.isTexture) parameters.emissiveMap = source.emissiveMap;
+    if (source.emissiveIntensity !== undefined)
+      parameters.emissiveIntensity = source.emissiveIntensity;
+    const material = new MeshToonMaterial(parameters);
     material.toneMapped = false;
     replacements.set(source, material);
     return material;

@@ -4,6 +4,8 @@ import { loadSchematicSources } from "./schematicSources";
 import {
   mergeNativeLayerVisibility,
   nativeLayerSections,
+  nativeLayerPresetVisibility,
+  type NativeLayerPreset,
   sameNativeLayers,
 } from "./nativeLayerState";
 
@@ -160,6 +162,7 @@ export function NativeProjectViews({
   const [layers, setLayers] = useState<NativeLayer[]>([]);
   const [mobileLayersOpen, setMobileLayersOpen] = useState(false);
   const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
+  const [layerPreset, setLayerPreset] = useState<NativeLayerPreset | null>(null);
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
   const viewRef = useRef(view);
@@ -167,6 +170,7 @@ export function NativeProjectViews({
   useEffect(() => {
     setLayers([]);
     setLayerVisibility({});
+    setLayerPreset(null);
   }, [pcb]);
   useEffect(() => {
     if (view) setVisited((old) => (old.has(view) ? old : new Set([...old, view])));
@@ -405,7 +409,25 @@ export function NativeProjectViews({
                   aria-label="PCB layers"
                   data-mobile-open={mobileLayersOpen}
                 >
-                  <div className="design-layer-title">Layers</div>
+                  <div className="design-layer-heading">
+                    <div className="design-layer-title">Layers</div>
+                    <div className="design-layer-presets" aria-label="Layer presets">
+                      {(["front", "back", "all"] as const).map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          className="design-layer-preset"
+                          aria-pressed={layerPreset === preset}
+                          onClick={() => {
+                            setLayerPreset(preset);
+                            setLayerVisibility(nativeLayerPresetVisibility(layers, preset));
+                          }}
+                        >
+                          {preset === "front" ? "Front" : preset === "back" ? "Back" : "All"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   {nativeLayerSections(layers).map(([section, sectionLayers]) => (
                     <section key={section} className="design-layer-section">
                       <h2>{section}</h2>
@@ -414,12 +436,13 @@ export function NativeProjectViews({
                           <input
                             type="checkbox"
                             checked={layerVisibility[layer.id] !== false}
-                            onChange={(event) =>
+                            onChange={(event) => {
+                              setLayerPreset(null);
                               setLayerVisibility((old) => ({
                                 ...old,
                                 [layer.id]: event.target.checked,
-                              }))
-                            }
+                              }));
+                            }}
                           />
                           <i style={{ backgroundColor: layer.color }} aria-hidden="true" />
                           <span>{layer.name}</span>

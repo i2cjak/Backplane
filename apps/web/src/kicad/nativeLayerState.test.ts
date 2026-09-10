@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   mergeNativeLayerVisibility,
   nativeLayerSections,
+  nativeLayerPresetVisibility,
   sameNativeLayers,
 } from "./nativeLayerState";
 
@@ -51,5 +52,28 @@ describe("native layer state", () => {
       ["Copper", [layer("F.Cu", "Copper"), layer("B.Cu", "Copper")]],
       ["Board", [layer("Edge.Cuts", "Board")]],
     ]);
+  });
+
+  it("builds explicit front, back, and all presets from reported layers", () => {
+    const layers = [
+      layer("F.Cu", "Copper"),
+      layer("F.SilkS", "Silkscreen"),
+      layer("B.Cu", "Copper"),
+      layer("B.SilkS", "Silkscreen"),
+      layer("In1.Cu", "Copper"),
+      layer("Edge.Cuts", "Board"),
+    ];
+    expect(nativeLayerPresetVisibility(layers, "front")).toEqual({
+      "F.Cu": true,
+      "F.SilkS": true,
+      "B.Cu": false,
+      "B.SilkS": false,
+      "In1.Cu": false,
+      "Edge.Cuts": true,
+    });
+    expect(nativeLayerPresetVisibility(layers, "back")["B.Cu"]).toBe(true);
+    expect(nativeLayerPresetVisibility(layers, "all")).toEqual(
+      Object.fromEntries(layers.map(({ id }) => [id, true])),
+    );
   });
 });

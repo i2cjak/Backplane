@@ -1,7 +1,8 @@
 import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { TrackballControls } from "three/addons/controls/TrackballControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { prepareBoardModel } from "./model-appearance.js";
+import { createCelOutlinePass } from "./cel-renderer.js";
 import { flattenModel, reconcileModel } from "./model-update.js";
 import { fitOrthographicCamera, resizeOrthographicCamera } from "./orthographic-camera.js";
 
@@ -14,7 +15,7 @@ function disposeModel(root, retained) {
     for (const material of [object.material].flat().filter(Boolean)) {
       materials.add(material);
       for (const value of Object.values(material)) {
-        if (value?.isTexture) textures.add(value);
+        if (value?.isTexture && !value.userData?.shared) textures.add(value);
       }
     }
   });
@@ -22,7 +23,8 @@ function disposeModel(root, retained) {
     geometries.delete(object.geometry);
     for (const material of [object.material].flat().filter(Boolean)) {
       materials.delete(material);
-      for (const value of Object.values(material)) if (value?.isTexture) textures.delete(value);
+      for (const value of Object.values(material))
+        if (value?.isTexture && !value.userData?.shared) textures.delete(value);
     }
   });
   for (const value of [...geometries, ...materials, ...textures]) value.dispose();
@@ -33,6 +35,11 @@ export function createBoardModel(host, status, options = {}) {
   const kind = options.kind ?? "model";
   const scene = new THREE.Scene();
   scene.background = new THREE.Color("#101214");
+  const ambientLight = new THREE.AmbientLight("#ffffff", 0.38);
+  scene.add(ambientLight);
+  const keyLight = new THREE.DirectionalLight("#ffffff", 1.3);
+  keyLight.position.set(4, 7, 5);
+  scene.add(keyLight);
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.001, 1000);
   camera.position.set(4, 6, 4);
   camera.lookAt(0, 0, 0);
@@ -41,9 +48,15 @@ export function createBoardModel(host, status, options = {}) {
   renderer.domElement.style.cssText = "display:block;touch-action:none;width:100%;height:100%";
   renderer.domElement.setAttribute("aria-label", "3D board model");
   host.appendChild(renderer.domElement);
-  const controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = false;
+  const controls = new TrackballControls(camera, renderer.domElement);
+  controls.rotateSpeed = 1.6;
+  controls.zoomSpeed = 1.05;
+  controls.panSpeed = 0.42;
+  controls.staticMoving = true;
+  controls.minZoom = 0.00001;
+  controls.maxZoom = 10000;
   const loader = new GLTFLoader();
+  const celPass = createCelOutlinePass(renderer);
   const warmup = new THREE.WebGLRenderTarget(1, 1);
   let content;
   let radius = 1;
@@ -57,11 +70,16 @@ export function createBoardModel(host, status, options = {}) {
   let transitionStart = 0;
   let center;
   let aspect = 1;
+  let controlsDirty = false;
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
   const visibility = new Map();
 
   const draw = () => {
     frame = 0;
+    if (controlsDirty) {
+      controlsDirty = false;
+      controls.update();
+    }
     if (transition) {
       const progress = reducedMotion.matches
         ? 1
@@ -70,8 +88,7 @@ export function createBoardModel(host, status, options = {}) {
       if (progress === 1) finishTransition();
       else invalidate();
     }
-    if (!disposed && active && host.clientWidth && host.clientHeight)
-      renderer.render(scene, camera);
+    if (!disposed && active && host.clientWidth && host.clientHeight) celPass.render(scene, camera);
   };
   const invalidate = () => {
     if (!frame && !disposed && active) frame = requestAnimationFrame(draw);
@@ -82,8 +99,16 @@ export function createBoardModel(host, status, options = {}) {
     disposeModel(transition.discarded, content);
     transition = undefined;
   };
-  controls.addEventListener("change", invalidate);
-  const fit = (direction = new THREE.Vector3(1, 1.5, 1)) => {
+  const updateControls = () => {
+    if (disposed || !active) return;
+    controlsDirty = true;
+    invalidate();
+  };
+  controls.addEventListener("start", updateControls);
+  renderer.domElement.addEventListener("pointermove", updateControls);
+  renderer.domElement.addEventListener("wheel", updateControls, { passive: true });
+  const fit = (direction = new THREE.Vector3(1, 1.5, 1), up) => {
+    if (up) camera.up.copy(up);
     fitOrthographicCamera(camera, radius, aspect, direction);
     controls.target.set(0, 0, 0);
     controls.update();
@@ -94,6 +119,8 @@ export function createBoardModel(host, status, options = {}) {
     const height = host.clientHeight;
     if (!width || !height || disposed) return;
     renderer.setSize(width, height, false);
+    controls.handleResize();
+    celPass.resize(width, height);
     aspect = width / height;
     resizeOrthographicCamera(camera, aspect);
     invalidate();
@@ -106,8 +133,8 @@ export function createBoardModel(host, status, options = {}) {
   actions.className = "canvas-actions";
   for (const [label, action] of [
     ["Fit model", () => fit()],
-    ["Top", () => fit(new THREE.Vector3(0, 1, 0.001))],
-    ["Bottom", () => fit(new THREE.Vector3(0, -1, 0.001))],
+    ["Top", () => fit(new THREE.Vector3(0, 1, 0.001), new THREE.Vector3(0, 0, 1))],
+    ["Bottom", () => fit(new THREE.Vector3(0, -1, 0.001), new THREE.Vector3(0, 0, -1))],
   ]) {
     const button = document.createElement("button");
     button.textContent = label;
@@ -196,6 +223,7 @@ export function createBoardModel(host, status, options = {}) {
       collectLayers(next);
       next = flattenModel(next);
       const staging = new THREE.Scene();
+      staging.add(ambientLight.clone(), keyLight.clone());
       staging.add(next);
       await renderer.compileAsync(staging, camera);
       if (disposed || ticket !== generation) return;
@@ -251,9 +279,13 @@ export function createBoardModel(host, status, options = {}) {
     cancelAnimationFrame(frame);
     observer.disconnect();
     controls.dispose();
+    controls.removeEventListener("start", updateControls);
+    renderer.domElement.removeEventListener("pointermove", updateControls);
+    renderer.domElement.removeEventListener("wheel", updateControls);
     finishTransition();
     if (content) disposeModel(content);
     warmup.dispose();
+    celPass.dispose();
     renderer.dispose();
   };
   window.addEventListener("pagehide", dispose, { once: true });

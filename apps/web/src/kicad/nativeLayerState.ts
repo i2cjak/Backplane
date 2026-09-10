@@ -38,3 +38,18 @@ export function nativeLayerSections(layers: NativeLayer[]): Array<[string, Nativ
     grouped.set(layer.section, [...(grouped.get(layer.section) ?? []), layer]);
   return [...grouped.entries()];
 }
+
+export type NativeLayerPreset = "front" | "back" | "all";
+
+const frontLayerIds = new Set(["F.Cu", "F.SilkS", "Edge.Cuts"]);
+const backLayerIds = new Set(["B.Cu", "B.SilkS", "Edge.Cuts"]);
+
+export function nativeLayerPresetVisibility(
+  layers: NativeLayer[],
+  preset: NativeLayerPreset,
+): Record<string, boolean> {
+  const visible = preset === "all" ? undefined : preset === "front" ? frontLayerIds : backLayerIds;
+  return Object.fromEntries(
+    layers.map((layer) => [layer.id, visible ? visible.has(layer.id) : true]),
+  );
+}
