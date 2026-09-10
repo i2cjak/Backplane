@@ -8,8 +8,7 @@
   font files in repositories or releases. Keep copy minimal and avoid decorative eyebrow
   headings. Viewer-tab behavior is outside routine UI work unless explicitly
   requested.
-- All commits in this repository use `i2cjak <build@amemb.com>` as both author
-  and committer. Verify the identity before committing; before pushing, verify
+- Verify the author and committer before committing; before pushing, verify
   the authenticated GitHub account, remote owner/repository, branch, outgoing
   commits, staged diff, and relevant checks.
 
