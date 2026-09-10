@@ -1,6 +1,8 @@
 import { indexNativeSources } from "./native-source-index.js";
 import { installNativeLayerCache } from "./native-layer-cache.js";
 import { hydrateSchematicPinInstances } from "./schematic-compatibility.js";
+import { collectSchematicNet } from "./schematic-net.js";
+import { resolveBoardNetAtPoint } from "./board-net-selection.js";
 
 const sectionFor = (name) => {
   if (/\.cu$/i.test(name)) return "Copper";
@@ -80,6 +82,98 @@ function footprintGlowProxy(core, footprint) {
   const proxy = Object.create(footprint);
   proxy.items = () => items;
   return proxy;
+}
+
+function footprintAncestor(item) {
+  let current = item;
+  for (let depth = 0; current && depth < 8; depth++) {
+    if (current.typeId === "Footprint") return current;
+    current = current.parent;
+  }
+  return undefined;
+}
+
+function decorativeFootprint(footprint) {
+  const reference = String(footprint?.reference ?? "").trim();
+  return !reference || /^(?:G|REF)(?:\*+|\?+)$/i.test(reference);
+}
+
+function footprintArea(footprint, hit) {
+  const bbox = footprint?.bbox ?? hit?.bbox;
+  const width = Number(bbox?.w ?? bbox?.width);
+  const height = Number(bbox?.h ?? bbox?.height);
+  return Number.isFinite(width) && Number.isFinite(height) ? Math.abs(width * height) : Infinity;
+}
+
+function chooseFootprintHit(hits) {
+  const candidates = new Map();
+  for (const hit of hits) {
+    const footprint = footprintAncestor(hit?.item);
+    if (footprint && !candidates.has(footprint)) candidates.set(footprint, hit);
+  }
+  if (candidates.size < 2) return undefined;
+  const entries = [...candidates.entries()];
+  const concrete = entries.filter(([footprint]) => !decorativeFootprint(footprint));
+  const pool = concrete.length ? concrete : entries;
+  pool.sort(
+    ([a, hitA], [b, hitB]) =>
+      footprintArea(a, hitA) - footprintArea(b, hitB) ||
+      String(a.reference ?? "").localeCompare(String(b.reference ?? "")),
+  );
+  const [footprint, hit] = pool[0];
+  // Pad hit records carry a net, which would be promoted back to a net
+  // selection before the host sees the footprint. The footprint is the
+  // intended compact-view selection when resolving overlapping candidates.
+  return { ...hit, item: footprint, net: undefined };
+}
+
+function installFootprintClickResolver(core) {
+  if (
+    !core?.board ||
+    core.__backplaneFootprintClickResolver ||
+    typeof core.on_click !== "function" ||
+    typeof core.find_items_under_pos !== "function"
+  )
+    return;
+  const originalOnClick = core.on_click.bind(core);
+  const findItems = core.find_items_under_pos.bind(core);
+  core.on_click = (position, ...args) => {
+    const physicalNet = resolveBoardNetAtPoint(core.board, position, {
+      isLayerVisible: (name) => visibleBoardLayer(core, name),
+    });
+    if (physicalNet?.item) {
+      const originalFindItems = core.find_items_under_pos;
+      core.find_items_under_pos = () => [{ item: physicalNet.item }];
+      try {
+        return originalOnClick(position, ...args);
+      } finally {
+        core.find_items_under_pos = originalFindItems;
+      }
+    }
+    const selected = chooseFootprintHit(findItems(position));
+    if (!selected) return originalOnClick(position, ...args);
+    const originalFindItems = core.find_items_under_pos;
+    // Reuse KiCad's semantic event and outline path with one resolved item;
+    // this avoids duplicating private event constructors from the bundle.
+    core.find_items_under_pos = () => [selected];
+    try {
+      return originalOnClick(position, ...args);
+    } finally {
+      core.find_items_under_pos = originalFindItems;
+    }
+  };
+  core.__backplaneFootprintClickResolver = true;
+}
+
+function installClickPointerSync(core) {
+  const canvas = core?.canvas;
+  if (!canvas || core.__backplaneClickPointerSync || typeof core.on_mouse_change !== "function")
+    return;
+  // The mature click listener reads its last mousemove position. Capture the
+  // click first so direct/touch clicks without a preceding mousemove resolve
+  // the actual world coordinate instead of the initial (0, 0).
+  canvas.addEventListener("click", (event) => core.on_mouse_change(event), { capture: true });
+  core.__backplaneClickPointerSync = true;
 }
 
 function cacheContext(core, sourceIndex) {
@@ -175,6 +269,105 @@ function paintSchematicGlow(core, painter, layer, color, offsets, alpha, blend, 
   layer.graphics = graphics;
 }
 
+function highlightSchematicNet(core, selection) {
+  const selectedItems = collectSchematicNet(core.schematic, selection).items;
+  if (!selectedItems.size) return false;
+  const color = core.layers.selection_fg.color.constructor.from_css("#40a9ff");
+  const items = [...selectedItems];
+  core.layers.selection_bg.clear();
+  core.layers.selection_fg.clear();
+  paintSchematicGlow(
+    core,
+    core.painter,
+    core.layers.selection_bg,
+    color,
+    glowOffsetsFor(core),
+    0.12,
+    0.75,
+    items,
+  );
+  paintSchematicGlow(
+    core,
+    core.painter,
+    core.layers.selection_fg,
+    color,
+    [[0, 0]],
+    0.4,
+    0.5,
+    items,
+  );
+  core.draw();
+  return true;
+}
+
+export function collectBoardNetItems(board, net) {
+  const items = [];
+  for (const item of board?.items?.() ?? []) {
+    if (item.typeId === "Footprint") {
+      for (const child of item.items?.() ?? []) {
+        if (child.typeId === "Pad" && child.net?.number === net) items.push(child);
+      }
+      continue;
+    }
+    if (item.net === net) items.push(item);
+  }
+  return items;
+}
+
+function boardNetPaintItems(board, net) {
+  const items = [];
+  for (const item of board?.items?.() ?? []) {
+    if (item.typeId === "Footprint") {
+      const pads = [...(item.items?.() ?? [])].filter(
+        (child) => child.typeId === "Pad" && child.net?.number === net,
+      );
+      if (pads.length) {
+        const proxy = Object.create(item);
+        proxy.items = () => pads;
+        items.push(proxy);
+      }
+      continue;
+    }
+    if (item.net === net) items.push(item);
+  }
+  return items;
+}
+
+function highlightBoardNet(core, selection, net) {
+  const items = boardNetPaintItems(core.board, net);
+  if (!items.length || !core.painter) return false;
+  const color = core.layers.selection_fg.color.constructor.from_css("#40a9ff");
+  for (const layer of [core.layers.selection_bg, core.layers.selection_fg]) layer.clear();
+  const paintItems = (layer, offsets, alpha, blend) => {
+    const gfx = core.painter.gfx ?? core.renderer;
+    gfx.start_layer(layer.name);
+    const previousTransform = gfx.color_transform;
+    gfx.color_transform = (source) => {
+      const tinted = typeof source.mix === "function" ? source.mix(color, blend) : color;
+      return tinted.with_alpha(Math.min(1, source.a * alpha));
+    };
+    try {
+      for (const [x, y] of offsets) {
+        gfx.state.push();
+        gfx.state.matrix.translate_self(x, y);
+        try {
+          for (const item of items) core.painter.paint_item(layer, item);
+        } finally {
+          gfx.state.pop();
+        }
+      }
+    } finally {
+      gfx.color_transform = previousTransform;
+    }
+    layer.graphics = gfx.end_layer();
+    layer.graphics.composite_operation = core.renderer.ctx2d ? "lighter" : "source-over";
+  };
+  paintItems(core.layers.selection_bg, glowOffsetsFor(core), 0.12, 0.75);
+  paintItems(core.layers.selection_fg, [[0, 0]], 0.55, 0.5);
+  core.draw();
+  return true;
+}
+
 /** Retain the mature KiCanvas geometry engine, camera, and GPU context across saves. */
 export class RetainedNativeViewer extends EventTarget {
   constructor(host) {
@@ -195,6 +388,7 @@ export class RetainedNativeViewer extends EventTarget {
     this.pendingIndex = undefined;
     this.disposed = false;
     this.generation = 0;
+    this.programmaticProbeDepth = 0;
   }
 
   core() {
@@ -221,11 +415,20 @@ export class RetainedNativeViewer extends EventTarget {
           ? { ...detail, kind, value, targetContext: detail.sourceContext }
           : undefined;
       }
-      this.dispatchEvent(new CustomEvent("selection", { detail }));
+      const selection =
+        detail && typeof detail === "object"
+          ? { ...detail, userInitiated: this.programmaticProbeDepth === 0 && !this.replacing }
+          : detail;
+      this.dispatchEvent(new CustomEvent("selection", { detail: selection }));
     });
-    viewer.addEventListener("ecad-viewer:crossprobe", (event) =>
-      this.dispatchEvent(new CustomEvent("crossprobe", { detail: event.detail })),
-    );
+    viewer.addEventListener("ecad-viewer:crossprobe", (event) => {
+      const detail = event.detail;
+      const selection =
+        detail && typeof detail === "object"
+          ? { ...detail, userInitiated: this.programmaticProbeDepth === 0 && !this.replacing }
+          : detail;
+      this.dispatchEvent(new CustomEvent("crossprobe", { detail: selection }));
+    });
     this.host.appendChild(viewer);
     this.current = viewer;
     return viewer;
@@ -260,6 +463,7 @@ export class RetainedNativeViewer extends EventTarget {
   enhanceGeometrySelection() {
     const core = this.core();
     if (!core?.painter) return;
+    installClickPointerSync(core);
     if (core.board) {
       const enhanceBoardPainter = (painter) => {
         if (!painter || painter.__backplaneHighlight) return;
@@ -305,6 +509,7 @@ export class RetainedNativeViewer extends EventTarget {
         };
         core.__backplaneCreatePainter = true;
       }
+      installFootprintClickResolver(core);
       enhanceBoardPainter(core.painter);
     }
     if (core.schematic && !core.__backplaneHighlight) {
@@ -542,13 +747,20 @@ export class RetainedNativeViewer extends EventTarget {
   }
   requestCrossProbe(probe) {
     this.enhanceGeometrySelection();
-    const found = Boolean(this.current?.requestCrossProbe(probe));
+    this.programmaticProbeDepth += 1;
+    let found;
+    try {
+      found = Boolean(this.current?.requestCrossProbe(probe));
+    } finally {
+      this.programmaticProbeDepth -= 1;
+    }
     if (found) {
       this.selection = probe;
       this.dispatchEvent(
         new CustomEvent("selection", {
           detail: {
             sourceContext: probe.targetContext,
+            userInitiated: false,
             ...(probe.kind === "net"
               ? { net: probe.value, itemType: "net" }
               : { reference: probe.value, itemType: "component" }),
@@ -557,6 +769,38 @@ export class RetainedNativeViewer extends EventTarget {
       );
     }
     return found;
+  }
+  setNetHighlight(selection) {
+    const core = this.core();
+    if (!core || (!selection?.value && !selection?.uuid)) return false;
+    if (core.board) {
+      if (!selection.value) return false;
+      const net =
+        selection.netCode ?? core.board.nets.find((item) => item.name === selection.value)?.number;
+      if (net === undefined) return false;
+      core.painter.filter_net = null;
+      core.clear_selection?.();
+      return highlightBoardNet(core, selection, net);
+    }
+    if (core.schematic) return highlightSchematicNet(core, selection);
+    return false;
+  }
+  requestNetHighlight(command) {
+    if (command?.clear) {
+      this.clearNetHighlight();
+      return true;
+    }
+    return this.setNetHighlight(command);
+  }
+  clearNetHighlight() {
+    const core = this.core();
+    if (!core) return;
+    if (core.board) core.clear_selection?.();
+    else if (core.schematic) {
+      core.layers.selection_bg.clear();
+      core.layers.selection_fg.clear();
+      core.draw();
+    }
   }
   setLayerVisibility(id, visible) {
     this.visibility[id] = visible;

@@ -41,6 +41,10 @@ Use **Open KiCad viewer in browser** to let your agent inspect and interact with
 
 The PCB and schematic use the bundled American Embedded Dark theme. Find a component by its reference (such as `U1`), or enable **Net** to search by net name. Selected components have a subtle glow beneath their geometry. Select a component and use **Show in schematic/PCB** to highlight its counterpart without losing the other view’s camera. Use the PCB layer panel to show or hide copper, silkscreen, solder mask, fabrication, and board layers.
 
+Activate **Cross-probe** with its toolbar button or **X**, then click a component to switch to its highlighted counterpart in the schematic or PCB. Press **Esc** to return to normal selection. The shortcut leaves text entry alone.
+
+Select a pad, track, wire, or net label and press **H** to highlight the whole net. **Highlight net** performs the same action on touch devices. Press **Esc** to clear the highlight.
+
 In Gerbers, use the arrow buttons or left/right arrow keys to flip layers. **Copper stack**, **Front fabrication**, and **Back fabrication** combine aligned layers from the current fabrication set. Use the layer panel to choose individual layers. Each layer is cached independently, so changing one saved Gerber keeps the other layers in place. Fabrication presets use available silkscreen, fabrication, and paste artwork; they are not a component BOM or a substitute for populated assembly inspection.
 
 Use **Tools** inside the KiCad viewer to open **BOM**, **Footprints**, **Symbols**, or **EMerge / Analysis**. Close an optional tab with its close button and reopen it from the same menu. These views are shared by web, desktop, and mobile.

@@ -329,6 +329,11 @@ body,
   background: var(--accent);
   border-color: color-mix(in srgb, var(--foreground) 25%, transparent);
 }
+.design-text-button[data-active="true"] {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--accent) 78%, transparent);
+  border-color: var(--foreground);
+}
 .design-file-browser {
   position: absolute;
   top: 154px;
@@ -416,6 +421,9 @@ body,
   padding: 7px 14px;
   border-bottom: 1px solid var(--design-line);
   background: var(--background);
+}
+.design-layer-toggle {
+  display: none;
 }
 .design-search {
   display: flex;
@@ -554,6 +562,16 @@ body,
     padding: 4px 10px;
     gap: 6px;
     min-height: 44px;
+    flex-wrap: wrap;
+  }
+  .design-inspectbar .design-search {
+    flex: 1 0 calc(100% - 6.5rem);
+  }
+  .design-layer-toggle {
+    display: inline-flex;
+  }
+  .design-layer-panel[data-mobile-open="false"] {
+    display: none;
   }
   .design-inspectbar .design-text-button {
     min-height: 32px;
