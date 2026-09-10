@@ -6,15 +6,31 @@ import { prismGerberPython } from "./vendor/prismGerber.ts";
 
 const renderCommand = `${prismGerberPython}
 import sys
+import re
 payload = json.load(sys.stdin)
 layer = parse_excellon(payload["content"]) if payload["drill"] else parse_gerber(payload["content"])
 bounds = _layer_bounds(layer)
 if bounds is None:
-    raise ValueError("This layer contains no drawable geometry")
+    # Empty plotted layers are valid (for example an unused user layer). Keep
+    # them representable so the layer panel can select them without turning a
+    # fabrication preview into an error state.
+    print('<svg xmlns="http://www.w3.org/2000/svg" data-empty="true" viewBox="0 0 1 1"></svg>')
+    sys.exit(0)
 x0, y0, x1, y1 = bounds
 y0, y1 = -y1, -y0
 margin = max(x1 - x0, y1 - y0, 1) * 0.025
-print(render_layer_svg(layer, (x0-margin, y0-margin, x1+margin, y1+margin)))
+svg = render_layer_svg(layer, (x0-margin, y0-margin, x1+margin, y1+margin), colour=payload.get("colour", "#3fb950"))
+if payload.get("transparent"):
+    # The renderer's first element is only its opaque framing backdrop. Remove
+    # that element after rendering; leave every subsequent dark/clear operation
+    # intact so polarity and masks retain the parser's exact semantics.
+    view_end = svg.find(">")
+    body = svg[view_end + 1:svg.rfind("</svg>")]
+    background = re.match(r"<rect[^>]*/>", body)
+    if background:
+        body = body[background.end():]
+    svg = svg[:view_end + 1] + body + "</svg>"
+print(svg)
 `;
 
 export function resolvePrismPython(env: NodeJS.ProcessEnv = process.env): string {
@@ -101,8 +117,12 @@ function runWithRenderLimit<T>(task: () => Promise<T>): Promise<T> {
   });
 }
 
-function renderCacheKey(content: string, filename: string): string {
-  return `${filename.toLowerCase()}\0${NodeCrypto.createHash("sha256").update(content).digest("hex")}`;
+function renderCacheKey(
+  content: string,
+  filename: string,
+  options: PrismGerberRenderOptions = {},
+): string {
+  return `${filename.toLowerCase()}\0${JSON.stringify(options)}\0${NodeCrypto.createHash("sha256").update(content).digest("hex")}`;
 }
 
 function rememberRender(key: string, svg: string): void {
@@ -131,8 +151,17 @@ export function clearPrismGerberRenderCache(): void {
 
 /** Runs Prism's original fabrication renderer on a saved snapshot, without opening the source file.
  * Results are content keyed and concurrent requests for the same layer share one Python process. */
-export function renderPrismGerber(content: string, filename: string): Promise<string> {
-  const key = renderCacheKey(content, filename);
+export type PrismGerberRenderOptions = {
+  colour?: string;
+  transparent?: boolean;
+};
+
+export function renderPrismGerber(
+  content: string,
+  filename: string,
+  options: PrismGerberRenderOptions = {},
+): Promise<string> {
+  const key = renderCacheKey(content, filename, options);
   const cached = renderCache.get(key);
   if (cached) {
     renderCache.delete(key);
@@ -143,7 +172,7 @@ export function renderPrismGerber(content: string, filename: string): Promise<st
   if (running) return running;
   const promise = runPrismCommand(
     renderCommand,
-    { content, drill: /\.(?:drl|xln)$/i.test(filename) },
+    { content, drill: /\.(?:drl|xln)$/i.test(filename), ...options },
     key,
   );
   renderInflight.set(key, promise);
@@ -194,7 +223,7 @@ export type PrismGerberCompositeLayer = {
 function compositeStyle(filename: string): { colour: string; opacity: number; rank: number } {
   const name = filename.toLowerCase();
   if (/(?:\.gtl$|f[_\-.]?cu)/.test(name)) return { colour: "#39d353", opacity: 0.65, rank: 10 };
-  if (/(?:\.gbl$|b[_\-.]?cu)/.test(name)) return { colour: "#f85149", opacity: 0.65, rank: 11 };
+  if (/(?:\.gbl$|b[_\-.]?cu)/.test(name)) return { colour: "#58a6ff", opacity: 0.65, rank: 11 };
   if (/\.g\d+$/.test(name) || /in(?:ner|ternal)/.test(name))
     return { colour: "#58a6ff", opacity: 0.6, rank: 12 };
   if (/(?:\.gto$|\.gbo$|silk|fab)/.test(name)) return { colour: "#f0f6fc", opacity: 1, rank: 40 };
@@ -204,6 +233,11 @@ function compositeStyle(filename: string): { colour: string; opacity: number; ra
     return { colour: "#f2cc60", opacity: 1, rank: 50 };
   if (/(?:\.drl$|\.xln$|drill)/.test(name)) return { colour: "#00d4ff", opacity: 1, rank: 60 };
   return { colour: "#8b949e", opacity: 0.45, rank: 70 };
+}
+
+/** Filename-derived color shared by single-layer and composite inspection. */
+export function gerberLayerColour(filename: string): string {
+  return compositeStyle(filename).colour;
 }
 
 export function renderPrismGerberComposite(

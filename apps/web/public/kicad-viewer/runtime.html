@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="referrer" content="no-referrer" />
-    <title>Prism viewer</title>
+    <title>Backplane KiCad viewer</title>
     <style>
       html,
       body,
@@ -17,7 +17,10 @@
       body {
         background: #101214;
         color: #b8b8b8;
-        font: 12px system-ui;
+        font:
+          12px "Berkeley Mono",
+          ui-monospace,
+          monospace;
       }
       #error {
         position: absolute;
@@ -32,6 +35,32 @@
       #error:empty {
         display: none;
       }
+      #error.refresh-status {
+        inset: auto auto 12px 12px;
+        max-width: min(420px, calc(100% - 48px));
+        background: #101214e8;
+        border: 1px solid #ffffff30;
+        padding: 8px 12px;
+        z-index: 30;
+      }
+      .model-layers {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        border: 1px solid #ffffff30;
+        padding: 10px;
+        background: #101214ed;
+        color: #ddd;
+      }
+      .model-layers summary {
+        cursor: pointer;
+      }
+      .model-layers label {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding-top: 10px;
+      }
       .canvas-actions {
         position: absolute;
         bottom: 16px;
@@ -39,7 +68,7 @@
         display: flex;
         gap: 2px;
         border: 1px solid #ffffff20;
-        border-radius: 9px;
+        border-radius: 0;
         padding: 4px;
         background: #182023;
         box-shadow: 0 4px 20px #0003;
@@ -47,13 +76,13 @@
       }
       .canvas-actions button {
         border: 0;
-        border-radius: 5px;
+        border-radius: 0;
         background: transparent;
         color: #dce5e0;
         height: 32px;
         min-width: 32px;
         padding: 0 10px;
-        font: 11px system-ui;
+        font: inherit;
         cursor: pointer;
         transition: background-color 140ms;
       }

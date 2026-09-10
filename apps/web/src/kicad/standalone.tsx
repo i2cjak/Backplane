@@ -17,7 +17,6 @@ import {
 import "../index.css";
 import "./viewer.css";
 import type { KiCadProjectManifest } from "@backplane/contracts";
-type KiCadViewerSource = { filename: string; content: string };
 import { GerberBrowser } from "./GerberBrowser";
 import { NativeProjectViews } from "./NativeProjectViews";
 import { LibraryView } from "./LibraryView";
@@ -105,9 +104,7 @@ if (matchMedia("(prefers-color-scheme: dark)").matches)
 function RuntimeView({
   snapshot,
 }: {
-  snapshot:
-    | { kind: "native"; sources: KiCadViewerSource[]; revision: string }
-    | { kind: "model" | "step"; url: string };
+  snapshot: { kind: "model"; url: string; active: boolean } | { kind: "step"; url: string };
 }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const snapshotRef = useRef(snapshot);
@@ -137,13 +134,7 @@ function RuntimeView({
   return (
     <iframe
       ref={ref}
-      title={
-        snapshot.kind === "step"
-          ? "STEP viewer"
-          : snapshot.kind === "model"
-            ? "Prism 3D viewer"
-            : "Prism ECAD viewer"
-      }
+      title={snapshot.kind === "step" ? "STEP viewer" : "3D board viewer"}
       src="/kicad-viewer/runtime.html"
       className="block h-full w-full border-0"
     />
@@ -177,6 +168,10 @@ function App() {
   const [nativeVisited, setNativeVisited] = useState(
     !params.get("view") || params.get("view") === "pcb" || params.get("view") === "schematic",
   );
+  const [modelVisited, setModelVisited] = useState(params.get("view") === "3d");
+  useEffect(() => {
+    if (view === "3d") setModelVisited(true);
+  }, [view]);
   const [refresh, setRefresh] = useState(0);
   const [localStep, setLocalStep] = useState<{ name: string; url: string } | null>(null);
   useEffect(
@@ -202,6 +197,7 @@ function App() {
         ).json()) as Manifest;
         if (!controller.signal.aborted) {
           setManifest((old) => (old?.revision === next.revision ? old : next));
+          setError(null);
         }
       } catch (cause) {
         if (!controller.signal.aborted) setError(String(cause));
@@ -545,12 +541,17 @@ function App() {
         aria-label={view}
       >
         <div key={view} className="design-view-transition" aria-hidden="true" />
-        {error ? (
+        {error && !manifest ? (
           <Notice text={error} />
         ) : !manifest ? (
           <Notice text="Loading saved project…" />
         ) : (
           <>
+            {error && (
+              <div className="design-refresh-status" role="status">
+                {error}
+              </div>
+            )}
             {nativeVisited && (
               <div hidden={!nativeView} className="h-full">
                 <NativeProjectViews
@@ -610,6 +611,10 @@ function App() {
                   paths={gerberCandidates.map((item) => item.path)}
                   selected={file.path}
                   revision={`${revision}:${refresh}`}
+                  revisionByPath={(path) => {
+                    const item = gerberCandidates.find((candidate) => candidate.path === path);
+                    return `${item?.mtimeMs}:${item?.size}:${refresh}`;
+                  }}
                   onSelect={(path) => setSelected((old) => ({ ...old, gerbers: path }))}
                   read={readResponse}
                   url={(paths) => {
@@ -624,24 +629,33 @@ function App() {
             {view === "step" &&
               (localStep || file ? (
                 <RuntimeView
-                  key={`step:${localStep?.url ?? file?.path}:${file?.mtimeMs}:${refresh}`}
+                  key={`step:${localStep?.url ?? file?.path}`}
                   snapshot={{
                     kind: "step",
-                    url: localStep?.url ?? apiUrl("assets", file?.path, revision),
+                    url:
+                      localStep?.url ??
+                      apiUrl("assets", file?.path, `${file?.mtimeMs}:${file?.size}:${refresh}`),
                   }}
                 />
               ) : (
                 <Notice text="Choose a project STEP file or use Open file to preview a .step or .stp file from your device." />
               ))}
-            {view === "3d" &&
-              (file ? (
-                <RuntimeView
-                  key={`model:${file.path}:${revision}`}
-                  snapshot={{ kind: "model", url: apiUrl("model", file.path, revision) }}
-                />
-              ) : (
-                <Notice text="Choose a PCB with Browse to preview it in 3D." />
-              ))}
+            {modelVisited && (
+              <div hidden={view !== "3d"} className="h-full">
+                {pcb ? (
+                  <RuntimeView
+                    key={`model:${pcb}`}
+                    snapshot={{
+                      kind: "model",
+                      url: apiUrl("model", pcb, `${revision}:${refresh}`),
+                      active: view === "3d" && visible,
+                    }}
+                  />
+                ) : (
+                  <Notice text="Choose a PCB with Browse to preview it in 3D." />
+                )}
+              </div>
+            )}
           </>
         )}
       </div>

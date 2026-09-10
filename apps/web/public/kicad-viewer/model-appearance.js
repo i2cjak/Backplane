@@ -1,4 +1,4 @@
-import { ACESFilmicToneMapping, MeshPhysicalMaterial, MeshStandardMaterial, Mesh } from "three";
+import { MeshBasicMaterial, Mesh } from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 // KiCad emits one primitive per copper face. Batch only static board surfaces;
@@ -37,31 +37,41 @@ function batchBoardSurfaces(content) {
   }
 }
 
-// Prism owns the scene, controls, loading, and rendering. Preserve KiCad's stackup
-// colors and opacity; only give the exported soldermask its resin surface finish.
+// KiCad's exporter already supplies the display colors and alpha. Basic
+// materials keep those values exact while avoiding lighting, tone mapping,
+// and PBR work for every retained mesh.
+export function prepareBoardModel(content) {
+  batchBoardSurfaces(content);
+  const replacements = new Map();
+  const flat = (source) => {
+    if (source.isMeshBasicMaterial) {
+      source.toneMapped = false;
+      return source;
+    }
+    if (replacements.has(source)) return replacements.get(source);
+    const material = new MeshBasicMaterial();
+    // BasicMaterial.copy preserves color, opacity, alpha maps, side, and
+    // the texture maps supported by an unlit material.
+    MeshBasicMaterial.prototype.copy.call(material, source);
+    material.toneMapped = false;
+    replacements.set(source, material);
+    return material;
+  };
+  content.traverse((mesh) => {
+    if (!mesh.isMesh || !mesh.material) return;
+    mesh.material = Array.isArray(mesh.material) ? mesh.material.map(flat) : flat(mesh.material);
+  });
+  const retained = new Set();
+  content.traverse((mesh) => {
+    for (const material of [mesh.material].flat().filter(Boolean)) retained.add(material);
+  });
+  for (const source of replacements.keys()) {
+    if (!retained.has(source)) source.dispose();
+  }
+}
+
 export function finishBoardModel(element) {
   const viewer = element._viewer_container;
-  batchBoardSurfaces(viewer.content);
-  viewer.content.traverse((mesh) => {
-    if (!mesh.isMesh || !/_soldermask(?:_|$)/i.test(mesh.name)) return;
-    const finish = (source) => {
-      const material = new MeshPhysicalMaterial();
-      // MeshStandardMaterial.copy also copies the exporter-supplied color/alpha.
-      MeshStandardMaterial.prototype.copy.call(material, source);
-      material.roughness = 0.38;
-      material.clearcoat = 0.65;
-      material.clearcoatRoughness = 0.24;
-      material.depthWrite = false;
-      return material;
-    };
-    mesh.material = Array.isArray(mesh.material)
-      ? mesh.material.map(finish)
-      : finish(mesh.material);
-  });
-  viewer.state.toneMapping = ACESFilmicToneMapping;
-  viewer.state.ambientIntensity = 0.18;
-  viewer.state.directIntensity = 2;
-  viewer.state.exposure = -0.25;
-  viewer.updateLights();
+  prepareBoardModel(viewer.content);
   viewer.render();
 }

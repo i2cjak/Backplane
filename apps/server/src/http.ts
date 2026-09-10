@@ -5,7 +5,7 @@ import Mime from "@effect/platform-node/Mime";
 import * as NodeCrypto from "node:crypto";
 import { kiCadLibraryCache } from "./kicad/KiCadLibrary.ts";
 import { kiCadBomCache } from "./kicad/KiCadBom.ts";
-import { kiCadModelCache } from "./kicad/KiCadModel.ts";
+import { kiCadModelCache, resolveKiCadModelRevision } from "./kicad/KiCadModel.ts";
 import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
@@ -55,7 +55,11 @@ import {
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
 import { discoverKiCadProject, resolveKiCadProjectFile } from "./kicad/KiCadProject.ts";
-import { renderPrismGerber, renderPrismGerberComposite } from "./kicad/PrismGerber.ts";
+import {
+  gerberLayerColour,
+  renderPrismGerber,
+  renderPrismGerberComposite,
+} from "./kicad/PrismGerber.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
@@ -499,8 +503,23 @@ export const kicadModelRouteLayer = HttpRouter.add(
     const asset = yield* Effect.tryPromise(() => resolveKiCadProjectFile(cwd, requestedPath));
     if (!asset || asset.file.kind !== "pcb")
       return HttpServerResponse.text("PCB file not found", { status: 404 });
+    const projectFiles = yield* Effect.tryPromise(async () =>
+      (
+        await Promise.all(
+          manifest.files
+            .filter((file) => file.kind === "project")
+            .map((file) => resolveKiCadProjectFile(cwd, file.path)),
+        )
+      ).flatMap((project) => (project ? [project.absolutePath] : [])),
+    );
+    const modelRevision = yield* Effect.tryPromise(() =>
+      resolveKiCadModelRevision(asset.absolutePath, { projectFiles }),
+    );
     const outputPath = yield* Effect.tryPromise({
-      try: () => kiCadModelCache.get(asset.absolutePath, manifest.revision),
+      // A Gerber, schematic, or unrelated project edit must not invalidate a
+      // costly 3D export. The revision includes the board and only its project,
+      // metadata, and referenced-model dependencies.
+      try: () => kiCadModelCache.get(asset.absolutePath, modelRevision),
       catch: (cause) =>
         new Error(
           `KiCad GLB export failed: ${cause instanceof Error ? cause.message : String(cause)}`,
@@ -570,7 +589,10 @@ export const kicadGerberRouteLayer = HttpRouter.add(
     const svg = yield* Effect.tryPromise({
       try: () =>
         content.length === 1
-          ? renderPrismGerber(content[0]!, assets[0]!.file.path)
+          ? renderPrismGerber(content[0]!, assets[0]!.file.path, {
+              colour: gerberLayerColour(assets[0]!.file.path),
+              transparent: true,
+            })
           : renderPrismGerberComposite(
               content.map((value, index) => ({
                 content: value,

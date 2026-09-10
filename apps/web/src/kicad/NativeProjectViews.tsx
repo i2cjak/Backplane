@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeftRight, Search } from "lucide-react";
 import { loadSchematicSources } from "./schematicSources";
+import { mergeNativeLayerVisibility, nativeLayerSections } from "./nativeLayerState";
 
 type Source = { filename: string; content: string };
 export type NativeView = "pcb" | "schematic";
@@ -13,6 +14,13 @@ type Selection = {
   value?: string;
 };
 type Probe = { id: number; kind: "net" | "component"; value: string; targetContext: "PCB" | "SCH" };
+export type NativeLayer = {
+  id: string;
+  name: string;
+  section: string;
+  color: string;
+  visible: boolean;
+};
 const origin = location.origin === "null" ? "*" : location.origin;
 
 function NativeFrame({
@@ -21,25 +29,37 @@ function NativeFrame({
   revision,
   active,
   probe,
+  layerVisibility,
   onSelection,
   onProbe,
   onResult,
+  onLayers,
 }: {
   view: NativeView;
   sources: Source[];
   revision: string;
   active: boolean;
   probe?: Probe | undefined;
-  onSelection: (selection: Selection) => void;
+  layerVisibility: Record<string, boolean>;
+  onSelection: (selection: Selection | null) => void;
   onProbe: (selection: Selection) => void;
   onResult: (found: boolean, value: string) => void;
+  onLayers: (layers: NativeLayer[]) => void;
 }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const ready = useRef(false);
   const sentRevision = useRef<string | undefined>(undefined);
-  const snapshot = { type: "backplane-snapshot", kind: "native", sources, revision, active, probe };
-  const latest = useRef({ snapshot, onSelection, onProbe, onResult });
-  latest.current = { snapshot, onSelection, onProbe, onResult };
+  const snapshot = {
+    type: "backplane-snapshot",
+    kind: "native",
+    sources,
+    revision,
+    active,
+    probe,
+    layerVisibility,
+  };
+  const latest = useRef({ snapshot, onSelection, onProbe, onResult, onLayers });
+  latest.current = { snapshot, onSelection, onProbe, onResult, onLayers };
   const send = () => {
     if (!ready.current) return;
     const { sources, ...state } = latest.current.snapshot;
@@ -62,24 +82,25 @@ function NativeFrame({
       if (event.data?.type === "backplane-crossprobe") latest.current.onProbe(event.data.selection);
       if (event.data?.type === "backplane-probe-result")
         latest.current.onResult(Boolean(event.data.found), String(event.data.value));
+      if (event.data?.type === "backplane-layers") latest.current.onLayers(event.data.layers ?? []);
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
   }, []);
   useEffect(() => {
     send();
-  }, [sources, revision, active, probe]);
+  }, [sources, revision, active, probe, layerVisibility]);
   return (
     <iframe
       ref={ref}
-      title={`Prism ${view === "pcb" ? "PCB" : "schematic"} viewer`}
+      title={`Fast ${view === "pcb" ? "PCB" : "schematic"} viewer`}
       src="/kicad-viewer/runtime.html"
       className="h-full w-full border-0"
     />
   );
 }
 
-/** Each Prism context retains its camera and parsed project when switching tabs. */
+/** Each native context retains its camera and parsed project when switching tabs. */
 export function NativeProjectViews({
   view,
   pcb,
@@ -107,6 +128,12 @@ export function NativeProjectViews({
   const [probe, setProbe] = useState<Probe>();
   const [status, setStatus] = useState("");
   const [visited, setVisited] = useState(new Set<NativeView>());
+  const [layers, setLayers] = useState<NativeLayer[]>([]);
+  const [layerVisibility, setLayerVisibility] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    setLayers([]);
+    setLayerVisibility({});
+  }, [pcb]);
   useEffect(() => {
     if (view) setVisited((old) => (old.has(view) ? old : new Set([...old, view])));
   }, [view]);
@@ -211,41 +238,86 @@ export function NativeProjectViews({
         const current = data?.key === `${revision}:${path}`;
         return (
           <div key={context} hidden={view !== context} className="relative min-h-0 flex-1">
-            {data && (view === context || visited.has(context)) && (
-              <NativeFrame
-                key={path}
-                view={context}
-                sources={data.sources}
-                revision={data.key}
-                active={view === context && current}
-                probe={
-                  probe?.targetContext === (context === "pcb" ? "PCB" : "SCH") && current
-                    ? probe
-                    : undefined
-                }
-                onSelection={(item) => {
-                  if (view === context) {
-                    setSelection(item);
-                    setStatus(item.reference ?? item.designator ?? item.net ?? "");
-                  }
-                }}
-                onProbe={crossProbe}
-                onResult={(found, value) =>
-                  setStatus(
-                    found ? `Located ${value}` : `No match for ${value} in this ${context}.`,
-                  )
-                }
-              />
-            )}
-            {(!current || errors[context]) && (
+            <div className="flex h-full min-h-0">
+              <div className="relative min-w-0 flex-1">
+                {data && (view === context || visited.has(context)) && (
+                  <NativeFrame
+                    key={path}
+                    view={context}
+                    sources={data.sources}
+                    revision={data.key}
+                    active={view === context}
+                    layerVisibility={context === "pcb" ? layerVisibility : {}}
+                    probe={
+                      probe?.targetContext === (context === "pcb" ? "PCB" : "SCH") && current
+                        ? probe
+                        : undefined
+                    }
+                    onSelection={(item) => {
+                      if (view === context) {
+                        setSelection(item);
+                        setStatus(item?.reference ?? item?.designator ?? item?.net ?? "");
+                      }
+                    }}
+                    onProbe={crossProbe}
+                    onLayers={(next) => {
+                      if (context !== "pcb") return;
+                      setLayers(next);
+                      setLayerVisibility((old) => mergeNativeLayerVisibility(next, old));
+                    }}
+                    onResult={(found, value) =>
+                      setStatus(
+                        found ? `Located ${value}` : `No match for ${value} in this ${context}.`,
+                      )
+                    }
+                  />
+                )}
+              </div>
+              {context === "pcb" && view === "pcb" && layers.length > 0 && (
+                <aside className="design-layer-panel" aria-label="PCB layers">
+                  <div className="design-layer-title">Layers</div>
+                  {nativeLayerSections(layers).map(([section, sectionLayers]) => (
+                    <section key={section} className="design-layer-section">
+                      <h2>{section}</h2>
+                      {sectionLayers.map((layer) => (
+                        <label key={layer.id} className="design-layer-row">
+                          <input
+                            type="checkbox"
+                            checked={layerVisibility[layer.id] !== false}
+                            onChange={(event) =>
+                              setLayerVisibility((old) => ({
+                                ...old,
+                                [layer.id]: event.target.checked,
+                              }))
+                            }
+                          />
+                          <i style={{ backgroundColor: layer.color }} aria-hidden="true" />
+                          <span>{layer.name}</span>
+                        </label>
+                      ))}
+                    </section>
+                  ))}
+                </aside>
+              )}
+            </div>
+            {!data && (
               <div
                 role="status"
                 className="absolute inset-0 flex items-center justify-center bg-background p-4 text-center text-xs text-muted-foreground"
               >
-                {errors[context] ??
-                  (path
-                    ? "Loading saved project…"
-                    : `Choose a ${context === "pcb" ? "PCB" : "schematic"} with Browse to open this view.`)}
+                {path
+                  ? (errors[context] ?? "Loading saved project…")
+                  : `Choose a ${context === "pcb" ? "PCB" : "schematic"} with Browse to open this view.`}
+              </div>
+            )}
+            {data && !current && !errors[context] && (
+              <div className="design-update-badge" role="status">
+                Updating saved files…
+              </div>
+            )}
+            {data && errors[context] && (
+              <div className="design-update-badge design-update-error" role="status">
+                Saved-file update failed; showing the last good view.
               </div>
             )}
           </div>
