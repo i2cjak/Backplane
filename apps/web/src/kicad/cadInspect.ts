@@ -1,4 +1,4 @@
-/** First-class inspect surfaces that sit beside KiCad in the right panel. Extra domains stay in `.backplane.json` drivers. */
+/** First-class inspect surfaces that sit beside KiCad in the right panel. */
 export const CAD_INSPECT_KINDS = ["kicad", "freecad", "blender"] as const;
 export type CadInspectKind = (typeof CAD_INSPECT_KINDS)[number];
 export type CadInspectView = "pcb" | "enclosure" | "product";

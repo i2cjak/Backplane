@@ -91,11 +91,10 @@ body,
 .design-tabs {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: 3px;
   min-width: 0;
   flex: 1;
-  overflow-x: visible;
+  overflow-x: auto;
   scrollbar-width: none;
 }
 .design-tabs::-webkit-scrollbar {

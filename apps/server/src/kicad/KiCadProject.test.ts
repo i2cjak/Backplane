@@ -4,7 +4,6 @@ import * as NodePath from "node:path";
 import {
   configuredArtifactPaths,
   discoverKiCadProject,
-  loadVizInspectImagePaths,
   resolveKiCadProjectFile,
 } from "./KiCadProject.ts";
 import { kiCadModelAction } from "./KiCadModel.ts";
@@ -158,115 +157,33 @@ it.effect("reads explicit library assignments and reports missing assigned asset
   }),
 );
 
-it.effect("resolves saved FreeCAD and Blender inspect pointers from .backplane.json", () =>
+it.effect("resolves saved FreeCAD solids and Blender stills from .backplane.json", () =>
   Effect.promise(async () => {
     const root = tempRoot();
     NodeFS.mkdirSync(NodePath.join(root, "ws", "board"), { recursive: true });
     NodeFS.mkdirSync(NodePath.join(root, "mech"), { recursive: true });
     NodeFS.writeFileSync(NodePath.join(root, "ws", "board", "layout.kicad_pcb"), "pcb");
-    NodeFS.writeFileSync(NodePath.join(root, "ws", "board", "layout.kicad_sch"), "sch");
-    NodeFS.writeFileSync(NodePath.join(root, "mech", "BASE.stl"), "solid base");
-    NodeFS.writeFileSync(NodePath.join(root, "mech", "PLATE.stl"), "solid plate");
-    NodeFS.writeFileSync(
-      NodePath.join(root, "mech", "enclosure-params.json"),
-      '{"clearance_mm":1.2}',
-    );
-    NodeFS.writeFileSync(
-      NodePath.join(root, "mech", "blender-scene.json"),
-      '{"required":["PCB","BASE","PLATE"]}',
-    );
+    NodeFS.writeFileSync(NodePath.join(root, "mech", "board.glb"), "glb-bytes");
     NodeFS.writeFileSync(NodePath.join(root, "mech", "product-render.png"), "png-bytes");
-    NodeFS.writeFileSync(NodePath.join(root, "mech", "load-viz-aluminum.png"), "al-png");
-    NodeFS.writeFileSync(
-      NodePath.join(root, "mech", "load-viz-materials.json"),
-      JSON.stringify({
-        product: NodePath.join(root, "mech", "product-render.png"),
-        outputs: { aluminum: NodePath.join(root, "mech", "load-viz-aluminum.png") },
-      }),
-    );
     NodeFS.writeFileSync(
       NodePath.join(root, ".backplane.json"),
-      JSON.stringify({
-        pcb: "ws/board/layout.kicad_pcb",
-        schematic: "ws/board/layout.kicad_sch",
-        enclosure: {
-          params: "mech/enclosure-params.json",
-          solids: { BASE: "mech/BASE.stl", PLATE: "mech/PLATE.stl" },
-        },
-        product: {
-          scene: "mech/blender-scene.json",
-          still: "mech/product-render.png",
-          loadViz: "mech/load-viz-materials.json",
-        },
-        drivers: {
-          kicad: {
-            mcp: "kicad",
-            reference: "https://github.com/mixelpixx/KiCAD-MCP-Server",
-            mutations: ["edit-board"],
-          },
-          freecad: {
-            mcp: "freecad",
-            reference: "https://github.com/neka-nat/freecad-mcp",
-            mutations: ["edit-enclosure"],
-          },
-          blender: {
-            mcp: "blender",
-            reference: "https://github.com/ahujasid/blender-mcp",
-            mutations: ["edit-scene"],
-          },
-          skipMe: { reference: "https://example.test/not-enough" },
-        },
-      }),
+      '{"pcb":"ws/board/layout.kicad_pcb","enclosure":{"solids":{"BOARD":"mech/board.glb"}},"product":{"still":"mech/product-render.png"}}',
     );
     const manifest = await discoverKiCadProject(root);
     expect(configuredArtifactPaths(manifest.config)).toEqual([
-      "mech/enclosure-params.json",
-      "mech/BASE.stl",
-      "mech/PLATE.stl",
-      "mech/blender-scene.json",
+      "mech/board.glb",
       "mech/product-render.png",
-      "mech/load-viz-materials.json",
     ]);
-    expect(manifest.config?.pcb).toBe("ws/board/layout.kicad_pcb");
-    expect(manifest.config?.enclosure?.solids?.BASE).toBe("mech/BASE.stl");
+    expect(manifest.config?.enclosure?.solids?.BOARD).toBe("mech/board.glb");
     expect(manifest.config?.product?.still).toBe("mech/product-render.png");
-    expect(manifest.config?.drivers).toEqual({
-      kicad: {
-        mcp: "kicad",
-        reference: "https://github.com/mixelpixx/KiCAD-MCP-Server",
-        mutations: ["edit-board"],
-      },
-      freecad: {
-        mcp: "freecad",
-        reference: "https://github.com/neka-nat/freecad-mcp",
-        mutations: ["edit-enclosure"],
-      },
-      blender: {
-        mcp: "blender",
-        reference: "https://github.com/ahujasid/blender-mcp",
-        mutations: ["edit-scene"],
-      },
-    });
-    const base = await resolveKiCadProjectFile(root, "mech/BASE.stl");
+    const solid = await resolveKiCadProjectFile(root, "mech/board.glb");
     const still = await resolveKiCadProjectFile(root, "mech/product-render.png");
-    const aluminum = await resolveKiCadProjectFile(root, "mech/load-viz-aluminum.png");
-    const params = await resolveKiCadProjectFile(root, "mech/enclosure-params.json");
     const pcb = await resolveKiCadProjectFile(root, "ws/board/layout.kicad_pcb");
-    expect(base?.file.kind).toBe("model");
+    expect(solid?.file.kind).toBe("model");
     expect(still?.file.kind).toBe("image");
-    expect(aluminum?.file.kind).toBe("image");
-    expect(params?.file.kind).toBe("json");
-    expect(kiCadModelAction(base!.file)).toBe("serve-existing");
+    expect(kiCadModelAction(solid!.file)).toBe("serve-existing");
     expect(kiCadModelAction(pcb!.file)).toBe("export-glb");
-    expect(NodeFS.readFileSync(base!.absolutePath, "utf8")).toBe("solid base");
+    expect(NodeFS.readFileSync(solid!.absolutePath, "utf8")).toBe("glb-bytes");
     expect(NodeFS.readFileSync(still!.absolutePath, "utf8")).toBe("png-bytes");
-    expect(
-      loadVizInspectImagePaths(
-        root,
-        JSON.parse(
-          NodeFS.readFileSync(NodePath.join(root, "mech", "load-viz-materials.json"), "utf8"),
-        ),
-      ),
-    ).toEqual(["mech/product-render.png", "mech/load-viz-aluminum.png"]);
   }),
 );

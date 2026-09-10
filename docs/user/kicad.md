@@ -10,11 +10,11 @@ Agents receive the selected KiCad executable and guidance for exports, ERC/DRC c
 
 This follows the connected environment: a phone or remote browser uses the KiCad available on its server, not a KiCad installation on the device. Restart Backplane after an upgrade so agent processes receive the updated runtime.
 
-Open **KiCad**, **FreeCAD**, or **Blender** from a thread's right-panel add menu. They are sibling inspect surfaces, not tabs inside one another. KiCad's inner tabs stay KiCad-only: schematic, PCB, board 3D, Gerbers, and STEP. Those 3D and STEP tabs are KiCad's board/STEP preview, not FreeCAD or Blender. FreeCAD is only the FreeCAD panel (saved enclosure solids). Blender is only the Blender panel (saved product stills). Each panel follows the thread's workspace or worktree. It reads saved files without locking them; you can continue editing in the CAD app or through your agent.
+Open **KiCad**, **FreeCAD**, or **Blender** from a thread's right-panel add menu. They are sibling inspect surfaces, not tabs inside one another. KiCad's inner tabs stay KiCad-only (schematic, PCB, 3D, Gerbers, STEP). FreeCAD shows saved enclosure solids. Blender shows a saved product still. Each panel follows the thread's workspace or worktree and reads saved files without locking them.
 
-The thread cwd must be the folder that contains `.backplane.json`. That file names the board, enclosure solids, and product still. You should not have to hunt for a file: KiCad opens the assigned `pcb`, FreeCAD opens the preferred solid (GLB/STEP if present), Blender opens `product.still`. Use **Browse** only to preview a different file.
+Point `.backplane.json` at the board, `enclosure.solids`, and `product.still`. FreeCAD prefers a GLB or STEP solid when several are listed. The inspect panels do not start KiCad, FreeCAD, or Blender; attach those apps through the agent's MCP config if you want the agent to edit them. Examples used to prove this overlay: [KiCAD-MCP-Server](https://github.com/mixelpixx/KiCAD-MCP-Server), [freecad-mcp](https://github.com/neka-nat/freecad-mcp), [blender-mcp](https://github.com/ahujasid/blender-mcp). Any equivalent server can replace them.
 
-On mobile, the thread toolbar has the same three inspect actions. Each opens a full-screen native web view. The viewer uses a short-lived session tied to the active environment; reconnect and tap **Retry** if that session expires.
+On mobile, the thread toolbar has the same three inspect actions. Each opens a full-screen native web view. Reconnect and tap **Retry** if the short-lived viewer session expires.
 
 For a workspace containing several boards, create `.backplane.json` at its root:
 
@@ -27,30 +27,12 @@ For a workspace containing several boards, create `.backplane.json` at its root:
   "symbolMember": "Controller_unit1",
   "footprint": "hardware/lib/parts.pretty/Controller.kicad_mod",
   "enclosure": {
-    "params": "mech/enclosure-params.json",
     "solids": {
-      "BASE": "mech/BASE.stl",
-      "PLATE": "mech/PLATE.stl"
+      "BASE": "mech/BASE.glb"
     }
   },
   "product": {
-    "scene": "mech/blender-scene.json",
-    "still": "mech/product-render.png",
-    "loadViz": "mech/load-viz-materials.json"
-  },
-  "drivers": {
-    "kicad": {
-      "mcp": "kicad",
-      "reference": "https://github.com/mixelpixx/KiCAD-MCP-Server"
-    },
-    "freecad": {
-      "mcp": "freecad",
-      "reference": "https://github.com/neka-nat/freecad-mcp"
-    },
-    "blender": {
-      "mcp": "blender",
-      "reference": "https://github.com/ahujasid/blender-mcp"
-    }
+    "still": "mech/product-render.png"
   }
 }
 ```
@@ -65,9 +47,7 @@ Select a STEP part in the model or the collapsible parts tree, then adjust its o
 
 Both board and STEP previews use orthographic projection with cel-shaded colors and outlines. Drag to tumble the model freely in any direction; **Top**, **Bottom**, and **Fit model** return to familiar views.
 
-The 3D preview requires `kicad-cli` with GLB export on the environment running Backplane. The preview includes outer copper, pads, silkscreen, and translucent soldermask using the board’s stackup colors. Exports go into a separate temporary cache. The **FreeCAD** and **Blender** panels do not call `kicad-cli` and do not start those apps. They serve the saved STL/STEP/GLB solids, enclosure params JSON, product still, and load-viz images named in `.backplane.json`. Gerber rendering requires `python3` there. None of these operations modify the project.
-
-The agent drives those apps through MCP you attach. The FreeCAD and Blender panels only show what that agent already wrote. `drivers` is an open map: extra domains are allowed, and any server can replace the examples. Backplane does not vendor a KiCad, FreeCAD, or Blender MCP. Name the server keys you already run, the same way you can drive KiCad with your own MCP instead of the stock KiCad path. See [Drive CAD with your own MCP](./cad-mcp.md).
+The 3D preview requires `kicad-cli` with GLB export on the environment running Backplane. The preview includes outer copper, pads, silkscreen, and translucent soldermask using the board’s stackup colors. Exports go into a separate temporary cache. FreeCAD inspect serves the named solid; Blender inspect serves the named still. Gerber rendering requires `python3` there. None of these operations modify the project.
 
 Use **Open KiCad viewer in browser** to let your agent inspect and interact with the viewer through the collaborative browser. Its link grants temporary read-only access to this workspace; reopen the panel after the link expires or the server restarts. The `backplane-viewer` agent skill includes a helper for finding and configuring project files.
 

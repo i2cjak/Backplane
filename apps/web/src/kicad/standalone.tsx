@@ -57,8 +57,8 @@ type Manifest = KiCadProjectManifest & {
     symbol?: string;
     symbolMember?: string;
     footprint?: string;
-    enclosure?: { params?: string; solids?: Record<string, string> };
-    product?: { scene?: string; still?: string; loadViz?: string };
+    enclosure?: { solids?: Record<string, string> };
+    product?: { still?: string };
   };
   warnings?: string[];
 };
@@ -725,33 +725,15 @@ function App() {
             {view === "enclosure" && manifest && (
               <EnclosureView
                 config={manifest.config ?? {}}
-                workspace={manifest.root}
                 revision={`${revision}:${refresh}`}
                 modelUrl={(path) => apiUrl("model", path, revision)}
-                readJson={async (path) =>
-                  (
-                    await readResponse(
-                      apiUrl("assets", path, revision),
-                      new AbortController().signal,
-                    )
-                  ).json()
-                }
               />
             )}
             {view === "product" && manifest && (
               <ProductView
                 config={manifest.config ?? {}}
-                workspace={manifest.root}
                 revision={`${revision}:${refresh}`}
                 assetUrl={(path) => apiUrl("assets", path, revision)}
-                readJson={async (path) =>
-                  (
-                    await readResponse(
-                      apiUrl("assets", path, revision),
-                      new AbortController().signal,
-                    )
-                  ).json()
-                }
               />
             )}
           </>

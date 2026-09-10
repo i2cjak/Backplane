@@ -1,6 +1,6 @@
 ---
 name: k3eda-viewer
-description: Point Backplane's KiCad panel at a project's board, schematic, and generated Gerber directories, inspect saved FreeCAD/Blender artifacts, and record BYO MCP driver names in .backplane.json. Use when configuring or navigating the KiCad viewer, including projects with several boards or custom fabrication output locations.
+description: Point Backplane's KiCad, FreeCAD, and Blender inspect panels at a project's board, enclosure solids, and product still, and inspect live saved-file views through the collaborative browser. Use when configuring or navigating those viewers, including projects with several boards or custom fabrication output locations.
 ---
 
 # Point the KiCad viewer at this project
@@ -22,29 +22,8 @@ Save explicit selection in `<workspace>/.backplane.json`. Paths are relative to 
   "pcb": "hardware/controller/controller.kicad_pcb",
   "schematic": "hardware/controller/controller.kicad_sch",
   "gerbers": ["build/controller/gerbers"],
-  "enclosure": {
-    "params": "mech/enclosure-params.json",
-    "solids": {
-      "BASE": "mech/BASE.stl"
-    }
-  },
-  "product": {
-    "still": "mech/product-render.png"
-  },
-  "drivers": {
-    "kicad": {
-      "mcp": "kicad",
-      "reference": "https://github.com/mixelpixx/KiCAD-MCP-Server"
-    },
-    "freecad": {
-      "mcp": "freecad",
-      "reference": "https://github.com/neka-nat/freecad-mcp"
-    },
-    "blender": {
-      "mcp": "blender",
-      "reference": "https://github.com/ahujasid/blender-mcp"
-    }
-  }
+  "enclosure": { "solids": { "BASE": "mech/BASE.glb" } },
+  "product": { "still": "mech/product-render.png" }
 }
 ```
 
@@ -54,26 +33,14 @@ The helper can write this after validating the paths; it preserves unrelated set
 python3 scripts/project_view.py /absolute/workspace \
   --pcb hardware/controller/controller.kicad_pcb \
   --schematic hardware/controller/controller.kicad_sch \
-  --gerbers build/controller/gerbers \
-  --enclosure-params mech/enclosure-params.json \
-  --enclosure-solid BASE=mech/BASE.stl \
-  --product-still mech/product-render.png \
-  --driver kicad=kicad \
-  --driver-reference kicad=https://github.com/mixelpixx/KiCAD-MCP-Server \
-  --driver freecad=freecad \
-  --driver-reference freecad=https://github.com/neka-nat/freecad-mcp \
-  --driver blender=blender \
-  --driver-reference blender=https://github.com/ahujasid/blender-mcp \
-  --write
+  --gerbers build/controller/gerbers --write
 ```
-
-`drivers` is an open map of MCP servers the agent uses to mutate CAD. Extra domains are allowed. The inspect tabs do not launch KiCad, FreeCAD, or Blender. The `reference` URLs are public servers used to prove this overlay. They are examples, not the only legal stack. See `docs/user/cad-mcp.md`.
 
 Use existing outputs where possible. If none exist, generate **review-only** Gerbers in a separate output directory with `kicad-cli pcb export gerbers --output <directory>/ <board>`, then point `gerbers` there. This does not certify fabrication readiness. Preserve any manufacturer's output directory; don't overwrite it just to preview a board. For a manufacturing release, use the Gerber/export review workflow available in that environment.
 
 # Inspect together
 
-Open **KiCad**, **FreeCAD**, or **Blender** from the thread's right-panel add menu. They are sibling inspect surfaces. KiCad shows GERBERs, PCB, Schematic, 3D, and STEP. FreeCAD reads saved enclosure solids and params. Blender reads product stills and load-viz images. They do not launch those apps. Mutations belong in the named MCP drivers. Select a file or Gerber layer inside the KiCad views. Saved-file changes refresh automatically while visible; **Refresh saved files** forces a reread. A changed `.backplane.json` updates the default selection.
+Open **KiCad**, **FreeCAD**, or **Blender** from the thread's right-panel add menu. They are sibling inspect surfaces. KiCad's inner tabs stay KiCad-only. FreeCAD reads `enclosure.solids`; Blender reads `product.still`. They do not launch those apps. Select a file or Gerber layer inside the KiCad views. Saved-file changes refresh automatically while visible; **Refresh saved files** forces a reread. A changed `.backplane.json` updates the default selection.
 
 For model interaction, use the panel's **Open KiCad viewer in browser** action. It opens the same viewer in Backplane's collaborative browser, where `preview_status`, `preview_snapshot`, `preview_click`, `preview_scroll`, and `preview_press` work. Target that viewer's `tabId` explicitly so other browser tabs stay intact. The panel iframe itself is not a `preview_*` automation target. If no viewer browser tab exists and only browser tools are available, ask the user to open that action once; do not invent a token or navigate to a bare viewer URL.
 

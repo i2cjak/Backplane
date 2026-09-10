@@ -10,7 +10,6 @@ export const KiCadFileKind = Schema.Literals([
   "footprint",
   "symbol",
   "image",
-  "json",
 ]);
 export type KiCadFileKind = typeof KiCadFileKind.Type;
 
@@ -23,13 +22,6 @@ export const KiCadProjectFile = Schema.Struct({
 });
 export type KiCadProjectFile = typeof KiCadProjectFile.Type;
 
-export const KiCadDriverConfig = Schema.Struct({
-  mcp: TrimmedNonEmptyString,
-  reference: Schema.optionalKey(Schema.String),
-  mutations: Schema.optionalKey(Schema.Array(Schema.String)),
-});
-export type KiCadDriverConfig = typeof KiCadDriverConfig.Type;
-
 export const KiCadProjectConfig = Schema.Struct({
   analysisUrl: Schema.optionalKey(Schema.String),
   pcb: Schema.optionalKey(Schema.String),
@@ -40,18 +32,14 @@ export const KiCadProjectConfig = Schema.Struct({
   footprint: Schema.optionalKey(Schema.String),
   enclosure: Schema.optionalKey(
     Schema.Struct({
-      params: Schema.optionalKey(Schema.String),
       solids: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
     }),
   ),
   product: Schema.optionalKey(
     Schema.Struct({
-      scene: Schema.optionalKey(Schema.String),
       still: Schema.optionalKey(Schema.String),
-      loadViz: Schema.optionalKey(Schema.String),
     }),
   ),
-  drivers: Schema.optionalKey(Schema.Record(Schema.String, KiCadDriverConfig)),
 });
 export type KiCadProjectConfig = typeof KiCadProjectConfig.Type;
 

@@ -13,8 +13,7 @@ export type KiCadFileKind =
   | "project"
   | "footprint"
   | "symbol"
-  | "image"
-  | "json";
+  | "image";
 
 export interface KiCadProjectFile {
   readonly path: string;
@@ -32,19 +31,10 @@ export interface KiCadProjectManifest {
   readonly warnings: readonly string[];
 }
 export interface KiCadEnclosureConfig {
-  readonly params?: string;
   readonly solids?: Readonly<Record<string, string>>;
 }
 export interface KiCadProductConfig {
-  readonly scene?: string;
   readonly still?: string;
-  readonly loadViz?: string;
-}
-/** Open map of MCP servers the agent uses to mutate CAD. Inspect never launches them. Extra domain keys are allowed. */
-export interface KiCadDriverConfig {
-  readonly mcp: string;
-  readonly reference?: string;
-  readonly mutations?: readonly string[];
 }
 export interface KiCadProjectConfig {
   readonly analysisUrl?: string;
@@ -56,7 +46,6 @@ export interface KiCadProjectConfig {
   readonly footprint?: string;
   readonly enclosure?: KiCadEnclosureConfig;
   readonly product?: KiCadProductConfig;
-  readonly drivers?: Readonly<Record<string, KiCadDriverConfig>>;
 }
 
 const manifestCache = new Map<
@@ -84,7 +73,6 @@ const MIME_TYPES: Record<string, string> = {
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".webp": "image/webp",
-  ".json": "application/json",
   ".kicad_pro": "application/json",
   ".kicad_wks": "application/x-kicad-workbook",
 };
@@ -138,7 +126,6 @@ function configuredKind(extension: string): KiCadFileKind | undefined {
     extension === ".webp"
   )
     return "image";
-  if (extension === ".json") return "json";
   return undefined;
 }
 
@@ -152,95 +139,23 @@ function asStringRecord(value: unknown): Record<string, string> | undefined {
 
 function parseEnclosure(value: unknown): KiCadEnclosureConfig | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const record = value as Record<string, unknown>;
-  const params = typeof record.params === "string" ? record.params : undefined;
-  const solids = asStringRecord(record.solids);
-  if (!params && !solids) return undefined;
-  return { ...(params ? { params } : {}), ...(solids ? { solids } : {}) };
+  const solids = asStringRecord((value as Record<string, unknown>).solids);
+  return solids ? { solids } : undefined;
 }
 
 function parseProduct(value: unknown): KiCadProductConfig | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const record = value as Record<string, unknown>;
-  const scene = typeof record.scene === "string" ? record.scene : undefined;
-  const still = typeof record.still === "string" ? record.still : undefined;
-  const loadViz = typeof record.loadViz === "string" ? record.loadViz : undefined;
-  if (!scene && !still && !loadViz) return undefined;
-  return {
-    ...(scene ? { scene } : {}),
-    ...(still ? { still } : {}),
-    ...(loadViz ? { loadViz } : {}),
-  };
-}
-
-function parseDriver(value: unknown): KiCadDriverConfig | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const record = value as Record<string, unknown>;
-  if (typeof record.mcp !== "string" || record.mcp.length === 0) return undefined;
-  const reference =
-    typeof record.reference === "string" && record.reference.length > 0
-      ? record.reference
-      : undefined;
-  const mutations = Array.isArray(record.mutations)
-    ? record.mutations.filter((item): item is string => typeof item === "string" && item.length > 0)
-    : undefined;
-  return {
-    mcp: record.mcp,
-    ...(reference ? { reference } : {}),
-    ...(mutations && mutations.length ? { mutations } : {}),
-  };
-}
-
-export function parseDrivers(
-  value: unknown,
-): Readonly<Record<string, KiCadDriverConfig>> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const drivers: Record<string, KiCadDriverConfig> = {};
-  for (const [key, entry] of Object.entries(value)) {
-    const parsed = parseDriver(entry);
-    if (parsed) drivers[key] = parsed;
-  }
-  return Object.keys(drivers).length ? drivers : undefined;
+  const still = (value as Record<string, unknown>).still;
+  return typeof still === "string" && still.length > 0 ? { still } : undefined;
 }
 
 export function configuredArtifactPaths(config: KiCadProjectConfig | undefined): string[] {
   if (!config) return [];
   const paths = [
-    config.enclosure?.params,
     ...(config.enclosure?.solids ? Object.values(config.enclosure.solids) : []),
-    config.product?.scene,
     config.product?.still,
-    config.product?.loadViz,
   ].filter((path): path is string => typeof path === "string" && path.length > 0);
   return [...new Set(paths.map((path) => path.replaceAll("\\", "/")))];
-}
-
-export function workspaceRelativeInspectPath(root: string, value: string): string | undefined {
-  const normalized = value.replaceAll("\\", "/");
-  const rootNorm = NodePath.resolve(root).replaceAll("\\", "/").replace(/\/$/, "");
-  if (normalized.startsWith(`${rootNorm}/`)) return normalized.slice(rootNorm.length + 1);
-  if (normalized.startsWith("/")) return undefined;
-  return normalized.replace(/^\.\//, "");
-}
-
-export function loadVizInspectImagePaths(root: string, payload: unknown): string[] {
-  if (!payload || typeof payload !== "object") return [];
-  const record = payload as Record<string, unknown>;
-  const values: string[] = [];
-  if (typeof record.product === "string") values.push(record.product);
-  if (record.outputs && typeof record.outputs === "object" && !Array.isArray(record.outputs)) {
-    for (const value of Object.values(record.outputs)) {
-      if (typeof value === "string") values.push(value);
-    }
-  }
-  const images: string[] = [];
-  for (const value of values) {
-    const relative = workspaceRelativeInspectPath(root, value);
-    if (!relative) continue;
-    if (configuredKind(NodePath.extname(relative).toLowerCase()) !== "image") continue;
-    images.push(relative);
-  }
-  return [...new Set(images)];
 }
 
 /** Walks the project without consulting ignore files: generated fabrication output is often ignored. */
@@ -258,6 +173,8 @@ export async function discoverKiCadProject(root: string): Promise<KiCadProjectMa
     const parsed = JSON.parse(
       await NodeFSP.readFile(NodePath.join(projectRoot, ".backplane.json"), "utf8"),
     ) as Record<string, unknown>;
+    const enclosure = parseEnclosure(parsed.enclosure);
+    const product = parseProduct(parsed.product);
     config = {
       ...(typeof parsed.analysisUrl === "string" ? { analysisUrl: parsed.analysisUrl } : {}),
       ...(typeof parsed.pcb === "string" ? { pcb: parsed.pcb } : {}),
@@ -268,9 +185,8 @@ export async function discoverKiCadProject(root: string): Promise<KiCadProjectMa
       ...(typeof parsed.symbol === "string" ? { symbol: parsed.symbol } : {}),
       ...(typeof parsed.symbolMember === "string" ? { symbolMember: parsed.symbolMember } : {}),
       ...(typeof parsed.footprint === "string" ? { footprint: parsed.footprint } : {}),
-      ...(parseEnclosure(parsed.enclosure) ? { enclosure: parseEnclosure(parsed.enclosure) } : {}),
-      ...(parseProduct(parsed.product) ? { product: parseProduct(parsed.product) } : {}),
-      ...(parseDrivers(parsed.drivers) ? { drivers: parseDrivers(parsed.drivers) } : {}),
+      ...(enclosure ? { enclosure } : {}),
+      ...(product ? { product } : {}),
     };
   } catch {
     try {
@@ -356,18 +272,6 @@ export async function discoverKiCadProject(root: string): Promise<KiCadProjectMa
     }
   };
   for (const relative of configuredArtifactPaths(config)) await includeInspectFile(relative);
-  if (config?.product?.loadViz) {
-    try {
-      const text = await NodeFSP.readFile(
-        NodePath.join(projectRoot, config.product.loadViz),
-        "utf8",
-      );
-      const extra = loadVizInspectImagePaths(projectRoot, JSON.parse(text));
-      for (const relative of extra) await includeInspectFile(relative);
-    } catch {
-      warnings.push(`Unable to read load-viz inspect images: ${config.product.loadViz}`);
-    }
-  }
   files.sort((a, b) => a.path.localeCompare(b.path));
   if (config?.pcb && !files.some((file) => file.path === config!.pcb))
     warnings.push(`Configured PCB file not found: ${config.pcb}`);
