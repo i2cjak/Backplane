@@ -33,6 +33,8 @@ Generated output is discovered even in Git-ignored folders. Saved changes refres
 
 Use **STEP** to inspect `.step` and `.stp` models. The project picker lists the most recently edited files first; **Open file** also accepts a file from your device without uploading it. Drag to rotate, pinch or scroll to zoom, and use **Fit model** to restore the view. STEP previews run in the viewer and support files up to 100 MB.
 
+Select a STEP part in the model or the collapsible parts tree, then adjust its opacity to inspect what is behind it. Selecting an assembly applies opacity to its parts together. Restore opacity to make the selection solid again; **Esc** clears the highlight. The camera and opacity choices remain when switching tabs or refreshing the same file.
+
 Both board and STEP previews use orthographic projection with cel-shaded colors and outlines. Drag to tumble the model freely in any direction; **Top**, **Bottom**, and **Fit model** return to familiar views.
 
 The 3D preview requires `kicad-cli` with GLB export on the environment running Backplane. The preview includes outer copper, pads, silkscreen, and translucent soldermask using the board’s stackup colors. Exports go into a separate temporary cache. Gerber rendering requires `python3` there. Neither operation modifies the project.

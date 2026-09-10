@@ -5,6 +5,7 @@ import { prepareBoardModel } from "./model-appearance.js";
 import { createCelOutlinePass } from "./cel-renderer.js";
 import { flattenModel, reconcileModel } from "./model-update.js";
 import { fitOrthographicCamera, resizeOrthographicCamera } from "./orthographic-camera.js";
+import { createStepSelectionController } from "./model-selection.js";
 
 function disposeModel(root, retained) {
   const geometries = new Set();
@@ -73,6 +74,7 @@ export function createBoardModel(host, status, options = {}) {
   let controlsDirty = false;
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
   const visibility = new Map();
+  let stepSelection;
 
   const draw = () => {
     frame = 0;
@@ -85,6 +87,7 @@ export function createBoardModel(host, status, options = {}) {
         ? 1
         : Math.min(1, (performance.now() - transitionStart) / 420);
       transition.step(progress);
+      stepSelection?.sync();
       if (progress === 1) finishTransition();
       else invalidate();
     }
@@ -95,10 +98,19 @@ export function createBoardModel(host, status, options = {}) {
   };
   const finishTransition = () => {
     if (!transition) return;
+    stepSelection?.restore();
     transition.finish();
     disposeModel(transition.discarded, content);
     transition = undefined;
+    stepSelection?.reapply();
   };
+  if (kind === "step")
+    stepSelection = createStepSelectionController({
+      host,
+      renderer,
+      camera,
+      invalidate,
+    });
   const updateControls = () => {
     if (disposed || !active) return;
     controlsDirty = true;
@@ -229,6 +241,7 @@ export function createBoardModel(host, status, options = {}) {
       if (disposed || ticket !== generation) return;
       const previous = content;
       finishTransition();
+      stepSelection?.restore();
       const update = reconcileModel(previous, next, !reducedMotion.matches);
       // Reconcile first so unchanged meshes keep their uploaded buffers. No
       // await separates reconciliation, changed-buffer upload and scene commit.
@@ -260,11 +273,13 @@ export function createBoardModel(host, status, options = {}) {
         update.finish();
         disposeModel(update.discarded, content);
       }
+      stepSelection?.setContent(content);
       draw();
       if (previous) disposeModel(previous, content);
     } catch (cause) {
       if (!disposed && ticket === generation && !signal.aborted) {
         currentUrl = undefined;
+        stepSelection?.reapply();
         status.textContent = `${content ? "Preview update failed: " : ""}${cause.message || String(cause)}`;
       }
     } finally {
@@ -283,6 +298,7 @@ export function createBoardModel(host, status, options = {}) {
     renderer.domElement.removeEventListener("pointermove", updateControls);
     renderer.domElement.removeEventListener("wheel", updateControls);
     finishTransition();
+    stepSelection?.dispose();
     if (content) disposeModel(content);
     warmup.dispose();
     celPass.dispose();

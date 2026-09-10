@@ -105,7 +105,9 @@ if (matchMedia("(prefers-color-scheme: dark)").matches)
 function RuntimeView({
   snapshot,
 }: {
-  snapshot: { kind: "model"; url: string; active: boolean } | { kind: "step"; url: string };
+  snapshot:
+    | { kind: "model"; url: string; active: boolean }
+    | { kind: "step"; url: string; active: boolean };
 }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const snapshotRef = useRef(snapshot);
@@ -170,8 +172,10 @@ function App() {
     !params.get("view") || params.get("view") === "pcb" || params.get("view") === "schematic",
   );
   const [modelVisited, setModelVisited] = useState(params.get("view") === "3d");
+  const [stepVisited, setStepVisited] = useState(params.get("view") === "step");
   useEffect(() => {
     if (view === "3d") setModelVisited(true);
+    if (view === "step") setStepVisited(true);
   }, [view]);
   const [refresh, setRefresh] = useState(0);
   const [localStep, setLocalStep] = useState<{ name: string; url: string } | null>(null);
@@ -224,6 +228,14 @@ function App() {
         : view === "schematic" || view === "bom"
           ? "schematic"
           : "pcb");
+  const stepFiles =
+    manifest?.files.filter((file) => file.kind === "model" && /\.(step|stp)$/i.test(file.path)) ??
+    [];
+  const stepSelectableFiles = [...stepFiles].sort(
+    (a, b) => b.mtimeMs - a.mtimeMs || a.path.localeCompare(b.path),
+  );
+  const stepFile =
+    stepSelectableFiles.find((item) => item.path === selected.step) ?? stepSelectableFiles[0];
   const files =
     manifest?.files.filter(
       (file) =>
@@ -631,20 +643,27 @@ function App() {
               ) : (
                 <Notice text="No Gerber layers found. Point gerbers in .backplane.json at your generated output directory." />
               ))}
-            {view === "step" &&
-              (localStep || file ? (
-                <RuntimeView
-                  key={`step:${localStep?.url ?? file?.path}`}
-                  snapshot={{
-                    kind: "step",
-                    url:
-                      localStep?.url ??
-                      apiUrl("assets", file?.path, `${file?.mtimeMs}:${file?.size}:${refresh}`),
-                  }}
-                />
-              ) : (
+            {stepVisited &&
+              (localStep || stepFile ? (
+                <div hidden={view !== "step"} className="h-full">
+                  <RuntimeView
+                    key={`step:${localStep?.url ?? stepFile?.path}`}
+                    snapshot={{
+                      kind: "step",
+                      active: view === "step" && visible,
+                      url:
+                        localStep?.url ??
+                        apiUrl(
+                          "assets",
+                          stepFile?.path,
+                          `${stepFile?.mtimeMs}:${stepFile?.size}:${refresh}`,
+                        ),
+                    }}
+                  />
+                </div>
+              ) : view === "step" ? (
                 <Notice text="Choose a project STEP file or use Open file to preview a .step or .stp file from your device." />
-              ))}
+              ) : null)}
             {modelVisited && (
               <div hidden={view !== "3d"} className="h-full">
                 {pcb ? (

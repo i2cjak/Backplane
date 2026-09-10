@@ -13,7 +13,7 @@ self.onmessage = async ({ data }) => {
     });
     if (!result.success || !result.meshes?.length)
       throw new Error("No solid geometry could be read from this STEP file.");
-    self.postMessage({ meshes: result.meshes });
+    self.postMessage({ root: result.root, meshes: result.meshes });
   } catch (error) {
     self.postMessage({ error: error.message || String(error) });
   }

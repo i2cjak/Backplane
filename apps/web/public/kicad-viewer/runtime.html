@@ -61,6 +61,149 @@
         align-items: center;
         padding-top: 10px;
       }
+      .step-selection-panel {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        z-index: 20;
+        display: flex;
+        flex-direction: column;
+        width: min(290px, calc(100% - 24px));
+        max-height: min(72vh, 560px);
+        box-sizing: border-box;
+        border: 1px solid #ffffff30;
+        background: #101214ed;
+        color: #dce5e0;
+        font-size: 14px;
+      }
+      .step-selection-tree {
+        overflow: auto;
+        padding: 4px;
+      }
+      .step-selection-toggle {
+        display: none;
+        width: 100%;
+        min-height: 34px;
+        border: 0;
+        border-bottom: 1px solid #ffffff24;
+        border-radius: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .step-selection-group > summary,
+      .step-selection-item {
+        display: block;
+        box-sizing: border-box;
+        width: 100%;
+        min-height: 30px;
+        padding: 6px 8px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        line-height: 1.25;
+        text-align: left;
+        cursor: pointer;
+        list-style-position: inside;
+      }
+      .step-selection-group > summary {
+        display: list-item;
+        padding-left: calc(8px + var(--step-depth, 0) * 14px);
+        overflow-wrap: anywhere;
+      }
+      .step-selection-item {
+        padding-left: calc(24px + var(--step-depth, 0) * 14px);
+        overflow-wrap: anywhere;
+      }
+      .step-selection-tree {
+        scrollbar-width: thin;
+        scrollbar-color: #4b6254 #141a17;
+        overflow-x: hidden;
+      }
+      .step-selection-group > summary:hover,
+      .step-selection-item:hover,
+      .step-selection-group > summary[aria-selected="true"],
+      .step-selection-item[aria-selected="true"] {
+        background: #b8f3c426;
+        color: #d8ffe0;
+      }
+      .step-selection-controls {
+        display: grid;
+        gap: 7px;
+        border-top: 1px solid #ffffff24;
+        padding: 10px;
+      }
+      .step-selection-controls[hidden] {
+        display: none;
+      }
+      .step-selection-heading {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        overflow: hidden;
+      }
+      .step-selection-heading span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .step-selection-heading output {
+        color: #b8f3c4;
+        font-variant-numeric: tabular-nums;
+      }
+      .step-selection-controls input {
+        width: 100%;
+        accent-color: #b8f3c4;
+      }
+      .step-selection-actions {
+        display: flex;
+        gap: 6px;
+      }
+      .step-selection-actions button {
+        min-height: 26px;
+        border: 1px solid #ffffff30;
+        border-radius: 0;
+        background: #ffffff0b;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      .step-selection-actions button:hover {
+        background: #b8f3c426;
+      }
+      .step-selection-panel.is-collapsed .step-selection-tree,
+      .step-selection-panel.is-collapsed .step-selection-controls {
+        display: none;
+      }
+      [data-color-scheme="light"] .step-selection-panel {
+        border-color: #18202326;
+        background: #f8faf9ed;
+        color: #283830;
+      }
+      [data-color-scheme="light"] .step-selection-group > summary:hover,
+      [data-color-scheme="light"] .step-selection-item:hover,
+      [data-color-scheme="light"] .step-selection-group > summary[aria-selected="true"],
+      [data-color-scheme="light"] .step-selection-item[aria-selected="true"] {
+        background: #2e724126;
+        color: #1f542e;
+      }
+      @media (max-width: 640px) {
+        .step-selection-panel {
+          top: 8px;
+          left: 8px;
+          width: min(270px, calc(100% - 16px));
+          max-height: 58vh;
+        }
+        .step-selection-toggle {
+          display: block;
+          padding: 6px 10px;
+        }
+      }
       .canvas-actions {
         position: absolute;
         bottom: 16px;
