@@ -2,9 +2,9 @@ name: Backplane CI
 
 on:
   push:
-    branches: [t3cad]
+    branches: [main]
   pull_request:
-    branches: [t3cad]
+    branches: [main]
 
 permissions:
   contents: read
