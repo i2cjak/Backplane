@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
-import { mergeNativeLayerVisibility, nativeLayerSections } from "./nativeLayerState";
+import {
+  mergeNativeLayerVisibility,
+  nativeLayerSections,
+  sameNativeLayers,
+} from "./nativeLayerState";
 
 const layer = (id: string, section: string, visible = true) => ({
   id,
@@ -17,6 +21,23 @@ describe("native layer state", () => {
         { "F.Cu": false },
       ),
     ).toEqual({ "F.Cu": false, "B.Cu": true, "Edge.Cuts": true });
+  });
+
+  it("returns the previous visibility object when a layer report is unchanged", () => {
+    const previous = { "F.Cu": false, "B.Cu": true };
+    expect(
+      mergeNativeLayerVisibility(
+        [layer("F.Cu", "Copper", true), layer("B.Cu", "Copper")],
+        previous,
+      ),
+    ).toBe(previous);
+  });
+
+  it("recognizes identical layer reports even when the arrays are new", () => {
+    expect(sameNativeLayers([layer("F.Cu", "Copper")], [layer("F.Cu", "Copper")])).toBe(true);
+    expect(sameNativeLayers([layer("F.Cu", "Copper")], [layer("F.Cu", "Copper", false)])).toBe(
+      false,
+    );
   });
 
   it("keeps renderer layer order inside grouped sections", () => {

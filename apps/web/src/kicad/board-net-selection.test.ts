@@ -118,3 +118,59 @@ it("ignores hidden-layer and unconnected geometry", () => {
     resolveBoardNetAtPoint(board, { x: 55, y: 50 }, { visibleLayers: visibleCopper }),
   ).toBeUndefined();
 });
+
+it("keeps pad and track hits ahead of an enclosing zone", () => {
+  const overlapping = {
+    nets: board.nets,
+    layers: board.layers,
+    segments: [
+      {
+        typeId: "LineSegment",
+        start: { x: 10, y: 10 },
+        end: { x: 30, y: 10 },
+        width: 0.2,
+        layer: "F.Cu",
+        net: 2,
+      },
+    ],
+    vias: [],
+    footprints: [
+      {
+        typeId: "Footprint",
+        pads: [
+          {
+            typeId: "Pad",
+            shape: "circle",
+            bbox: { x: 24.5, y: 9.5, w: 1, h: 1 },
+            layers: ["F.Cu"],
+            net: { number: 1, name: "GND" },
+          },
+        ],
+      },
+    ],
+    zones: [
+      {
+        typeId: "Zone",
+        layer: "F.Cu",
+        polygons: [
+          {
+            points: [
+              { x: 5, y: 5 },
+              { x: 35, y: 5 },
+              { x: 35, y: 15 },
+              { x: 5, y: 15 },
+            ],
+          },
+        ],
+        net: 1,
+      },
+    ],
+  };
+
+  expect(
+    resolveBoardNetAtPoint(overlapping, { x: 25, y: 10 }, { visibleLayers: visibleCopper })?.kind,
+  ).toBe("pad");
+  expect(
+    resolveBoardNetAtPoint(overlapping, { x: 20, y: 10.1 }, { visibleLayers: visibleCopper })?.kind,
+  ).toBe("segment");
+});

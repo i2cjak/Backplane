@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeftRight, Search } from "lucide-react";
 import { loadSchematicSources } from "./schematicSources";
-import { mergeNativeLayerVisibility, nativeLayerSections } from "./nativeLayerState";
+import {
+  mergeNativeLayerVisibility,
+  nativeLayerSections,
+  sameNativeLayers,
+} from "./nativeLayerState";
 
 type Source = { filename: string; content: string };
 export type NativeView = "pcb" | "schematic";
@@ -383,7 +387,7 @@ export function NativeProjectViews({
                     onKey={handleCrossProbeShortcut}
                     onLayers={(next) => {
                       if (context !== "pcb") return;
-                      setLayers(next);
+                      setLayers((old) => (sameNativeLayers(old, next) ? old : next));
                       setLayerVisibility((old) => mergeNativeLayerVisibility(next, old));
                     }}
                     onResult={(found, value) =>

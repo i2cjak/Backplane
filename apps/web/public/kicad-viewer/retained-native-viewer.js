@@ -105,26 +105,66 @@ function footprintArea(footprint, hit) {
   return Number.isFinite(width) && Number.isFinite(height) ? Math.abs(width * height) : Infinity;
 }
 
-function chooseFootprintHit(hits) {
+function bboxContains(value, position) {
+  const width = Number(value?.w ?? value?.width);
+  const height = Number(value?.h ?? value?.height);
+  const x = Number(value?.x);
+  const y = Number(value?.y);
+  return (
+    Number.isFinite(width) &&
+    Number.isFinite(height) &&
+    Number.isFinite(x) &&
+    Number.isFinite(y) &&
+    position.x >= x &&
+    position.x <= x + width &&
+    position.y >= y &&
+    position.y <= y + height
+  );
+}
+
+function footprintHasGeometryAt(core, footprint, position) {
+  // Select the body between visible pads/silkscreen too. The vendor's wider
+  // footprint bbox includes property text, which can cover unrelated routes.
+  const bounds = visibleFootprintGlowItems(core, footprint)
+    .map((item) => item?.bbox)
+    .filter((value) => [value?.x, value?.y, value?.w, value?.h].every(Number.isFinite));
+  if (!bounds.length) return false;
+  const x = Math.min(...bounds.map((value) => value.x));
+  const y = Math.min(...bounds.map((value) => value.y));
+  return bboxContains(
+    {
+      x,
+      y,
+      w: Math.max(...bounds.map((value) => value.x + value.w)) - x,
+      h: Math.max(...bounds.map((value) => value.y + value.h)) - y,
+    },
+    position,
+  );
+}
+
+function chooseFootprintHit(core, hits, position) {
   const candidates = new Map();
   for (const hit of hits) {
     const footprint = footprintAncestor(hit?.item);
-    if (footprint && !candidates.has(footprint)) candidates.set(footprint, hit);
+    if (
+      footprint &&
+      !decorativeFootprint(footprint) &&
+      footprintHasGeometryAt(core, footprint, position) &&
+      !candidates.has(footprint)
+    )
+      candidates.set(footprint, hit);
   }
-  if (candidates.size < 2) return undefined;
+  if (!candidates.size) return undefined;
   const entries = [...candidates.entries()];
-  const concrete = entries.filter(([footprint]) => !decorativeFootprint(footprint));
-  const pool = concrete.length ? concrete : entries;
-  pool.sort(
+  entries.sort(
     ([a, hitA], [b, hitB]) =>
       footprintArea(a, hitA) - footprintArea(b, hitB) ||
       String(a.reference ?? "").localeCompare(String(b.reference ?? "")),
   );
-  const [footprint, hit] = pool[0];
-  // Pad hit records carry a net, which would be promoted back to a net
-  // selection before the host sees the footprint. The footprint is the
-  // intended compact-view selection when resolving overlapping candidates.
-  return { ...hit, item: footprint, net: undefined };
+  const [footprint, hit] = entries[0];
+  // Keep a pad's net on a footprint selection so the H shortcut can still
+  // highlight the connected net after the component wins the hit test.
+  return { ...hit, item: footprint };
 }
 
 function installFootprintClickResolver(core) {
@@ -138,9 +178,30 @@ function installFootprintClickResolver(core) {
   const originalOnClick = core.on_click.bind(core);
   const findItems = core.find_items_under_pos.bind(core);
   core.on_click = (position, ...args) => {
+    const selected = chooseFootprintHit(core, findItems(position), position);
     const physicalNet = resolveBoardNetAtPoint(core.board, position, {
       isLayerVisible: (name) => visibleBoardLayer(core, name),
     });
+    if (selected) {
+      const originalFindItems = core.find_items_under_pos;
+      const footprintSelection = { ...selected };
+      // The native normalizer promotes any hit carrying `net` to a net
+      // selection. Keep the footprint as the selected item and pass the
+      // connected net through the retained-viewer event listener for H.
+      delete footprintSelection.net;
+      delete footprintSelection.netCode;
+      core.__backplanePendingFootprintNet =
+        physicalNet?.kind === "pad" && footprintAncestor(physicalNet.item) === selected.item
+          ? physicalNet
+          : undefined;
+      core.find_items_under_pos = () => [footprintSelection];
+      try {
+        return originalOnClick(position, ...args);
+      } finally {
+        delete core.__backplanePendingFootprintNet;
+        core.find_items_under_pos = originalFindItems;
+      }
+    }
     if (physicalNet?.item) {
       const originalFindItems = core.find_items_under_pos;
       core.find_items_under_pos = () => [{ item: physicalNet.item }];
@@ -150,17 +211,7 @@ function installFootprintClickResolver(core) {
         core.find_items_under_pos = originalFindItems;
       }
     }
-    const selected = chooseFootprintHit(findItems(position));
-    if (!selected) return originalOnClick(position, ...args);
-    const originalFindItems = core.find_items_under_pos;
-    // Reuse KiCad's semantic event and outline path with one resolved item;
-    // this avoids duplicating private event constructors from the bundle.
-    core.find_items_under_pos = () => [selected];
-    try {
-      return originalOnClick(position, ...args);
-    } finally {
-      core.find_items_under_pos = originalFindItems;
-    }
+    return originalOnClick(position, ...args);
   };
   core.__backplaneFootprintClickResolver = true;
 }
@@ -401,7 +452,13 @@ export class RetainedNativeViewer extends EventTarget {
     viewer.setAttribute("show-header", "false");
     viewer.style.cssText = "display:block;width:100%;height:100%";
     viewer.addEventListener("ecad-viewer:selection", (event) => {
-      const detail = event.detail;
+      const pendingNet =
+        this.core()?.__backplanePendingFootprintNet && event.detail?.itemType === "footprint"
+          ? this.core().__backplanePendingFootprintNet
+          : undefined;
+      const detail = pendingNet
+        ? { ...event.detail, net: pendingNet.net, netCode: pendingNet.netCode }
+        : event.detail;
       if (!detail?.itemType) {
         if (this.replacing) return;
         this.selection = undefined;

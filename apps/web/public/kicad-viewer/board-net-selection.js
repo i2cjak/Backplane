@@ -243,8 +243,12 @@ export function resolveBoardNetAtPoint(board, target, options = {}) {
     );
     if (Number.isFinite(distance)) add(zone, "zone", distance, 3);
   }
+  // Selection is semantic before geometric. A filled zone contains most of
+  // the board, so sorting by distance first made it win every time the click
+  // was merely a fraction off a pad or track centreline. Keep distance as a
+  // tie-breaker within a kind only.
   candidates.sort(
-    (left, right) => left.distance - right.distance || left.priority - right.priority,
+    (left, right) => left.priority - right.priority || left.distance - right.distance,
   );
   return candidates[0];
 }

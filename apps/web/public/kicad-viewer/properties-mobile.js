@@ -33,11 +33,51 @@ a[aria-label*="KiCAD Prism" i] {
 kc-board-properties-panel,
 kc-schematic-properties-panel {
   --floating-pro-panel-width: min(24rem, calc(100% - 1rem));
+  --backplane-properties-height: clamp(13rem, 30vh, 16rem);
+  position: absolute !important;
+  inset: auto 0 0 auto !important;
+  width: 0 !important;
+  height: 0 !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  display: block !important;
+  overflow: visible !important;
+  pointer-events: none;
   color: var(--backplane-fg);
   font-family: inherit;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+kc-board-properties-panel[hidden],
+kc-schematic-properties-panel[hidden] {
+  display: none !important;
 }
 
 kc-ui-panel {
+  background: var(--backplane-panel) !important;
+  border: 1px solid var(--backplane-line) !important;
+  border-radius: 0 !important;
+  box-shadow: 0 10px 28px #0008 !important;
+  color: var(--backplane-fg) !important;
+}
+
+:host(kc-board-properties-panel) > kc-ui-panel,
+:host(kc-schematic-properties-panel) > kc-ui-panel {
+  position: fixed !important;
+  inset: auto 0 0 !important;
+  z-index: 40 !important;
+  box-sizing: border-box !important;
+  width: 100vw !important;
+  max-width: none !important;
+  height: var(--backplane-properties-height) !important;
+  min-height: 0 !important;
+  max-height: calc(100vh - 0.5rem) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  font-size: 14px !important;
+  line-height: 1.3 !important;
+  pointer-events: auto;
   background: var(--backplane-panel) !important;
   border: 1px solid var(--backplane-line) !important;
   border-radius: 0 !important;
@@ -55,14 +95,37 @@ kc-ui-panel-title-with-close {
 }
 
 kc-ui-panel-body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow: auto !important;
   background: var(--backplane-panel) !important;
   color: var(--backplane-fg) !important;
+}
+
+:host(kc-board-properties-panel) > kc-ui-panel > kc-ui-panel-title,
+:host(kc-board-properties-panel) > kc-ui-panel > kc-ui-panel-title-with-close,
+:host(kc-board-properties-panel) > kc-ui-panel > kc-ui-panel-body,
+:host(kc-schematic-properties-panel) > kc-ui-panel > kc-ui-panel-title,
+:host(kc-schematic-properties-panel) > kc-ui-panel > kc-ui-panel-title-with-close,
+:host(kc-schematic-properties-panel) > kc-ui-panel > kc-ui-panel-body {
+  font-size: 14px !important;
+  line-height: 1.3 !important;
 }
 
 kc-ui-property-list {
   width: 100%;
   min-width: 0;
-  grid-template-columns: minmax(5.5rem, 38%) minmax(0, 1fr) !important;
+  grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr)) !important;
+  align-content: start;
+  gap: 1px !important;
+  background: var(--backplane-line) !important;
+}
+
+:host(kc-ui-property-list) {
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr)) !important;
+  align-content: start;
   gap: 1px !important;
   background: var(--backplane-line) !important;
 }
@@ -82,15 +145,76 @@ kc-ui-icon {
   kc-board-properties-panel,
   kc-schematic-properties-panel {
     --floating-pro-panel-width: calc(100% - 1rem);
-    right: 0.5rem !important;
-    left: 0.5rem;
-    width: auto !important;
-    max-height: calc(100% - 1rem);
+    --backplane-properties-height: min(45vh, 22rem);
   }
 }
 `;
 
 const BASE_PROPERTY_ITEM_CSS = `
+:host {
+  display: grid !important;
+  grid-template-columns: minmax(5.5rem, 38%) minmax(0, 1fr);
+  min-width: 0;
+  font-size: inherit !important;
+  line-height: inherit !important;
+  background: var(--backplane-line) !important;
+}
+
+:host(.label) {
+  grid-column: 1 / -1;
+  grid-template-columns: 1fr;
+}
+
+:host([name="Reference"]) {
+  order: -30;
+}
+
+:host([name="Value"]) {
+  order: -29;
+}
+
+@media (min-width: 1152px) {
+  :host([name="Reference"]),
+  :host([name="Value"]) {
+    grid-column: span 2;
+  }
+}
+
+:host(.label[name="Fields"]) {
+  order: -28;
+}
+
+:host([name="Footprint"]) {
+  order: -27;
+}
+
+:host([name="Dielectric"]) {
+  order: -26;
+}
+
+:host([name="Voltage"]) {
+  order: -25;
+}
+
+:host([name="MPN"]) {
+  order: -24;
+}
+
+:host([name="Manufacturer"]) {
+  order: -23;
+}
+
+:host([name="LCSC"]) {
+  order: -22;
+}
+
+:host([name="Reference"]) span:last-of-type,
+:host([name="Value"]) span:last-of-type {
+  color: var(--backplane-accent) !important;
+  font-size: 1.05em !important;
+  font-weight: 700 !important;
+}
+
 :host span {
   box-sizing: border-box;
   min-width: 0;
@@ -118,20 +242,7 @@ const MOBILE_PROPERTIES_CSS = `
 @media (max-width: 640px) {
   kc-board-properties-panel,
   kc-schematic-properties-panel {
-    position: fixed !important;
-    left: 8px !important;
-    right: 8px !important;
-    top: auto !important;
-    bottom: 8px !important;
-    width: auto !important;
-    height: min(48vh, 360px) !important;
-    max-height: calc(100vh - 16px) !important;
-    min-height: 0 !important;
-    z-index: 40 !important;
-    align-items: stretch !important;
-    border-radius: 0 !important;
-    overflow: hidden !important;
-    box-shadow: 0 10px 30px rgb(0 0 0 / 0.35) !important;
+    --backplane-properties-height: min(45vh, 22rem);
   }
 
   kc-board-properties-panel[hidden],
@@ -157,7 +268,11 @@ const MOBILE_PROPERTIES_CSS = `
   kc-ui-property-list {
     font-size: 14px !important;
     line-height: 1.3 !important;
-    grid-template-columns: minmax(7rem, 42%) minmax(0, 1fr) !important;
+    grid-template-columns: 1fr !important;
+  }
+
+  :host(kc-ui-property-list) {
+    grid-template-columns: 1fr !important;
   }
 
   kc-ui-panel-title-with-close {
@@ -181,6 +296,11 @@ const MOBILE_PROPERTY_ITEM_CSS = `
   :host {
     font-size: 14px !important;
     line-height: 1.3 !important;
+    grid-template-columns: minmax(7rem, 42%) minmax(0, 1fr) !important;
+  }
+
+  :host(.label) {
+    grid-template-columns: 1fr !important;
   }
 
   :host span {
