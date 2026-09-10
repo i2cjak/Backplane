@@ -1,4 +1,15 @@
-/** First-class inspect surfaces that sit beside KiCad in the right panel. */
+/**
+ * Sibling inspect surfaces next to KiCad. Inspect is view-only: it rereads
+ * saved files and does not launch CAD apps or speak MCP.
+ *
+ * Driving those apps is bring-your-own MCP on the agent, the same way you can
+ * drive KiCad with your own server instead of Backplane's stock KiCad path.
+ * This overlay used these public servers as examples, not dependencies:
+ * https://github.com/mixelpixx/KiCAD-MCP-Server
+ * https://github.com/neka-nat/freecad-mcp
+ * https://github.com/ahujasid/blender-mcp
+ * Any equivalent server can replace them.
+ */
 export const CAD_INSPECT_KINDS = ["kicad", "freecad", "blender"] as const;
 export type CadInspectKind = (typeof CAD_INSPECT_KINDS)[number];
 export type CadInspectView = "pcb" | "enclosure" | "product";
@@ -31,7 +42,7 @@ export const CAD_INSPECT_SURFACES: readonly CadInspectSurface[] = [
     label: "Blender",
     view: "product",
     shortcut: "V",
-    description: "Inspect saved product stills.",
+    description: "Inspect saved product 3D and material stills.",
   },
 ];
 
@@ -130,4 +141,51 @@ export function preferredInspectSolid(
     entries.find(([, path]) => /\.(?:step|stp)$/i.test(path)) ??
     entries[0];
   return ranked?.[0];
+}
+
+export type ProductInspectPreview = "model" | "step" | "image";
+
+export interface ProductInspectItem {
+  readonly id: string;
+  readonly label: string;
+  readonly path: string;
+  readonly preview: ProductInspectPreview;
+}
+
+export function inspectPreviewKind(path: string): ProductInspectPreview | undefined {
+  if (/\.(?:glb|gltf)$/i.test(path)) return "model";
+  if (/\.(?:step|stp)$/i.test(path)) return "step";
+  if (/\.(?:png|jpe?g|webp)$/i.test(path)) return "image";
+  return undefined;
+}
+
+/** 3D meshes first, then product.still and named renders (aluminum, resin, …). */
+export function productInspectItems(
+  product:
+    | {
+        readonly still?: string;
+        readonly renders?: Readonly<Record<string, string>>;
+        readonly solids?: Readonly<Record<string, string>>;
+      }
+    | undefined,
+): readonly ProductInspectItem[] {
+  if (!product) return [];
+  const items: ProductInspectItem[] = [];
+  const seen = new Set<string>();
+  for (const [id, path] of Object.entries(product.solids ?? {})) {
+    const preview = inspectPreviewKind(path);
+    if (preview !== "model" && preview !== "step") continue;
+    seen.add(path);
+    items.push({ id: `solid:${id}`, label: id, path, preview });
+  }
+  const stills: Record<string, string> = {
+    ...(product.still ? { product: product.still } : {}),
+    ...(product.renders ?? {}),
+  };
+  for (const [id, path] of Object.entries(stills)) {
+    if (inspectPreviewKind(path) !== "image" || seen.has(path)) continue;
+    seen.add(path);
+    items.push({ id: `still:${id}`, label: id, path, preview: "image" });
+  }
+  return items;
 }

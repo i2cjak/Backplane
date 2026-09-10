@@ -12,6 +12,7 @@ import {
   isCadInspectKind,
   isSiblingInspectView,
   preferredInspectSolid,
+  productInspectItems,
   readViewerView,
   viewerHashView,
 } from "./cadInspect.ts";
@@ -104,5 +105,23 @@ describe("cadInspect surfaces", () => {
       }),
     ).toBe("PCB");
     expect(preferredInspectSolid({ BASE: "mech/BASE.stl" })).toBe("BASE");
+  });
+
+  it("lists Blender 3D solids then named material stills", () => {
+    expect(
+      productInspectItems({
+        solids: { PRODUCT: "mech/product.glb" },
+        still: "mech/product-render.png",
+        renders: {
+          aluminum: "mech/load-viz-aluminum.png",
+          resin: "mech/load-viz-resin.png",
+        },
+      }).map((item) => [item.label, item.preview, item.path]),
+    ).toEqual([
+      ["PRODUCT", "model", "mech/product.glb"],
+      ["product", "image", "mech/product-render.png"],
+      ["aluminum", "image", "mech/load-viz-aluminum.png"],
+      ["resin", "image", "mech/load-viz-resin.png"],
+    ]);
   });
 });

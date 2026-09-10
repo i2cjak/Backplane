@@ -58,7 +58,11 @@ type Manifest = KiCadProjectManifest & {
     symbolMember?: string;
     footprint?: string;
     enclosure?: { solids?: Record<string, string> };
-    product?: { still?: string };
+    product?: {
+      still?: string;
+      renders?: Record<string, string>;
+      solids?: Record<string, string>;
+    };
   };
   warnings?: string[];
 };
@@ -734,6 +738,7 @@ function App() {
                 config={manifest.config ?? {}}
                 revision={`${revision}:${refresh}`}
                 assetUrl={(path) => apiUrl("assets", path, revision)}
+                modelUrl={(path) => apiUrl("model", path, revision)}
               />
             )}
           </>

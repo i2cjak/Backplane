@@ -40,7 +40,7 @@ Use existing outputs where possible. If none exist, generate **review-only** Ger
 
 # Inspect together
 
-Open **KiCad**, **FreeCAD**, or **Blender** from the thread's right-panel add menu. They are sibling inspect surfaces. KiCad's inner tabs stay KiCad-only. FreeCAD reads `enclosure.solids`; Blender reads `product.still`. They do not launch those apps. Select a file or Gerber layer inside the KiCad views. Saved-file changes refresh automatically while visible; **Refresh saved files** forces a reread. A changed `.backplane.json` updates the default selection.
+Open **KiCad**, **FreeCAD**, or **Blender** from the thread's right-panel add menu. They are sibling inspect surfaces. KiCad's inner tabs stay KiCad-only. FreeCAD reads `enclosure.solids`. Blender reads product 3D and named stills. They do not launch those apps; driving CAD is BYO MCP on the agent. Select a file or Gerber layer inside the KiCad views. Saved-file changes refresh automatically while visible; **Refresh saved files** forces a reread. A changed `.backplane.json` updates the default selection.
 
 For model interaction, use the panel's **Open KiCad viewer in browser** action. It opens the same viewer in Backplane's collaborative browser, where `preview_status`, `preview_snapshot`, `preview_click`, `preview_scroll`, and `preview_press` work. Target that viewer's `tabId` explicitly so other browser tabs stay intact. The panel iframe itself is not a `preview_*` automation target. If no viewer browser tab exists and only browser tools are available, ask the user to open that action once; do not invent a token or navigate to a bare viewer URL.
 

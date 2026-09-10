@@ -35,6 +35,8 @@ export interface KiCadEnclosureConfig {
 }
 export interface KiCadProductConfig {
   readonly still?: string;
+  readonly renders?: Readonly<Record<string, string>>;
+  readonly solids?: Readonly<Record<string, string>>;
 }
 export interface KiCadProjectConfig {
   readonly analysisUrl?: string;
@@ -145,15 +147,69 @@ function parseEnclosure(value: unknown): KiCadEnclosureConfig | undefined {
 
 function parseProduct(value: unknown): KiCadProductConfig | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const still = (value as Record<string, unknown>).still;
-  return typeof still === "string" && still.length > 0 ? { still } : undefined;
+  const record = value as Record<string, unknown>;
+  const still =
+    typeof record.still === "string" && record.still.length > 0 ? record.still : undefined;
+  const renders = asStringRecord(record.renders);
+  const solids = asStringRecord(record.solids);
+  if (!still && !renders && !solids) return undefined;
+  return {
+    ...(still ? { still } : {}),
+    ...(renders ? { renders } : {}),
+    ...(solids ? { solids } : {}),
+  };
+}
+
+export function workspaceRelativeInspectPath(root: string, value: string): string | undefined {
+  const normalized = value.replaceAll("\\", "/");
+  const rootNorm = NodePath.resolve(root).replaceAll("\\", "/").replace(/\/$/, "");
+  if (normalized.startsWith(`${rootNorm}/`)) return normalized.slice(rootNorm.length + 1);
+  if (normalized.startsWith("/")) return undefined;
+  return normalized.replace(/^\.\//, "");
+}
+
+function inspectImageOrModel(path: string): "image" | "model" | undefined {
+  const extension = NodePath.extname(path).toLowerCase();
+  if (configuredKind(extension) === "image") return "image";
+  if (MODEL_EXTENSIONS.has(extension)) return "model";
+  return undefined;
+}
+
+/** Named stills from a load-viz sidecar (`outputs` plus `product`). */
+export function loadVizRenderPaths(root: string, payload: unknown): Record<string, string> {
+  if (!payload || typeof payload !== "object") return {};
+  const record = payload as Record<string, unknown>;
+  const renders: Record<string, string> = {};
+  if (typeof record.product === "string") {
+    const relative = workspaceRelativeInspectPath(root, record.product);
+    if (relative && inspectImageOrModel(relative) === "image") renders.product = relative;
+  }
+  if (record.outputs && typeof record.outputs === "object" && !Array.isArray(record.outputs)) {
+    for (const [name, value] of Object.entries(record.outputs)) {
+      if (typeof value !== "string") continue;
+      const relative = workspaceRelativeInspectPath(root, value);
+      if (relative && inspectImageOrModel(relative) === "image") renders[name] = relative;
+    }
+  }
+  return renders;
+}
+
+/** GLB/STEP from a Blender scene sidecar (`pcb_source`). */
+export function sceneSolidPath(root: string, payload: unknown): string | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const source = (payload as Record<string, unknown>).pcb_source;
+  if (typeof source !== "string") return undefined;
+  const relative = workspaceRelativeInspectPath(root, source);
+  return relative && inspectImageOrModel(relative) === "model" ? relative : undefined;
 }
 
 export function configuredArtifactPaths(config: KiCadProjectConfig | undefined): string[] {
   if (!config) return [];
   const paths = [
     ...(config.enclosure?.solids ? Object.values(config.enclosure.solids) : []),
+    ...(config.product?.solids ? Object.values(config.product.solids) : []),
     config.product?.still,
+    ...(config.product?.renders ? Object.values(config.product.renders) : []),
   ].filter((path): path is string => typeof path === "string" && path.length > 0);
   return [...new Set(paths.map((path) => path.replaceAll("\\", "/")))];
 }
@@ -174,7 +230,46 @@ export async function discoverKiCadProject(root: string): Promise<KiCadProjectMa
       await NodeFSP.readFile(NodePath.join(projectRoot, ".backplane.json"), "utf8"),
     ) as Record<string, unknown>;
     const enclosure = parseEnclosure(parsed.enclosure);
-    const product = parseProduct(parsed.product);
+    let product = parseProduct(parsed.product);
+    const productRecord =
+      parsed.product && typeof parsed.product === "object" && !Array.isArray(parsed.product)
+        ? (parsed.product as Record<string, unknown>)
+        : undefined;
+    if (productRecord) {
+      const renders = { ...(product?.renders ?? {}) };
+      const solids = { ...(product?.solids ?? {}) };
+      const loadViz = typeof productRecord.loadViz === "string" ? productRecord.loadViz : undefined;
+      const scene = typeof productRecord.scene === "string" ? productRecord.scene : undefined;
+      if (loadViz) {
+        try {
+          Object.assign(
+            renders,
+            loadVizRenderPaths(
+              projectRoot,
+              JSON.parse(await NodeFSP.readFile(NodePath.join(projectRoot, loadViz), "utf8")),
+            ),
+          );
+        } catch {
+          warnings.push(`Unable to read product stills: ${loadViz}`);
+        }
+      }
+      if (scene) {
+        try {
+          const solid = sceneSolidPath(
+            projectRoot,
+            JSON.parse(await NodeFSP.readFile(NodePath.join(projectRoot, scene), "utf8")),
+          );
+          if (solid && !solids.PCB) solids.PCB = solid;
+        } catch {
+          warnings.push(`Unable to read product scene: ${scene}`);
+        }
+      }
+      product = parseProduct({
+        still: product?.still,
+        renders: Object.keys(renders).length ? renders : undefined,
+        solids: Object.keys(solids).length ? solids : undefined,
+      });
+    }
     config = {
       ...(typeof parsed.analysisUrl === "string" ? { analysisUrl: parsed.analysisUrl } : {}),
       ...(typeof parsed.pcb === "string" ? { pcb: parsed.pcb } : {}),

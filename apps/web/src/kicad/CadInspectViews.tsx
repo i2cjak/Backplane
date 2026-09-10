@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { preferredInspectSolid } from "./cadInspect";
+import { preferredInspectSolid, productInspectItems } from "./cadInspect";
 
 export type InspectConfig = {
   enclosure?: { solids?: Record<string, string> };
-  product?: { still?: string };
+  product?: {
+    still?: string;
+    renders?: Record<string, string>;
+    solids?: Record<string, string>;
+  };
 };
 
 function Notice({ text }: { text: string }) {
@@ -121,21 +125,62 @@ export function ProductView({
   config,
   revision,
   assetUrl,
+  modelUrl,
 }: {
   config: InspectConfig;
   revision: string;
   assetUrl: (path: string) => string;
+  modelUrl: (path: string) => string;
 }) {
-  if (!config.product?.still) {
-    return <Notice text="No product inspect files. Set product.still in .backplane.json." />;
+  const items = productInspectItems(config.product);
+  const preferred = items.find((item) => item.preview !== "image")?.id ?? items[0]?.id ?? "";
+  const [selected, setSelected] = useState(preferred);
+  const active = items.find((item) => item.id === selected) ?? items[0];
+  if (!items.length) {
+    return (
+      <Notice text="No product inspect files. Set product.solids, product.still, or product.renders in .backplane.json." />
+    );
   }
   return (
-    <div className="flex h-full min-h-0 items-center justify-center overflow-auto p-3">
-      <img
-        alt="Blender product still"
-        className="max-h-full max-w-full rounded border border-border bg-black object-contain"
-        src={`${assetUrl(config.product.still)}&revision=${revision}`}
-      />
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-1.5 text-xs">
+        <label className="flex min-w-0 flex-1 items-center gap-2">
+          View
+          <select
+            aria-label="Blender product view"
+            className="min-w-0 flex-1 rounded border border-border bg-background px-1.5 py-1"
+            value={active?.id ?? ""}
+            onChange={(event) => setSelected(event.target.value)}
+          >
+            {items.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span className="text-muted-foreground">Saved files</span>
+      </div>
+      <div className="min-h-0 flex-1">
+        {!active ? (
+          <Notice text="Select a product solid or still." />
+        ) : active.preview === "image" ? (
+          <div className="flex h-full items-center justify-center overflow-auto p-3">
+            <img
+              alt={`Blender ${active.label}`}
+              className="max-h-full max-w-full rounded border border-border bg-black object-contain"
+              src={`${assetUrl(active.path)}&revision=${revision}`}
+            />
+          </div>
+        ) : (
+          <SnapshotFrame
+            key={`${active.path}:${revision}`}
+            kind={active.preview}
+            url={modelUrl(active.path)}
+            title={`Product ${active.label}`}
+          />
+        )}
+      </div>
     </div>
   );
 }

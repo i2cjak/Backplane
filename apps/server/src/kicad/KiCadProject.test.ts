@@ -157,7 +157,7 @@ it.effect("reads explicit library assignments and reports missing assigned asset
   }),
 );
 
-it.effect("resolves saved FreeCAD solids and Blender stills from .backplane.json", () =>
+it.effect("resolves saved FreeCAD solids and Blender product views from .backplane.json", () =>
   Effect.promise(async () => {
     const root = tempRoot();
     NodeFS.mkdirSync(NodePath.join(root, "ws", "board"), { recursive: true });
@@ -165,22 +165,42 @@ it.effect("resolves saved FreeCAD solids and Blender stills from .backplane.json
     NodeFS.writeFileSync(NodePath.join(root, "ws", "board", "layout.kicad_pcb"), "pcb");
     NodeFS.writeFileSync(NodePath.join(root, "mech", "board.glb"), "glb-bytes");
     NodeFS.writeFileSync(NodePath.join(root, "mech", "product-render.png"), "png-bytes");
+    NodeFS.writeFileSync(NodePath.join(root, "mech", "load-viz-aluminum.png"), "al-png");
+    NodeFS.writeFileSync(NodePath.join(root, "mech", "load-viz-resin.png"), "resin-png");
+    NodeFS.writeFileSync(
+      NodePath.join(root, "mech", "load-viz-materials.json"),
+      '{"product":"mech/product-render.png","outputs":{"aluminum":"mech/load-viz-aluminum.png","resin":"mech/load-viz-resin.png"}}',
+    );
+    NodeFS.writeFileSync(
+      NodePath.join(root, "mech", "blender-scene.json"),
+      '{"pcb_source":"mech/board.glb"}',
+    );
     NodeFS.writeFileSync(
       NodePath.join(root, ".backplane.json"),
-      '{"pcb":"ws/board/layout.kicad_pcb","enclosure":{"solids":{"BOARD":"mech/board.glb"}},"product":{"still":"mech/product-render.png"}}',
+      '{"pcb":"ws/board/layout.kicad_pcb","enclosure":{"solids":{"BOARD":"mech/board.glb"}},"product":{"still":"mech/product-render.png","scene":"mech/blender-scene.json","loadViz":"mech/load-viz-materials.json"}}',
     );
     const manifest = await discoverKiCadProject(root);
+    expect(manifest.config?.enclosure?.solids?.BOARD).toBe("mech/board.glb");
+    expect(manifest.config?.product?.still).toBe("mech/product-render.png");
+    expect(manifest.config?.product?.solids?.PCB).toBe("mech/board.glb");
+    expect(manifest.config?.product?.renders).toEqual({
+      product: "mech/product-render.png",
+      aluminum: "mech/load-viz-aluminum.png",
+      resin: "mech/load-viz-resin.png",
+    });
     expect(configuredArtifactPaths(manifest.config)).toEqual([
       "mech/board.glb",
       "mech/product-render.png",
+      "mech/load-viz-aluminum.png",
+      "mech/load-viz-resin.png",
     ]);
-    expect(manifest.config?.enclosure?.solids?.BOARD).toBe("mech/board.glb");
-    expect(manifest.config?.product?.still).toBe("mech/product-render.png");
     const solid = await resolveKiCadProjectFile(root, "mech/board.glb");
     const still = await resolveKiCadProjectFile(root, "mech/product-render.png");
+    const aluminum = await resolveKiCadProjectFile(root, "mech/load-viz-aluminum.png");
     const pcb = await resolveKiCadProjectFile(root, "ws/board/layout.kicad_pcb");
     expect(solid?.file.kind).toBe("model");
     expect(still?.file.kind).toBe("image");
+    expect(aluminum?.file.kind).toBe("image");
     expect(kiCadModelAction(solid!.file)).toBe("serve-existing");
     expect(kiCadModelAction(pcb!.file)).toBe("export-glb");
     expect(NodeFS.readFileSync(solid!.absolutePath, "utf8")).toBe("glb-bytes");

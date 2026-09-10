@@ -10,9 +10,9 @@ Agents receive the selected KiCad executable and guidance for exports, ERC/DRC c
 
 This follows the connected environment: a phone or remote browser uses the KiCad available on its server, not a KiCad installation on the device. Restart Backplane after an upgrade so agent processes receive the updated runtime.
 
-Open **KiCad**, **FreeCAD**, or **Blender** from a thread's right-panel add menu. They are sibling inspect surfaces, not tabs inside one another. KiCad's inner tabs stay KiCad-only (schematic, PCB, 3D, Gerbers, STEP). FreeCAD shows saved enclosure solids. Blender shows a saved product still. Each panel follows the thread's workspace or worktree and reads saved files without locking them.
+Open **KiCad**, **FreeCAD**, or **Blender** from a thread's right-panel add menu. They are sibling inspect surfaces, not tabs inside one another. KiCad's inner tabs stay KiCad-only (schematic, PCB, 3D, Gerbers, STEP). FreeCAD shows saved enclosure solids. Blender shows a product 3D mesh when one is assigned, plus a picker for saved stills (product render, milled aluminum, resin, and other named outputs). Each panel follows the thread's workspace or worktree and reads saved files without locking them.
 
-Point `.backplane.json` at the board, `enclosure.solids`, and `product.still`. FreeCAD prefers a GLB or STEP solid when several are listed. The inspect panels do not start KiCad, FreeCAD, or Blender; attach those apps through the agent's MCP config if you want the agent to edit them. Examples used to prove this overlay: [KiCAD-MCP-Server](https://github.com/mixelpixx/KiCAD-MCP-Server), [freecad-mcp](https://github.com/neka-nat/freecad-mcp), [blender-mcp](https://github.com/ahujasid/blender-mcp). Any equivalent server can replace them.
+Point `.backplane.json` at the board, `enclosure.solids`, and the product files. FreeCAD prefers a GLB or STEP solid when several are listed. Blender 3D uses `product.solids` or a `product.scene` JSON `pcb_source` GLB. Named stills use `product.renders` or a `product.loadViz` JSON `outputs` map. The inspect panels do not start KiCad, FreeCAD, or Blender; they do not speak MCP. Attach those apps through the agent's MCP config if you want the agent to edit them. This overlay is bring-your-own MCP: the servers used to prove it are [KiCAD-MCP-Server](https://github.com/mixelpixx/KiCAD-MCP-Server), [freecad-mcp](https://github.com/neka-nat/freecad-mcp), and [blender-mcp](https://github.com/ahujasid/blender-mcp). Any equivalent server can replace them.
 
 On mobile, the thread toolbar has the same three inspect actions. Each opens a full-screen native web view. Reconnect and tap **Retry** if the short-lived viewer session expires.
 
@@ -32,7 +32,12 @@ For a workspace containing several boards, create `.backplane.json` at its root:
     }
   },
   "product": {
-    "still": "mech/product-render.png"
+    "solids": { "PRODUCT": "mech/product.glb" },
+    "still": "mech/product-render.png",
+    "renders": {
+      "aluminum": "mech/load-viz-aluminum.png",
+      "resin": "mech/load-viz-resin.png"
+    }
   }
 }
 ```
@@ -47,7 +52,7 @@ Select a STEP part in the model or the collapsible parts tree, then adjust its o
 
 Both board and STEP previews use orthographic projection with cel-shaded colors and outlines. Drag to tumble the model freely in any direction; **Top**, **Bottom**, and **Fit model** return to familiar views.
 
-The 3D preview requires `kicad-cli` with GLB export on the environment running Backplane. The preview includes outer copper, pads, silkscreen, and translucent soldermask using the board’s stackup colors. Exports go into a separate temporary cache. FreeCAD inspect serves the named solid; Blender inspect serves the named still. Gerber rendering requires `python3` there. None of these operations modify the project.
+The 3D preview requires `kicad-cli` with GLB export on the environment running Backplane. The preview includes outer copper, pads, silkscreen, and translucent soldermask using the board’s stackup colors. Exports go into a separate temporary cache. FreeCAD inspect serves the named solid. Blender inspect serves the named product mesh and stills. Gerber rendering requires `python3` there. None of these operations modify the project.
 
 Use **Open KiCad viewer in browser** to let your agent inspect and interact with the viewer through the collaborative browser. Its link grants temporary read-only access to this workspace; reopen the panel after the link expires or the server restarts. The `backplane-viewer` agent skill includes a helper for finding and configuring project files.
 

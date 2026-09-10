@@ -38,6 +38,8 @@ export const KiCadProjectConfig = Schema.Struct({
   product: Schema.optionalKey(
     Schema.Struct({
       still: Schema.optionalKey(Schema.String),
+      renders: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+      solids: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
     }),
   ),
 });
