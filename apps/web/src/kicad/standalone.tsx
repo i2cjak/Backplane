@@ -24,6 +24,7 @@ import { AnalysisView } from "./AnalysisView";
 import { BomView } from "./BomView";
 import { resolveProjectDesign } from "./projectDesign";
 import { EnclosureView, ProductView } from "./CadInspectViews";
+import { viewerHashView } from "./cadInspect";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 
 type View =
@@ -160,9 +161,12 @@ function Notice({ text }: { text: string }) {
 }
 
 function App() {
-  const [view, setView] = useState<View>(
-    allTabs.some((tab) => tab.id === params.get("view")) ? (params.get("view") as View) : "pcb",
-  );
+  const [view, setView] = useState<View>(() => {
+    const hashed = params.get("view");
+    if (hashed === "enclosure" || hashed === "product") return hashed;
+    if (allTabs.some((tab) => tab.id === hashed)) return hashed as View;
+    return viewerHashView(hashed) ?? "pcb";
+  });
   const [openTabs, setOpenTabs] = useState<View[]>(
     optionalTabs.some((tab) => tab.id === params.get("view")) ? [params.get("view") as View] : [],
   );

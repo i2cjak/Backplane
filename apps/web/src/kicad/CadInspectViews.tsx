@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { preferredInspectSolid } from "./cadInspect";
 
 export type InspectConfig = {
   enclosure?: { params?: string; solids?: Record<string, string> };
@@ -54,6 +55,7 @@ function StlFrame({ url, title }: { url: string; title: string }) {
       ref={ref}
       title={title}
       src="/kicad-viewer/stl-runtime.html"
+      allow="webgl"
       className="block h-full w-full border-0"
     />
   );
@@ -88,7 +90,15 @@ function SnapshotFrame({
   useEffect(() => {
     ref.current?.contentWindow?.postMessage({ type: "backplane-snapshot", kind, url }, origin);
   }, [kind, origin, url]);
-  return <iframe ref={ref} title={title} src={src} className="block h-full w-full border-0" />;
+  return (
+    <iframe
+      ref={ref}
+      title={title}
+      src={src}
+      allow="webgl"
+      className="block h-full w-full border-0"
+    />
+  );
 }
 
 function GlbFrame({ url, title }: { url: string; title: string }) {
@@ -121,6 +131,7 @@ function GlbFrame({ url, title }: { url: string; title: string }) {
       ref={ref}
       title={title}
       src="/kicad-viewer/runtime.html"
+      allow="webgl"
       className="block h-full w-full border-0"
     />
   );
@@ -139,7 +150,9 @@ export function EnclosureView({
   readJson: (path: string) => Promise<unknown>;
 }) {
   const solids = Object.entries(config.enclosure?.solids ?? {});
-  const [selected, setSelected] = useState(solids[0]?.[0] ?? "");
+  const [selected, setSelected] = useState(
+    preferredInspectSolid(config.enclosure?.solids) ?? solids[0]?.[0] ?? "",
+  );
   const [params, setParams] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const path = config.enclosure?.solids?.[selected];

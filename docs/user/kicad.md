@@ -12,6 +12,8 @@ This follows the connected environment: a phone or remote browser uses the KiCad
 
 Open **KiCad**, **FreeCAD**, or **Blender** from a thread's right-panel add menu. They are sibling inspect surfaces, not tabs inside one another. KiCad shows PCB, schematic, Gerber, 3D, and STEP. FreeCAD shows saved enclosure solids. Blender shows saved product stills. Each panel follows the thread's workspace or worktree. It reads saved files without locking them; you can continue editing in the CAD app or through your agent.
 
+The thread cwd must be the folder that contains `.backplane.json`. That file names the board, enclosure solids, and product still. You should not have to hunt for a file: KiCad opens the assigned `pcb`, FreeCAD opens the preferred solid (GLB/STEP if present), Blender opens `product.still`. Use **Browse** only to preview a different file.
+
 On mobile, the thread toolbar has the same three inspect actions. Each opens a full-screen native web view. The viewer uses a short-lived session tied to the active environment; reconnect and tap **Retry** if that session expires.
 
 For a workspace containing several boards, create `.backplane.json` at its root:

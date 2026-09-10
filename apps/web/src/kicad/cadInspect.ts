@@ -47,3 +47,32 @@ export function cadInspectLabelForKind(kind: string): string | undefined {
 export function isCadInspectKind(kind: string): kind is CadInspectKind {
   return CAD_INSPECT_SURFACES.some((entry) => entry.kind === kind);
 }
+
+export function viewerHashView(
+  value: string | null,
+): CadInspectView | "schematic" | "3d" | "step" | "gerbers" | undefined {
+  if (
+    value === "pcb" ||
+    value === "enclosure" ||
+    value === "product" ||
+    value === "schematic" ||
+    value === "3d" ||
+    value === "step" ||
+    value === "gerbers"
+  )
+    return value;
+  return undefined;
+}
+
+/** Prefer GLB/STEP so FreeCAD inspect uses the working 3D runtime, not a nested STL iframe. */
+export function preferredInspectSolid(
+  solids: Readonly<Record<string, string>> | undefined,
+): string | undefined {
+  if (!solids) return undefined;
+  const entries = Object.entries(solids);
+  const ranked =
+    entries.find(([, path]) => /\.(?:glb|gltf)$/i.test(path)) ??
+    entries.find(([, path]) => /\.(?:step|stp)$/i.test(path)) ??
+    entries[0];
+  return ranked?.[0];
+}
