@@ -26,8 +26,6 @@ import { BomView } from "./BomView";
 import { resolveProjectDesign } from "./projectDesign";
 import { EnclosureView, ProductView } from "./CadInspectViews";
 import {
-  KICAD_INNER_TABS,
-  KICAD_OPTIONAL_TABS,
   cadInspectLabelForKind,
   cadInspectOpenHint,
   inspectSurfaceKind,
@@ -66,24 +64,19 @@ type Manifest = KiCadProjectManifest & {
   };
   warnings?: string[];
 };
-const INNER_TAB_ICONS = {
-  schematic: FileText,
-  pcb: CircuitBoard,
-  "3d": Box,
-  gerbers: Layers3,
-  step: Box,
-} as const;
-const OPTIONAL_TAB_ICONS = {
-  bom: List,
-  footprint: Shapes,
-  symbol: Cpu,
-  analysis: Radio,
-} as const;
-const tabs = KICAD_INNER_TABS.map((tab) => ({ ...tab, icon: INNER_TAB_ICONS[tab.id] }));
-const optionalTabs = KICAD_OPTIONAL_TABS.map((tab) => ({
-  ...tab,
-  icon: OPTIONAL_TAB_ICONS[tab.id],
-}));
+const tabs = [
+  { id: "schematic", label: "Schematic", icon: FileText },
+  { id: "pcb", label: "PCB", icon: CircuitBoard },
+  { id: "3d", label: "3D", icon: Box },
+  { id: "gerbers", label: "Gerbers", icon: Layers3 },
+  { id: "step", label: "STEP", icon: Box },
+] as const;
+const optionalTabs = [
+  { id: "bom", label: "BOM", icon: List },
+  { id: "footprint", label: "Footprints", icon: Shapes },
+  { id: "symbol", label: "Symbols", icon: Cpu },
+  { id: "analysis", label: "Analysis", icon: Radio },
+] as const;
 const allTabs = [...tabs, ...optionalTabs];
 const params = new URLSearchParams(location.hash.slice(1));
 const apiBase = params.get("api") || location.origin;
@@ -377,87 +370,83 @@ function App() {
         >
           <RefreshCw size={15} />
         </button>
-        {!sibling ? (
-          <nav className="design-navigation" aria-label="Design navigation">
-            <div
-              className="design-tabs"
-              role="tablist"
-              aria-label="KiCad views"
-              onKeyDown={(event) => {
-                if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-                const buttons = Array.from(
-                  event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
-                );
-                const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-                if (index < 0) return;
-                event.preventDefault();
-                const next =
-                  event.key === "Home"
-                    ? 0
-                    : event.key === "End"
-                      ? buttons.length - 1
-                      : (index + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) %
-                        buttons.length;
-                buttons[next]?.focus();
-                buttons[next]?.click();
-              }}
-            >
-              {allTabs
-                .filter(
-                  (tab) => tabs.some((base) => base.id === tab.id) || openTabs.includes(tab.id),
-                )
-                .map(({ id, label, icon: Icon }) => (
-                  <div key={id} className="design-tab-wrap">
+        <nav className="design-navigation" aria-label="Design navigation" hidden={sibling}>
+          <div
+            className="design-tabs"
+            role="tablist"
+            aria-label="KiCad views"
+            onKeyDown={(event) => {
+              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+              const buttons = Array.from(
+                event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+              );
+              const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+              if (index < 0) return;
+              event.preventDefault();
+              const next =
+                event.key === "Home"
+                  ? 0
+                  : event.key === "End"
+                    ? buttons.length - 1
+                    : (index + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) %
+                      buttons.length;
+              buttons[next]?.focus();
+              buttons[next]?.click();
+            }}
+          >
+            {allTabs
+              .filter((tab) => tabs.some((base) => base.id === tab.id) || openTabs.includes(tab.id))
+              .map(({ id, label, icon: Icon }) => (
+                <div key={id} className="design-tab-wrap">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={id === view}
+                    aria-controls="design-canvas"
+                    tabIndex={id === view ? 0 : -1}
+                    className="design-tab"
+                    onClick={() => chooseView(id)}
+                  >
+                    <Icon size={15} strokeWidth={1.7} />
+                    {label}
+                  </button>
+                  {openTabs.includes(id) && (
                     <button
                       type="button"
-                      role="tab"
-                      aria-selected={id === view}
-                      aria-controls="design-canvas"
-                      tabIndex={id === view ? 0 : -1}
-                      className="design-tab"
-                      onClick={() => chooseView(id)}
+                      className="design-tab-close"
+                      aria-label={`Close ${label}`}
+                      onClick={() => {
+                        setOpenTabs((old) => old.filter((tab) => tab !== id));
+                        if (view === id) chooseView("pcb");
+                      }}
                     >
-                      <Icon size={15} strokeWidth={1.7} />
-                      {label}
+                      <X size={11} />
                     </button>
-                    {openTabs.includes(id) && (
-                      <button
-                        type="button"
-                        className="design-tab-close"
-                        aria-label={`Close ${label}`}
-                        onClick={() => {
-                          setOpenTabs((old) => old.filter((tab) => tab !== id));
-                          if (view === id) chooseView("pcb");
-                        }}
-                      >
-                        <X size={11} />
-                      </button>
-                    )}
-                  </div>
-                ))}
-            </div>
-            <div className="design-tools">
-              <select
-                aria-label="Open optional viewer tab"
-                value=""
-                onChange={(event) => {
-                  const next = optionalTabs.find((tab) => tab.id === event.target.value)?.id;
-                  if (!next) return;
-                  setOpenTabs((old) => (old.includes(next) ? old : [...old, next]));
-                  chooseView(next);
-                }}
-              >
-                <option value="">Tools</option>
-                {optionalTabs.map((tab) => (
-                  <option key={tab.id} value={tab.id}>
-                    {tab.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={12} aria-hidden="true" />
-            </div>
-          </nav>
-        ) : null}
+                  )}
+                </div>
+              ))}
+          </div>
+          <div className="design-tools">
+            <select
+              aria-label="Open optional viewer tab"
+              value=""
+              onChange={(event) => {
+                const next = optionalTabs.find((tab) => tab.id === event.target.value)?.id;
+                if (!next) return;
+                setOpenTabs((old) => (old.includes(next) ? old : [...old, next]));
+                chooseView(next);
+              }}
+            >
+              <option value="">Tools</option>
+              {optionalTabs.map((tab) => (
+                <option key={tab.id} value={tab.id}>
+                  {tab.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={12} aria-hidden="true" />
+          </div>
+        </nav>
       </header>
       {view !== "analysis" && !sibling && (
         <div className="design-filebar">

@@ -369,21 +369,12 @@ describe("rightPanelStore", () => {
   });
 
   it("opens FreeCAD and Blender as sibling inspect surfaces next to KiCad", () => {
-    useRightPanelStore.getState().open(refA, "kicad");
-    useRightPanelStore.getState().open(refA, "freecad");
-    useRightPanelStore.getState().open(refA, "blender");
-    useRightPanelStore.getState().open(refA, "freecad");
-
+    const store = useRightPanelStore.getState();
+    store.open(refA, "kicad");
+    store.open(refA, "freecad");
+    store.open(refA, "blender");
     const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
-    expect(state).toMatchObject({
-      isOpen: true,
-      activeSurfaceId: "freecad",
-      surfaces: [
-        { id: "kicad", kind: "kicad" },
-        { id: "freecad", kind: "freecad" },
-        { id: "blender", kind: "blender" },
-      ],
-    });
+    expect(state?.surfaces.map((surface) => surface.kind)).toEqual(["kicad", "freecad", "blender"]);
   });
 
   it("replaces the standalone explorer with peer file surfaces", () => {

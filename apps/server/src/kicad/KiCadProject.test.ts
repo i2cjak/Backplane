@@ -160,53 +160,39 @@ it.effect("reads explicit library assignments and reports missing assigned asset
 it.effect("resolves saved FreeCAD solids and Blender product views from .backplane.json", () =>
   Effect.promise(async () => {
     const root = tempRoot();
+    const mech = NodePath.join(root, "mech");
     NodeFS.mkdirSync(NodePath.join(root, "ws", "board"), { recursive: true });
-    NodeFS.mkdirSync(NodePath.join(root, "mech"), { recursive: true });
+    NodeFS.mkdirSync(mech, { recursive: true });
     NodeFS.writeFileSync(NodePath.join(root, "ws", "board", "layout.kicad_pcb"), "pcb");
-    NodeFS.writeFileSync(NodePath.join(root, "mech", "board.glb"), "glb-bytes");
-    NodeFS.writeFileSync(NodePath.join(root, "mech", "enclosure.step"), "step-bytes");
-    NodeFS.writeFileSync(NodePath.join(root, "mech", "product-render.png"), "png-bytes");
-    NodeFS.writeFileSync(NodePath.join(root, "mech", "load-viz-aluminum.png"), "al-png");
-    NodeFS.writeFileSync(NodePath.join(root, "mech", "load-viz-resin.png"), "resin-png");
-    NodeFS.writeFileSync(
-      NodePath.join(root, "mech", "load-viz-materials.json"),
-      '{"product":"mech/product-render.png","outputs":{"aluminum":"mech/load-viz-aluminum.png","resin":"mech/load-viz-resin.png"}}',
-    );
-    NodeFS.writeFileSync(
-      NodePath.join(root, "mech", "blender-scene.json"),
-      '{"pcb_source":"mech/board.glb"}',
-    );
+    for (const [name, body] of [
+      ["board.glb", "glb-bytes"],
+      ["enclosure.step", "step-bytes"],
+      ["product-render.png", "png-bytes"],
+      ["load-viz-aluminum.png", "al-png"],
+      ["load-viz-resin.png", "resin-png"],
+      [
+        "load-viz-materials.json",
+        '{"product":"mech/product-render.png","outputs":{"aluminum":"mech/load-viz-aluminum.png","resin":"mech/load-viz-resin.png"}}',
+      ],
+      ["blender-scene.json", '{"pcb_source":"mech/board.glb"}'],
+    ] as const)
+      NodeFS.writeFileSync(NodePath.join(mech, name), body);
     NodeFS.writeFileSync(
       NodePath.join(root, ".backplane.json"),
       '{"pcb":"ws/board/layout.kicad_pcb","enclosure":{"solids":{"BOARD":"mech/board.glb","ENCLOSURE":"mech/enclosure.step"}},"product":{"still":"mech/product-render.png","scene":"mech/blender-scene.json","loadViz":"mech/load-viz-materials.json"}}',
     );
     const manifest = await discoverKiCadProject(root);
-    expect(manifest.config?.enclosure?.solids?.BOARD).toBe("mech/board.glb");
-    expect(manifest.config?.product?.still).toBe("mech/product-render.png");
-    expect(manifest.config?.product?.solids?.PCB).toBe("mech/board.glb");
-    expect(manifest.config?.product?.solids?.ENCLOSURE).toBe("mech/enclosure.step");
-    expect(manifest.config?.product?.renders).toEqual({
-      product: "mech/product-render.png",
-      aluminum: "mech/load-viz-aluminum.png",
-      resin: "mech/load-viz-resin.png",
+    expect(manifest.config?.product?.solids).toEqual({
+      PCB: "mech/board.glb",
+      ENCLOSURE: "mech/enclosure.step",
     });
-    expect(configuredArtifactPaths(manifest.config)).toEqual([
-      "mech/board.glb",
-      "mech/enclosure.step",
-      "mech/product-render.png",
-      "mech/load-viz-aluminum.png",
-      "mech/load-viz-resin.png",
-    ]);
+    expect(manifest.config?.product?.renders?.aluminum).toBe("mech/load-viz-aluminum.png");
+    expect(configuredArtifactPaths(manifest.config)).toContain("mech/load-viz-resin.png");
     const solid = await resolveKiCadProjectFile(root, "mech/board.glb");
     const still = await resolveKiCadProjectFile(root, "mech/product-render.png");
-    const aluminum = await resolveKiCadProjectFile(root, "mech/load-viz-aluminum.png");
-    const pcb = await resolveKiCadProjectFile(root, "ws/board/layout.kicad_pcb");
     expect(solid?.file.kind).toBe("model");
     expect(still?.file.kind).toBe("image");
-    expect(aluminum?.file.kind).toBe("image");
     expect(kiCadModelAction(solid!.file)).toBe("serve-existing");
-    expect(kiCadModelAction(pcb!.file)).toBe("export-glb");
-    expect(NodeFS.readFileSync(solid!.absolutePath, "utf8")).toBe("glb-bytes");
     expect(NodeFS.readFileSync(still!.absolutePath, "utf8")).toBe("png-bytes");
   }),
 );

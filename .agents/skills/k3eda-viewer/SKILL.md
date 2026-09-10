@@ -1,6 +1,6 @@
 ---
 name: k3eda-viewer
-description: Point Backplane's KiCad, FreeCAD, and Blender inspect panels at a project's board, enclosure solids, and product still, and inspect live saved-file views through the collaborative browser. Use when configuring or navigating those viewers, including projects with several boards or custom fabrication output locations.
+description: Point backplane's KiCad panel at a project's board, schematic, and generated Gerber directories, and inspect its live saved-file views through the collaborative browser. Use when configuring or navigating the KiCad viewer, including projects with several boards or custom fabrication output locations.
 ---
 
 # Point the KiCad viewer at this project
@@ -21,9 +21,7 @@ Save explicit selection in `<workspace>/.backplane.json`. Paths are relative to 
 {
   "pcb": "hardware/controller/controller.kicad_pcb",
   "schematic": "hardware/controller/controller.kicad_sch",
-  "gerbers": ["build/controller/gerbers"],
-  "enclosure": { "solids": { "BASE": "mech/BASE.glb" } },
-  "product": { "still": "mech/product-render.png" }
+  "gerbers": ["build/controller/gerbers"]
 }
 ```
 
@@ -40,7 +38,7 @@ Use existing outputs where possible. If none exist, generate **review-only** Ger
 
 # Inspect together
 
-Open **KiCad**, **FreeCAD**, or **Blender** from the thread's right-panel add menu. They are sibling inspect surfaces. KiCad's inner tabs stay KiCad-only. FreeCAD reads `enclosure.solids`. Blender reads product 3D and named stills. They do not launch those apps; driving CAD is BYO MCP on the agent. Select a file or Gerber layer inside the KiCad views. Saved-file changes refresh automatically while visible; **Refresh saved files** forces a reread. A changed `.backplane.json` updates the default selection.
+Open **KiCad** from the thread's right-panel add menu. The four views are **GERBERs**, **PCB**, **Schematic**, and **3D model**. Select a file or Gerber layer inside the view. Saved-file changes refresh automatically while visible; **Refresh saved files** forces a reread. A changed `.backplane.json` updates the default selection.
 
 For model interaction, use the panel's **Open KiCad viewer in browser** action. It opens the same viewer in Backplane's collaborative browser, where `preview_status`, `preview_snapshot`, `preview_click`, `preview_scroll`, and `preview_press` work. Target that viewer's `tabId` explicitly so other browser tabs stay intact. The panel iframe itself is not a `preview_*` automation target. If no viewer browser tab exists and only browser tools are available, ask the user to open that action once; do not invent a token or navigate to a bare viewer URL.
 

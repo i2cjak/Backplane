@@ -10,12 +10,6 @@ Open Backplane and configure the coding provider you use. Provider accounts and 
 
 See [install and first run](docs/user/install.md), [KiCad views](docs/user/kicad.md), and [remote access](docs/user/remote-access.md).
 
-## Features
-
-Inspect saved CAD from the thread add menu: **KiCad**, **FreeCAD**, and **Blender** are sibling panels. KiCad keeps its own inner tabs. FreeCAD shows enclosure solids. Blender shows product 3D plus named stills (for example milled aluminum vs resin). The panels reread files; they do not launch those apps.
-
-Driving CAD is bring-your-own MCP on the agent. This tree used [KiCAD-MCP-Server](https://github.com/mixelpixx/KiCAD-MCP-Server), [freecad-mcp](https://github.com/neka-nat/freecad-mcp), and [blender-mcp](https://github.com/ahujasid/blender-mcp) as examples, not dependencies. Swap the server. Keep the inspect pointers.
-
 ## Develop
 
 Use the Node.js version in `package.json` and [Vite+](https://viteplus.dev/guide/).

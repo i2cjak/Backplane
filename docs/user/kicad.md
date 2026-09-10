@@ -10,9 +10,7 @@ Agents receive the selected KiCad executable and guidance for exports, ERC/DRC c
 
 This follows the connected environment: a phone or remote browser uses the KiCad available on its server, not a KiCad installation on the device. Restart Backplane after an upgrade so agent processes receive the updated runtime.
 
-Open **KiCad**, **FreeCAD**, or **Blender** from a thread's right-panel add menu. They are sibling inspect surfaces, not tabs inside one another. KiCad's inner tabs stay KiCad-only (schematic, PCB, 3D, Gerbers, STEP). FreeCAD shows saved enclosure solids. Blender keeps a 3D mesh visible and a separate Render picker for named stills (product, milled aluminum, resin, and other outputs). Picking a still does not replace the 3D view. Each panel follows the thread's workspace or worktree and reads saved files without locking them.
-
-Point `.backplane.json` at the board, `enclosure.solids`, and the product files. FreeCAD prefers a GLB or STEP solid when several are listed. Blender 3D uses `product.solids` or a `product.scene` JSON `pcb_source` GLB. Named stills use `product.renders` or a `product.loadViz` JSON `outputs` map. The inspect panels do not start KiCad, FreeCAD, or Blender; they do not speak MCP. Attach those apps through the agent's MCP config if you want the agent to edit them. This overlay is bring-your-own MCP: the servers used to prove it are [KiCAD-MCP-Server](https://github.com/mixelpixx/KiCAD-MCP-Server), [freecad-mcp](https://github.com/neka-nat/freecad-mcp), and [blender-mcp](https://github.com/ahujasid/blender-mcp). Any equivalent server can replace them.
+Open **KiCad**, **FreeCAD**, or **Blender** from the right-panel add menu. They are sibling inspect surfaces. KiCad's inner tabs stay KiCad-only. FreeCAD shows enclosure solids. Blender keeps a 3D mesh visible and a separate Render picker for named stills (aluminum, resin, and others). Panels reread saved files and do not speak MCP. Drive those apps with BYO MCP on the agent. Servers used to prove this overlay: [KiCAD-MCP-Server](https://github.com/mixelpixx/KiCAD-MCP-Server), [freecad-mcp](https://github.com/neka-nat/freecad-mcp), [blender-mcp](https://github.com/ahujasid/blender-mcp). Any equivalent can replace them.
 
 On mobile, the thread toolbar has the same three inspect actions. Each opens a full-screen native web view. Reconnect and tap **Retry** if the short-lived viewer session expires.
 
@@ -26,18 +24,11 @@ For a workspace containing several boards, create `.backplane.json` at its root:
   "symbol": "hardware/lib/parts.kicad_sym",
   "symbolMember": "Controller_unit1",
   "footprint": "hardware/lib/parts.pretty/Controller.kicad_mod",
-  "enclosure": {
-    "solids": {
-      "BASE": "mech/BASE.glb"
-    }
-  },
+  "enclosure": { "solids": { "BASE": "mech/BASE.glb" } },
   "product": {
     "solids": { "PRODUCT": "mech/product.glb" },
     "still": "mech/product-render.png",
-    "renders": {
-      "aluminum": "mech/load-viz-aluminum.png",
-      "resin": "mech/load-viz-resin.png"
-    }
+    "renders": { "aluminum": "mech/load-viz-aluminum.png", "resin": "mech/load-viz-resin.png" }
   }
 }
 ```

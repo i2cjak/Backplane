@@ -1,15 +1,5 @@
-/**
- * Sibling inspect surfaces next to KiCad. Inspect is view-only: it rereads
- * saved files and does not launch CAD apps or speak MCP.
- *
- * Driving those apps is bring-your-own MCP on the agent, the same way you can
- * drive KiCad with your own server instead of Backplane's stock KiCad path.
- * This overlay used these public servers as examples, not dependencies:
- * https://github.com/mixelpixx/KiCAD-MCP-Server
- * https://github.com/neka-nat/freecad-mcp
- * https://github.com/ahujasid/blender-mcp
- * Any equivalent server can replace them.
- */
+/** Inspect is view-only. Agent drives CAD via BYO MCP (examples, not deps):
+ * mixelpixx/KiCAD-MCP-Server, neka-nat/freecad-mcp, ahujasid/blender-mcp. */
 export const CAD_INSPECT_KINDS = ["kicad", "freecad", "blender"] as const;
 export type CadInspectKind = (typeof CAD_INSPECT_KINDS)[number];
 export type CadInspectView = "pcb" | "enclosure" | "product";
