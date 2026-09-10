@@ -7731,6 +7731,7 @@ export default function ChatView(props: ChatViewProps) {
       renderedRightPanelSurface?.kind === "freecad" ||
       renderedRightPanelSurface?.kind === "blender" ? (
       <KiCadProjectPanel
+        key={renderedRightPanelSurface.kind}
         mode="embedded"
         threadRef={activeThreadRef}
         projectPath={activeWorkspaceRoot ?? null}

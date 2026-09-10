@@ -76,6 +76,7 @@ export function KiCadViewerRouteScreen({ route }: Props) {
   const viewerUrl = useMemo(() => {
     if (!session || Option.isNone(connection)) return null;
     const url = new URL(`${connection.value.httpBaseUrl.replace(/\/$/, "")}/kicad.html`);
+    url.searchParams.set("view", inspectView);
     url.hash = new URLSearchParams({
       api: connection.value.httpBaseUrl,
       token: session.token,

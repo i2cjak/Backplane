@@ -10,7 +10,7 @@ Agents receive the selected KiCad executable and guidance for exports, ERC/DRC c
 
 This follows the connected environment: a phone or remote browser uses the KiCad available on its server, not a KiCad installation on the device. Restart Backplane after an upgrade so agent processes receive the updated runtime.
 
-Open **KiCad**, **FreeCAD**, or **Blender** from a thread's right-panel add menu. They are sibling inspect surfaces, not tabs inside one another. KiCad shows PCB, schematic, Gerber, 3D, and STEP. FreeCAD shows saved enclosure solids. Blender shows saved product stills. Each panel follows the thread's workspace or worktree. It reads saved files without locking them; you can continue editing in the CAD app or through your agent.
+Open **KiCad**, **FreeCAD**, or **Blender** from a thread's right-panel add menu. They are sibling inspect surfaces, not tabs inside one another. KiCad's inner tabs stay KiCad-only: schematic, PCB, board 3D, Gerbers, and STEP. Those 3D and STEP tabs are KiCad's board/STEP preview, not FreeCAD or Blender. FreeCAD is only the FreeCAD panel (saved enclosure solids). Blender is only the Blender panel (saved product stills). Each panel follows the thread's workspace or worktree. It reads saved files without locking them; you can continue editing in the CAD app or through your agent.
 
 The thread cwd must be the folder that contains `.backplane.json`. That file names the board, enclosure solids, and product still. You should not have to hunt for a file: KiCad opens the assigned `pcb`, FreeCAD opens the preferred solid (GLB/STEP if present), Blender opens `product.still`. Use **Browse** only to preview a different file.
 

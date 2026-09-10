@@ -4,6 +4,7 @@ import {
   Box,
   CircuitBoard,
   FileText,
+  Image,
   Layers3,
   RefreshCw,
   Radio,
@@ -24,7 +25,15 @@ import { AnalysisView } from "./AnalysisView";
 import { BomView } from "./BomView";
 import { resolveProjectDesign } from "./projectDesign";
 import { EnclosureView, ProductView } from "./CadInspectViews";
-import { viewerHashView } from "./cadInspect";
+import {
+  KICAD_INNER_TABS,
+  KICAD_OPTIONAL_TABS,
+  cadInspectLabelForKind,
+  cadInspectOpenHint,
+  inspectSurfaceKind,
+  isSiblingInspectView,
+  readViewerView,
+} from "./cadInspect";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 
 type View =
@@ -53,19 +62,24 @@ type Manifest = KiCadProjectManifest & {
   };
   warnings?: string[];
 };
-const tabs = [
-  { id: "schematic", label: "Schematic", icon: FileText },
-  { id: "pcb", label: "PCB", icon: CircuitBoard },
-  { id: "3d", label: "3D", icon: Box },
-  { id: "gerbers", label: "Gerbers", icon: Layers3 },
-  { id: "step", label: "STEP", icon: Box },
-] as const;
-const optionalTabs = [
-  { id: "bom", label: "BOM", icon: List },
-  { id: "footprint", label: "Footprints", icon: Shapes },
-  { id: "symbol", label: "Symbols", icon: Cpu },
-  { id: "analysis", label: "Analysis", icon: Radio },
-] as const;
+const INNER_TAB_ICONS = {
+  schematic: FileText,
+  pcb: CircuitBoard,
+  "3d": Box,
+  gerbers: Layers3,
+  step: Box,
+} as const;
+const OPTIONAL_TAB_ICONS = {
+  bom: List,
+  footprint: Shapes,
+  symbol: Cpu,
+  analysis: Radio,
+} as const;
+const tabs = KICAD_INNER_TABS.map((tab) => ({ ...tab, icon: INNER_TAB_ICONS[tab.id] }));
+const optionalTabs = KICAD_OPTIONAL_TABS.map((tab) => ({
+  ...tab,
+  icon: OPTIONAL_TAB_ICONS[tab.id],
+}));
 const allTabs = [...tabs, ...optionalTabs];
 const params = new URLSearchParams(location.hash.slice(1));
 const apiBase = params.get("api") || location.origin;
@@ -161,18 +175,27 @@ function Notice({ text }: { text: string }) {
 }
 
 function App() {
-  const [view, setView] = useState<View>(() => {
-    const hashed = params.get("view");
-    if (hashed === "enclosure" || hashed === "product") return hashed;
-    if (allTabs.some((tab) => tab.id === hashed)) return hashed as View;
-    return viewerHashView(hashed) ?? "pcb";
-  });
+  const [view, setView] = useState<View>(
+    () => (readViewerView(location.hash, location.search) as View | undefined) ?? "pcb",
+  );
+  useEffect(() => {
+    const sync = () => {
+      const next = readViewerView(location.hash, location.search);
+      if (next) setView(next as View);
+    };
+    window.addEventListener("hashchange", sync);
+    window.addEventListener("popstate", sync);
+    return () => {
+      window.removeEventListener("hashchange", sync);
+      window.removeEventListener("popstate", sync);
+    };
+  }, []);
   const [openTabs, setOpenTabs] = useState<View[]>(
     optionalTabs.some((tab) => tab.id === params.get("view")) ? [params.get("view") as View] : [],
   );
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [error, setError] = useState<string | null>(
-    token ? null : "Open this viewer from the project's KiCad panel.",
+    token ? null : cadInspectOpenHint(readViewerView(location.hash, location.search)),
   );
   const [browse, setBrowse] = useState(false);
   const [fileQuery, setFileQuery] = useState("");
@@ -304,7 +327,12 @@ function App() {
     item.path.toLowerCase().includes(fileQuery.toLowerCase()),
   );
   const nativeView = view === "pcb" || view === "schematic" ? view : null;
+  const sibling = isSiblingInspectView(view);
+  const surface = inspectSurfaceKind(view);
+  const Mark = surface === "freecad" ? Box : surface === "blender" ? Image : CircuitBoard;
+  const heading = sibling ? (cadInspectLabelForKind(surface) ?? surface) : designName;
   const chooseView = (next: View) => {
+    if (isSiblingInspectView(next)) return;
     setError(null);
     if (next === "pcb" || next === "schematic") setNativeVisited(true);
     setBrowse(false);
@@ -315,18 +343,19 @@ function App() {
     <main
       className="design-workspace flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground"
       data-kicad-viewer
+      data-inspect-surface={surface}
       data-revision={manifest?.revision}
     >
       <header className="design-header">
         <div className="design-mark" aria-hidden="true">
-          <CircuitBoard size={21} strokeWidth={1.5} />
+          <Mark size={21} strokeWidth={1.5} />
         </div>
         <Tooltip>
           <TooltipTrigger render={<div className="design-identity" />}>
-            <h1>{designName}</h1>
+            <h1>{heading}</h1>
           </TooltipTrigger>
           <TooltipPopup side="bottom" className="max-w-96 break-words">
-            {file?.path ?? designName}
+            {sibling ? heading : (file?.path ?? designName)}
           </TooltipPopup>
         </Tooltip>
         <span className="design-live">
@@ -344,7 +373,7 @@ function App() {
         >
           <RefreshCw size={15} />
         </button>
-        {view !== "enclosure" && view !== "product" ? (
+        {!sibling ? (
           <nav className="design-navigation" aria-label="Design navigation">
             <div
               className="design-tabs"
@@ -426,7 +455,7 @@ function App() {
           </nav>
         ) : null}
       </header>
-      {view !== "analysis" && view !== "enclosure" && view !== "product" && (
+      {view !== "analysis" && !sibling && (
         <div className="design-filebar">
           <div className="design-file-identity">
             <FileText size={14} aria-hidden="true" />

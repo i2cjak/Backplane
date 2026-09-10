@@ -12,6 +12,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { openUrlInPreview } from "~/browser/openFileInPreview";
 
 import { PreviewPanelShell, type PreviewPanelMode } from "../preview/PreviewPanelShell";
+import { cadInspectViewerSearch } from "~/kicad/cadInspect";
 
 export interface KiCadProjectPanelProps {
   readonly mode: PreviewPanelMode;
@@ -109,6 +110,7 @@ export function KiCadProjectPanel({
   const viewerUrl = session
     ? (() => {
         const url = new URL("/kicad.html", window.location.href);
+        url.search = cadInspectViewerSearch(inspectView);
         url.hash = new URLSearchParams({
           api: Option.isSome(connection) ? connection.value.httpBaseUrl : window.location.origin,
           token: session.token,
@@ -154,6 +156,7 @@ export function KiCadProjectPanel({
         <div className="relative min-h-0 flex-1 bg-[#101214]">
           {viewerUrl ? (
             <iframe
+              key={inspectView}
               ref={iframeRef}
               onLoad={sendTheme}
               title={`${title} project viewer`}
