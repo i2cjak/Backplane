@@ -1,16 +1,85 @@
 const presentations = new WeakMap();
 const fitted = new WeakSet();
+let themePromise;
+const darkFallback = {
+  board: {
+    background: "rgb(30, 30, 30)",
+    grid: "rgb(50, 50, 50)",
+    grid_axes: "rgb(80, 80, 80)",
+    copper: { f: "rgb(224, 122, 95)", b: "rgb(126, 184, 218)" },
+    f_silks: "rgb(220, 220, 220)",
+    b_silks: "rgb(143, 188, 187)",
+  },
+  schematic: {
+    background: "rgb(30, 30, 30)",
+    sheet_background: "rgba(60, 65, 70, 0.600)",
+    component_body: "rgb(50, 50, 55)",
+    component_outline: "rgb(224, 122, 95)",
+    fields: "rgb(143, 188, 187)",
+    reference: "rgb(200, 200, 200)",
+    value: "rgb(143, 188, 187)",
+    wire: "rgb(143, 188, 187)",
+    pin: "rgb(224, 122, 95)",
+    pin_name: "rgb(200, 200, 200)",
+    pin_number: "rgb(224, 122, 95)",
+    grid: "rgb(50, 50, 50)",
+    grid_axes: "rgb(50, 50, 50)",
+  },
+};
 
-/** Apply host presentation after Prism initializes its renderer, without changing layer colors. */
-export function installCanvasPresentation(element) {
-  const dark = parent.document.documentElement.classList.contains("dark");
-  document.documentElement.dataset.colorScheme = dark ? "dark" : "light";
-  const background = dark ? "#111719" : "#eef1f0";
+function loadTheme() {
+  return (themePromise ??= fetch(new URL("./american-embedded-dark.json", import.meta.url))
+    .then((response) => {
+      if (!response.ok)
+        throw new Error(`Unable to load the bundled KiCad theme (${response.status})`);
+      return response.json();
+    })
+    .catch(() => darkFallback));
+}
+
+function convertPalette(value, Color) {
+  if (typeof value === "string") return Color.from_css(value);
+  if (Array.isArray(value)) return value.map((item) => convertPalette(item, Color));
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, convertPalette(item, Color)]),
+    );
+  return value;
+}
+
+/** Apply the bundled American Embedded dark palette after the renderer initializes. */
+export async function installCanvasPresentation(element) {
+  const definition = await loadTheme();
+  document.documentElement.dataset.colorScheme = "dark";
   for (const name of ["kc-board-app", "kc-schematic-app"]) {
     const viewer = element.shadowRoot?.querySelector(name)?.viewer;
-    if (!viewer || presentations.get(viewer) === background) continue;
+    if (!viewer || presentations.has(viewer)) continue;
     const color = viewer.renderer.background_color.constructor;
-    viewer.theme.background = color.from_css(background);
+    const section = name === "kc-board-app" ? "board" : "schematic";
+    viewer.theme = {
+      ...viewer.theme,
+      ...convertPalette(definition?.[section] ?? darkFallback[section], color),
+    };
+    viewer.__backplaneLayerCache?.clear();
+    if (!viewer.__backplaneHiddenWorksheet) {
+      const paint = viewer.paint.bind(viewer);
+      const hidePaper = () => {
+        const names =
+          section === "board"
+            ? [":DrawingSheet", ":DrawingSheet:Background"]
+            : [":DrawingSheet:Background"];
+        for (const name of names) {
+          const paper = viewer.layers?.by_name?.(name);
+          if (paper) paper.visible = false;
+        }
+      };
+      viewer.paint = (...args) => {
+        const result = paint(...args);
+        hidePaper();
+        return result;
+      };
+      viewer.__backplaneHiddenWorksheet = true;
+    }
     viewer.renderer.background_color = viewer.theme.background;
     if (viewer.renderer.gl) viewer.renderer.gl.clearColor(...viewer.theme.background.to_array());
     if (!fitted.has(viewer)) {
@@ -25,8 +94,16 @@ export function installCanvasPresentation(element) {
       fitted.add(viewer);
     }
     viewer.paint();
+    const names =
+      section === "board"
+        ? [":DrawingSheet", ":DrawingSheet:Background"]
+        : [":DrawingSheet:Background"];
+    for (const name of names) {
+      const paper = viewer.layers?.by_name?.(name);
+      if (paper) paper.visible = false;
+    }
     viewer.draw();
-    presentations.set(viewer, background);
+    presentations.set(viewer, true);
   }
   if (element.parentElement.querySelector(".canvas-actions")) return;
   const bar = document.createElement("div");

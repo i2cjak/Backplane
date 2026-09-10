@@ -10,7 +10,7 @@ Agents receive the selected KiCad executable and guidance for exports, ERC/DRC c
 
 This follows the connected environment: a phone or remote browser uses the KiCad available on its server, not a KiCad installation on the device. Restart Backplane after an upgrade so agent processes receive the updated runtime.
 
-Open **KiCad** from a thread's right-panel add menu to inspect its PCB, schematic, Gerber layers, and 3D board using KiCAD-Prism's viewers. The panel follows the thread's workspace or worktree. It reads saved files without locking them; you can continue editing in KiCad or through your agent.
+Open **KiCad** from a thread's right-panel add menu to inspect its PCB, schematic, Gerber layers, and 3D board. The panel follows the thread's workspace or worktree. It reads saved files without locking them; you can continue editing in KiCad or through your agent.
 
 On mobile, open **KiCad** from the thread toolbar. The same read-only viewer opens in a full-screen native web view, with its PCB, Gerber, schematic, and 3D tabs available at the top. The viewer uses a short-lived session tied to the active environment; reconnect and tap **Retry** if that session expires.
 
@@ -29,17 +29,25 @@ For a workspace containing several boards, create `.backplane.json` at its root:
 
 Paths are relative to the workspace. These assignments select the design shown in the viewer; the agent and viewer can use the same files. Without assignments, the viewer opens an unambiguous project and leaves tools, examples, and routing intermediates out of automatic selection. Use **Browse** to preview another workspace file, and **Return to assigned design** to clear that temporary choice. PCB and 3D share a selection, as do schematic and BOM. Only referenced child sheets load with the selected schematic.
 
-Generated output is discovered even in Git-ignored folders. Saved changes refresh while the viewer is visible. Gerbers show the existing generated package; editing the board does not regenerate that package.
+Generated output is discovered even in Git-ignored folders. Saved changes refresh while the viewer is visible. The previous preview remains visible while an update is prepared. Changed 3D items transition into place without resetting the camera; reduced-motion preferences disable this animation. Gerbers show the existing generated package; editing the board does not regenerate that package.
 
 Use **STEP** to inspect `.step` and `.stp` models. The project picker lists the most recently edited files first; **Open file** also accepts a file from your device without uploading it. Drag to rotate, pinch or scroll to zoom, and use **Fit model** to restore the view. STEP previews run in the viewer and support files up to 100 MB.
+
+Select a STEP part in the model or the collapsible parts tree, then adjust its opacity to inspect what is behind it. Selecting an assembly applies opacity to its parts together. Restore opacity to make the selection solid again; **Esc** clears the highlight. The camera and opacity choices remain when switching tabs or refreshing the same file.
+
+Both board and STEP previews use orthographic projection with cel-shaded colors and outlines. Drag to tumble the model freely in any direction; **Top**, **Bottom**, and **Fit model** return to familiar views.
 
 The 3D preview requires `kicad-cli` with GLB export on the environment running Backplane. The preview includes outer copper, pads, silkscreen, and translucent soldermask using the board’s stackup colors. Exports go into a separate temporary cache. Gerber rendering requires `python3` there. Neither operation modifies the project.
 
 Use **Open KiCad viewer in browser** to let your agent inspect and interact with the viewer through the collaborative browser. Its link grants temporary read-only access to this workspace; reopen the panel after the link expires or the server restarts. The `backplane-viewer` agent skill includes a helper for finding and configuring project files.
 
-Find a component by its reference (such as `U1`), or enable **Net** to search by net name. Select a component and use **Show in schematic/PCB** to inspect its counterpart without losing the other view’s camera.
+The PCB and schematic use the bundled American Embedded Dark theme. Find a component by its reference (such as `U1`), or enable **Net** to search by net name. Selected components have a subtle glow beneath their geometry. Select a component and use **Show in schematic/PCB** to highlight its counterpart without losing the other view’s camera. Use the PCB layer panel to show or hide copper, silkscreen, solder mask, fabrication, and board layers.
 
-In Gerbers, use the arrow buttons or left/right arrow keys to flip layers. **Copper layers**, **Front placement**, and **Back placement** combine aligned layers from the current fabrication set. The viewer caches rendered layers and warms adjacent layers for faster switching. Placement presets use available silkscreen, fabrication, and paste artwork; they are not a component BOM or a substitute for populated assembly inspection.
+Activate **Cross-probe** with its toolbar button or **X**, then click a component to switch to its highlighted counterpart in the schematic or PCB. Press **Esc** to return to normal selection. The shortcut leaves text entry alone.
+
+Select a pad, track, wire, or net label and press **H** to highlight the whole net. **Highlight net** performs the same action on touch devices. Press **Esc** to clear the highlight.
+
+In Gerbers, use the arrow buttons or left/right arrow keys to flip layers. **Copper stack**, **Front fabrication**, and **Back fabrication** combine aligned layers from the current fabrication set. Use the layer panel to choose individual layers. Each layer is cached independently, so changing one saved Gerber keeps the other layers in place. Fabrication presets use available silkscreen, fabrication, and paste artwork; they are not a component BOM or a substitute for populated assembly inspection.
 
 Use **Tools** inside the KiCad viewer to open **BOM**, **Footprints**, **Symbols**, or **EMerge / Analysis**. Close an optional tab with its close button and reopen it from the same menu. These views are shared by web, desktop, and mobile.
 

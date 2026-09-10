@@ -17,13 +17,13 @@ import {
 import "../index.css";
 import "./viewer.css";
 import type { KiCadProjectManifest } from "@backplane/contracts";
-type KiCadViewerSource = { filename: string; content: string };
 import { GerberBrowser } from "./GerberBrowser";
 import { NativeProjectViews } from "./NativeProjectViews";
 import { LibraryView } from "./LibraryView";
 import { AnalysisView } from "./AnalysisView";
 import { BomView } from "./BomView";
 import { resolveProjectDesign } from "./projectDesign";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 
 type View =
   | "gerbers"
@@ -106,8 +106,8 @@ function RuntimeView({
   snapshot,
 }: {
   snapshot:
-    | { kind: "native"; sources: KiCadViewerSource[]; revision: string }
-    | { kind: "model" | "step"; url: string };
+    | { kind: "model"; url: string; active: boolean }
+    | { kind: "step"; url: string; active: boolean };
 }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const snapshotRef = useRef(snapshot);
@@ -137,13 +137,7 @@ function RuntimeView({
   return (
     <iframe
       ref={ref}
-      title={
-        snapshot.kind === "step"
-          ? "STEP viewer"
-          : snapshot.kind === "model"
-            ? "Prism 3D viewer"
-            : "Prism ECAD viewer"
-      }
+      title={snapshot.kind === "step" ? "STEP viewer" : "3D board viewer"}
       src="/kicad-viewer/runtime.html"
       className="block h-full w-full border-0"
     />
@@ -177,6 +171,12 @@ function App() {
   const [nativeVisited, setNativeVisited] = useState(
     !params.get("view") || params.get("view") === "pcb" || params.get("view") === "schematic",
   );
+  const [modelVisited, setModelVisited] = useState(params.get("view") === "3d");
+  const [stepVisited, setStepVisited] = useState(params.get("view") === "step");
+  useEffect(() => {
+    if (view === "3d") setModelVisited(true);
+    if (view === "step") setStepVisited(true);
+  }, [view]);
   const [refresh, setRefresh] = useState(0);
   const [localStep, setLocalStep] = useState<{ name: string; url: string } | null>(null);
   useEffect(
@@ -202,6 +202,7 @@ function App() {
         ).json()) as Manifest;
         if (!controller.signal.aborted) {
           setManifest((old) => (old?.revision === next.revision ? old : next));
+          setError(null);
         }
       } catch (cause) {
         if (!controller.signal.aborted) setError(String(cause));
@@ -227,6 +228,14 @@ function App() {
         : view === "schematic" || view === "bom"
           ? "schematic"
           : "pcb");
+  const stepFiles =
+    manifest?.files.filter((file) => file.kind === "model" && /\.(step|stp)$/i.test(file.path)) ??
+    [];
+  const stepSelectableFiles = [...stepFiles].sort(
+    (a, b) => b.mtimeMs - a.mtimeMs || a.path.localeCompare(b.path),
+  );
+  const stepFile =
+    stepSelectableFiles.find((item) => item.path === selected.step) ?? stepSelectableFiles[0];
   const files =
     manifest?.files.filter(
       (file) =>
@@ -303,10 +312,14 @@ function App() {
         <div className="design-mark" aria-hidden="true">
           <CircuitBoard size={21} strokeWidth={1.5} />
         </div>
-        <div className="design-identity">
-          <span className="design-eyebrow">DESIGN WORKSPACE</span>
-          <h1>{designName}</h1>
-        </div>
+        <Tooltip>
+          <TooltipTrigger render={<div className="design-identity" />}>
+            <h1>{designName}</h1>
+          </TooltipTrigger>
+          <TooltipPopup side="bottom" className="max-w-96 break-words">
+            {file?.path ?? designName}
+          </TooltipPopup>
+        </Tooltip>
         <span className="design-live">
           <span />
           Saved files
@@ -322,84 +335,84 @@ function App() {
         >
           <RefreshCw size={15} />
         </button>
-      </header>
-      <nav className="design-navigation" aria-label="Design navigation">
-        <div
-          className="design-tabs"
-          role="tablist"
-          aria-label="KiCad views"
-          onKeyDown={(event) => {
-            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-            const buttons = Array.from(
-              event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
-            );
-            const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-            if (index < 0) return;
-            event.preventDefault();
-            const next =
-              event.key === "Home"
-                ? 0
-                : event.key === "End"
-                  ? buttons.length - 1
-                  : (index + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) %
-                    buttons.length;
-            buttons[next]?.focus();
-            buttons[next]?.click();
-          }}
-        >
-          {allTabs
-            .filter((tab) => tabs.some((base) => base.id === tab.id) || openTabs.includes(tab.id))
-            .map(({ id, label, icon: Icon }) => (
-              <div key={id} className="design-tab-wrap">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={id === view}
-                  aria-controls="design-canvas"
-                  tabIndex={id === view ? 0 : -1}
-                  className="design-tab"
-                  onClick={() => chooseView(id)}
-                >
-                  <Icon size={15} strokeWidth={1.7} />
-                  {label}
-                </button>
-                {openTabs.includes(id) && (
-                  <button
-                    type="button"
-                    className="design-tab-close"
-                    aria-label={`Close ${label}`}
-                    onClick={() => {
-                      setOpenTabs((old) => old.filter((tab) => tab !== id));
-                      if (view === id) chooseView("pcb");
-                    }}
-                  >
-                    <X size={11} />
-                  </button>
-                )}
-              </div>
-            ))}
-        </div>
-        <div className="design-tools">
-          <select
-            aria-label="Open optional viewer tab"
-            value=""
-            onChange={(event) => {
-              const next = optionalTabs.find((tab) => tab.id === event.target.value)?.id;
-              if (!next) return;
-              setOpenTabs((old) => (old.includes(next) ? old : [...old, next]));
-              chooseView(next);
+        <nav className="design-navigation" aria-label="Design navigation">
+          <div
+            className="design-tabs"
+            role="tablist"
+            aria-label="KiCad views"
+            onKeyDown={(event) => {
+              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+              const buttons = Array.from(
+                event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+              );
+              const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+              if (index < 0) return;
+              event.preventDefault();
+              const next =
+                event.key === "Home"
+                  ? 0
+                  : event.key === "End"
+                    ? buttons.length - 1
+                    : (index + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) %
+                      buttons.length;
+              buttons[next]?.focus();
+              buttons[next]?.click();
             }}
           >
-            <option value="">Tools</option>
-            {optionalTabs.map((tab) => (
-              <option key={tab.id} value={tab.id}>
-                {tab.label}
-              </option>
-            ))}
-          </select>
-          <ChevronDown size={12} aria-hidden="true" />
-        </div>
-      </nav>
+            {allTabs
+              .filter((tab) => tabs.some((base) => base.id === tab.id) || openTabs.includes(tab.id))
+              .map(({ id, label, icon: Icon }) => (
+                <div key={id} className="design-tab-wrap">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={id === view}
+                    aria-controls="design-canvas"
+                    tabIndex={id === view ? 0 : -1}
+                    className="design-tab"
+                    onClick={() => chooseView(id)}
+                  >
+                    <Icon size={15} strokeWidth={1.7} />
+                    {label}
+                  </button>
+                  {openTabs.includes(id) && (
+                    <button
+                      type="button"
+                      className="design-tab-close"
+                      aria-label={`Close ${label}`}
+                      onClick={() => {
+                        setOpenTabs((old) => old.filter((tab) => tab !== id));
+                        if (view === id) chooseView("pcb");
+                      }}
+                    >
+                      <X size={11} />
+                    </button>
+                  )}
+                </div>
+              ))}
+          </div>
+          <div className="design-tools">
+            <select
+              aria-label="Open optional viewer tab"
+              value=""
+              onChange={(event) => {
+                const next = optionalTabs.find((tab) => tab.id === event.target.value)?.id;
+                if (!next) return;
+                setOpenTabs((old) => (old.includes(next) ? old : [...old, next]));
+                chooseView(next);
+              }}
+            >
+              <option value="">Tools</option>
+              {optionalTabs.map((tab) => (
+                <option key={tab.id} value={tab.id}>
+                  {tab.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={12} aria-hidden="true" />
+          </div>
+        </nav>
+      </header>
       {view !== "analysis" && (
         <div className="design-filebar">
           <div className="design-file-identity">
@@ -545,12 +558,17 @@ function App() {
         aria-label={view}
       >
         <div key={view} className="design-view-transition" aria-hidden="true" />
-        {error ? (
+        {error && !manifest ? (
           <Notice text={error} />
         ) : !manifest ? (
           <Notice text="Loading saved project…" />
         ) : (
           <>
+            {error && (
+              <div className="design-refresh-status" role="status">
+                {error}
+              </div>
+            )}
             {nativeVisited && (
               <div hidden={!nativeView} className="h-full">
                 <NativeProjectViews
@@ -610,6 +628,10 @@ function App() {
                   paths={gerberCandidates.map((item) => item.path)}
                   selected={file.path}
                   revision={`${revision}:${refresh}`}
+                  revisionByPath={(path) => {
+                    const item = gerberCandidates.find((candidate) => candidate.path === path);
+                    return `${item?.mtimeMs}:${item?.size}:${refresh}`;
+                  }}
                   onSelect={(path) => setSelected((old) => ({ ...old, gerbers: path }))}
                   read={readResponse}
                   url={(paths) => {
@@ -621,27 +643,43 @@ function App() {
               ) : (
                 <Notice text="No Gerber layers found. Point gerbers in .backplane.json at your generated output directory." />
               ))}
-            {view === "step" &&
-              (localStep || file ? (
-                <RuntimeView
-                  key={`step:${localStep?.url ?? file?.path}:${file?.mtimeMs}:${refresh}`}
-                  snapshot={{
-                    kind: "step",
-                    url: localStep?.url ?? apiUrl("assets", file?.path, revision),
-                  }}
-                />
-              ) : (
+            {stepVisited &&
+              (localStep || stepFile ? (
+                <div hidden={view !== "step"} className="h-full">
+                  <RuntimeView
+                    key={`step:${localStep?.url ?? stepFile?.path}`}
+                    snapshot={{
+                      kind: "step",
+                      active: view === "step" && visible,
+                      url:
+                        localStep?.url ??
+                        apiUrl(
+                          "assets",
+                          stepFile?.path,
+                          `${stepFile?.mtimeMs}:${stepFile?.size}:${refresh}`,
+                        ),
+                    }}
+                  />
+                </div>
+              ) : view === "step" ? (
                 <Notice text="Choose a project STEP file or use Open file to preview a .step or .stp file from your device." />
-              ))}
-            {view === "3d" &&
-              (file ? (
-                <RuntimeView
-                  key={`model:${file.path}:${revision}`}
-                  snapshot={{ kind: "model", url: apiUrl("model", file.path, revision) }}
-                />
-              ) : (
-                <Notice text="Choose a PCB with Browse to preview it in 3D." />
-              ))}
+              ) : null)}
+            {modelVisited && (
+              <div hidden={view !== "3d"} className="h-full">
+                {pcb ? (
+                  <RuntimeView
+                    key={`model:${pcb}`}
+                    snapshot={{
+                      kind: "model",
+                      url: apiUrl("model", pcb, `${revision}:${refresh}`),
+                      active: view === "3d" && visible,
+                    }}
+                  />
+                ) : (
+                  <Notice text="Choose a PCB with Browse to preview it in 3D." />
+                )}
+              </div>
+            )}
           </>
         )}
       </div>

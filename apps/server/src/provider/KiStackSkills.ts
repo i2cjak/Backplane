@@ -49,6 +49,8 @@ const bundledMetadata: Metadata = {
 };
 const bundledSkillNames = new Set(bundledMetadata.skills.map((skill) => skill.name));
 const legacyBundledRevisions = new Set(["97934211326a03c0541b784c616c6582cdc14107"]);
+const backplaneBoardEditingGuidance =
+  "For normal KiCad PCB placement, routing, and cleanup, identify the project's canonical configured .kicad_pcb path (the board opened by the project or viewer) and keep using that exact path. Save each meaningful milestone to it so the active board and collaborators show progress. Keep backups and intermediate tool outputs in a separate backup or build directory. If a tool writes a staging or alternate file, validate it and promote the result back to the canonical path with a backup before continuing; do not silently switch the active filename. Use an alternate board only when the user explicitly requests an experiment or alternate design, and label it clearly. Coordinate ownership so only one agent or process writes the active board at a time; other agents may inspect it or prepare changes for integration.";
 const isRevision = (value: string) => /^[0-9a-f]{40}$/.test(value);
 function safePath(path: string): boolean {
   return (
@@ -80,6 +82,7 @@ function instructions(metadata: Metadata, directory: string): string {
   return [
     "<kistack_skills>",
     "Before doing any work related to any skill listed below, you MUST read that skill's complete SKILL.md and follow its instructions and workflow. Apply every relevant skill, even when the user does not explicitly name it. Do not skip a relevant skill because you already know how to do the task.",
+    `<backplane_kicad_board_editing>${backplaneBoardEditingGuidance}</backplane_kicad_board_editing>`,
     `Backplane includes KiStack by American Embedded (${source}, revision ${metadata.revision}). These skills are always available in every project.`,
     "Resolve referenced scripts and documents relative to that skill's directory. User instructions take precedence. Other installed skills remain available.",
     ...metadata.skills.map(

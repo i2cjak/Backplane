@@ -1,19 +1,34 @@
 # KiCad viewer vendor bundle
 
-This directory contains the browser viewer artifacts used by KiCad Prism,
-vendored from the local checkout of [KiCAD-Prism](https://github.com/krishna-swaroop/KiCAD-Prism)
-at commit `50a4812c7c05aebcc8dda28c64c9382c9fce719d`. The ECAD bundle manifest separately records its own upstream and adapter commits.
+This directory contains the browser viewer artifacts used by Backplane's KiCad
+views. The retained native controllers reuse the mature KiCanvas geometry
+engine/parser and the bundled Three.js assets; they keep the renderer and GPU
+context alive while saved sources are replaced. The ECAD bundle manifest records
+the upstream and adapter commits for those assets.
 
-The `ecad-viewer.js` and `parser.worker.js` artifacts provide the upstream
-native KiCad schematic and PCB viewers. `3d-viewer.js`, Three.js, and its
-add-ons provide the upstream 3D viewer loaded by the ECAD element. These files
-are read-only browser assets: the viewer receives snapshots of file contents
-and never opens a KiCad source file for writing or locking.
+The `ecad-viewer.js` and `parser.worker.js` artifacts provide the KiCanvas
+native KiCad schematic and PCB engine. `3d-viewer.js`, Three.js, and its add-ons
+provide the 3D assets loaded by the ECAD element. These files are read-only
+browser assets: the viewer receives snapshots of file contents and never opens
+a KiCad source file for writing or locking.
 
-KiCAD-Prism is Apache-2.0 licensed; its bundled third-party notices remain in
-the generated artifacts. Keep this attribution with the vendored files when
-updating them from upstream.
+The Gerber camera hook at `src/kicad/vendor/fabrication-viewport.ts` and the
+server renderer at `apps/server/src/kicad/vendor/prismGerber.ts` retain the
+Apache-2.0 KiCAD-Prism parser/renderer, with attribution and the vendor license
+kept beside the source. `runtime.html`, `runtime.js`, `retained-native-viewer.js`,
+`model-appearance.js`, and `schematic-sizing.js` are Backplane adapters. The
+native controllers retain parsed layers and cameras across updates, use
+highlight overlays for selection, and keep layer colors available to the UI.
 
-The Gerber camera hook at `src/kicad/vendor/fabrication-viewport.ts` and server renderer at `apps/server/src/kicad/vendor/prismGerber.ts` come from that same Prism commit. The renderer is embedded verbatim for server packaging. `runtime.html`, `runtime.js`, `model-appearance.js`, and `schematic-sizing.js` are backplane adapters, not upstream viewer code. The sizing adapter supplies high-density canvas backing and reserves space for the schematic properties panel without modifying the vendor bundle.
+The model appearance adapter uses unlit materials and KiCad's exported colors
+and opacity for fast, stable previews. It does not add resin clearcoat or alter
+the source GLB's layer palette.
 
-The model appearance adapter adds a resin clearcoat to exported soldermask and tunes Prism's existing lighting. Color and mask opacity come from KiCad's GLB export, not a fixed viewer palette.
+## Bundled color theme
+
+`american-embedded-dark.json` is the American Embedded Dark KiCad color theme,
+copied from the [American Embedded KiCad Repository](https://github.com/American-Embedded/American_Embedded_KiCad_Repository/tree/main/packages/themes/american-embedded-dark)
+at version 1.0.0. It is included under the theme's CC BY 4.0 license; American
+Embedded is the author. The original metadata is available in the repository's
+`packages/themes/american-embedded-dark/metadata.json`; see the
+[Creative Commons Attribution 4.0 license](https://creativecommons.org/licenses/by/4.0/).
