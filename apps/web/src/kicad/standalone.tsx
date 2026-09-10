@@ -4,6 +4,7 @@ import {
   Box,
   CircuitBoard,
   FileText,
+  Image,
   Layers3,
   RefreshCw,
   Radio,
@@ -23,6 +24,7 @@ import { LibraryView } from "./LibraryView";
 import { AnalysisView } from "./AnalysisView";
 import { BomView } from "./BomView";
 import { resolveProjectDesign } from "./projectDesign";
+import { EnclosureView, ProductView } from "./CadInspectViews";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 
 type View =
@@ -31,6 +33,8 @@ type View =
   | "schematic"
   | "3d"
   | "step"
+  | "enclosure"
+  | "product"
   | "footprint"
   | "symbol"
   | "analysis"
@@ -44,6 +48,8 @@ type Manifest = KiCadProjectManifest & {
     symbol?: string;
     symbolMember?: string;
     footprint?: string;
+    enclosure?: { params?: string; solids?: Record<string, string> };
+    product?: { scene?: string; still?: string; loadViz?: string };
   };
   warnings?: string[];
 };
@@ -53,6 +59,8 @@ const tabs = [
   { id: "3d", label: "3D", icon: Box },
   { id: "gerbers", label: "Gerbers", icon: Layers3 },
   { id: "step", label: "STEP", icon: Box },
+  { id: "enclosure", label: "FreeCAD", icon: Box },
+  { id: "product", label: "Blender", icon: Image },
 ] as const;
 const optionalTabs = [
   { id: "bom", label: "BOM", icon: List },
@@ -413,7 +421,7 @@ function App() {
           </div>
         </nav>
       </header>
-      {view !== "analysis" && (
+      {view !== "analysis" && view !== "enclosure" && view !== "product" && (
         <div className="design-filebar">
           <div className="design-file-identity">
             <FileText size={14} aria-hidden="true" />
@@ -679,6 +687,38 @@ function App() {
                   <Notice text="Choose a PCB with Browse to preview it in 3D." />
                 )}
               </div>
+            )}
+            {view === "enclosure" && manifest && (
+              <EnclosureView
+                config={manifest.config ?? {}}
+                workspace={manifest.root}
+                revision={`${revision}:${refresh}`}
+                modelUrl={(path) => apiUrl("model", path, revision)}
+                readJson={async (path) =>
+                  (
+                    await readResponse(
+                      apiUrl("assets", path, revision),
+                      new AbortController().signal,
+                    )
+                  ).json()
+                }
+              />
+            )}
+            {view === "product" && manifest && (
+              <ProductView
+                config={manifest.config ?? {}}
+                workspace={manifest.root}
+                revision={`${revision}:${refresh}`}
+                assetUrl={(path) => apiUrl("assets", path, revision)}
+                readJson={async (path) =>
+                  (
+                    await readResponse(
+                      apiUrl("assets", path, revision),
+                      new AbortController().signal,
+                    )
+                  ).json()
+                }
+              />
             )}
           </>
         )}

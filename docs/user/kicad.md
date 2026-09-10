@@ -12,7 +12,7 @@ This follows the connected environment: a phone or remote browser uses the KiCad
 
 Open **KiCad** from a thread's right-panel add menu to inspect its PCB, schematic, Gerber layers, and 3D board. The panel follows the thread's workspace or worktree. It reads saved files without locking them; you can continue editing in KiCad or through your agent.
 
-On mobile, open **KiCad** from the thread toolbar. The same read-only viewer opens in a full-screen native web view, with its PCB, Gerber, schematic, and 3D tabs available at the top. The viewer uses a short-lived session tied to the active environment; reconnect and tap **Retry** if that session expires.
+On mobile, open **KiCad** from the thread toolbar. The same read-only viewer opens in a full-screen native web view, with PCB, Gerber, schematic, 3D, STEP, FreeCAD, and Blender tabs at the top. The viewer uses a short-lived session tied to the active environment; reconnect and tap **Retry** if that session expires.
 
 For a workspace containing several boards, create `.backplane.json` at its root:
 
@@ -23,7 +23,33 @@ For a workspace containing several boards, create `.backplane.json` at its root:
   "gerbers": ["build/gerbers"],
   "symbol": "hardware/lib/parts.kicad_sym",
   "symbolMember": "Controller_unit1",
-  "footprint": "hardware/lib/parts.pretty/Controller.kicad_mod"
+  "footprint": "hardware/lib/parts.pretty/Controller.kicad_mod",
+  "enclosure": {
+    "params": "mech/enclosure-params.json",
+    "solids": {
+      "BASE": "mech/BASE.stl",
+      "PLATE": "mech/PLATE.stl"
+    }
+  },
+  "product": {
+    "scene": "mech/blender-scene.json",
+    "still": "mech/product-render.png",
+    "loadViz": "mech/load-viz-materials.json"
+  },
+  "drivers": {
+    "kicad": {
+      "mcp": "kicad",
+      "reference": "https://github.com/mixelpixx/KiCAD-MCP-Server"
+    },
+    "freecad": {
+      "mcp": "freecad",
+      "reference": "https://github.com/neka-nat/freecad-mcp"
+    },
+    "blender": {
+      "mcp": "blender",
+      "reference": "https://github.com/ahujasid/blender-mcp"
+    }
+  }
 }
 ```
 
@@ -37,7 +63,9 @@ Select a STEP part in the model or the collapsible parts tree, then adjust its o
 
 Both board and STEP previews use orthographic projection with cel-shaded colors and outlines. Drag to tumble the model freely in any direction; **Top**, **Bottom**, and **Fit model** return to familiar views.
 
-The 3D preview requires `kicad-cli` with GLB export on the environment running Backplane. The preview includes outer copper, pads, silkscreen, and translucent soldermask using the board’s stackup colors. Exports go into a separate temporary cache. Gerber rendering requires `python3` there. Neither operation modifies the project.
+The 3D preview requires `kicad-cli` with GLB export on the environment running Backplane. The preview includes outer copper, pads, silkscreen, and translucent soldermask using the board’s stackup colors. Exports go into a separate temporary cache. The **FreeCAD** and **Blender** tabs do not call `kicad-cli` and do not start those apps. They serve the saved STL/STEP/GLB solids, enclosure params JSON, product still, and load-viz images named in `.backplane.json`. Gerber rendering requires `python3` there. None of these operations modify the project.
+
+The agent drives those apps through MCP you attach. The FreeCAD and Blender tabs only show what that agent already wrote. `drivers` is an open map: extra domains are allowed, and any server can replace the examples. Backplane does not vendor a KiCad, FreeCAD, or Blender MCP. Name the server keys you already run, the same way you can drive KiCad with your own MCP instead of the stock KiCad path. See [Drive CAD with your own MCP](./cad-mcp.md).
 
 Use **Open KiCad viewer in browser** to let your agent inspect and interact with the viewer through the collaborative browser. Its link grants temporary read-only access to this workspace; reopen the panel after the link expires or the server restarts. The `backplane-viewer` agent skill includes a helper for finding and configuring project files.
 

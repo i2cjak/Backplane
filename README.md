@@ -8,7 +8,7 @@ Download an installer for your system from [Backplane Releases](https://github.c
 
 Open Backplane and configure the coding provider you use. Provider accounts and credentials are your own. Berkeley Mono is used when installed on your system; the font is not redistributed with Backplane.
 
-See [install and first run](docs/user/install.md), [KiCad views](docs/user/kicad.md), and [remote access](docs/user/remote-access.md).
+See [install and first run](docs/user/install.md), [KiCad views](docs/user/kicad.md), [Drive CAD with your own MCP](docs/user/cad-mcp.md), and [remote access](docs/user/remote-access.md). The agent can drive KiCad, FreeCAD, and Blender through any MCP you drop in. Those three are proof cases, not a closed list. The viewer stays inspect.
 
 ## Develop
 

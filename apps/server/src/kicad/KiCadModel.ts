@@ -9,6 +9,15 @@ import { resolveKiCadEnvironment, resolveKiCadExecutable } from "./KiCadExecutab
 
 import { nameKiCadGlbLayers } from "./KiCadGlb.ts";
 
+/** PCB boards are exported through kicad-cli. Saved GLB/STL/STEP are served as-is. */
+export function kiCadModelAction(file: {
+  readonly kind: string;
+}): "export-glb" | "serve-existing" | "reject" {
+  if (file.kind === "pcb") return "export-glb";
+  if (file.kind === "model") return "serve-existing";
+  return "reject";
+}
+
 const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
 
 // GLB export meshes are CPU-heavy (especially tracks, zones, and soldermask).
