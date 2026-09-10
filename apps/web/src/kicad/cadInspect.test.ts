@@ -13,6 +13,8 @@ import {
   isSiblingInspectView,
   preferredInspectSolid,
   productInspectItems,
+  productInspectSolids,
+  productInspectStills,
   readViewerView,
   viewerHashView,
 } from "./cadInspect.ts";
@@ -108,20 +110,24 @@ describe("cadInspect surfaces", () => {
   });
 
   it("lists Blender 3D solids then named material stills", () => {
-    expect(
-      productInspectItems({
-        solids: { PRODUCT: "mech/product.glb" },
-        still: "mech/product-render.png",
-        renders: {
-          aluminum: "mech/load-viz-aluminum.png",
-          resin: "mech/load-viz-resin.png",
-        },
-      }).map((item) => [item.label, item.preview, item.path]),
-    ).toEqual([
-      ["PRODUCT", "model", "mech/product.glb"],
-      ["product", "image", "mech/product-render.png"],
-      ["aluminum", "image", "mech/load-viz-aluminum.png"],
-      ["resin", "image", "mech/load-viz-resin.png"],
+    const product = {
+      solids: { PRODUCT: "mech/product.glb", ENCLOSURE: "mech/enclosure.step" },
+      still: "mech/product-render.png",
+      renders: {
+        aluminum: "mech/load-viz-aluminum.png",
+        resin: "mech/load-viz-resin.png",
+      },
+    };
+    expect(productInspectSolids(product).map((item) => [item.label, item.preview])).toEqual([
+      ["PRODUCT", "model"],
+      ["ENCLOSURE", "step"],
     ]);
+    expect(productInspectStills(product).map((item) => item.label)).toEqual([
+      "product",
+      "aluminum",
+      "resin",
+    ]);
+    expect(productInspectItems(product).every((item) => item.path.length > 0)).toBe(true);
+    expect(productInspectStills(product).every((item) => item.preview === "image")).toBe(true);
   });
 });

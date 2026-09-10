@@ -203,6 +203,19 @@ export function sceneSolidPath(root: string, payload: unknown): string | undefin
   return relative && inspectImageOrModel(relative) === "model" ? relative : undefined;
 }
 
+/** Prefer a mechanical STEP/GLB over a board GLB so Blender 3D is not PCB-only. */
+export function enclosureProductSolid(
+  solids: Readonly<Record<string, string>> | undefined,
+): { readonly name: string; readonly path: string } | undefined {
+  if (!solids) return undefined;
+  const entries = Object.entries(solids);
+  const named =
+    entries.find(([name, path]) => name === "ENCLOSURE" && inspectImageOrModel(path) === "model") ??
+    entries.find(([, path]) => /\.(?:step|stp)$/i.test(path)) ??
+    entries.find(([name, path]) => name !== "PCB" && inspectImageOrModel(path) === "model");
+  return named ? { name: named[0], path: named[1] } : undefined;
+}
+
 export function configuredArtifactPaths(config: KiCadProjectConfig | undefined): string[] {
   if (!config) return [];
   const paths = [
@@ -263,6 +276,10 @@ export async function discoverKiCadProject(root: string): Promise<KiCadProjectMa
         } catch {
           warnings.push(`Unable to read product scene: ${scene}`);
         }
+      }
+      const enclosureSolid = enclosureProductSolid(enclosure?.solids);
+      if (enclosureSolid && !Object.values(solids).includes(enclosureSolid.path)) {
+        solids[enclosureSolid.name] = enclosureSolid.path;
       }
       product = parseProduct({
         still: product?.still,

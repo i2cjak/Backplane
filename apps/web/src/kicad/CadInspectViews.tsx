@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { preferredInspectSolid, productInspectItems } from "./cadInspect";
+import { preferredInspectSolid, productInspectSolids, productInspectStills } from "./cadInspect";
 
 export type InspectConfig = {
   enclosure?: { solids?: Record<string, string> };
@@ -132,11 +132,14 @@ export function ProductView({
   assetUrl: (path: string) => string;
   modelUrl: (path: string) => string;
 }) {
-  const items = productInspectItems(config.product);
-  const preferred = items.find((item) => item.preview !== "image")?.id ?? items[0]?.id ?? "";
-  const [selected, setSelected] = useState(preferred);
-  const active = items.find((item) => item.id === selected) ?? items[0];
-  if (!items.length) {
+  const solids = productInspectSolids(config.product);
+  const stills = productInspectStills(config.product);
+  const preferredSolid = solids.find((item) => item.preview === "step")?.id ?? solids[0]?.id ?? "";
+  const [solidId, setSolidId] = useState(preferredSolid);
+  const [stillId, setStillId] = useState(stills[0]?.id ?? "");
+  const solid = solids.find((item) => item.id === solidId) ?? solids[0];
+  const still = stills.find((item) => item.id === stillId) ?? stills[0];
+  if (!solids.length && !stills.length) {
     return (
       <Notice text="No product inspect files. Set product.solids, product.still, or product.renders in .backplane.json." />
     );
@@ -144,42 +147,60 @@ export function ProductView({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-1.5 text-xs">
-        <label className="flex min-w-0 flex-1 items-center gap-2">
-          View
-          <select
-            aria-label="Blender product view"
-            className="min-w-0 flex-1 rounded border border-border bg-background px-1.5 py-1"
-            value={active?.id ?? ""}
-            onChange={(event) => setSelected(event.target.value)}
-          >
-            {items.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        {solids.length ? (
+          <label className="flex min-w-0 flex-1 items-center gap-2">
+            3D
+            <select
+              aria-label="Blender product solid"
+              className="min-w-0 flex-1 rounded border border-border bg-background px-1.5 py-1"
+              value={solid?.id ?? ""}
+              onChange={(event) => setSolidId(event.target.value)}
+            >
+              {solids.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {stills.length ? (
+          <label className="flex min-w-0 flex-1 items-center gap-2">
+            Render
+            <select
+              aria-label="Blender product still"
+              className="min-w-0 flex-1 rounded border border-border bg-background px-1.5 py-1"
+              value={still?.id ?? ""}
+              onChange={(event) => setStillId(event.target.value)}
+            >
+              {stills.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <span className="text-muted-foreground">Saved files</span>
       </div>
-      <div className="min-h-0 flex-1">
-        {!active ? (
-          <Notice text="Select a product solid or still." />
-        ) : active.preview === "image" ? (
-          <div className="flex h-full items-center justify-center overflow-auto p-3">
+      <div className={`grid min-h-0 flex-1 ${solid && still ? "grid-rows-2" : "grid-rows-1"}`}>
+        {solid && (solid.preview === "model" || solid.preview === "step") ? (
+          <SnapshotFrame
+            key={`${solid.path}:${revision}`}
+            kind={solid.preview}
+            url={modelUrl(solid.path)}
+            title={`Product ${solid.label}`}
+          />
+        ) : null}
+        {still ? (
+          <div className="flex min-h-0 items-center justify-center overflow-auto p-3">
             <img
-              alt={`Blender ${active.label}`}
+              alt={`Blender ${still.label}`}
               className="max-h-full max-w-full rounded border border-border bg-black object-contain"
-              src={`${assetUrl(active.path)}&revision=${revision}`}
+              src={`${assetUrl(still.path)}&revision=${revision}`}
             />
           </div>
-        ) : (
-          <SnapshotFrame
-            key={`${active.path}:${revision}`}
-            kind={active.preview}
-            url={modelUrl(active.path)}
-            title={`Product ${active.label}`}
-          />
-        )}
+        ) : null}
       </div>
     </div>
   );

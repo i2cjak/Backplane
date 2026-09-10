@@ -159,25 +159,31 @@ export function inspectPreviewKind(path: string): ProductInspectPreview | undefi
   return undefined;
 }
 
-/** 3D meshes first, then product.still and named renders (aluminum, resin, …). */
-export function productInspectItems(
-  product:
-    | {
-        readonly still?: string;
-        readonly renders?: Readonly<Record<string, string>>;
-        readonly solids?: Readonly<Record<string, string>>;
-      }
-    | undefined,
+type ProductInspectConfig = {
+  readonly still?: string;
+  readonly renders?: Readonly<Record<string, string>>;
+  readonly solids?: Readonly<Record<string, string>>;
+};
+
+export function productInspectSolids(
+  product: ProductInspectConfig | undefined,
+): readonly ProductInspectItem[] {
+  if (!product) return [];
+  const items: ProductInspectItem[] = [];
+  for (const [id, path] of Object.entries(product.solids ?? {})) {
+    const preview = inspectPreviewKind(path);
+    if (preview !== "model" && preview !== "step") continue;
+    items.push({ id: `solid:${id}`, label: id, path, preview });
+  }
+  return items;
+}
+
+export function productInspectStills(
+  product: ProductInspectConfig | undefined,
 ): readonly ProductInspectItem[] {
   if (!product) return [];
   const items: ProductInspectItem[] = [];
   const seen = new Set<string>();
-  for (const [id, path] of Object.entries(product.solids ?? {})) {
-    const preview = inspectPreviewKind(path);
-    if (preview !== "model" && preview !== "step") continue;
-    seen.add(path);
-    items.push({ id: `solid:${id}`, label: id, path, preview });
-  }
   const stills: Record<string, string> = {
     ...(product.still ? { product: product.still } : {}),
     ...(product.renders ?? {}),
@@ -188,4 +194,11 @@ export function productInspectItems(
     items.push({ id: `still:${id}`, label: id, path, preview: "image" });
   }
   return items;
+}
+
+/** 3D meshes, then named stills. Blender UI keeps these as separate pickers. */
+export function productInspectItems(
+  product: ProductInspectConfig | undefined,
+): readonly ProductInspectItem[] {
+  return [...productInspectSolids(product), ...productInspectStills(product)];
 }

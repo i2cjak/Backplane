@@ -164,6 +164,7 @@ it.effect("resolves saved FreeCAD solids and Blender product views from .backpla
     NodeFS.mkdirSync(NodePath.join(root, "mech"), { recursive: true });
     NodeFS.writeFileSync(NodePath.join(root, "ws", "board", "layout.kicad_pcb"), "pcb");
     NodeFS.writeFileSync(NodePath.join(root, "mech", "board.glb"), "glb-bytes");
+    NodeFS.writeFileSync(NodePath.join(root, "mech", "enclosure.step"), "step-bytes");
     NodeFS.writeFileSync(NodePath.join(root, "mech", "product-render.png"), "png-bytes");
     NodeFS.writeFileSync(NodePath.join(root, "mech", "load-viz-aluminum.png"), "al-png");
     NodeFS.writeFileSync(NodePath.join(root, "mech", "load-viz-resin.png"), "resin-png");
@@ -177,12 +178,13 @@ it.effect("resolves saved FreeCAD solids and Blender product views from .backpla
     );
     NodeFS.writeFileSync(
       NodePath.join(root, ".backplane.json"),
-      '{"pcb":"ws/board/layout.kicad_pcb","enclosure":{"solids":{"BOARD":"mech/board.glb"}},"product":{"still":"mech/product-render.png","scene":"mech/blender-scene.json","loadViz":"mech/load-viz-materials.json"}}',
+      '{"pcb":"ws/board/layout.kicad_pcb","enclosure":{"solids":{"BOARD":"mech/board.glb","ENCLOSURE":"mech/enclosure.step"}},"product":{"still":"mech/product-render.png","scene":"mech/blender-scene.json","loadViz":"mech/load-viz-materials.json"}}',
     );
     const manifest = await discoverKiCadProject(root);
     expect(manifest.config?.enclosure?.solids?.BOARD).toBe("mech/board.glb");
     expect(manifest.config?.product?.still).toBe("mech/product-render.png");
     expect(manifest.config?.product?.solids?.PCB).toBe("mech/board.glb");
+    expect(manifest.config?.product?.solids?.ENCLOSURE).toBe("mech/enclosure.step");
     expect(manifest.config?.product?.renders).toEqual({
       product: "mech/product-render.png",
       aluminum: "mech/load-viz-aluminum.png",
@@ -190,6 +192,7 @@ it.effect("resolves saved FreeCAD solids and Blender product views from .backpla
     });
     expect(configuredArtifactPaths(manifest.config)).toEqual([
       "mech/board.glb",
+      "mech/enclosure.step",
       "mech/product-render.png",
       "mech/load-viz-aluminum.png",
       "mech/load-viz-resin.png",
