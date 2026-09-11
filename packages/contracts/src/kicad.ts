@@ -23,6 +23,7 @@ export type KiCadProjectFile = typeof KiCadProjectFile.Type;
 
 export const KiCadProjectConfig = Schema.Struct({
   analysisUrl: Schema.optionalKey(Schema.String),
+  panelization: Schema.optionalKey(Schema.String),
   pcb: Schema.optionalKey(Schema.String),
   schematic: Schema.optionalKey(Schema.String),
   gerbers: Schema.optionalKey(Schema.Array(Schema.String)),
@@ -59,3 +60,11 @@ export type KiCadBom = typeof KiCadBom.Type;
 
 export const KiCadLibraryMember = Schema.Struct({ name: Schema.String, svg: Schema.String });
 export type KiCadLibraryMember = typeof KiCadLibraryMember.Type;
+
+export const KiCadPanelizationPreview = Schema.Struct({
+  svg: Schema.String,
+  revision: Schema.String,
+  presetPath: Schema.String,
+  durationMs: Schema.Number,
+});
+export type KiCadPanelizationPreview = typeof KiCadPanelizationPreview.Type;

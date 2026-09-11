@@ -27,7 +27,7 @@ For a workspace containing several boards, create `.backplane.json` at its root:
 }
 ```
 
-Paths are relative to the workspace. These assignments select the design shown in the viewer; the agent and viewer can use the same files. Without assignments, the viewer opens an unambiguous project and leaves tools, examples, and routing intermediates out of automatic selection. Use **Browse** to preview another workspace file, and **Return to assigned design** to clear that temporary choice. PCB and 3D share a selection, as do schematic and BOM. Only referenced child sheets load with the selected schematic.
+Paths are relative to the workspace. These assignments select the design shown in the viewer; the agent and viewer can use the same files. Without assignments, the viewer opens an unambiguous project and leaves tools, examples, and routing intermediates out of automatic selection. Use **Browse** to preview another workspace file, and **Return to assigned design** to clear that temporary choice. PCB, 3D, and Panelization share a selection, as do schematic and BOM. Only referenced child sheets load with the selected schematic.
 
 Generated output is discovered even in Git-ignored folders. Saved changes refresh while the viewer is visible. The previous preview remains visible while an update is prepared. Changed 3D items transition into place without resetting the camera; reduced-motion preferences disable this animation. Gerbers show the existing generated package; editing the board does not regenerate that package.
 
@@ -64,3 +64,20 @@ The analysis view creates a planar antenna starter specification with feed and g
 ```
 
 The dashboard service must allow embedding; **Open dashboard** opens it separately. The openEMS option currently prepares a specification only; an openEMS execution adapter is not included. Exporting a specification does not start a solver or training job or qualify an antenna design.
+
+## Preview panelization
+
+Open **Panelization** in the KiCad viewer to preview the selected PCB using KiKit. Ask your agent to create or edit `panelize.json` in the workspace. It is a standard KiKit JSON preset, for example:
+
+```json
+{
+  "layout": { "rows": 2, "cols": 3, "hspace": "2mm", "vspace": "2mm" },
+  "tabs": { "type": "fixed", "hcount": 1, "vcount": 1, "width": "3mm" },
+  "cuts": { "type": "mousebites", "drill": "0.5mm", "spacing": "0.8mm" },
+  "framing": { "type": "frame", "width": "5mm", "hspace": "2mm", "vspace": "2mm", "cuts": "none" }
+}
+```
+
+To use another preset, set `"panelization": "hardware/panelize.json"` in `.backplane.json`. Paths are relative to the workspace. Saved PCB and preset changes refresh the visible preview automatically. Drag to pan, zoom with the wheel or zoom controls, and use **Fit** to reset the view.
+
+The connected environment needs KiKit and `kicad-cli`. Previews are generated in temporary storage and cached; the source PCB stays untouched. This is a 2D panel review, not a fabrication release. Custom Python plugins, postprocessing scripts, and external preset inheritance are not supported in the viewer.
