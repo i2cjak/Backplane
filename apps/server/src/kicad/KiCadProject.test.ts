@@ -167,29 +167,29 @@ it.effect("resolves saved FreeCAD solids and Blender product views from .backpla
     for (const [name, body] of [
       ["board.glb", "glb-bytes"],
       ["enclosure.step", "step-bytes"],
-      ["product-render.png", "png-bytes"],
-      ["load-viz-aluminum.png", "al-png"],
-      ["load-viz-resin.png", "resin-png"],
+      ["product.png", "png-bytes"],
+      ["render-a.png", "a-png"],
+      ["render-b.png", "b-png"],
       [
-        "load-viz-materials.json",
-        '{"product":"mech/product-render.png","outputs":{"aluminum":"mech/load-viz-aluminum.png","resin":"mech/load-viz-resin.png"}}',
+        "renders.json",
+        '{"product":"mech/product.png","outputs":{"look":"mech/render-a.png","alt":"mech/render-b.png"}}',
       ],
       ["blender-scene.json", '{"pcb_source":"mech/board.glb"}'],
     ] as const)
       NodeFS.writeFileSync(NodePath.join(mech, name), body);
     NodeFS.writeFileSync(
       NodePath.join(root, ".backplane.json"),
-      '{"pcb":"ws/board/layout.kicad_pcb","enclosure":{"solids":{"BOARD":"mech/board.glb","ENCLOSURE":"mech/enclosure.step"}},"product":{"still":"mech/product-render.png","scene":"mech/blender-scene.json","loadViz":"mech/load-viz-materials.json"}}',
+      '{"pcb":"ws/board/layout.kicad_pcb","enclosure":{"solids":{"BOARD":"mech/board.glb","ENCLOSURE":"mech/enclosure.step"}},"product":{"still":"mech/product.png","scene":"mech/blender-scene.json","loadViz":"mech/renders.json"}}',
     );
     const manifest = await discoverKiCadProject(root);
     expect(manifest.config?.product?.solids).toEqual({
       PCB: "mech/board.glb",
       ENCLOSURE: "mech/enclosure.step",
     });
-    expect(manifest.config?.product?.renders?.aluminum).toBe("mech/load-viz-aluminum.png");
-    expect(configuredArtifactPaths(manifest.config)).toContain("mech/load-viz-resin.png");
+    expect(manifest.config?.product?.renders?.look).toBe("mech/render-a.png");
+    expect(configuredArtifactPaths(manifest.config)).toContain("mech/render-b.png");
     const solid = await resolveKiCadProjectFile(root, "mech/board.glb");
-    const still = await resolveKiCadProjectFile(root, "mech/product-render.png");
+    const still = await resolveKiCadProjectFile(root, "mech/product.png");
     expect(solid?.file.kind).toBe("model");
     expect(still?.file.kind).toBe("image");
     expect(kiCadModelAction(solid!.file)).toBe("serve-existing");

@@ -53,18 +53,18 @@ describe("cadInspect surfaces", () => {
     );
   });
 
-  it("lists Blender 3D solids separately from named material stills", () => {
+  it("lists Blender 3D solids separately from other saved renders", () => {
     expect(preferredInspectSolid({ BASE: "mech/BASE.stl", PCB: "mech/board.glb" })).toBe("PCB");
     const product = {
       solids: { PRODUCT: "mech/product.glb", ENCLOSURE: "mech/enclosure.step" },
-      still: "mech/product-render.png",
-      renders: { aluminum: "mech/load-viz-aluminum.png", resin: "mech/load-viz-resin.png" },
+      still: "mech/product.png",
+      renders: { look: "mech/render-a.png", alt: "mech/render-b.png" },
     };
     expect(productInspectSolids(product).map((item) => item.preview)).toEqual(["model", "step"]);
     expect(productInspectStills(product).map((item) => item.label)).toEqual([
       "product",
-      "aluminum",
-      "resin",
+      "look",
+      "alt",
     ]);
     expect(productInspectItems(product).length).toBe(5);
   });

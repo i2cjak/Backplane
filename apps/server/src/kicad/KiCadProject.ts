@@ -175,7 +175,7 @@ function inspectImageOrModel(path: string): "image" | "model" | undefined {
   return undefined;
 }
 
-/** Named stills from a load-viz sidecar (`outputs` plus `product`). */
+/** Named stills from a sidecar JSON (`outputs` plus `product`). */
 export function loadVizRenderPaths(root: string, payload: unknown): Record<string, string> {
   if (!payload || typeof payload !== "object") return {};
   const record = payload as Record<string, unknown>;

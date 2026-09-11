@@ -414,7 +414,7 @@ function RightPanelEmptyState(props: {
     },
     {
       label: "Blender",
-      description: "Inspect saved product 3D and material stills.",
+      description: "Inspect saved product 3D and other render files.",
       icon: Image,
       shortcut: "V",
       available: props.blenderAvailable,

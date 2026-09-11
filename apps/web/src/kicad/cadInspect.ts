@@ -32,7 +32,7 @@ export const CAD_INSPECT_SURFACES: readonly CadInspectSurface[] = [
     label: "Blender",
     view: "product",
     shortcut: "V",
-    description: "Inspect saved product 3D and material stills.",
+    description: "Inspect saved product 3D and other render files.",
   },
 ];
 

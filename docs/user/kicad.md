@@ -10,7 +10,7 @@ Agents receive the selected KiCad executable and guidance for exports, ERC/DRC c
 
 This follows the connected environment: a phone or remote browser uses the KiCad available on its server, not a KiCad installation on the device. Restart Backplane after an upgrade so agent processes receive the updated runtime.
 
-Open **KiCad**, **FreeCAD**, or **Blender** from the right-panel add menu. They are sibling inspect surfaces. KiCad's inner tabs stay KiCad-only. FreeCAD shows enclosure solids. Blender keeps a 3D mesh visible and a separate Render picker for named stills (aluminum, resin, and others). Panels reread saved files and do not speak MCP. Drive those apps with BYO MCP on the agent. Servers used to prove this overlay: [KiCAD-MCP-Server](https://github.com/mixelpixx/KiCAD-MCP-Server), [freecad-mcp](https://github.com/neka-nat/freecad-mcp), [blender-mcp](https://github.com/ahujasid/blender-mcp). Any equivalent can replace them.
+Open **KiCad**, **FreeCAD**, or **Blender** from the right-panel add menu. They are sibling inspect surfaces. KiCad's inner tabs stay KiCad-only. FreeCAD shows enclosure solids. Blender keeps a 3D mesh visible and a separate Render picker for other saved render files in the workspace. Panels reread saved files and do not speak MCP. Drive those apps with BYO MCP on the agent. Servers used to prove this overlay: [KiCAD-MCP-Server](https://github.com/mixelpixx/KiCAD-MCP-Server), [freecad-mcp](https://github.com/neka-nat/freecad-mcp), [blender-mcp](https://github.com/ahujasid/blender-mcp). Any equivalent can replace them.
 
 On mobile, the thread toolbar has the same three inspect actions. Each opens a full-screen native web view. Reconnect and tap **Retry** if the short-lived viewer session expires.
 
@@ -28,7 +28,7 @@ For a workspace containing several boards, create `.backplane.json` at its root:
   "product": {
     "solids": { "PRODUCT": "mech/product.glb" },
     "still": "mech/product-render.png",
-    "renders": { "aluminum": "mech/load-viz-aluminum.png", "resin": "mech/load-viz-resin.png" }
+    "renders": { "look": "mech/render-a.png", "alt": "mech/render-b.png" }
   }
 }
 ```
