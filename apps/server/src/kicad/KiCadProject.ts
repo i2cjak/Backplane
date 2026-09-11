@@ -31,6 +31,7 @@ export interface KiCadProjectManifest {
 }
 export interface KiCadProjectConfig {
   readonly analysisUrl?: string;
+  readonly panelization?: string;
   readonly pcb?: string;
   readonly schematic?: string;
   readonly gerbers?: readonly string[];
@@ -119,6 +120,7 @@ export async function discoverKiCadProject(root: string): Promise<KiCadProjectMa
     ) as Record<string, unknown>;
     config = {
       ...(typeof parsed.analysisUrl === "string" ? { analysisUrl: parsed.analysisUrl } : {}),
+      ...(typeof parsed.panelization === "string" ? { panelization: parsed.panelization } : {}),
       ...(typeof parsed.pcb === "string" ? { pcb: parsed.pcb } : {}),
       ...(typeof parsed.schematic === "string" ? { schematic: parsed.schematic } : {}),
       ...(Array.isArray(parsed.gerbers)
@@ -136,6 +138,9 @@ export async function discoverKiCadProject(root: string): Promise<KiCadProjectMa
       /* configuration is optional */
     }
   }
+  const panelizationPath = (config?.panelization ?? "panelize.json")
+    .replaceAll("\\", "/")
+    .replace(/^\.\//, "");
   const walk = async (directory: string): Promise<void> => {
     if (++visited > 50_000) {
       if (!scanLimitWarningAdded) {
@@ -158,14 +163,18 @@ export async function discoverKiCadProject(root: string): Promise<KiCadProjectMa
       }
       const extension = entry.name.slice(entry.name.lastIndexOf(".")).toLowerCase();
       const kind = fileKind(extension);
+      const panelization =
+        NodePath.relative(projectRoot, NodePath.join(directory, entry.name))
+          .split(NodePath.sep)
+          .join("/") === panelizationPath;
       const metadata = /\.kicad_(?:pcb|sch|mod|sym)\.backplane\.json$/i.test(entry.name);
-      if (!kind && !metadata) continue;
+      if (!kind && !metadata && !panelization) continue;
       const absolute = NodePath.join(directory, entry.name);
       try {
         const info = await NodeFSP.lstat(absolute);
         if (info.isSymbolicLink()) continue;
         if (!info.isFile()) continue;
-        if (metadata) {
+        if (metadata || panelization) {
           metadataRevisions.push(
             `${NodePath.relative(projectRoot, absolute)}\0${info.size}\0${info.mtimeMs}`,
           );

@@ -90,15 +90,11 @@ body,
 }
 .design-tabs {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 3px;
   min-width: 0;
   flex: 1;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.design-tabs::-webkit-scrollbar {
-  display: none;
 }
 .design-tab-wrap {
   display: flex;
@@ -161,6 +157,7 @@ body,
 .design-tools {
   display: flex;
   position: relative;
+  align-self: flex-start;
   align-items: center;
   flex-shrink: 0;
   color: var(--muted-foreground);
@@ -180,6 +177,126 @@ body,
 }
 .design-workspace option {
   background: var(--background);
+  color: var(--foreground);
+}
+.panelization-surface {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--background);
+}
+.panelization-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 38px;
+  padding: 3px 10px 3px 14px;
+  border-bottom: 1px solid var(--design-line);
+  color: var(--muted-foreground);
+}
+.panelization-label,
+.panelization-meta,
+.panelization-status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.panelization-label {
+  max-width: 45%;
+}
+.panelization-meta {
+  opacity: 0.7;
+}
+.panelization-status {
+  color: var(--design-highlight);
+}
+.panelization-toolbar-spacer {
+  flex: 1;
+}
+.panelization-viewport {
+  position: relative;
+  display: grid;
+  /* Tall panels must not size the grid track beyond the visible viewport. */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  place-items: center;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  background-color: color-mix(in srgb, var(--background) 94%, var(--foreground));
+  background-image:
+    linear-gradient(
+      45deg,
+      color-mix(in srgb, var(--foreground) 4%, transparent) 25%,
+      transparent 25%,
+      transparent 75%,
+      color-mix(in srgb, var(--foreground) 4%, transparent) 75%
+    ),
+    linear-gradient(
+      45deg,
+      color-mix(in srgb, var(--foreground) 4%, transparent) 25%,
+      transparent 25%,
+      transparent 75%,
+      color-mix(in srgb, var(--foreground) 4%, transparent) 75%
+    );
+  background-position:
+    0 0,
+    8px 8px;
+  background-size: 16px 16px;
+}
+.panelization-viewport:active {
+  cursor: grabbing;
+}
+.panelization-image {
+  background: var(--background);
+  display: block;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  max-width: none;
+  max-height: none;
+  user-select: none;
+}
+.panelization-outline {
+  display: block;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  max-width: none;
+  max-height: none;
+  pointer-events: none;
+  user-select: none;
+}
+.panelization-error {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  color: var(--destructive, #b34b3e);
+  background: color-mix(in srgb, var(--destructive, #b34b3e) 9%, var(--background));
+  font-size: 11px;
+}
+.panelization-empty,
+.panelization-empty-copy {
+  max-width: 440px;
+  padding: 24px;
+  color: var(--muted-foreground);
+  text-align: center;
+  font-size: 12px;
+}
+.panelization-empty h2 {
+  margin: 0 0 8px;
+  color: var(--foreground);
+  font-size: 15px;
+  font-weight: 550;
+}
+.panelization-empty p {
+  margin: 0;
+}
+.panelization-empty code,
+.panelization-empty-copy code {
   color: var(--foreground);
 }
 .design-filebar {
@@ -506,6 +623,17 @@ body,
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+@media (max-width: 1000px) {
+  .design-header {
+    flex-wrap: wrap;
+  }
+  .design-navigation {
+    flex: 1 0 100%;
+    width: 100%;
+    padding: 0;
+    order: 3;
   }
 }
 @media (max-width: 640px) {

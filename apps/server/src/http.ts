@@ -1,3 +1,4 @@
+import { getKiCadPanelization } from "./kicad/KiCadPanelization.ts";
 import { IosNotificationRegistration } from "@backplane/contracts";
 import { DirectIosPushService } from "./notifications/DirectIosPushService.ts";
 // @effect-diagnostics globalDate:off globalDateInEffect:off globalErrorInEffectCatch:off globalErrorInEffectFailure:off
@@ -645,6 +646,32 @@ export const kicadProjectRouteLayer = HttpRouter.add(
     if (suffix === "manifest") {
       return yield* HttpServerResponse.json(
         yield* Effect.tryPromise(() => discoverKiCadProject(cwd)),
+      );
+    }
+    if (suffix === "panelization") {
+      const path = url.value.searchParams.get("path");
+      if (!path) return HttpServerResponse.text("Missing path", { status: 400 });
+      const asset = yield* Effect.tryPromise(() => resolveKiCadProjectFile(cwd, path));
+      if (asset?.file.kind !== "pcb")
+        return HttpServerResponse.text("PCB not found", { status: 404 });
+      const manifest = yield* Effect.tryPromise(() => discoverKiCadProject(cwd));
+      return yield* Effect.tryPromise({
+        try: () =>
+          getKiCadPanelization(
+            cwd,
+            asset.file.path,
+            manifest.config?.panelization ?? "panelize.json",
+          ),
+        catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+      }).pipe(
+        Effect.flatMap((preview) =>
+          HttpServerResponse.json(preview, {
+            headers: { "Cache-Control": "private, no-cache" },
+          }),
+        ),
+        Effect.catch((cause) =>
+          Effect.succeed(HttpServerResponse.text(cause.message, { status: 422 })),
+        ),
       );
     }
     if (suffix === "library") {

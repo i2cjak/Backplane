@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Box,
   CircuitBoard,
@@ -13,21 +13,25 @@ import {
   List,
   FolderOpen,
   ChevronDown,
+  PanelsTopLeft,
 } from "lucide-react";
 import "../index.css";
 import "./viewer.css";
 import type { KiCadProjectManifest } from "@backplane/contracts";
+import type { KiCadPanelizationPreview } from "@backplane/contracts";
 import { GerberBrowser } from "./GerberBrowser";
 import { NativeProjectViews } from "./NativeProjectViews";
 import { LibraryView } from "./LibraryView";
 import { AnalysisView } from "./AnalysisView";
 import { BomView } from "./BomView";
+import { PanelizationView } from "./PanelizationView";
 import { resolveProjectDesign } from "./projectDesign";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 
 type View =
   | "gerbers"
   | "pcb"
+  | "panelization"
   | "schematic"
   | "3d"
   | "step"
@@ -44,12 +48,14 @@ type Manifest = KiCadProjectManifest & {
     symbol?: string;
     symbolMember?: string;
     footprint?: string;
+    panelization?: string;
   };
   warnings?: string[];
 };
 const tabs = [
   { id: "schematic", label: "Schematic", icon: FileText },
   { id: "pcb", label: "PCB", icon: CircuitBoard },
+  { id: "panelization", label: "Panelization", icon: PanelsTopLeft },
   { id: "3d", label: "3D", icon: Box },
   { id: "gerbers", label: "Gerbers", icon: Layers3 },
   { id: "step", label: "STEP", icon: Box },
@@ -249,8 +255,9 @@ function App() {
   const pcb = boards.find((item) => item.path === selected.pcb)?.path ?? design.pcb?.path;
   const schematic =
     schematics.find((item) => item.path === selected.schematic)?.path ?? design.schematic?.path;
-  const selectionKey = view === "3d" ? "pcb" : view === "bom" ? "schematic" : view;
-  const designView = ["pcb", "schematic", "3d", "bom"].includes(view);
+  const selectionKey =
+    view === "3d" || view === "panelization" ? "pcb" : view === "bom" ? "schematic" : view;
+  const designView = ["pcb", "schematic", "3d", "bom", "panelization"].includes(view);
   const configured = view === "schematic" || view === "bom" ? schematic : pcb;
   const configuredLibrary =
     libraryView === "symbol" ? manifest?.config?.symbol : manifest?.config?.footprint;
@@ -285,6 +292,13 @@ function App() {
       : undefined) ??
     selectableFiles[0];
   const revision = manifest?.revision ?? "";
+  const loadPanelization = useCallback(
+    (path: string, panelRevision: string, signal: AbortSignal): Promise<KiCadPanelizationPreview> =>
+      readResponse(apiUrl("panelization", path, panelRevision), signal).then(
+        (response) => response.json() as Promise<KiCadPanelizationPreview>,
+      ),
+    [],
+  );
   const workspaceName = manifest?.root.split(/[\\/]/).findLast(Boolean) ?? "Design workspace";
   const designName =
     (pcb ?? schematic)
@@ -609,6 +623,16 @@ function App() {
                   dashboardUrl={manifest.config?.analysisUrl}
                 />
               </div>
+            )}
+            {view === "panelization" && (
+              <PanelizationView
+                path={pcb}
+                revision={`${revision}:${refresh}`}
+                scope={JSON.stringify([apiBase, manifest.root])}
+                presetPath={manifest.config?.panelization}
+                visible={view === "panelization" && visible}
+                load={loadPanelization}
+              />
             )}
             {view === "bom" &&
               (file ? (

@@ -151,3 +151,54 @@ it.effect("reads explicit library assignments and reports missing assigned asset
     );
   }),
 );
+
+it.effect(
+  "tracks creation, edits, and removal of the panelization preset without listing JSON as a board",
+  () =>
+    Effect.promise(async () => {
+      const root = tempRoot();
+      NodeFS.mkdirSync(root, { recursive: true });
+      NodeFS.writeFileSync(NodePath.join(root, "board.kicad_pcb"), "pcb");
+      const clock = Date.now();
+      const now = vi.spyOn(Date, "now");
+      const first = await discoverKiCadProject(root);
+      const preset = NodePath.join(root, "panelize.json");
+      NodeFS.writeFileSync(preset, '{"layout":{"rows":2}}');
+      now.mockReturnValue(clock + 400);
+      const created = await discoverKiCadProject(root);
+      expect(created.revision).not.toBe(first.revision);
+      expect(created.files.map((file) => file.path)).toEqual(["board.kicad_pcb"]);
+      NodeFS.writeFileSync(preset, '{"layout":{"rows":20}}');
+      now.mockReturnValue(clock + 800);
+      const edited = await discoverKiCadProject(root);
+      expect(edited.revision).not.toBe(created.revision);
+      NodeFS.unlinkSync(preset);
+      now.mockReturnValue(clock + 1200);
+      expect((await discoverKiCadProject(root)).revision).toBe(first.revision);
+      NodeFS.rmSync(root, { recursive: true });
+    }),
+);
+
+it.effect("tracks a configured preset and ignores unrelated JSON edits", () =>
+  Effect.promise(async () => {
+    const root = tempRoot();
+    NodeFS.mkdirSync(NodePath.join(root, "hardware"), { recursive: true });
+    NodeFS.writeFileSync(
+      NodePath.join(root, ".backplane.json"),
+      '{"panelization":"hardware/panel.json"}',
+    );
+    const preset = NodePath.join(root, "hardware/panel.json");
+    NodeFS.writeFileSync(preset, "{}");
+    const clock = Date.now();
+    const now = vi.spyOn(Date, "now");
+    const first = await discoverKiCadProject(root);
+    expect(first.config?.panelization).toBe("hardware/panel.json");
+    NodeFS.writeFileSync(NodePath.join(root, "unrelated.json"), "{}");
+    now.mockReturnValue(clock + 400);
+    expect((await discoverKiCadProject(root)).revision).toBe(first.revision);
+    NodeFS.writeFileSync(preset, '{"layout":{"cols":3}}');
+    now.mockReturnValue(clock + 800);
+    expect((await discoverKiCadProject(root)).revision).not.toBe(first.revision);
+    NodeFS.rmSync(root, { recursive: true });
+  }),
+);
