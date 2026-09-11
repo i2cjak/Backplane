@@ -368,6 +368,15 @@ describe("rightPanelStore", () => {
     });
   });
 
+  it("opens FreeCAD and Blender as sibling inspect surfaces next to KiCad", () => {
+    const store = useRightPanelStore.getState();
+    store.open(refA, "kicad");
+    store.open(refA, "freecad");
+    store.open(refA, "blender");
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state?.surfaces.map((surface) => surface.kind)).toEqual(["kicad", "freecad", "blender"]);
+  });
+
   it("replaces the standalone explorer with peer file surfaces", () => {
     useRightPanelStore.getState().open(refA, "files");
     useRightPanelStore.getState().openFile(refA, "src/index.ts");

@@ -12,7 +12,8 @@ export type KiCadFileKind =
   | "model"
   | "project"
   | "footprint"
-  | "symbol";
+  | "symbol"
+  | "image";
 
 export interface KiCadProjectFile {
   readonly path: string;
@@ -29,6 +30,14 @@ export interface KiCadProjectManifest {
   readonly config?: KiCadProjectConfig;
   readonly warnings: readonly string[];
 }
+export interface KiCadEnclosureConfig {
+  readonly solids?: Readonly<Record<string, string>>;
+}
+export interface KiCadProductConfig {
+  readonly still?: string;
+  readonly renders?: Readonly<Record<string, string>>;
+  readonly solids?: Readonly<Record<string, string>>;
+}
 export interface KiCadProjectConfig {
   readonly analysisUrl?: string;
   readonly pcb?: string;
@@ -37,6 +46,8 @@ export interface KiCadProjectConfig {
   readonly symbol?: string;
   readonly symbolMember?: string;
   readonly footprint?: string;
+  readonly enclosure?: KiCadEnclosureConfig;
+  readonly product?: KiCadProductConfig;
 }
 
 const manifestCache = new Map<
@@ -59,6 +70,11 @@ const MIME_TYPES: Record<string, string> = {
   ".glb": "model/gltf-binary",
   ".gltf": "model/gltf+json",
   ".obj": "text/plain",
+  ".stl": "model/stl",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
   ".kicad_pro": "application/json",
   ".kicad_wks": "application/x-kicad-workbook",
 };
@@ -88,7 +104,7 @@ const GERBER_EXTENSIONS = new Set([
   ".drl",
   ".xln",
 ]);
-const MODEL_EXTENSIONS = new Set([".step", ".stp", ".wrl", ".glb", ".gltf", ".obj"]);
+const MODEL_EXTENSIONS = new Set([".step", ".stp", ".wrl", ".glb", ".gltf", ".obj", ".stl"]);
 const IGNORED_DIRECTORIES = new Set([".git", ".history", "node_modules"]);
 
 function fileKind(extension: string): KiCadFileKind | undefined {
@@ -100,6 +116,115 @@ function fileKind(extension: string): KiCadFileKind | undefined {
   if (GERBER_EXTENSIONS.has(extension) || /^\.g\d+$/.test(extension)) return "gerber";
   if (MODEL_EXTENSIONS.has(extension)) return "model";
   return undefined;
+}
+
+function configuredKind(extension: string): KiCadFileKind | undefined {
+  const walked = fileKind(extension);
+  if (walked) return walked;
+  if (
+    extension === ".png" ||
+    extension === ".jpg" ||
+    extension === ".jpeg" ||
+    extension === ".webp"
+  )
+    return "image";
+  return undefined;
+}
+
+function asStringRecord(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value).filter(
+    (entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0,
+  );
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
+function parseEnclosure(value: unknown): KiCadEnclosureConfig | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const solids = asStringRecord((value as Record<string, unknown>).solids);
+  return solids ? { solids } : undefined;
+}
+
+function parseProduct(value: unknown): KiCadProductConfig | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const still =
+    typeof record.still === "string" && record.still.length > 0 ? record.still : undefined;
+  const renders = asStringRecord(record.renders);
+  const solids = asStringRecord(record.solids);
+  if (!still && !renders && !solids) return undefined;
+  return {
+    ...(still ? { still } : {}),
+    ...(renders ? { renders } : {}),
+    ...(solids ? { solids } : {}),
+  };
+}
+
+export function workspaceRelativeInspectPath(root: string, value: string): string | undefined {
+  const normalized = value.replaceAll("\\", "/");
+  const rootNorm = NodePath.resolve(root).replaceAll("\\", "/").replace(/\/$/, "");
+  if (normalized.startsWith(`${rootNorm}/`)) return normalized.slice(rootNorm.length + 1);
+  if (normalized.startsWith("/")) return undefined;
+  return normalized.replace(/^\.\//, "");
+}
+
+function inspectImageOrModel(path: string): "image" | "model" | undefined {
+  const extension = NodePath.extname(path).toLowerCase();
+  if (configuredKind(extension) === "image") return "image";
+  if (MODEL_EXTENSIONS.has(extension)) return "model";
+  return undefined;
+}
+
+/** Named stills from a sidecar JSON (`outputs` plus `product`). */
+export function loadVizRenderPaths(root: string, payload: unknown): Record<string, string> {
+  if (!payload || typeof payload !== "object") return {};
+  const record = payload as Record<string, unknown>;
+  const renders: Record<string, string> = {};
+  if (typeof record.product === "string") {
+    const relative = workspaceRelativeInspectPath(root, record.product);
+    if (relative && inspectImageOrModel(relative) === "image") renders.product = relative;
+  }
+  if (record.outputs && typeof record.outputs === "object" && !Array.isArray(record.outputs)) {
+    for (const [name, value] of Object.entries(record.outputs)) {
+      if (typeof value !== "string") continue;
+      const relative = workspaceRelativeInspectPath(root, value);
+      if (relative && inspectImageOrModel(relative) === "image") renders[name] = relative;
+    }
+  }
+  return renders;
+}
+
+/** GLB/STEP from a Blender scene sidecar (`pcb_source`). */
+export function sceneSolidPath(root: string, payload: unknown): string | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const source = (payload as Record<string, unknown>).pcb_source;
+  if (typeof source !== "string") return undefined;
+  const relative = workspaceRelativeInspectPath(root, source);
+  return relative && inspectImageOrModel(relative) === "model" ? relative : undefined;
+}
+
+/** Prefer a mechanical STEP/GLB over a board GLB so Blender 3D is not PCB-only. */
+export function enclosureProductSolid(
+  solids: Readonly<Record<string, string>> | undefined,
+): { readonly name: string; readonly path: string } | undefined {
+  if (!solids) return undefined;
+  const entries = Object.entries(solids);
+  const named =
+    entries.find(([name, path]) => name === "ENCLOSURE" && inspectImageOrModel(path) === "model") ??
+    entries.find(([, path]) => /\.(?:step|stp)$/i.test(path)) ??
+    entries.find(([name, path]) => name !== "PCB" && inspectImageOrModel(path) === "model");
+  return named ? { name: named[0], path: named[1] } : undefined;
+}
+
+export function configuredArtifactPaths(config: KiCadProjectConfig | undefined): string[] {
+  if (!config) return [];
+  const paths = [
+    ...(config.enclosure?.solids ? Object.values(config.enclosure.solids) : []),
+    ...(config.product?.solids ? Object.values(config.product.solids) : []),
+    config.product?.still,
+    ...(config.product?.renders ? Object.values(config.product.renders) : []),
+  ].filter((path): path is string => typeof path === "string" && path.length > 0);
+  return [...new Set(paths.map((path) => path.replaceAll("\\", "/")))];
 }
 
 /** Walks the project without consulting ignore files: generated fabrication output is often ignored. */
@@ -117,6 +242,51 @@ export async function discoverKiCadProject(root: string): Promise<KiCadProjectMa
     const parsed = JSON.parse(
       await NodeFSP.readFile(NodePath.join(projectRoot, ".backplane.json"), "utf8"),
     ) as Record<string, unknown>;
+    const enclosure = parseEnclosure(parsed.enclosure);
+    let product = parseProduct(parsed.product);
+    const productRecord =
+      parsed.product && typeof parsed.product === "object" && !Array.isArray(parsed.product)
+        ? (parsed.product as Record<string, unknown>)
+        : undefined;
+    if (productRecord) {
+      const renders = { ...(product?.renders ?? {}) };
+      const solids = { ...(product?.solids ?? {}) };
+      const loadViz = typeof productRecord.loadViz === "string" ? productRecord.loadViz : undefined;
+      const scene = typeof productRecord.scene === "string" ? productRecord.scene : undefined;
+      if (loadViz) {
+        try {
+          Object.assign(
+            renders,
+            loadVizRenderPaths(
+              projectRoot,
+              JSON.parse(await NodeFSP.readFile(NodePath.join(projectRoot, loadViz), "utf8")),
+            ),
+          );
+        } catch {
+          warnings.push(`Unable to read product stills: ${loadViz}`);
+        }
+      }
+      if (scene) {
+        try {
+          const solid = sceneSolidPath(
+            projectRoot,
+            JSON.parse(await NodeFSP.readFile(NodePath.join(projectRoot, scene), "utf8")),
+          );
+          if (solid && !solids.PCB) solids.PCB = solid;
+        } catch {
+          warnings.push(`Unable to read product scene: ${scene}`);
+        }
+      }
+      const enclosureSolid = enclosureProductSolid(enclosure?.solids);
+      if (enclosureSolid && !Object.values(solids).includes(enclosureSolid.path)) {
+        solids[enclosureSolid.name] = enclosureSolid.path;
+      }
+      product = parseProduct({
+        still: product?.still,
+        renders: Object.keys(renders).length ? renders : undefined,
+        solids: Object.keys(solids).length ? solids : undefined,
+      });
+    }
     config = {
       ...(typeof parsed.analysisUrl === "string" ? { analysisUrl: parsed.analysisUrl } : {}),
       ...(typeof parsed.pcb === "string" ? { pcb: parsed.pcb } : {}),
@@ -127,6 +297,8 @@ export async function discoverKiCadProject(root: string): Promise<KiCadProjectMa
       ...(typeof parsed.symbol === "string" ? { symbol: parsed.symbol } : {}),
       ...(typeof parsed.symbolMember === "string" ? { symbolMember: parsed.symbolMember } : {}),
       ...(typeof parsed.footprint === "string" ? { footprint: parsed.footprint } : {}),
+      ...(enclosure ? { enclosure } : {}),
+      ...(product ? { product } : {}),
     };
   } catch {
     try {
@@ -185,6 +357,33 @@ export async function discoverKiCadProject(root: string): Promise<KiCadProjectMa
     }
   };
   await walk(projectRoot);
+  const includeInspectFile = async (relative: string): Promise<void> => {
+    if (files.some((file) => file.path === relative)) return;
+    const absolute = NodePath.join(projectRoot, relative);
+    const extension = NodePath.extname(relative).toLowerCase();
+    const kind = configuredKind(extension);
+    if (!kind) {
+      warnings.push(`Configured inspect file is not a supported artifact: ${relative}`);
+      return;
+    }
+    try {
+      const info = await NodeFSP.lstat(absolute);
+      if (info.isSymbolicLink() || !info.isFile()) {
+        warnings.push(`Configured inspect file not found: ${relative}`);
+        return;
+      }
+      files.push({
+        path: relative,
+        kind,
+        mimeType: MIME_TYPES[extension] ?? "application/octet-stream",
+        size: info.size,
+        mtimeMs: info.mtimeMs,
+      });
+    } catch {
+      warnings.push(`Configured inspect file not found: ${relative}`);
+    }
+  };
+  for (const relative of configuredArtifactPaths(config)) await includeInspectFile(relative);
   files.sort((a, b) => a.path.localeCompare(b.path));
   if (config?.pcb && !files.some((file) => file.path === config!.pcb))
     warnings.push(`Configured PCB file not found: ${config.pcb}`);

@@ -19,10 +19,17 @@ type Props = StaticScreenProps<{
   readonly environmentId: string;
   readonly threadId: string;
   readonly cwd: string;
+  readonly view?: string;
+  readonly title?: string;
 }>;
 
 export function KiCadViewerRouteScreen({ route }: Props) {
   const { cwd } = route.params;
+  const inspectView =
+    route.params.view === "enclosure" || route.params.view === "product"
+      ? route.params.view
+      : "pcb";
+  const inspectTitle = route.params.title ?? "KiCad";
   const environmentId = EnvironmentId.make(route.params.environmentId);
   const connection = usePreparedConnection(environmentId);
   const mintSession = useAtomQueryRunner(kicadState.session, {
@@ -69,14 +76,15 @@ export function KiCadViewerRouteScreen({ route }: Props) {
   const viewerUrl = useMemo(() => {
     if (!session || Option.isNone(connection)) return null;
     const url = new URL(`${connection.value.httpBaseUrl.replace(/\/$/, "")}/kicad.html`);
+    url.searchParams.set("view", inspectView);
     url.hash = new URLSearchParams({
       api: connection.value.httpBaseUrl,
       token: session.token,
-      view: "pcb",
+      view: inspectView,
       embedded: "1",
     }).toString();
     return url.toString();
-  }, [connection, session]);
+  }, [connection, inspectView, session]);
   const viewerOrigin = useMemo(() => (viewerUrl ? new URL(viewerUrl).origin : null), [viewerUrl]);
   const themeScript = useMemo(() => {
     const variables = {
@@ -99,7 +107,7 @@ export function KiCadViewerRouteScreen({ route }: Props) {
 
   return (
     <View className="flex-1 bg-sheet">
-      <NativeStackScreenOptions options={{ title: "KiCad" }} />
+      <NativeStackScreenOptions options={{ title: inspectTitle }} />
       {progress > 0 && progress < 1 ? <LoadingStrip progress={progress} /> : null}
       {viewerUrl ? (
         <WebView

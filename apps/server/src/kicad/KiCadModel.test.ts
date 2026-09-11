@@ -6,8 +6,15 @@ import { expect, it } from "vite-plus/test";
 import {
   createKiCadModelCache,
   kiCadGlbExportArgs,
+  kiCadModelAction,
   resolveKiCadModelRevision,
 } from "./KiCadModel.ts";
+
+it("exports PCB boards through kicad-cli and serves saved solids as-is", () => {
+  expect(kiCadModelAction({ kind: "pcb" })).toBe("export-glb");
+  expect(kiCadModelAction({ kind: "model" })).toBe("serve-existing");
+  expect(kiCadModelAction({ kind: "image" })).toBe("reject");
+});
 
 it("uses the fork-compatible full-fidelity GLB export options", () => {
   const args = kiCadGlbExportArgs("board.kicad_pcb", "/tmp/board.glb");

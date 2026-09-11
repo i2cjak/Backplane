@@ -1,7 +1,12 @@
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off globalTimers:off cryptoRandomUUID:off globalDateInEffect:off
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
-import { discoverKiCadProject, resolveKiCadProjectFile } from "./KiCadProject.ts";
+import {
+  configuredArtifactPaths,
+  discoverKiCadProject,
+  resolveKiCadProjectFile,
+} from "./KiCadProject.ts";
+import { kiCadModelAction } from "./KiCadModel.ts";
 import { afterEach, expect, vi } from "vite-plus/test";
 import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -149,5 +154,45 @@ it.effect("reads explicit library assignments and reports missing assigned asset
     expect(manifest.warnings).toContain(
       "Configured footprint file not found: generated/controller.kicad_mod",
     );
+  }),
+);
+
+it.effect("resolves saved FreeCAD solids and Blender product views from .backplane.json", () =>
+  Effect.promise(async () => {
+    const root = tempRoot();
+    const mech = NodePath.join(root, "mech");
+    NodeFS.mkdirSync(NodePath.join(root, "ws", "board"), { recursive: true });
+    NodeFS.mkdirSync(mech, { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(root, "ws", "board", "layout.kicad_pcb"), "pcb");
+    for (const [name, body] of [
+      ["board.glb", "glb-bytes"],
+      ["enclosure.step", "step-bytes"],
+      ["product.png", "png-bytes"],
+      ["render-a.png", "a-png"],
+      ["render-b.png", "b-png"],
+      [
+        "renders.json",
+        '{"product":"mech/product.png","outputs":{"look":"mech/render-a.png","alt":"mech/render-b.png"}}',
+      ],
+      ["blender-scene.json", '{"pcb_source":"mech/board.glb"}'],
+    ] as const)
+      NodeFS.writeFileSync(NodePath.join(mech, name), body);
+    NodeFS.writeFileSync(
+      NodePath.join(root, ".backplane.json"),
+      '{"pcb":"ws/board/layout.kicad_pcb","enclosure":{"solids":{"BOARD":"mech/board.glb","ENCLOSURE":"mech/enclosure.step"}},"product":{"still":"mech/product.png","scene":"mech/blender-scene.json","loadViz":"mech/renders.json"}}',
+    );
+    const manifest = await discoverKiCadProject(root);
+    expect(manifest.config?.product?.solids).toEqual({
+      PCB: "mech/board.glb",
+      ENCLOSURE: "mech/enclosure.step",
+    });
+    expect(manifest.config?.product?.renders?.look).toBe("mech/render-a.png");
+    expect(configuredArtifactPaths(manifest.config)).toContain("mech/render-b.png");
+    const solid = await resolveKiCadProjectFile(root, "mech/board.glb");
+    const still = await resolveKiCadProjectFile(root, "mech/product.png");
+    expect(solid?.file.kind).toBe("model");
+    expect(still?.file.kind).toBe("image");
+    expect(kiCadModelAction(solid!.file)).toBe("serve-existing");
+    expect(NodeFS.readFileSync(still!.absolutePath, "utf8")).toBe("png-bytes");
   }),
 );

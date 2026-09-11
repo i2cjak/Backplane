@@ -4,6 +4,7 @@ import {
   Box,
   CircuitBoard,
   FileText,
+  Image,
   Layers3,
   RefreshCw,
   Radio,
@@ -23,6 +24,14 @@ import { LibraryView } from "./LibraryView";
 import { AnalysisView } from "./AnalysisView";
 import { BomView } from "./BomView";
 import { resolveProjectDesign } from "./projectDesign";
+import { EnclosureView, ProductView } from "./CadInspectViews";
+import {
+  cadInspectLabelForKind,
+  cadInspectOpenHint,
+  inspectSurfaceKind,
+  isSiblingInspectView,
+  readViewerView,
+} from "./cadInspect";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 
 type View =
@@ -31,6 +40,8 @@ type View =
   | "schematic"
   | "3d"
   | "step"
+  | "enclosure"
+  | "product"
   | "footprint"
   | "symbol"
   | "analysis"
@@ -44,6 +55,12 @@ type Manifest = KiCadProjectManifest & {
     symbol?: string;
     symbolMember?: string;
     footprint?: string;
+    enclosure?: { solids?: Record<string, string> };
+    product?: {
+      still?: string;
+      renders?: Record<string, string>;
+      solids?: Record<string, string>;
+    };
   };
   warnings?: string[];
 };
@@ -156,14 +173,26 @@ function Notice({ text }: { text: string }) {
 
 function App() {
   const [view, setView] = useState<View>(
-    allTabs.some((tab) => tab.id === params.get("view")) ? (params.get("view") as View) : "pcb",
+    () => (readViewerView(location.hash, location.search) as View | undefined) ?? "pcb",
   );
+  useEffect(() => {
+    const sync = () => {
+      const next = readViewerView(location.hash, location.search);
+      if (next) setView(next as View);
+    };
+    window.addEventListener("hashchange", sync);
+    window.addEventListener("popstate", sync);
+    return () => {
+      window.removeEventListener("hashchange", sync);
+      window.removeEventListener("popstate", sync);
+    };
+  }, []);
   const [openTabs, setOpenTabs] = useState<View[]>(
     optionalTabs.some((tab) => tab.id === params.get("view")) ? [params.get("view") as View] : [],
   );
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [error, setError] = useState<string | null>(
-    token ? null : "Open this viewer from the project's KiCad panel.",
+    token ? null : cadInspectOpenHint(readViewerView(location.hash, location.search)),
   );
   const [browse, setBrowse] = useState(false);
   const [fileQuery, setFileQuery] = useState("");
@@ -295,7 +324,12 @@ function App() {
     item.path.toLowerCase().includes(fileQuery.toLowerCase()),
   );
   const nativeView = view === "pcb" || view === "schematic" ? view : null;
+  const sibling = isSiblingInspectView(view);
+  const surface = inspectSurfaceKind(view);
+  const Mark = surface === "freecad" ? Box : surface === "blender" ? Image : CircuitBoard;
+  const heading = sibling ? (cadInspectLabelForKind(surface) ?? surface) : designName;
   const chooseView = (next: View) => {
+    if (isSiblingInspectView(next)) return;
     setError(null);
     if (next === "pcb" || next === "schematic") setNativeVisited(true);
     setBrowse(false);
@@ -306,18 +340,19 @@ function App() {
     <main
       className="design-workspace flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground"
       data-kicad-viewer
+      data-inspect-surface={surface}
       data-revision={manifest?.revision}
     >
       <header className="design-header">
         <div className="design-mark" aria-hidden="true">
-          <CircuitBoard size={21} strokeWidth={1.5} />
+          <Mark size={21} strokeWidth={1.5} />
         </div>
         <Tooltip>
           <TooltipTrigger render={<div className="design-identity" />}>
-            <h1>{designName}</h1>
+            <h1>{heading}</h1>
           </TooltipTrigger>
           <TooltipPopup side="bottom" className="max-w-96 break-words">
-            {file?.path ?? designName}
+            {sibling ? heading : (file?.path ?? designName)}
           </TooltipPopup>
         </Tooltip>
         <span className="design-live">
@@ -335,7 +370,7 @@ function App() {
         >
           <RefreshCw size={15} />
         </button>
-        <nav className="design-navigation" aria-label="Design navigation">
+        <nav className="design-navigation" aria-label="Design navigation" hidden={sibling}>
           <div
             className="design-tabs"
             role="tablist"
@@ -413,7 +448,7 @@ function App() {
           </div>
         </nav>
       </header>
-      {view !== "analysis" && (
+      {view !== "analysis" && !sibling && (
         <div className="design-filebar">
           <div className="design-file-identity">
             <FileText size={14} aria-hidden="true" />
@@ -679,6 +714,21 @@ function App() {
                   <Notice text="Choose a PCB with Browse to preview it in 3D." />
                 )}
               </div>
+            )}
+            {view === "enclosure" && manifest && (
+              <EnclosureView
+                config={manifest.config ?? {}}
+                revision={`${revision}:${refresh}`}
+                modelUrl={(path) => apiUrl("model", path, revision)}
+              />
+            )}
+            {view === "product" && manifest && (
+              <ProductView
+                config={manifest.config ?? {}}
+                revision={`${revision}:${refresh}`}
+                assetUrl={(path) => apiUrl("assets", path, revision)}
+                modelUrl={(path) => apiUrl("model", path, revision)}
+              />
             )}
           </>
         )}

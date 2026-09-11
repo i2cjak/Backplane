@@ -9,6 +9,7 @@ export const KiCadFileKind = Schema.Literals([
   "project",
   "footprint",
   "symbol",
+  "image",
 ]);
 export type KiCadFileKind = typeof KiCadFileKind.Type;
 
@@ -29,6 +30,18 @@ export const KiCadProjectConfig = Schema.Struct({
   symbol: Schema.optionalKey(Schema.String),
   symbolMember: Schema.optionalKey(Schema.String),
   footprint: Schema.optionalKey(Schema.String),
+  enclosure: Schema.optionalKey(
+    Schema.Struct({
+      solids: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+    }),
+  ),
+  product: Schema.optionalKey(
+    Schema.Struct({
+      still: Schema.optionalKey(Schema.String),
+      renders: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+      solids: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+    }),
+  ),
 });
 export type KiCadProjectConfig = typeof KiCadProjectConfig.Type;
 

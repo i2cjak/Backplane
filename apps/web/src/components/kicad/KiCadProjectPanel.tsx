@@ -12,14 +12,23 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { openUrlInPreview } from "~/browser/openFileInPreview";
 
 import { PreviewPanelShell, type PreviewPanelMode } from "../preview/PreviewPanelShell";
+import { cadInspectViewerSearch } from "~/kicad/cadInspect";
 
 export interface KiCadProjectPanelProps {
   readonly mode: PreviewPanelMode;
   readonly threadRef: ScopedThreadRef;
   readonly projectPath: string | null;
+  readonly inspectView?: "pcb" | "enclosure" | "product";
+  readonly title?: string;
 }
 
-export function KiCadProjectPanel({ mode, threadRef, projectPath }: KiCadProjectPanelProps) {
+export function KiCadProjectPanel({
+  mode,
+  threadRef,
+  projectPath,
+  inspectView = "pcb",
+  title = "KiCad",
+}: KiCadProjectPanelProps) {
   const [session, setSession] = useState<KiCadViewerSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -101,10 +110,11 @@ export function KiCadProjectPanel({ mode, threadRef, projectPath }: KiCadProject
   const viewerUrl = session
     ? (() => {
         const url = new URL("/kicad.html", window.location.href);
+        url.search = cadInspectViewerSearch(inspectView);
         url.hash = new URLSearchParams({
           api: Option.isSome(connection) ? connection.value.httpBaseUrl : window.location.origin,
           token: session.token,
-          view: "pcb",
+          view: inspectView,
           embedded: "1",
         }).toString();
         return url.toString();
@@ -121,12 +131,12 @@ export function KiCadProjectPanel({ mode, threadRef, projectPath }: KiCadProject
     } else {
       void openUrlInPreview({ threadRef, url: viewerUrl, openPreview });
     }
-  }, [connection, openPreview, threadRef, viewerUrl]);
+  }, [connection, inspectView, openPreview, threadRef, viewerUrl]);
   return (
     <PreviewPanelShell mode={mode} widthStorageKey="backplane:kicad-panel-width" defaultWidth={620}>
       <div className="flex h-full min-h-0 flex-col bg-background" data-kicad-panel>
         <div className="flex min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-2 border-b border-border px-3 text-xs">
-          <span className="font-medium text-foreground">KiCad</span>
+          <span className="font-medium text-foreground">{title}</span>
           <span className="min-w-0 flex-1 truncate text-muted-foreground">
             {projectPath?.split(/[\\/]/).filter(Boolean).at(-1) ?? "Current project"}
           </span>
@@ -138,7 +148,7 @@ export function KiCadProjectPanel({ mode, threadRef, projectPath }: KiCadProject
             disabled={!viewerUrl}
             className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
             onClick={openInBrowser}
-            aria-label="Open KiCad viewer in browser"
+            aria-label={`Open ${title} viewer in browser`}
           >
             <ExternalLink className="size-3.5" />
           </button>
@@ -146,9 +156,10 @@ export function KiCadProjectPanel({ mode, threadRef, projectPath }: KiCadProject
         <div className="relative min-h-0 flex-1 bg-[#101214]">
           {viewerUrl ? (
             <iframe
+              key={inspectView}
               ref={iframeRef}
               onLoad={sendTheme}
-              title="KiCad project viewer"
+              title={`${title} project viewer`}
               src={viewerUrl}
               className="block h-full w-full border-0"
             />

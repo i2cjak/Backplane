@@ -192,6 +192,7 @@ import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavaila
 import { RightPanelTabs } from "./RightPanelTabs";
 import { AgentsPanel } from "./AgentsPanel";
 import { KiCadProjectPanel } from "./kicad/KiCadProjectPanel";
+import { cadInspectLabelForKind, cadInspectViewForKind } from "~/kicad/cadInspect";
 import {
   deriveAgentPanelModel,
   foldSubagentActivities,
@@ -3960,6 +3961,14 @@ export default function ChatView(props: ChatViewProps) {
     if (!activeThreadRef || !activeProject) return;
     useRightPanelStore.getState().open(activeThreadRef, "kicad");
   }, [activeProject, activeThreadRef]);
+  const addFreeCadSurface = useCallback(() => {
+    if (!activeThreadRef || !activeProject) return;
+    useRightPanelStore.getState().open(activeThreadRef, "freecad");
+  }, [activeProject, activeThreadRef]);
+  const addBlenderSurface = useCallback(() => {
+    if (!activeThreadRef || !activeProject) return;
+    useRightPanelStore.getState().open(activeThreadRef, "blender");
+  }, [activeProject, activeThreadRef]);
   const openFileSurface = useCallback(
     (relativePath: string) => {
       if (!activeThreadRef || !activeProject) return;
@@ -7718,11 +7727,16 @@ export default function ChatView(props: ChatViewProps) {
         environmentId={activeThreadRef?.environmentId ?? null}
         threadId={activeThreadRef?.threadId ?? null}
       />
-    ) : renderedRightPanelSurface?.kind === "kicad" ? (
+    ) : renderedRightPanelSurface?.kind === "kicad" ||
+      renderedRightPanelSurface?.kind === "freecad" ||
+      renderedRightPanelSurface?.kind === "blender" ? (
       <KiCadProjectPanel
+        key={renderedRightPanelSurface.kind}
         mode="embedded"
         threadRef={activeThreadRef}
         projectPath={activeWorkspaceRoot ?? null}
+        inspectView={cadInspectViewForKind(renderedRightPanelSurface.kind) ?? "pcb"}
+        title={cadInspectLabelForKind(renderedRightPanelSurface.kind) ?? "KiCad"}
       />
     ) : (renderedRightPanelSurface?.kind === "files" ||
         renderedRightPanelSurface?.kind === "file") &&
@@ -8276,6 +8290,8 @@ export default function ChatView(props: ChatViewProps) {
           onAddPullRequest={addPullRequestSurface}
           onAddAgents={addAgentsSurface}
           onAddKiCad={addKiCadSurface}
+          onAddFreeCad={addFreeCadSurface}
+          onAddBlender={addBlenderSurface}
           browserAvailable={isPreviewSupportedInRuntime()}
           terminalAvailable={activeProject !== null}
           diffAvailable={isServerThread && isGitRepo}
@@ -8283,6 +8299,8 @@ export default function ChatView(props: ChatViewProps) {
           pullRequestAvailable={pullRequestSurfaceAvailable}
           agentsAvailable
           kicadAvailable={activeProject !== null}
+          freecadAvailable={activeProject !== null}
+          blenderAvailable={activeProject !== null}
           liveAgentCount={agentPanelModel.liveCount}
         >
           {rightPanelContent}
@@ -8328,6 +8346,8 @@ export default function ChatView(props: ChatViewProps) {
             onAddPullRequest={addPullRequestSurface}
             onAddAgents={addAgentsSurface}
             onAddKiCad={addKiCadSurface}
+            onAddFreeCad={addFreeCadSurface}
+            onAddBlender={addBlenderSurface}
             browserAvailable={isPreviewSupportedInRuntime()}
             terminalAvailable={activeProject !== null}
             diffAvailable={isServerThread && isGitRepo}
@@ -8335,6 +8355,8 @@ export default function ChatView(props: ChatViewProps) {
             pullRequestAvailable={pullRequestSurfaceAvailable}
             agentsAvailable
             kicadAvailable={activeProject !== null}
+            freecadAvailable={activeProject !== null}
+            blenderAvailable={activeProject !== null}
             liveAgentCount={agentPanelModel.liveCount}
           >
             {rightPanelContent}

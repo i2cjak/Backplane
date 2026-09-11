@@ -8,6 +8,7 @@ import type {
 import { getTerminalLabel } from "@backplane/shared/terminalLabels";
 import {
   Bot,
+  Box,
   CircuitBoard,
   ChevronDown,
   ChevronLeft,
@@ -16,6 +17,7 @@ import {
   Files,
   GitPullRequest,
   Globe2,
+  Image,
   Plus,
   TerminalSquare,
   Volume2,
@@ -107,6 +109,8 @@ interface RightPanelTabsProps {
   onAddPullRequest: () => void;
   onAddAgents: () => void;
   onAddKiCad?: () => void;
+  onAddFreeCad?: () => void;
+  onAddBlender?: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
@@ -114,6 +118,8 @@ interface RightPanelTabsProps {
   pullRequestAvailable: boolean;
   agentsAvailable: boolean;
   kicadAvailable?: boolean;
+  freecadAvailable?: boolean;
+  blenderAvailable?: boolean;
   pullRequestStatusSeeds?: Readonly<Record<string, PullRequestTabStatusSeed>>;
   /** Running + waiting subagents; badges the Agents card in the empty state. */
   liveAgentCount: number;
@@ -144,6 +150,8 @@ const SURFACE_DISABLED_REASONS = {
   pullRequest: "This thread's branch has no pull request yet.",
   agents: "Agents are only available from a thread.",
   kicad: "KiCad is only available when a project is open.",
+  freecad: "FreeCAD inspect is only available when a project is open.",
+  blender: "Blender inspect is only available when a project is open.",
 } as const;
 
 /** Overlays that must win over the launcher's letter shortcuts. */
@@ -167,6 +175,8 @@ const SURFACE_UNAVAILABLE_HINTS = {
   pullRequest: "No pull request on this branch yet.",
   agents: "Available from a thread.",
   kicad: "Available when a project is open.",
+  freecad: "Available when a project is open.",
+  blender: "Available when a project is open.",
 } as const;
 
 type TabContextMenuAction =
@@ -305,6 +315,8 @@ function RightPanelEmptyState(props: {
   onAddPullRequest: () => void;
   onAddAgents: () => void;
   onAddKiCad: () => void;
+  onAddFreeCad: () => void;
+  onAddBlender: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
@@ -312,6 +324,8 @@ function RightPanelEmptyState(props: {
   pullRequestAvailable: boolean;
   agentsAvailable: boolean;
   kicadAvailable: boolean;
+  freecadAvailable: boolean;
+  blenderAvailable: boolean;
   liveAgentCount: number;
 }) {
   // -1 means no highlight: it only appears on hover or arrow use.
@@ -386,6 +400,26 @@ function RightPanelEmptyState(props: {
       available: props.kicadAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.kicad,
       onClick: props.onAddKiCad ?? (() => undefined),
+      badgeCount: 0,
+    },
+    {
+      label: "FreeCAD",
+      description: "Inspect saved enclosure solids.",
+      icon: Box,
+      shortcut: "E",
+      available: props.freecadAvailable,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.freecad,
+      onClick: props.onAddFreeCad,
+      badgeCount: 0,
+    },
+    {
+      label: "Blender",
+      description: "Inspect saved product 3D and other render files.",
+      icon: Image,
+      shortcut: "V",
+      available: props.blenderAvailable,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.blender,
+      onClick: props.onAddBlender,
       badgeCount: 0,
     },
   ] as const;
@@ -623,6 +657,10 @@ function surfaceTitle(
       return "Agents";
     case "kicad":
       return "KiCad";
+    case "freecad":
+      return "FreeCAD";
+    case "blender":
+      return "Blender";
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       if (!snapshot || snapshot.navStatus._tag === "Idle") return "Browser";
@@ -706,6 +744,10 @@ function SurfaceIcon({
       return <Bot className="size-3 shrink-0" />;
     case "kicad":
       return <CircuitBoard className="size-3 shrink-0" />;
+    case "freecad":
+      return <Box className="size-3 shrink-0" />;
+    case "blender":
+      return <Image className="size-3 shrink-0" />;
   }
 }
 
@@ -842,6 +884,22 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       available: props.kicadAvailable ?? false,
       disabledReason: SURFACE_DISABLED_REASONS.kicad,
       onClick: props.onAddKiCad ?? (() => undefined),
+    },
+    {
+      label: "FreeCAD",
+      icon: Box,
+      shortcut: "E",
+      available: props.freecadAvailable ?? props.kicadAvailable ?? false,
+      disabledReason: SURFACE_DISABLED_REASONS.freecad,
+      onClick: props.onAddFreeCad ?? (() => undefined),
+    },
+    {
+      label: "Blender",
+      icon: Image,
+      shortcut: "V",
+      available: props.blenderAvailable ?? props.kicadAvailable ?? false,
+      disabledReason: SURFACE_DISABLED_REASONS.blender,
+      onClick: props.onAddBlender ?? (() => undefined),
     },
   ] as const;
 
@@ -1281,6 +1339,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddPullRequest={props.onAddPullRequest}
             onAddAgents={props.onAddAgents}
             onAddKiCad={props.onAddKiCad ?? (() => undefined)}
+            onAddFreeCad={props.onAddFreeCad ?? (() => undefined)}
+            onAddBlender={props.onAddBlender ?? (() => undefined)}
             browserAvailable={props.browserAvailable}
             terminalAvailable={props.terminalAvailable}
             diffAvailable={props.diffAvailable}
@@ -1288,6 +1348,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             pullRequestAvailable={props.pullRequestAvailable}
             agentsAvailable={props.agentsAvailable}
             kicadAvailable={props.kicadAvailable ?? false}
+            freecadAvailable={props.freecadAvailable ?? props.kicadAvailable ?? false}
+            blenderAvailable={props.blenderAvailable ?? props.kicadAvailable ?? false}
             liveAgentCount={props.liveAgentCount}
           />
         ) : (

@@ -23,6 +23,8 @@ const RIGHT_PANEL_KINDS = [
   "pull-request",
   "agents",
   "kicad",
+  "freecad",
+  "blender",
 ] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
@@ -68,7 +70,9 @@ export type RightPanelSurface =
       number: number;
     }
   | { id: "agents"; kind: "agents" }
-  | { id: "kicad"; kind: "kicad" };
+  | { id: "kicad"; kind: "kicad" }
+  | { id: "freecad"; kind: "freecad" }
+  | { id: "blender"; kind: "blender" };
 
 const RIGHT_PANEL_STORAGE_KEY = "backplane:right-panel-state:v2";
 // v9 removed the "plan" surface kind (plans render inline in the transcript).
@@ -157,6 +161,10 @@ const singletonSurface = (
       return { id: "agents", kind };
     case "kicad":
       return { id: "kicad", kind };
+    case "freecad":
+      return { id: "freecad", kind };
+    case "blender":
+      return { id: "blender", kind };
   }
 };
 

@@ -5,7 +5,11 @@ import Mime from "@effect/platform-node/Mime";
 import * as NodeCrypto from "node:crypto";
 import { kiCadLibraryCache } from "./kicad/KiCadLibrary.ts";
 import { kiCadBomCache } from "./kicad/KiCadBom.ts";
-import { kiCadModelCache, resolveKiCadModelRevision } from "./kicad/KiCadModel.ts";
+import {
+  kiCadModelAction,
+  kiCadModelCache,
+  resolveKiCadModelRevision,
+} from "./kicad/KiCadModel.ts";
 import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
@@ -501,7 +505,17 @@ export const kicadModelRouteLayer = HttpRouter.add(
       return HttpServerResponse.text("Missing cwd or path", { status: 400 });
     const manifest = yield* Effect.tryPromise(() => discoverKiCadProject(cwd));
     const asset = yield* Effect.tryPromise(() => resolveKiCadProjectFile(cwd, requestedPath));
-    if (!asset || asset.file.kind !== "pcb")
+    if (!asset) return HttpServerResponse.text("PCB file not found", { status: 404 });
+    if (kiCadModelAction(asset.file) === "serve-existing") {
+      return yield* HttpServerResponse.file(asset.absolutePath, {
+        headers: {
+          "Content-Type": asset.file.mimeType,
+          "Cache-Control": "private, no-cache",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    }
+    if (asset.file.kind !== "pcb")
       return HttpServerResponse.text("PCB file not found", { status: 404 });
     const projectFiles = yield* Effect.tryPromise(async () =>
       (
