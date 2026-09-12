@@ -15,7 +15,21 @@ function dataFromNotificationResponse(response: unknown): Record<string, unknown
     return null;
   }
   const data = (content as { readonly data?: unknown }).data;
-  return typeof data === "object" && data !== null ? (data as Record<string, unknown>) : null;
+  if (typeof data === "object" && data !== null) {
+    return data as Record<string, unknown>;
+  }
+
+  // Expo's iOS remote notification serializer only copies userInfo["body"]
+  // into content.data. Direct APNs payloads from Backplane keep the routing
+  // fields at the top level, which remains available on the push trigger.
+  const trigger = (request as { readonly trigger?: unknown }).trigger;
+  if (typeof trigger !== "object" || trigger === null) {
+    return null;
+  }
+  const payload = (trigger as { readonly payload?: unknown }).payload;
+  return typeof payload === "object" && payload !== null
+    ? (payload as Record<string, unknown>)
+    : null;
 }
 
 function identifierFromNotificationResponse(response: unknown): string | null {
@@ -70,37 +84,73 @@ function normalizeThreadDeepLink(value: string): string | null {
 }
 
 export function extractAgentNotificationDeepLink(response: unknown): string | null {
+  const target = extractAgentNotificationThreadTarget(response);
+  return target ? encodeThreadDeepLink(target) : null;
+}
+
+/**
+ * Returns route params separately from the URL representation. Notification
+ * taps are already inside the native navigation tree, so consumers can use
+ * the typed route directly and avoid asking the linking layer to dispatch an
+ * action while a cold-start navigator is still settling.
+ */
+export type AgentNotificationThreadTarget = Readonly<{
+  environmentId: string;
+  threadId: string;
+}>;
+
+export function extractAgentNotificationThreadTarget(
+  response: unknown,
+): AgentNotificationThreadTarget | null {
   const data = dataFromNotificationResponse(response);
   const deepLink = data?.deepLink;
   if (typeof deepLink === "string") {
     const normalizedDeepLink = normalizeThreadDeepLink(deepLink);
     if (normalizedDeepLink) {
-      return normalizedDeepLink;
+      const parts = normalizedDeepLink.split("/");
+      try {
+        return {
+          environmentId: decodeURIComponent(parts[2] ?? ""),
+          threadId: decodeURIComponent(parts[3] ?? ""),
+        };
+      } catch {
+        return null;
+      }
     }
   }
 
   const environmentId = data?.environmentId;
   const threadId = data?.threadId;
   if (typeof environmentId === "string" && typeof threadId === "string") {
-    return encodeThreadDeepLink({ environmentId, threadId });
+    return encodeThreadTarget({ environmentId, threadId });
   }
   return null;
+}
+
+function encodeThreadTarget(input: {
+  readonly environmentId: string;
+  readonly threadId: string;
+}): AgentNotificationThreadTarget | null {
+  return input.environmentId.length > 0 && input.threadId.length > 0 ? input : null;
 }
 
 export function routeAgentNotificationResponseOnce(input: {
   readonly handledResponseIds: Set<string>;
   readonly response: unknown;
-  readonly navigate: (deepLink: string) => void;
+  readonly navigate: (target: AgentNotificationThreadTarget) => void;
 }): void {
   const responseId = identifierFromNotificationResponse(input.response);
   if (responseId && input.handledResponseIds.has(responseId)) {
     return;
   }
-  if (responseId) {
-    input.handledResponseIds.add(responseId);
-  }
-  const deepLink = extractAgentNotificationDeepLink(input.response);
-  if (deepLink) {
-    input.navigate(deepLink);
+  const target = extractAgentNotificationThreadTarget(input.response);
+  if (target) {
+    input.navigate(target);
+    // Keep failed navigation retryable. This matters during cold start, when
+    // the notification listener can receive the same response before the
+    // native navigation tree has finished mounting.
+    if (responseId) {
+      input.handledResponseIds.add(responseId);
+    }
   }
 }

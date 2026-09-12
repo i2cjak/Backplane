@@ -66,6 +66,37 @@ type RegistrationInput = {
   activityToken?: string;
   pushToken?: string;
 };
+
+export async function registerDirectPushWithActivityToken(input: {
+  readonly connection: SavedRemoteConnection;
+  readonly liveActivitiesEnabled: boolean;
+  readonly pushToken?: string;
+  readonly activity?: { getPushToken(): Promise<string | null | undefined> };
+}): Promise<void> {
+  // An activity ended by APNs can throw on token lookup when the app resumes.
+  // Register alerts first so that activity state cannot block their delivery.
+  await registerDirectPush({
+    connection: input.connection,
+    liveActivitiesEnabled: input.liveActivitiesEnabled,
+    ...(input.pushToken ? { pushToken: input.pushToken } : {}),
+  });
+  if (!input.activity) return;
+  try {
+    const activityToken = await input.activity.getPushToken();
+    if (activityToken) {
+      await registerDirectPush({
+        connection: input.connection,
+        liveActivitiesEnabled: input.liveActivitiesEnabled,
+        activityToken,
+        ...(input.pushToken ? { pushToken: input.pushToken } : {}),
+      });
+    }
+    setDirectPushError(`${input.connection.environmentId}:activity`, "");
+  } catch (error) {
+    setDirectPushError(`${input.connection.environmentId}:activity`, String(error));
+  }
+}
+
 export function registerDirectPush(input: RegistrationInput) {
   if (input.pushToken) cachedPushToken = input.pushToken;
   const key = input.connection.environmentId;

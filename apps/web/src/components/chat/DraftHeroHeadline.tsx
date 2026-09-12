@@ -2,8 +2,8 @@ import type { DraftId } from "~/composerDraftStore";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import type { ScopedProjectRef } from "@backplane/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@backplane/client-runtime/environment";
-import { FolderPlusIcon } from "lucide-react";
-import { useCallback, useMemo } from "react";
+import { FolderPlusIcon, SearchIcon } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
 import { useClientSettings } from "~/hooks/useSettings";
@@ -16,6 +16,7 @@ import {
 import { useProjects, useThreadShells } from "~/state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { sortLogicalProjectsForSidebar } from "../Sidebar.logic";
+import { Input } from "../ui/input";
 import {
   Menu,
   MenuItem,
@@ -51,6 +52,7 @@ export function DraftHeroHeadline({
   const applyStickyState = useComposerDraftStore((store) => store.applyStickyState);
   const setModelSelection = useComposerDraftStore((store) => store.setModelSelection);
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
+  const [projectSearchQuery, setProjectSearchQuery] = useState("");
 
   const environmentLabelById = useMemo(
     () =>
@@ -93,6 +95,21 @@ export function DraftHeroHeadline({
     () => new Map(projectPickerEntries.map((entry) => [entry.group.projectKey, entry] as const)),
     [projectPickerEntries],
   );
+  const visibleProjectPickerEntries = useMemo(() => {
+    const query = projectSearchQuery.trim().toLocaleLowerCase();
+    if (query.length === 0) return projectPickerEntries;
+    return projectPickerEntries.filter(({ group }) => {
+      const searchText = [
+        group.displayName,
+        group.title,
+        group.workspaceRoot,
+        ...group.memberProjects.flatMap((project) => [project.title, project.workspaceRoot]),
+      ]
+        .join(" ")
+        .toLocaleLowerCase();
+      return searchText.includes(query);
+    });
+  }, [projectPickerEntries, projectSearchQuery]);
   const activeProjectGroup =
     activeProjectRef === null
       ? null
@@ -108,7 +125,11 @@ export function DraftHeroHeadline({
   const shouldShowProjectMenu = canChooseProject;
 
   const projectSelector = shouldShowProjectMenu ? (
-    <Menu>
+    <Menu
+      onOpenChange={(open) => {
+        if (!open) setProjectSearchQuery("");
+      }}
+    >
       <Tooltip>
         <TooltipTrigger
           render={
@@ -126,7 +147,29 @@ export function DraftHeroHeadline({
           </TooltipPopup>
         ) : null}
       </Tooltip>
-      <MenuPopup align="center" className="max-h-80 min-w-40! w-max max-w-64 overflow-y-auto">
+      <MenuPopup align="center" className="max-h-96 min-w-64! w-max max-w-80 overflow-y-auto">
+        <div className="relative mx-1 mb-1 border-b border-border/70 transition-colors focus-within:border-ring">
+          <SearchIcon
+            aria-hidden="true"
+            className="pointer-events-none absolute top-1.5 left-1 size-4 text-muted-foreground/60"
+          />
+          <Input
+            aria-label="Search projects"
+            className="h-7 rounded-none bg-transparent ps-6 text-sm"
+            nativeInput
+            placeholder="Search projects..."
+            type="search"
+            value={projectSearchQuery}
+            autoFocus
+            onChange={(event) => setProjectSearchQuery(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key.length === 1 || event.key === "Backspace" || event.key === "Delete") {
+                event.stopPropagation();
+              }
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+          />
+        </div>
         <MenuRadioGroup
           value={activeProjectKey}
           onValueChange={(value) => {
@@ -162,7 +205,7 @@ export function DraftHeroHeadline({
             }
           }}
         >
-          {projectPickerEntries.map(({ group }) => {
+          {visibleProjectPickerEntries.map(({ group }) => {
             return (
               <MenuRadioItem key={group.projectKey} value={group.projectKey} closeOnClick>
                 <Tooltip>
@@ -177,6 +220,9 @@ export function DraftHeroHeadline({
             );
           })}
         </MenuRadioGroup>
+        {visibleProjectPickerEntries.length === 0 ? (
+          <div className="px-2 py-2 text-muted-foreground text-sm">No projects found</div>
+        ) : null}
         <MenuSeparator />
         <MenuItem onClick={openAddProject}>
           <FolderPlusIcon />
