@@ -21,6 +21,7 @@ import {
   setDirectPushError,
   onDirectPushRefresh,
   registerDirectPush,
+  registerDirectPushWithActivityToken,
   subscribeDirectPushStatus,
 } from "./directRegistration";
 
@@ -150,14 +151,13 @@ export function useLocalAgentAwareness() {
     const refresh = (pushToken?: string) => {
       for (const connection of Object.values(current.current.savedConnectionsById)) {
         void (async () => {
-          const activityToken = await activities.current
-            .get(connection.environmentId)
-            ?.activity.getPushToken();
-          await registerRef.current(
-            connection.environmentId,
-            activityToken ?? undefined,
-            pushToken,
-          );
+          const activity = activities.current.get(connection.environmentId);
+          await registerDirectPushWithActivityToken({
+            connection,
+            liveActivitiesEnabled: current.current.enabled,
+            ...(pushToken ? { pushToken } : {}),
+            ...(activity ? { activity: activity.activity } : {}),
+          });
         })().catch((error: unknown) => console.warn("Live Activity token refresh failed", error));
       }
     };

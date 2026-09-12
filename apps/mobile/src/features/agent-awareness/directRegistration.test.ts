@@ -72,3 +72,50 @@ it("accepts provisional iOS permission instead of disabling delivery", async () 
   await registerDirectPush({ connection, liveActivitiesEnabled: true });
   expect(JSON.parse(mocks.fetch.mock.calls[0]![1].body).notificationsEnabled).toBe(true);
 });
+
+it("registers ordinary notifications before a failed Live Activity token lookup", async () => {
+  const { registerDirectPushWithActivityToken, getDirectPushErrors } =
+    await import("./directRegistration");
+  await registerDirectPushWithActivityToken({
+    connection,
+    liveActivitiesEnabled: true,
+    activity: { getPushToken: () => Promise.reject(new Error("activity ended")) },
+  });
+  expect(mocks.fetch).toHaveBeenCalledTimes(1);
+  expect(getDirectPushErrors().get("one:activity")).toContain("activity ended");
+});
+
+it("refreshes the registration with a Live Activity token after ordinary registration", async () => {
+  const { registerDirectPushWithActivityToken } = await import("./directRegistration");
+  await registerDirectPushWithActivityToken({
+    connection,
+    liveActivitiesEnabled: true,
+    activity: { getPushToken: () => Promise.resolve("b".repeat(64)) },
+  });
+  expect(mocks.fetch).toHaveBeenCalledTimes(2);
+  expect(JSON.parse(mocks.fetch.mock.calls[1]![1].body).activityToken).toBe("b".repeat(64));
+});
+
+it("does not wait for a pending Live Activity token before ordinary registration", async () => {
+  const { registerDirectPushWithActivityToken, getDirectPushStatuses } =
+    await import("./directRegistration");
+  const activityToken = Promise.withResolvers<string>();
+  const lookupStarted = Promise.withResolvers<void>();
+  const registration = registerDirectPushWithActivityToken({
+    connection,
+    liveActivitiesEnabled: true,
+    activity: {
+      getPushToken: async () => {
+        lookupStarted.resolve();
+        return activityToken.promise;
+      },
+    },
+  });
+  await lookupStarted.promise;
+  expect(mocks.fetch).toHaveBeenCalledTimes(1);
+  expect(JSON.parse(mocks.fetch.mock.calls[0]![1].body).pushToken).toBe("a".repeat(64));
+  expect(getDirectPushStatuses().get("one")).toBe("registered");
+  activityToken.resolve("c".repeat(64));
+  await registration;
+  expect(mocks.fetch).toHaveBeenCalledTimes(2);
+});

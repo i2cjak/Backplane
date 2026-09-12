@@ -147,6 +147,37 @@ Create the existing iOS TestFlight build:
 vp run eas:ios:testflight
 ```
 
+Manual Xcode releases must preserve the app and extension entitlements. Prefer a normally
+signed archive with `-allowProvisioningUpdates`. An archive produced with
+`CODE_SIGNING_ALLOWED=NO` can export and upload successfully while silently losing push and
+App Group entitlements. When cloud signing requires an unsigned archive, first ad hoc sign
+both extensions and then the app, using each target's generated entitlements:
+
+```bash
+codesign --force --sign - --entitlements ios/ExpoWidgetsTarget/ExpoWidgetsTarget.entitlements \
+  "$ARCHIVE_PATH/Products/Applications/Backplane.app/PlugIns/ExpoWidgetsTarget.appex"
+codesign --force --sign - --entitlements ios/expo-sharing-extension/expo-sharing-extension.entitlements \
+  "$ARCHIVE_PATH/Products/Applications/Backplane.app/PlugIns/expo-sharing-extension.appex"
+codesign --force --sign - --entitlements ios/Backplane/Backplane.entitlements \
+  "$ARCHIVE_PATH/Products/Applications/Backplane.app"
+```
+
+These are intermediate signatures. Export through Xcode with Apple distribution signing,
+then inspect the actual IPA before uploading:
+
+```bash
+ios_export_check=$(mktemp -d)
+ditto -x -k /path/to/Backplane.ipa "$ios_export_check"
+codesign --verify --deep --strict "$ios_export_check/Payload/Backplane.app"
+codesign -dvv --entitlements :- "$ios_export_check/Payload/Backplane.app"
+```
+
+Require an Apple signing authority, `aps-environment=production`, and
+`com.apple.security.application-groups` containing `group.com.i2cjak.k3eda`.
+Inspect both bundles under `PlugIns` for Apple signatures and the same App Group. Also check
+that the app and both extensions carry the intended version and build number; generated
+Info.plist values can override command-line build settings.
+
 Android equivalents:
 
 ```bash
