@@ -7,13 +7,13 @@ import {
 } from "@react-navigation/native";
 import { SymbolView } from "../../components/AppSymbol";
 import type { EnvironmentProject } from "@backplane/client-runtime/state/shell";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { cn } from "../../lib/cn";
 
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
-import { AppText as Text } from "../../components/AppText";
+import { AppText as Text, AppTextInput } from "../../components/AppText";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { useProjects } from "../../state/entities";
 import type { WorkspaceState } from "../../state/workspaceModel";
@@ -85,6 +85,7 @@ function deriveProjectEmptyState(catalogState: WorkspaceState): {
 export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRouteParams | undefined>) {
   const projects = useProjects();
   const { projectScopes, selectedEnvironmentId, setProject } = useNewTaskFlow();
+  const [projectSearchQuery, setProjectSearchQuery] = useState("");
   const { state: catalogState } = useWorkspaceState();
   const navigation = useNavigation();
   const isFocused = useIsFocused();
@@ -104,6 +105,18 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
     : null;
   const screenTitle = incomingShare ? "Start a task" : "Choose project";
   const projectEmptyState = deriveProjectEmptyState(catalogState);
+  const filteredProjectScopes = useMemo(() => {
+    const query = projectSearchQuery.trim().toLocaleLowerCase();
+    if (query.length === 0) {
+      return projectScopes;
+    }
+    return projectScopes.filter((scope) =>
+      [
+        scope.title,
+        ...scope.projects.flatMap((project) => [project.title, project.workspaceRoot]),
+      ].some((value) => value.toLocaleLowerCase().includes(query)),
+    );
+  }, [projectScopes, projectSearchQuery]);
   const resumedDestinationKeyRef = useRef<string | null>(null);
   const reservedDestinationProject = incomingShare?.destination
     ? (projects.find(
@@ -228,6 +241,8 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
 
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         className="flex-1"
         contentContainerStyle={{
@@ -269,54 +284,92 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
             )}
           </View>
         ) : (
-          <View collapsable={false} className="overflow-hidden rounded-[24px] bg-card">
-            {projectScopes.map((scope, scopeIndex) => {
-              const hasMultipleProjects = scope.projects.length > 1;
-              const selectionTarget = getProjectScopeSelectionTarget(scope, selectedEnvironmentId);
-              return (
-                <View
-                  key={scope.key}
-                  className={cn(scopeIndex > 0 && "border-t border-border-subtle")}
-                >
-                  <Pressable
-                    disabled={reservedDestinationProject !== null}
-                    onPress={() => void selectProject(selectionTarget)}
-                    className="flex-row items-center gap-3 bg-card px-4 py-3.5"
-                  >
-                    <View className="h-7 w-7 items-center justify-center">
-                      <ProjectFavicon
-                        environmentId={scope.representative.environmentId}
-                        faviconPath={scope.representative.faviconPath}
-                        size={20}
-                        projectTitle={scope.title}
-                        workspaceRoot={scope.representative.workspaceRoot}
-                      />
-                    </View>
-                    <View className="min-w-0 flex-1">
-                      <Text className="text-base leading-snug font-backplane-bold">
-                        {scope.title}
-                      </Text>
-                      <Text
-                        className="text-xs leading-snug text-foreground-muted"
-                        ellipsizeMode="middle"
-                        numberOfLines={1}
+          <>
+            <View className="h-[42px] flex-row items-center gap-1.5 rounded-xl bg-sidebar-search pr-2.5 pl-[11px]">
+              <SymbolView
+                name="magnifyingglass"
+                size={15}
+                tintColorClassName={"accent-foreground-muted"}
+                type="monochrome"
+              />
+              <AppTextInput
+                accessibilityLabel="Search projects"
+                autoCapitalize="none"
+                autoCorrect={false}
+                clearButtonMode="while-editing"
+                onChangeText={setProjectSearchQuery}
+                placeholder="Search projects"
+                returnKeyType="search"
+                className="h-[38px] min-h-0 flex-1 rounded-none border-0 bg-transparent px-0 py-0 text-base"
+                value={projectSearchQuery}
+              />
+            </View>
+            {filteredProjectScopes.length === 0 ? (
+              <View
+                collapsable={false}
+                className="items-center gap-2 rounded-[24px] bg-card px-6 py-8"
+              >
+                <Text className="text-center text-lg font-backplane-bold text-foreground">
+                  No matching projects
+                </Text>
+                <Text className="text-center text-sm leading-normal text-foreground-muted">
+                  Try a different project name or workspace path.
+                </Text>
+              </View>
+            ) : (
+              <View collapsable={false} className="overflow-hidden rounded-[24px] bg-card">
+                {filteredProjectScopes.map((scope, scopeIndex) => {
+                  const hasMultipleProjects = scope.projects.length > 1;
+                  const selectionTarget = getProjectScopeSelectionTarget(
+                    scope,
+                    selectedEnvironmentId,
+                  );
+                  return (
+                    <View
+                      key={scope.key}
+                      className={cn(scopeIndex > 0 && "border-t border-border-subtle")}
+                    >
+                      <Pressable
+                        disabled={reservedDestinationProject !== null}
+                        onPress={() => void selectProject(selectionTarget)}
+                        className="flex-row items-center gap-3 bg-card px-4 py-3.5"
                       >
-                        {hasMultipleProjects
-                          ? `${scope.projects.length} workspaces`
-                          : selectionTarget.workspaceRoot}
-                      </Text>
+                        <View className="h-7 w-7 items-center justify-center">
+                          <ProjectFavicon
+                            environmentId={scope.representative.environmentId}
+                            faviconPath={scope.representative.faviconPath}
+                            size={20}
+                            projectTitle={scope.title}
+                            workspaceRoot={scope.representative.workspaceRoot}
+                          />
+                        </View>
+                        <View className="min-w-0 flex-1">
+                          <Text className="text-base leading-snug font-backplane-bold">
+                            {scope.title}
+                          </Text>
+                          <Text
+                            className="text-xs leading-snug text-foreground-muted"
+                            ellipsizeMode="middle"
+                            numberOfLines={1}
+                          >
+                            {hasMultipleProjects
+                              ? `${scope.projects.length} workspaces`
+                              : selectionTarget.workspaceRoot}
+                          </Text>
+                        </View>
+                        <SymbolView
+                          name="chevron.right"
+                          size={14}
+                          tintColorClassName={"accent-chevron"}
+                          type="monochrome"
+                        />
+                      </Pressable>
                     </View>
-                    <SymbolView
-                      name="chevron.right"
-                      size={14}
-                      tintColorClassName={"accent-chevron"}
-                      type="monochrome"
-                    />
-                  </Pressable>
-                </View>
-              );
-            })}
-          </View>
+                  );
+                })}
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
     </View>

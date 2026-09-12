@@ -2180,10 +2180,12 @@ function OpenCommandPaletteDialog(props: {
     displayedGroups = relativePathNeedsActiveProject ? [] : browseGroups;
   }
 
+  const isSubmenu = paletteMode === "submenu" || paletteMode === "submenu-browse";
   const inputPlaceholder =
     remoteProjectInputPlaceholder(addProjectCloneFlow) ??
-    getCommandPaletteInputPlaceholder(paletteMode);
-  const isSubmenu = paletteMode === "submenu" || paletteMode === "submenu-browse";
+    (isSubmenu && currentView?.groups.some((group) => group.value === "projects")
+      ? "Search projects..."
+      : getCommandPaletteInputPlaceholder(paletteMode));
   const hasHighlightedBrowseItem = highlightedItemValue?.startsWith("browse:") ?? false;
   const canSubmitBrowsePath =
     isBrowsing &&
