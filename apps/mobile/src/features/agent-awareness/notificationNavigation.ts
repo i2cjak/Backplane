@@ -1,12 +1,13 @@
 import { useEffect, useRef } from "react";
 import * as Notifications from "expo-notifications";
-import { useLinkTo } from "@react-navigation/native";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { routeAgentNotificationResponseOnce } from "./notificationPayload";
 import { consumeLastAgentNotificationResponse } from "./notificationResponseConsumer";
 
 export function useAgentNotificationNavigation(): void {
-  const linkTo = useLinkTo();
+  const navigation = useNavigation<NativeStackNavigationProp<ReactNavigation.RootParamList>>();
   const handledResponseIds = useRef(new Set<string>());
 
   useEffect(() => {
@@ -14,7 +15,7 @@ export function useAgentNotificationNavigation(): void {
       routeAgentNotificationResponseOnce({
         handledResponseIds: handledResponseIds.current,
         response,
-        navigate: linkTo,
+        navigate: (target) => navigation.navigate("Thread", target),
       });
     };
 
@@ -28,5 +29,5 @@ export function useAgentNotificationNavigation(): void {
     return () => {
       subscription.remove();
     };
-  }, [linkTo]);
+  }, [navigation]);
 }

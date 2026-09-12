@@ -5,6 +5,7 @@ import { consumeLastAgentNotificationResponse } from "./notificationResponseCons
 
 import {
   extractAgentNotificationDeepLink,
+  extractAgentNotificationThreadTarget,
   routeAgentNotificationResponseOnce,
 } from "./notificationPayload";
 
@@ -16,6 +17,21 @@ function responseWithData(data: Record<string, unknown>, identifier = "notificat
         content: {
           data,
         },
+      },
+    },
+  };
+}
+
+function remoteResponseWithTriggerPayload(
+  payload: Record<string, unknown>,
+  identifier = "notification-remote",
+) {
+  return {
+    notification: {
+      request: {
+        identifier,
+        content: { data: null },
+        trigger: { payload },
       },
     },
   };
@@ -154,10 +170,72 @@ describe("extractAgentNotificationDeepLink", () => {
   });
 });
 
+describe("extractAgentNotificationThreadTarget", () => {
+  it("returns native route params for an encoded deep link", () => {
+    expect(
+      extractAgentNotificationThreadTarget(
+        responseWithData({ deepLink: "/threads/env%201/thread%2F2" }),
+      ),
+    ).toEqual({ environmentId: "env 1", threadId: "thread/2" });
+  });
+
+  it("returns native route params from the APNs data fields", () => {
+    expect(
+      extractAgentNotificationThreadTarget(
+        responseWithData({ environmentId: "environment-1", threadId: "thread-1" }),
+      ),
+    ).toEqual({ environmentId: "environment-1", threadId: "thread-1" });
+  });
+
+  it("reads top-level direct APNs fields from the iOS trigger payload", () => {
+    expect(
+      extractAgentNotificationThreadTarget(
+        remoteResponseWithTriggerPayload({
+          environmentId: "environment-1",
+          threadId: "thread-1",
+        }),
+      ),
+    ).toEqual({ environmentId: "environment-1", threadId: "thread-1" });
+  });
+});
+
 describe("routeAgentNotificationResponseOnce", () => {
+  it("does not consume a response when navigation fails so a cold start can retry", () => {
+    const handledResponseIds = new Set<string>();
+    const response = responseWithData(
+      { environmentId: "env", threadId: "thread" },
+      "notification-retry",
+    );
+    const navigate = vi
+      .fn<(target: { environmentId: string; threadId: string }) => void>()
+      .mockImplementationOnce(() => {
+        throw new Error("navigation tree is not ready");
+      });
+
+    expect(() =>
+      routeAgentNotificationResponseOnce({
+        handledResponseIds,
+        response,
+        navigate,
+      }),
+    ).toThrow("navigation tree is not ready");
+    expect(handledResponseIds).toEqual(new Set());
+
+    routeAgentNotificationResponseOnce({
+      handledResponseIds,
+      response,
+      navigate,
+    });
+
+    expect(navigate).toHaveBeenNthCalledWith(2, {
+      environmentId: "env",
+      threadId: "thread",
+    });
+  });
+
   it("does not navigate twice when the initial and listener responses refer to one notification", () => {
     const handledResponseIds = new Set<string>();
-    const navigations: Array<string> = [];
+    const navigations: Array<{ environmentId: string; threadId: string }> = [];
     const response = responseWithData({
       environmentId: "env",
       threadId: "thread",
@@ -166,14 +244,14 @@ describe("routeAgentNotificationResponseOnce", () => {
     routeAgentNotificationResponseOnce({
       handledResponseIds,
       response,
-      navigate: (deepLink) => navigations.push(deepLink),
+      navigate: (target) => navigations.push(target),
     });
     routeAgentNotificationResponseOnce({
       handledResponseIds,
       response,
-      navigate: (deepLink) => navigations.push(deepLink),
+      navigate: (target) => navigations.push(target),
     });
 
-    expect(navigations).toEqual(["/threads/env/thread"]);
+    expect(navigations).toEqual([{ environmentId: "env", threadId: "thread" }]);
   });
 });
