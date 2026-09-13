@@ -660,6 +660,13 @@ function ThreadRouteContent(
       cwd: selectedThreadCwd,
     });
   }, [navigation, selectedThread, selectedThreadCwd]);
+  const openBrowserClone = useCallback(() => {
+    if (!selectedThread) return;
+    void navigation.navigate("BrowserClone", {
+      environmentId: String(selectedThread.environmentId),
+      threadId: String(selectedThread.id),
+    });
+  }, [navigation, selectedThread]);
   const kiCadHeaderItem = useMemo(
     () =>
       withNativeGlassHeaderItem({
@@ -671,19 +678,30 @@ function ThreadRouteContent(
       }),
     [openKiCad],
   );
+  const browserCloneHeaderItem = useMemo(
+    () =>
+      withNativeGlassHeaderItem({
+        accessibilityLabel: "Open browser clone",
+        icon: { name: "safari", type: "sfSymbol" as const },
+        identifier: "thread-browser-clone",
+        onPress: openBrowserClone,
+        type: "button" as const,
+      }),
+    [openBrowserClone],
+  );
   const compactRightHeaderItems = useMemo(
     () =>
       selectedThreadCwd === null
         ? baseCompactRightHeaderItems
-        : [...baseCompactRightHeaderItems, kiCadHeaderItem],
-    [baseCompactRightHeaderItems, kiCadHeaderItem, selectedThreadCwd],
+        : [...baseCompactRightHeaderItems, browserCloneHeaderItem, kiCadHeaderItem],
+    [baseCompactRightHeaderItems, browserCloneHeaderItem, kiCadHeaderItem, selectedThreadCwd],
   );
   const splitCenterHeaderItems = useMemo(
     () =>
       selectedThreadCwd === null
         ? threadCenterHeaderItems
-        : [...threadCenterHeaderItems, kiCadHeaderItem],
-    [kiCadHeaderItem, selectedThreadCwd, threadCenterHeaderItems],
+        : [...threadCenterHeaderItems, browserCloneHeaderItem, kiCadHeaderItem],
+    [browserCloneHeaderItem, kiCadHeaderItem, selectedThreadCwd, threadCenterHeaderItems],
   );
   const splitLeftHeaderItems = useMemo<NativeHeaderItems>(
     () => [
@@ -749,6 +767,11 @@ function ThreadRouteContent(
         onPress: openKiCad,
       });
     }
+    actions.push({
+      accessibilityLabel: "Open browser clone",
+      icon: "safari",
+      onPress: openBrowserClone,
+    });
     if (selectedThreadProject?.workspaceRoot) {
       actions.push({
         accessibilityLabel: "Open terminal",
@@ -778,6 +801,7 @@ function ThreadRouteContent(
     props.onReturnToThread,
     selectedThreadCwd,
     openKiCad,
+    openBrowserClone,
     selectedThreadProject?.workspaceRoot,
   ]);
 

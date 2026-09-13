@@ -43,6 +43,12 @@ export const PREVIEW_AUTOMATION_OPERATIONS = [
   ...PREVIEW_AUTOMATION_V1_OPERATIONS,
   "resize",
   "setColorScheme",
+  "captureFrame",
+  "pointer",
+  "key",
+  "text",
+  "clipboardCopy",
+  "clipboardPaste",
 ] as const;
 
 export const PreviewAutomationOperation = Schema.Literals(PREVIEW_AUTOMATION_OPERATIONS);
@@ -546,6 +552,75 @@ export const PreviewAutomationSnapshot = Schema.Struct({
 });
 export type PreviewAutomationSnapshot = typeof PreviewAutomationSnapshot.Type;
 
+/** A bounded JPEG frame returned by a desktop preview host for remote cloning. */
+export const PreviewAutomationFrame = Schema.Struct({
+  data: Schema.String.check(Schema.isMaxLength(12_000_000)),
+  mimeType: Schema.Literal("image/jpeg"),
+  width: Schema.Int.check(Schema.isGreaterThan(0)),
+  height: Schema.Int.check(Schema.isGreaterThan(0)),
+  /** CSS viewport dimensions used to map remote pointer coordinates. */
+  viewportWidth: Schema.Int.check(Schema.isGreaterThan(0)),
+  viewportHeight: Schema.Int.check(Schema.isGreaterThan(0)),
+  capturedAt: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+});
+export type PreviewAutomationFrame = typeof PreviewAutomationFrame.Type;
+
+export const PreviewCloneOperation = Schema.Literals([
+  "capture",
+  "pointer",
+  "key",
+  "text",
+  "clipboardCopy",
+  "clipboardPaste",
+]);
+export type PreviewCloneOperation = typeof PreviewCloneOperation.Type;
+const CloneTab = { tabId: PreviewTabId };
+export const PreviewClonePointerInput = Schema.Struct({
+  ...CloneTab,
+  action: Schema.Literals(["down", "move", "up", "wheel"]),
+  x: Schema.Finite,
+  y: Schema.Finite,
+  deltaX: Schema.optional(Schema.Finite),
+  deltaY: Schema.optional(Schema.Finite),
+  button: Schema.optional(Schema.Literals(["left", "middle", "right"])),
+});
+export type PreviewClonePointerInput = typeof PreviewClonePointerInput.Type;
+
+export const PreviewCloneInput = Schema.Union([
+  Schema.Struct({ ...CloneTab, action: Schema.Literal("capture") }),
+  PreviewClonePointerInput,
+  Schema.Struct({
+    ...CloneTab,
+    action: Schema.Literal("key"),
+    key: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+    modifiers: Schema.optional(Schema.Array(Schema.Literals(["Alt", "Control", "Meta", "Shift"]))),
+  }),
+  Schema.Struct({
+    ...CloneTab,
+    action: Schema.Literal("text"),
+    text: Schema.String.check(Schema.isMaxLength(64_000)),
+  }),
+  Schema.Struct({ ...CloneTab, action: Schema.Literal("clipboardCopy") }),
+  Schema.Struct({
+    ...CloneTab,
+    action: Schema.Literal("clipboardPaste"),
+    text: Schema.String.check(Schema.isMaxLength(64_000)),
+  }),
+]);
+export type PreviewCloneInput = typeof PreviewCloneInput.Type;
+export const PreviewCloneResult = Schema.Union([
+  PreviewAutomationFrame,
+  Schema.Struct({ tabId: PreviewTabId, clipboard: Schema.String }),
+  Schema.Struct({ tabId: PreviewTabId, ok: Schema.Literal(true) }),
+]);
+export type PreviewCloneResult = typeof PreviewCloneResult.Type;
+export const PreviewCloneResponse = Schema.Struct({
+  clientId: TrimmedNonEmptyString,
+  connectionId: TrimmedNonEmptyString,
+  result: PreviewCloneResult,
+});
+export type PreviewCloneResponse = typeof PreviewCloneResponse.Type;
+
 export const PreviewAutomationRecordingStatus = Schema.Struct({
   tabId: PreviewTabId,
   recording: Schema.Boolean,
@@ -567,6 +642,32 @@ export const PreviewAutomationClientId = TrimmedNonEmptyString.check(Schema.isMa
 export type PreviewAutomationClientId = typeof PreviewAutomationClientId.Type;
 export const PreviewAutomationConnectionId = TrimmedNonEmptyString.check(Schema.isMaxLength(64));
 export type PreviewAutomationConnectionId = typeof PreviewAutomationConnectionId.Type;
+
+export const PreviewCloneInvokeInput = Schema.Struct({
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  cloneId: TrimmedNonEmptyString.check(Schema.isMaxLength(128)),
+  operation: PreviewCloneOperation,
+  input: PreviewCloneInput,
+  tabId: PreviewTabId,
+  timeoutMs: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 15_000 }))),
+  clientId: Schema.optional(PreviewAutomationClientId),
+  connectionId: Schema.optional(PreviewAutomationConnectionId),
+}).check(
+  Schema.makeFilter((value) => {
+    if (value.tabId !== value.input.tabId) return "Clone input must target the selected tab.";
+    const operation = ["down", "move", "up", "wheel"].includes(value.input.action)
+      ? "pointer"
+      : value.input.action;
+    if (value.operation !== operation) return "Clone operation must match its input.";
+    if ((value.clientId === undefined) !== (value.connectionId === undefined))
+      return "Provide both desktop host identifiers.";
+    if (value.operation !== "capture" && value.clientId === undefined)
+      return "Capture a desktop frame before sending input.";
+    return true;
+  }),
+);
+export type PreviewCloneInvokeInput = typeof PreviewCloneInvokeInput.Type;
 
 export const PreviewAutomationHostIdentity = Schema.Struct({
   clientId: PreviewAutomationClientId,

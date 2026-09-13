@@ -289,6 +289,14 @@ contextBridge.exposeInMainWorld("desktopBridge", {
         ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_EVALUATE_CHANNEL, { tabId, input }),
       waitFor: (tabId, input) =>
         ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_WAIT_FOR_CHANNEL, { tabId, input }),
+      captureFrame: (tabId) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_CAPTURE_FRAME_CHANNEL, { tabId }),
+      clonePointer: (tabId, input) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_CLONE_POINTER_CHANNEL, { tabId, input }),
+      cloneText: (tabId, text) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_CLONE_TEXT_CHANNEL, { tabId, text }),
+      cloneClipboardCopy: (tabId) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_CLONE_CLIPBOARD_COPY_CHANNEL, { tabId }),
     },
     onStateChange: (listener) => {
       const wrappedListener = (

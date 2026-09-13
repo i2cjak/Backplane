@@ -185,6 +185,8 @@ import {
   PreviewAutomationHostFocus,
   PreviewAutomationResponse,
   PreviewAutomationStreamEvent,
+  PreviewCloneResponse,
+  PreviewCloneInvokeInput,
 } from "./previewAutomation.ts";
 import {
   ServerConfigStreamEvent,
@@ -308,6 +310,7 @@ export const WS_METHODS = {
   previewAutomationConnect: "previewAutomation.connect",
   previewAutomationRespond: "previewAutomation.respond",
   previewAutomationFocusHost: "previewAutomation.focusHost",
+  previewCloneInvoke: "previewClone.invoke",
 
   // Server meta
   serverProbe: "server.probe",
@@ -1045,6 +1048,12 @@ const WsPreviewAutomationFocusHostRpc = Rpc.make(WS_METHODS.previewAutomationFoc
   error: EnvironmentAuthorizationError,
 });
 
+const WsPreviewCloneInvokeRpc = Rpc.make(WS_METHODS.previewCloneInvoke, {
+  payload: PreviewCloneInvokeInput,
+  success: PreviewCloneResponse,
+  error: Schema.Union([PreviewAutomationError, EnvironmentAuthorizationError]),
+});
+
 const WsSubscribePreviewEventsRpc = Rpc.make(WS_METHODS.subscribePreviewEvents, {
   payload: Schema.Struct({}),
   success: PreviewEvent,
@@ -1287,6 +1296,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsPreviewAutomationConnectRpc,
   WsPreviewAutomationRespondRpc,
   WsPreviewAutomationFocusHostRpc,
+  WsPreviewCloneInvokeRpc,
   WsSubscribePreviewEventsRpc,
   WsSubscribeDiscoveredLocalServersRpc,
   WsSubscribeServerConfigRpc,

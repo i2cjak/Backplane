@@ -40,6 +40,9 @@ export interface PreviewAutomationInvokeInput {
   readonly input: unknown;
   readonly tabId?: PreviewTabId;
   readonly timeoutMs?: number;
+  /** Optional connection pin used by remote browser cloning. */
+  readonly clientId?: string;
+  readonly connectionId?: string;
 }
 
 export class PreviewAutomationBroker extends Context.Service<
@@ -52,6 +55,12 @@ export class PreviewAutomationBroker extends Context.Service<
     readonly respond: (
       response: PreviewAutomationResponse,
     ) => Effect.Effect<void, PreviewAutomationError>;
+    readonly invokePinned: <A = unknown>(
+      request: PreviewAutomationInvokeInput,
+    ) => Effect.Effect<
+      { readonly clientId: string; readonly connectionId: string; readonly result: A },
+      PreviewAutomationError
+    >;
     readonly invoke: <A = unknown>(
       request: PreviewAutomationInvokeInput,
     ) => Effect.Effect<A, PreviewAutomationError>;
@@ -423,9 +432,13 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
     }
   });
 
-  const invoke = Effect.fn("PreviewAutomationBroker.invoke")(function* <A = unknown>(
-    input: Parameters<PreviewAutomationBroker["Service"]["invoke"]>[0],
-  ): Effect.fn.Return<A, PreviewAutomationError> {
+  const invokeRouted = Effect.fn("PreviewAutomationBroker.invokeRouted")(function* <A = unknown>(
+    input: PreviewAutomationInvokeInput,
+    retainAssignment: boolean,
+  ): Effect.fn.Return<
+    { readonly clientId: string; readonly connectionId: string; readonly result: A },
+    PreviewAutomationError
+  > {
     const timeoutMs = input.timeoutMs ?? 15_000;
     const deferred = yield* Deferred.make<unknown, PreviewAutomationError>();
     const route = yield* SynchronizedRef.modify(state, (current) => {
@@ -439,9 +452,13 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
         }),
       );
       const assignmentKey = hostAssignmentKey(input.scope);
-      const assigned = assignments.get(assignmentKey);
+      const assigned = retainAssignment ? assignments.get(assignmentKey) : undefined;
       const assignedConnection = assigned ? current.clients.get(assigned.clientId) : undefined;
-      const hasLiveAssignment = assignedConnection?.environmentId === input.scope.environmentId;
+      const hasLiveAssignment =
+        assignedConnection?.environmentId === input.scope.environmentId &&
+        (input.clientId === undefined || assignedConnection.clientId === input.clientId) &&
+        (input.connectionId === undefined ||
+          assignedConnection.connectionId === input.connectionId);
       // Keep one provider session on one physical desktop runtime so a
       // multi-step browser interaction cannot jump between independent
       // Electron cookie/DOM state. A live assignment that predates an
@@ -457,6 +474,9 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
                 .filter(
                   (host) =>
                     host.environmentId === input.scope.environmentId &&
+                    (input.clientId === undefined || host.clientId === input.clientId) &&
+                    (input.connectionId === undefined ||
+                      host.connectionId === input.connectionId) &&
                     supportsOperation(host, input.operation),
                 )
                 .sort(
@@ -473,15 +493,16 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
         assigned !== undefined &&
         assigned.connectionId === connection.connectionId &&
         assigned.queue === connection.queue;
-      assignments.set(assignmentKey, {
-        clientId: connection.clientId,
-        connectionId: connection.connectionId,
-        queue: connection.queue,
-        ...(canReuseAssignedTab && assigned.tabId !== undefined ? { tabId: assigned.tabId } : {}),
-        ...(canReuseAssignedTab && assigned.tabSequence !== undefined
-          ? { tabSequence: assigned.tabSequence }
-          : {}),
-      });
+      if (retainAssignment)
+        assignments.set(assignmentKey, {
+          clientId: connection.clientId,
+          connectionId: connection.connectionId,
+          queue: connection.queue,
+          ...(canReuseAssignedTab && assigned.tabId !== undefined ? { tabId: assigned.tabId } : {}),
+          ...(canReuseAssignedTab && assigned.tabSequence !== undefined
+            ? { tabSequence: assigned.tabSequence }
+            : {}),
+        });
 
       const requestSequence = current.requestSequence;
       const requestId = `preview-${requestSequence}`;
@@ -551,9 +572,15 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       });
     });
     const result = yield* awaitResponse().pipe(Effect.ensuring(removePending));
+    const routedResult = {
+      clientId: connection.clientId,
+      connectionId: connection.connectionId,
+      result,
+    };
+    if (!retainAssignment) return routedResult;
     const responseTabId = readResultTabId(result);
     const resultTabId = responseTabId === undefined ? input.tabId : responseTabId;
-    if (resultTabId === undefined) return result;
+    if (resultTabId === undefined) return routedResult;
     const assignmentKey = hostAssignmentKey(input.scope);
     yield* SynchronizedRef.update(state, (current) => {
       const assignment = current.assignments.get(assignmentKey);
@@ -578,10 +605,15 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
       }
       return { ...current, assignments };
     });
-    return result;
+    return routedResult;
   });
 
-  return PreviewAutomationBroker.of({ connect, focusHost, respond, invoke });
+  const invoke = <A = unknown>(input: PreviewAutomationInvokeInput) =>
+    invokeRouted<A>(input, true).pipe(Effect.map((response) => response.result));
+  const invokePinned = <A = unknown>(input: PreviewAutomationInvokeInput) =>
+    invokeRouted<A>(input, false);
+
+  return PreviewAutomationBroker.of({ connect, focusHost, respond, invoke, invokePinned });
 }).pipe(Effect.withSpan("PreviewAutomationBroker.make"));
 
 export const layer = Layer.effect(PreviewAutomationBroker, make);

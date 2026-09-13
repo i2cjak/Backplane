@@ -333,8 +333,16 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
       const browserActivity = { release: null as (() => void) | null };
       try {
         let state = readThreadPreviewState(threadRef);
+        const cloneOperation = [
+          "captureFrame",
+          "pointer",
+          "key",
+          "text",
+          "clipboardCopy",
+          "clipboardPaste",
+        ].includes(request.operation);
         const needsSessionSync = needsPreviewAutomationSessionSync(state, request.tabId);
-        if (needsSessionSync) {
+        if (needsSessionSync && !cloneOperation) {
           const listTarget = {
             environmentId,
             input: { threadId: request.threadId },
@@ -364,7 +372,10 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           }
           const readyState = readThreadPreviewState(threadRef);
           const runtimeTabId = previewRuntimeTabId(threadRef, readyState.serverEpoch, readyTabId);
-          if (request.operation !== "open") {
+          if (cloneOperation && !readyState.desktopByTabId[readyTabId]) {
+            throw new PreviewAutomationTargetUnavailableError(unavailableTarget);
+          }
+          if (request.operation !== "open" && !cloneOperation) {
             const { autoShowFloatingPreview } = await resolveBrowserDefaults();
             if (
               shouldAutoShowPreviewForAutomationUse({
@@ -646,6 +657,47 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           case "snapshot": {
             const ready = await requireReadyTab();
             return await ready.bridge.automation.snapshot(ready.runtimeTabId);
+          }
+          case "captureFrame": {
+            const ready = await requireReadyTab();
+            return await ready.bridge.automation.captureFrame(ready.runtimeTabId);
+          }
+          case "pointer": {
+            const ready = await requireReadyTab();
+            const input = request.input as Parameters<
+              typeof ready.bridge.automation.clonePointer
+            >[1];
+            await ready.bridge.automation.clonePointer(ready.runtimeTabId, input);
+            return { tabId: ready.tabId, ok: true };
+          }
+          case "text": {
+            const ready = await requireReadyTab();
+            await ready.bridge.automation.cloneText(
+              ready.runtimeTabId,
+              (request.input as { text: string }).text,
+            );
+            return { tabId: ready.tabId, ok: true };
+          }
+          case "key": {
+            const ready = await requireReadyTab();
+            const input = request.input as Parameters<typeof ready.bridge.automation.press>[1];
+            await ready.bridge.automation.press(ready.runtimeTabId, input);
+            return { tabId: ready.tabId, ok: true };
+          }
+          case "clipboardCopy": {
+            const ready = await requireReadyTab();
+            return {
+              tabId: ready.tabId,
+              clipboard: await ready.bridge.automation.cloneClipboardCopy(ready.runtimeTabId),
+            };
+          }
+          case "clipboardPaste": {
+            const ready = await requireReadyTab();
+            await ready.bridge.automation.cloneText(
+              ready.runtimeTabId,
+              (request.input as { text: string }).text,
+            );
+            return { tabId: ready.tabId, ok: true };
           }
           case "click": {
             const ready = await requireReadyTab();

@@ -464,6 +464,11 @@ export function isPreviewSupportedInRuntime(): boolean {
   return Boolean(window.desktopBridge?.preview);
 }
 
+/** Remote web clients can clone a desktop owned tab through previewClone.invoke. */
+export function isBrowserCloneSupportedInRuntime(): boolean {
+  return typeof window !== "undefined" && !window.desktopBridge;
+}
+
 export function resetPreviewStateForTests(): void {
   for (const threadKey of changedPreviewThreadKeys) {
     appAtomRegistry.set(previewStateAtom(threadKey), EMPTY_THREAD_PREVIEW_STATE);

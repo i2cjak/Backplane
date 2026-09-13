@@ -5,7 +5,10 @@
  * elements live in the renderer; we only attach listeners and forward state
  * here). Single layer-scoped browser session partition.
  */
-import { DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER } from "@backplane/contracts";
+import {
+  DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER,
+  PreviewRenderedViewportSize,
+} from "@backplane/contracts";
 import type {
   DesktopPreviewAnnotationTheme,
   DesktopPreviewAutomationStatus,
@@ -23,6 +26,8 @@ import type {
   PreviewAutomationActionEvent,
   PreviewAutomationConsoleEntry,
   PreviewAutomationEvaluateInput,
+  PreviewAutomationFrame,
+  PreviewCloneInput,
   PreviewAutomationPressInput,
   PreviewAutomationNetworkEntry,
   PreviewAutomationScrollInput,
@@ -66,8 +71,12 @@ import {
 } from "./GuestProtocol.ts";
 import { isPreviewAnnotationPayload } from "./PickedElementPayload.ts";
 import { playwrightInjectedRuntimeInstallExpression } from "./PlaywrightInjectedRuntime.ts";
+import { createClonePointerDispatcher } from "./ClonePointer.ts";
 import { makePreviewAutomationKeySequence } from "./PreviewKeyboard.ts";
 import { captureFavicon, safeHttpOrigin, selectFaviconCandidates } from "./FaviconCapture.ts";
+
+const decodeCloneViewport = Schema.decodeUnknownSync(PreviewRenderedViewportSize);
+const decodeCloneClipboardText = Schema.decodeUnknownSync(Schema.String);
 
 export type PreviewNavStatus =
   | { kind: "Idle" }
@@ -3602,6 +3611,108 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     );
   });
 
+  const automationCaptureFrame = Effect.fn("PreviewManager.automationCaptureFrame")(function* (
+    tabId: string,
+  ): Effect.fn.Return<PreviewAutomationFrame, PreviewManagerError> {
+    const wc = yield* requireWebContents(tabId);
+    const [image, capturedAt] = yield* Effect.all([
+      capturePageWithRetry(
+        { operation: "automationCaptureFrame.capturePage", tabId, webContentsId: wc.id },
+        tabId,
+        wc,
+      ),
+      currentMillis,
+    ]);
+    const size = image.getSize();
+    const scale = Math.min(1, 1600 / size.width, 1200 / size.height);
+    const frameImage =
+      scale < 1
+        ? image.resize({
+            width: Math.max(1, Math.round(size.width * scale)),
+            height: Math.max(1, Math.round(size.height * scale)),
+          })
+        : image;
+    const frameSize = frameImage.getSize();
+    const measured = yield* attemptPromise(
+      { operation: "automationCaptureFrame.measureViewport", tabId, webContentsId: wc.id },
+      () => wc.executeJavaScript("({ width: window.innerWidth, height: window.innerHeight })"),
+    );
+    const viewport = yield* attempt(
+      { operation: "automationCaptureFrame.decodeViewport", tabId, webContentsId: wc.id },
+      () => decodeCloneViewport(measured),
+    );
+    const data = yield* attempt(
+      { operation: "automationCaptureFrame.encode", tabId, webContentsId: wc.id },
+      () => frameImage.toJPEG(70).toString("base64"),
+    );
+    return {
+      data,
+      mimeType: "image/jpeg",
+      width: frameSize.width,
+      height: frameSize.height,
+      viewportWidth: viewport.width,
+      viewportHeight: viewport.height,
+      capturedAt,
+    };
+  });
+  const clonePointers = new WeakMap<
+    Electron.Debugger,
+    ReturnType<typeof createClonePointerDispatcher>
+  >();
+  const automationClonePointer = Effect.fn("PreviewManager.automationClonePointer")(function* (
+    tabId: string,
+    input: Extract<PreviewCloneInput, { action: "down" | "move" | "up" | "wheel" }>,
+  ) {
+    const wc = yield* requireWebContents(tabId);
+    const control = yield* ensureControlSession(wc);
+    let pointer = clonePointers.get(control.debugger);
+    if (!pointer) {
+      pointer = createClonePointerDispatcher((method, parameters) =>
+        control.debugger.sendCommand(method, parameters),
+      );
+      clonePointers.set(control.debugger, pointer);
+      const ownedPointer = pointer;
+      yield* Scope.addFinalizer(
+        control.scope,
+        Effect.promise(() => {
+          clonePointers.delete(control.debugger);
+          return ownedPointer.dispose();
+        }).pipe(Effect.ignore),
+      );
+    }
+    const activePointer = pointer;
+    yield* attemptPromise(
+      { operation: "automationClonePointer.dispatch", tabId, webContentsId: wc.id },
+      () => activePointer.dispatch(input),
+    );
+  });
+  const automationCloneText = Effect.fn("PreviewManager.automationCloneText")(function* (
+    tabId: string,
+    text: string,
+  ) {
+    return yield* automationType(tabId, { text, clear: false });
+  });
+  const automationCloneClipboardCopy = Effect.fn("PreviewManager.automationCloneClipboardCopy")(
+    function* (tabId: string) {
+      const wc = yield* requireWebContents(tabId);
+      const selected = yield* attemptPromise(
+        { operation: "automationCloneClipboardCopy.select", tabId },
+        () =>
+          wc.executeJavaScript(`(() => {
+        let active = document.activeElement;
+        while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+        const text = active && typeof active.selectionStart === "number" && typeof active.selectionEnd === "number"
+          ? active.value.slice(active.selectionStart, active.selectionEnd)
+          : window.getSelection()?.toString() ?? "";
+        return text.slice(0, 64000);
+      })()`),
+      );
+      return yield* attempt({ operation: "automationCloneClipboardCopy.decode", tabId }, () =>
+        decodeCloneClipboardText(selected),
+      );
+    },
+  );
+
   const resolveClickPoint = Effect.fn("PreviewManager.resolveClickPoint")(function* (
     tabId: string,
     send: SendCommand,
@@ -4148,6 +4259,10 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     automationPress,
     automationScroll,
     automationSnapshot,
+    automationCaptureFrame,
+    automationClonePointer,
+    automationCloneText,
+    automationCloneClipboardCopy,
     automationStatus,
     automationType,
     automationWaitFor,
@@ -4558,6 +4673,20 @@ export class PreviewManager extends Context.Service<
     readonly automationSnapshot: (
       tabId: string,
     ) => Effect.Effect<PreviewAutomationSnapshot, PreviewManagerError>;
+    readonly automationCaptureFrame: (
+      tabId: string,
+    ) => Effect.Effect<PreviewAutomationFrame, PreviewManagerError>;
+    readonly automationClonePointer: (
+      tabId: string,
+      input: Extract<PreviewCloneInput, { action: "down" | "move" | "up" | "wheel" }>,
+    ) => Effect.Effect<void, PreviewManagerError>;
+    readonly automationCloneText: (
+      tabId: string,
+      text: string,
+    ) => Effect.Effect<void, PreviewManagerError>;
+    readonly automationCloneClipboardCopy: (
+      tabId: string,
+    ) => Effect.Effect<string, PreviewManagerError>;
     readonly automationClick: (
       tabId: string,
       input: PreviewAutomationClickInput,
@@ -4675,6 +4804,10 @@ export const make = Effect.gen(function* PreviewManagerMake() {
     automationScroll: operations.automationScroll,
     automationEvaluate: operations.automationEvaluate,
     automationWaitFor: operations.automationWaitFor,
+    automationCaptureFrame: operations.automationCaptureFrame,
+    automationClonePointer: operations.automationClonePointer,
+    automationCloneText: operations.automationCloneText,
+    automationCloneClipboardCopy: operations.automationCloneClipboardCopy,
     subscribeStateChanges: operations.subscribeStateChanges,
     subscribePointerEvents: operations.subscribePointerEvents,
     subscribeRecordingFrames: operations.subscribeRecordingFrames,
