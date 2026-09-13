@@ -10,6 +10,7 @@ import {
   ThreadId,
   TurnId,
 } from "@backplane/contracts";
+import { HostProcessEnvironment } from "@backplane/shared/hostProcess";
 import { resolveProjectAutoPull } from "@backplane/shared/serverSettings";
 import * as Cause from "effect/Cause";
 import * as Console from "effect/Console";
@@ -49,6 +50,7 @@ import {
   formatHostForUrl,
   isWildcardHost,
   issueHeadlessServeAccessInfo,
+  shouldPrintHeadlessPairingDetails,
 } from "./startupAccess.ts";
 
 export class ServerRuntimeStartupError extends Schema.TaggedErrorClass<ServerRuntimeStartupError>()(
@@ -926,11 +928,14 @@ export const make = (options?: StartupOptions) =>
             Effect.ignoreCause({ log: true }),
           );
           if (serverConfig.startupPresentation === "headless") {
-            const accessInfo = yield* issueHeadlessServeAccessInfo();
-            yield* runStartupPhase(
-              "headless.output",
-              Console.log(formatHeadlessServeOutput(accessInfo)),
-            );
+            const environment = yield* HostProcessEnvironment;
+            if (shouldPrintHeadlessPairingDetails(environment)) {
+              const accessInfo = yield* issueHeadlessServeAccessInfo();
+              yield* runStartupPhase(
+                "headless.output",
+                Console.log(formatHeadlessServeOutput(accessInfo)),
+              );
+            }
           } else {
             const startupBrowserTarget = yield* resolveStartupBrowserTarget;
             if (serverConfig.mode !== "desktop") {

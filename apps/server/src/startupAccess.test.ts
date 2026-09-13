@@ -7,6 +7,7 @@ import {
   resolveHeadlessConnectionHost,
   resolveHeadlessConnectionString,
   resolveListeningPort,
+  shouldPrintHeadlessPairingDetails,
 } from "./startupAccess.ts";
 
 it("prefers localhost when no explicit host is configured", () => {
@@ -76,4 +77,11 @@ it("formats headless serve output with the connection string, token, pairing url
   expect(output).toContain("Token: PAIRCODE");
   expect(output).toContain("Pairing URL: http://192.168.1.42:3773/pair#token=PAIRCODE");
   assert.isTrue(output.includes("█") || output.includes("▀") || output.includes("▄"));
+});
+
+it("does not print pairing details for boot services", () => {
+  expect(
+    shouldPrintHeadlessPairingDetails({ BACKPLANE_BOOT_SERVICE_UNIT: "backplane.service" }),
+  ).toBe(false);
+  expect(shouldPrintHeadlessPairingDetails({})).toBe(true);
 });
