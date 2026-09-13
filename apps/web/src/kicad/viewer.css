@@ -803,3 +803,28 @@ body,
   font-size: 11px;
   pointer-events: none;
 }
+
+.design-open-kicad-short {
+  display: none;
+}
+.design-editor-status {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--design-line);
+}
+.design-open-kicad:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+@media (max-width: 640px) {
+  .design-open-kicad-full {
+    display: none;
+  }
+  .design-open-kicad-short {
+    display: inline;
+  }
+  .design-open-kicad {
+    padding-inline: 8px;
+  }
+}

@@ -12,6 +12,8 @@ This follows the connected environment: a phone or remote browser uses the KiCad
 
 Open **KiCad** from a thread's right-panel add menu to inspect its PCB, schematic, Gerber layers, and 3D board. The panel follows the thread's workspace or worktree. It reads saved files without locking them; you can continue editing in KiCad or through your agent.
 
+To edit the selected schematic or board, choose **Open in KiCad** beside the filename (**KiCad** on a phone). Schematics open in Eeschema; boards open in PCB Editor. The editor opens on the connected desktop, including when you press the button from your phone. Save in KiCad to refresh the Backplane preview. This requires a graphical desktop session on that host.
+
 On mobile, open **KiCad** from the thread toolbar. The same read-only viewer opens in a full-screen native web view, with its PCB, Gerber, schematic, and 3D tabs available at the top. The viewer uses a short-lived session tied to the active environment; reconnect and tap **Retry** if that session expires.
 
 For a workspace containing several boards, create `.backplane.json` at its root:

@@ -1,6 +1,7 @@
 /* @effect-diagnostics nodeBuiltinImport:off */
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
+import * as NodeChildProcess from "node:child_process";
 
 /**
  * Locate the KiCad CLI shipped with Backplane before consulting PATH.
@@ -41,6 +42,39 @@ export function resolveKiCadExecutable(env: NodeJS.ProcessEnv = process.env): st
   // AppImage users may run the server outside Electron. In that case the
   // system path is still useful, but APPDIR must not shadow KiCad's libraries.
   return "kicad-cli";
+}
+
+export function resolveKiCadEditor(
+  kind: "schematic" | "pcb",
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const cli = resolveKiCadExecutable(env);
+  const name = kind === "schematic" ? "eeschema" : "pcbnew";
+  if (NodePath.isAbsolute(cli)) {
+    const suffix = process.platform === "win32" ? ".exe" : "";
+    return NodePath.join(NodePath.dirname(cli), `${name}${suffix}`);
+  }
+  return name;
+}
+
+export function launchKiCadEditor(
+  kind: "schematic" | "pcb",
+  filePath: string,
+  cwd: string,
+  env: NodeJS.ProcessEnv = process.env,
+  spawn: typeof NodeChildProcess.spawn = NodeChildProcess.spawn,
+): Promise<NodeChildProcess.ChildProcess> {
+  const editor = resolveKiCadEditor(kind, env);
+  const child = spawn(editor, [filePath], {
+    cwd,
+    detached: true,
+    stdio: "ignore",
+    env: resolveKiCadEnvironment(env),
+  });
+  return new Promise((resolve, reject) => {
+    child.once("spawn", () => resolve(child));
+    child.once("error", reject);
+  });
 }
 
 /**

@@ -48,6 +48,11 @@ export const KiCadViewerSession = Schema.Struct({
 });
 export type KiCadViewerSession = typeof KiCadViewerSession.Type;
 
+export const KiCadOpenInput = Schema.Struct({
+  path: TrimmedNonEmptyString,
+});
+export type KiCadOpenInput = typeof KiCadOpenInput.Type;
+
 export const KiCadBom = Schema.Struct({
   columns: Schema.Array(Schema.String),
   rows: Schema.Array(Schema.Array(Schema.String)),

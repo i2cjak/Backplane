@@ -349,6 +349,21 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           ],
         ),
       ]);
+      await NodeFSP.mkdir(NodePath.join(root, "bin"));
+      for (const program of ["kicad-cli", "eeschema", "pcbnew"])
+        await NodeFSP.writeFile(NodePath.join(root, "bin", program), "executable");
+      await validateKiCadRuntimeBundle(root);
+      await NodeFSP.rm(NodePath.join(root, "bin", "eeschema"));
+      await NodeAssert.rejects(validateKiCadRuntimeBundle(root), /missing eeschema/);
+      await NodeFSP.writeFile(NodePath.join(root, "bin", "eeschema"), "executable");
+      await NodeFSP.mkdir(NodePath.join(root, "lib"));
+      await NodeFSP.writeFile(NodePath.join(root, "lib", "libc.so.6"), "private glibc");
+      await NodeAssert.rejects(
+        validateKiCadRuntimeBundle(root),
+        /glibc is incomplete: missing libdl/,
+      );
+      for (const name of ["libdl.so.2", "libpthread.so.0", "librt.so.1", "libmvec.so.1"])
+        await NodeFSP.writeFile(NodePath.join(root, "lib", name), "matching glibc side library");
       await validateKiCadRuntimeBundle(root);
       await NodeFSP.rm(NodePath.join(root, "share", "kicad", "3dmodels", "Demo.step"));
       await NodeAssert.rejects(validateKiCadRuntimeBundle(root), /standard 3dmodels library/);

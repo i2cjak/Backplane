@@ -2316,6 +2316,41 @@ export async function validateKiCadRuntimeBundle(source: string): Promise<void> 
   if (!isKiCadRuntimeManifest(manifest))
     throw new Error(`Bundled KiCad runtime manifest is missing provenance fields: ${manifestPath}`);
 
+  const editorSuffix = await NodeFSP.stat(NodePath.join(source, "bin", "kicad-cli.exe")).then(
+    () => ".exe",
+    () => "",
+  );
+  for (const program of ["kicad-cli", "eeschema", "pcbnew"]) {
+    if (
+      !(await NodeFSP.stat(NodePath.join(source, "bin", `${program}${editorSuffix}`)).then(
+        (file) => file.isFile(),
+        () => false,
+      ))
+    )
+      throw new Error(`Bundled KiCad runtime is missing ${program}${editorSuffix}.`);
+  }
+
+  // Host GPU drivers load these dynamically. Falling back to a newer host glibc
+  // while using the private loader/libc prevents OpenGL contexts from opening.
+  if (
+    await NodeFSP.stat(NodePath.join(source, "lib", "libc.so.6")).then(
+      () => true,
+      () => false,
+    )
+  ) {
+    for (const name of ["libdl.so.2", "libpthread.so.0", "librt.so.1", "libmvec.so.1"]) {
+      if (
+        !(await NodeFSP.stat(NodePath.join(source, "lib", name)).then(
+          (file) => file.isFile(),
+          () => false,
+        ))
+      )
+        throw new Error(
+          `Bundled KiCad glibc is incomplete: missing ${name}. Include libraries from the same libc6 package.`,
+        );
+    }
+  }
+
   const libraryChecks: ReadonlyArray<readonly [string, (file: string) => boolean]> = [
     ["symbols", (file) => file.endsWith(".kicad_sym")],
     ["footprints", (file) => file.endsWith(".kicad_mod")],

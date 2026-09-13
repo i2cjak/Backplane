@@ -14,6 +14,7 @@ import {
   FolderOpen,
   ChevronDown,
   PanelsTopLeft,
+  ExternalLink,
 } from "lucide-react";
 import "../index.css";
 import "./viewer.css";
@@ -172,6 +173,8 @@ function App() {
     token ? null : "Open this viewer from the project's KiCad panel.",
   );
   const [browse, setBrowse] = useState(false);
+  const [openingEditor, setOpeningEditor] = useState(false);
+  const [editorStatus, setEditorStatus] = useState("");
   const [fileQuery, setFileQuery] = useState("");
   const [selected, setSelected] = useState<Partial<Record<View, string>>>({});
   const [nativeVisited, setNativeVisited] = useState(
@@ -309,8 +312,29 @@ function App() {
     item.path.toLowerCase().includes(fileQuery.toLowerCase()),
   );
   const nativeView = view === "pcb" || view === "schematic" ? view : null;
+  const openInKiCad = async () => {
+    if (!file || openingEditor || (file.kind !== "schematic" && file.kind !== "pcb")) return;
+    const editorName = file.kind === "schematic" ? "Schematic Editor" : "PCB Editor";
+    setOpeningEditor(true);
+    setEditorStatus(`Opening ${editorName} on desktop…`);
+    try {
+      const response = await fetch(apiUrl("open"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: file.path }),
+      });
+      if (!response.ok)
+        throw new Error((await response.text()).slice(0, 300) || "Could not open KiCad.");
+      setEditorStatus(`${editorName} launched on desktop. Save in KiCad to update this viewer.`);
+    } catch (cause) {
+      setEditorStatus(cause instanceof Error ? cause.message : "Could not open KiCad on desktop.");
+    } finally {
+      setOpeningEditor(false);
+    }
+  };
   const chooseView = (next: View) => {
     setError(null);
+    setEditorStatus("");
     if (next === "pcb" || next === "schematic") setNativeVisited(true);
     setBrowse(false);
     setFileQuery("");
@@ -475,6 +499,22 @@ function App() {
                       : "Saved library"
                   : "Saved output"}
           </span>
+          {(view === "schematic" || view === "pcb") && file && (
+            <button
+              type="button"
+              className="design-text-button design-open-kicad"
+              disabled={openingEditor}
+              aria-label={`Open ${view === "schematic" ? "schematic" : "PCB"} in KiCad on desktop`}
+              title={`Open ${file.path} in ${view === "schematic" ? "Eeschema" : "PCB Editor"} on desktop`}
+              onClick={() => void openInKiCad()}
+            >
+              <ExternalLink size={14} aria-hidden="true" />
+              <span className="design-open-kicad-full">
+                {openingEditor ? "Opening…" : "Open in KiCad"}
+              </span>
+              <span className="design-open-kicad-short">KiCad</span>
+            </button>
+          )}
           {(designView || libraryView) && (
             <button
               type="button"
@@ -521,6 +561,11 @@ function App() {
               />
             </label>
           )}
+        </div>
+      )}
+      {editorStatus && (
+        <div className="design-editor-status" role="status">
+          {editorStatus}
         </div>
       )}
       {browse && (

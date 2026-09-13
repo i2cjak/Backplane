@@ -1,5 +1,5 @@
 import { getKiCadPanelization } from "./kicad/KiCadPanelization.ts";
-import { IosNotificationRegistration } from "@backplane/contracts";
+import { IosNotificationRegistration, KiCadOpenInput } from "@backplane/contracts";
 import { DirectIosPushService } from "./notifications/DirectIosPushService.ts";
 // @effect-diagnostics globalDate:off globalDateInEffect:off globalErrorInEffectCatch:off globalErrorInEffectFailure:off
 import Mime from "@effect/platform-node/Mime";
@@ -56,6 +56,7 @@ import {
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
 import { discoverKiCadProject, resolveKiCadProjectFile } from "./kicad/KiCadProject.ts";
+import { launchKiCadEditor } from "./kicad/KiCadExecutable.ts";
 import {
   gerberLayerColour,
   renderPrismGerber,
@@ -414,7 +415,10 @@ export const assetRouteLayer = HttpRouter.add(
 );
 
 const KICAD_ROUTE_PREFIX = "/api/kicad";
-const kicadViewerSessions = new Map<string, { readonly cwd: string; readonly expiresAt: number }>();
+export const kicadViewerSessions = new Map<
+  string,
+  { readonly cwd: string; readonly expiresAt: number }
+>();
 const kicadSessionCwd = (url: URL): string | undefined => {
   const token = url.searchParams.get("token");
   if (!token) return undefined;
@@ -454,6 +458,50 @@ export const kicadViewerSessionRouteLayer = HttpRouter.add(
       EnvironmentInternalError: HttpServerRespondable.toResponse,
       EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
     }),
+  ),
+);
+
+export const kicadOpenRouteLayer = HttpRouter.add(
+  "POST",
+  `${KICAD_ROUTE_PREFIX}/open`,
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const url = HttpServerRequest.toURL(request);
+    if (Option.isNone(url)) return HttpServerResponse.text("Bad Request", { status: 400 });
+    const cwd = kicadSessionCwd(url.value);
+    if (!cwd) return HttpServerResponse.text("Viewer session expired", { status: 401 });
+    const input = yield* request.json.pipe(
+      Effect.flatMap(Schema.decodeUnknownEffect(KiCadOpenInput)),
+    );
+    const asset = yield* Effect.tryPromise(() => resolveKiCadProjectFile(cwd, input.path));
+    if (!asset || (asset.file.kind !== "pcb" && asset.file.kind !== "schematic"))
+      return HttpServerResponse.text("KiCad file not found", { status: 404 });
+    const kind = asset.file.kind;
+    if (process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY)
+      return HttpServerResponse.text("KiCad editor requires a graphical display", { status: 503 });
+    const launch = yield* Effect.result(
+      Effect.tryPromise({
+        try: () => launchKiCadEditor(kind, asset.absolutePath, cwd),
+        catch: () => new Error("Unable to launch the bundled KiCad editor"),
+      }),
+    );
+    if (launch._tag === "Failure")
+      return HttpServerResponse.text("Unable to launch the bundled KiCad editor", { status: 503 });
+    const child = launch.success;
+    child.unref();
+    return yield* HttpServerResponse.json(
+      { ok: true, editor: kind === "pcb" ? "pcbnew" : "eeschema" },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.succeed(
+        HttpServerResponse.text(
+          error instanceof Error ? error.message : "Unable to open KiCad file",
+          { status: 400 },
+        ),
+      ),
+    ),
   ),
 );
 
