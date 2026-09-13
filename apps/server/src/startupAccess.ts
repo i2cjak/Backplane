@@ -13,6 +13,9 @@ export interface HeadlessServeAccessInfo {
   readonly pairingUrl: string;
 }
 
+export const shouldPrintHeadlessPairingDetails = (environment: NodeJS.ProcessEnv): boolean =>
+  environment.BACKPLANE_BOOT_SERVICE_UNIT === undefined;
+
 type NetworkInterfacesMap = ReturnType<typeof NodeOS.networkInterfaces>;
 
 export const isLoopbackHost = (host: string | undefined): boolean => {
