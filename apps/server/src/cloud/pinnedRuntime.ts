@@ -73,7 +73,9 @@ export class PinnedRuntimePreflightBlockedError extends Schema.TaggedErrorClass<
 
 /**
  * Installs `@backplane/cli@<version>` into the pinned runtime directory unless a complete
- * install is already there, and returns its paths. The sentinel is written
+ * install is already there, and returns its paths. A source-built CLI can
+ * provide its bundled entry instead; the staged symlink keeps that build's
+ * external dependencies resolvable from its checkout. The sentinel is written
  * only after npm exits 0; checking the entry file alone is not enough. npm
  * extracts files before running native builds (node-pty), so a killed
  * install leaves a plausible-looking but broken tree behind.
@@ -84,6 +86,8 @@ interface PinnedRuntimeInstallInput {
   readonly fs: FileSystem.FileSystem;
   readonly path: Path.Path;
   readonly runner: ProcessRunner.ProcessRunner["Service"];
+  /** A bundled CLI entry from a source checkout, used instead of the registry. */
+  readonly sourceEntryPath?: string;
   readonly validate: (
     paths: PinnedRuntimePaths,
   ) => Effect.Effect<void, PinnedRuntimeInstallError | PinnedRuntimePreflightBlockedError>;
@@ -152,48 +156,68 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
   };
 
   return yield* Effect.gen(function* () {
-    const installStep = "installing the pinned backplane runtime (this can take a few minutes)";
-    const installArgs = [
-      "install",
-      "--prefix",
-      stagingDir,
-      "--no-fund",
-      "--no-audit",
-      `@backplane/cli@${input.version}`,
-    ];
-    yield* runner
-      .run({
-        command: "npm",
-        args: installArgs,
-        // Native dependencies may compile from source on slower machines.
-        timeout: PINNED_RUNTIME_INSTALL_TIMEOUT,
-      })
-      .pipe(
-        Effect.catchTags({
-          ProcessSpawnError: (error) =>
-            error.cause instanceof PlatformError.PlatformError &&
-            error.cause.reason._tag === "NotFound"
-              ? // pnpm-managed Node installations do not include npm. Keep npm
-                // installation semantics for the pinned runtime and native builds.
-                runner.run({
-                  command: "pnpm",
-                  args: ["--package=npm@11", "dlx", "npm", ...installArgs],
-                  timeout: PINNED_RUNTIME_INSTALL_TIMEOUT,
-                })
-              : Effect.fail(error),
-        }),
-        Effect.mapError((cause) => new PinnedRuntimeInstallError({ step: installStep, cause })),
-        Effect.filterOrFail(
-          (result) => result.code === 0,
-          (result) =>
+    if (input.sourceEntryPath !== undefined) {
+      yield* fs.makeDirectory(input.path.dirname(stagingPaths.entryPath), { recursive: true }).pipe(
+        Effect.mapError(
+          (cause) =>
             new PinnedRuntimeInstallError({
-              step: installStep,
-              exitCode: Number(result.code),
-              stdoutLength: result.stdout.length,
-              stderrLength: result.stderr.length,
+              step: "staging the local backplane runtime",
+              cause,
             }),
         ),
       );
+      yield* fs
+        .symlink(input.sourceEntryPath, stagingPaths.entryPath)
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new PinnedRuntimeInstallError({ step: "staging the local backplane runtime", cause }),
+          ),
+        );
+    } else {
+      const installStep = "installing the pinned backplane runtime (this can take a few minutes)";
+      const installArgs = [
+        "install",
+        "--prefix",
+        stagingDir,
+        "--no-fund",
+        "--no-audit",
+        `@backplane/cli@${input.version}`,
+      ];
+      yield* runner
+        .run({
+          command: "npm",
+          args: installArgs,
+          // Native dependencies may compile from source on slower machines.
+          timeout: PINNED_RUNTIME_INSTALL_TIMEOUT,
+        })
+        .pipe(
+          Effect.catchTags({
+            ProcessSpawnError: (error) =>
+              error.cause instanceof PlatformError.PlatformError &&
+              error.cause.reason._tag === "NotFound"
+                ? // pnpm-managed Node installations do not include npm. Keep npm
+                  // installation semantics for the pinned runtime and native builds.
+                  runner.run({
+                    command: "pnpm",
+                    args: ["--package=npm@11", "dlx", "npm", ...installArgs],
+                    timeout: PINNED_RUNTIME_INSTALL_TIMEOUT,
+                  })
+                : Effect.fail(error),
+          }),
+          Effect.mapError((cause) => new PinnedRuntimeInstallError({ step: installStep, cause })),
+          Effect.filterOrFail(
+            (result) => result.code === 0,
+            (result) =>
+              new PinnedRuntimeInstallError({
+                step: installStep,
+                exitCode: Number(result.code),
+                stdoutLength: result.stdout.length,
+                stderrLength: result.stderr.length,
+              }),
+          ),
+        );
+    }
 
     yield* input.validate(stagingPaths);
     yield* fs

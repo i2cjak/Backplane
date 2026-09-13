@@ -110,14 +110,22 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
   platform: NodeJS.Platform = "linux",
   usePinnedLauncher = false,
   installerPath = macInstallerPath,
+  sourceBuild = false,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const home = yield* fs.makeTempDirectoryScoped({ prefix: "backplane-boot-service-test-" });
   const baseDir = path.join(home, ".backplane");
   const sourceLauncher = path.join(home, "service-launcher.mjs");
+  const sourceRuntime = path.join(home, "apps", "server", "dist", "bin.mjs");
   const statePath = path.join(baseDir, "runtime", "service-state.json");
   yield* fs.writeFileString(sourceLauncher, "export {};\n");
+  yield* fs.makeDirectory(path.dirname(sourceRuntime), { recursive: true });
+  yield* fs.writeFileString(sourceRuntime, "export {};\n");
+  yield* fs.writeFileString(
+    path.join(path.dirname(sourceRuntime), "service-launcher.mjs"),
+    "export {};\n",
+  );
   const runtime = pinnedRuntimePaths(path, baseDir, "1.2.3");
   yield* fs.makeDirectory(path.dirname(runtime.entryPath), { recursive: true });
   yield* fs.writeFileString(runtime.entryPath, "export {};\n");
@@ -190,10 +198,14 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
       baseDir,
       logsDir: path.join(baseDir, "userdata", "logs"),
       cliVersion: "1.2.3",
-      host: {
-        execPath: "/usr/bin/node",
-        ...(usePinnedLauncher ? {} : { launcherSourcePath: sourceLauncher }),
-      },
+      ...(sourceBuild
+        ? {}
+        : {
+            host: {
+              execPath: "/usr/bin/node",
+              ...(usePinnedLauncher ? {} : { launcherSourcePath: sourceLauncher }),
+            },
+          }),
     }).pipe(
       Effect.provideService(ProcessRunner.ProcessRunner, runner),
       Effect.provide(
@@ -201,7 +213,10 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
           Layer.succeed(HostProcessPlatform, platform),
           Layer.succeed(HostProcessUserId, 501),
           Layer.succeed(HostProcessExecutablePath, "/usr/bin/node"),
-          Layer.succeed(HostProcessArguments, ["/usr/bin/node", path.join(home, "bin.mjs")]),
+          Layer.succeed(HostProcessArguments, [
+            "/usr/bin/node",
+            sourceBuild ? sourceRuntime : path.join(home, "bin.mjs"),
+          ]),
           ConfigProvider.layer(
             ConfigProvider.fromEnv({
               env: { HOME: home, ...(environmentPath === "" ? {} : { PATH: environmentPath }) },
@@ -466,6 +481,23 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
       expect(yield* fs.readFileString(plan.launcherPath)).toBe(
         "export const source = 'pinned runtime';\n",
       );
+    }),
+  );
+
+  it.effect("uses a source-built CLI instead of installing its unpublished version", () =>
+    Effect.gen(function* () {
+      const { service, commands, fs, runtime } = yield* makeHarness(
+        "linux",
+        false,
+        macInstallerPath,
+        true,
+      );
+
+      yield* fs.remove(runtime.sentinelPath);
+      yield* service.install();
+
+      expect(commands.some((command) => command.startsWith("npm "))).toBe(false);
+      expect(yield* fs.readLink(runtime.entryPath)).toContain("/apps/server/dist/bin.mjs");
     }),
   );
 
