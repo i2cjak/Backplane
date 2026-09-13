@@ -57,6 +57,128 @@ const requestsFrom = (
     }),
   );
 
+it.effect("pins clone input to the captured desktop despite focus changes", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const broker = yield* makeBroker;
+      const connected = yield* Deferred.make<string>();
+      const received: string[] = [];
+      yield* (yield* broker.connect(makeHost())).pipe(
+        Stream.runForEach((event) =>
+          event.type === "connected"
+            ? Deferred.succeed(connected, event.connectionId)
+            : Effect.sync(() => received.push("first")).pipe(
+                Effect.andThen(
+                  broker.respond({
+                    clientId: "client-1",
+                    connectionId: event.connectionId,
+                    requestId: event.request.requestId,
+                    ok: true,
+                    result: "first desktop",
+                  }),
+                ),
+              ),
+        ),
+        Effect.forkScoped,
+      );
+      yield* Deferred.await(connected);
+      const first = yield* broker.invokePinned({
+        scope,
+        operation: "snapshot",
+        input: {},
+        tabId: PreviewTabId.make("tab-1"),
+      });
+      const otherConnected = yield* Deferred.make<string>();
+      yield* (yield* broker.connect(makeHost({ clientId: "client-2" }))).pipe(
+        Stream.runForEach((event) =>
+          event.type === "connected"
+            ? Deferred.succeed(otherConnected, event.connectionId)
+            : Effect.sync(() => received.push("other")).pipe(
+                Effect.andThen(
+                  broker.respond({
+                    clientId: "client-2",
+                    connectionId: event.connectionId,
+                    requestId: event.request.requestId,
+                    ok: true,
+                    result: "other desktop",
+                  }),
+                ),
+              ),
+        ),
+        Effect.forkScoped,
+      );
+      const otherConnectionId = yield* Deferred.await(otherConnected);
+      yield* broker.focusHost({
+        ...makeHost({ clientId: "client-2" }),
+        connectionId: otherConnectionId,
+        focused: true,
+      });
+      const next = yield* broker.invokePinned({
+        scope,
+        operation: "click",
+        input: {},
+        tabId: PreviewTabId.make("tab-1"),
+        clientId: first.clientId,
+        connectionId: first.connectionId,
+      });
+      expect(next.clientId).toBe(first.clientId);
+      expect(next.connectionId).toBe(first.connectionId);
+      expect(received).toEqual(["first", "first"]);
+    }),
+  ),
+);
+
+it.effect(
+  "rejects a replaced clone host connection instead of sending input to its replacement",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const broker = yield* makeBroker;
+        const connected = yield* Deferred.make<string>();
+        yield* (yield* broker.connect(makeHost())).pipe(
+          Stream.runForEach((event) =>
+            event.type === "connected"
+              ? Deferred.succeed(connected, event.connectionId)
+              : broker.respond({
+                  clientId: "client-1",
+                  connectionId: event.connectionId,
+                  requestId: event.request.requestId,
+                  ok: true,
+                  result: {},
+                }),
+          ),
+          Effect.forkScoped,
+        );
+        const connectionId = yield* Deferred.await(connected);
+        const replacementConnected = yield* Deferred.make<string>();
+        let replacementInputs = 0;
+        yield* (yield* broker.connect(makeHost())).pipe(
+          Stream.runForEach((event) =>
+            event.type === "connected"
+              ? Deferred.succeed(replacementConnected, event.connectionId)
+              : Effect.sync(() => {
+                  replacementInputs += 1;
+                }),
+          ),
+          Effect.forkScoped,
+        );
+        yield* Deferred.await(replacementConnected);
+        const failure = yield* broker
+          .invokePinned({
+            scope,
+            operation: "click",
+            input: {},
+            tabId: PreviewTabId.make("tab-1"),
+            clientId: "client-1",
+            connectionId,
+          })
+          .pipe(Effect.flip);
+        expect(failure).toBeInstanceOf(PreviewAutomationNoAvailableHostError);
+        expect(replacementInputs).toBe(0);
+      }),
+    ),
+);
+
 it.effect("atomically registers a connected host and correlates its response", () =>
   Effect.scoped(
     Effect.gen(function* () {

@@ -71,10 +71,12 @@ import {
   PreviewAutomationResponse,
   PreviewAutomationScrollInput,
   PreviewAutomationSnapshot,
+  PreviewAutomationFrame,
   PreviewAutomationStatus,
   PreviewAutomationStreamEvent,
   PreviewAutomationTypeInput,
   PreviewAutomationWaitForInput,
+  PreviewClonePointerInput,
 } from "./previewAutomation.ts";
 import type {
   ClientOrchestrationCommand,
@@ -593,6 +595,9 @@ export const DesktopPreviewAutomationStatusSchema = Schema.Struct({
   tabId: Schema.NullOr(DesktopPreviewTabIdSchema),
 });
 export type DesktopPreviewAutomationStatus = typeof DesktopPreviewAutomationStatusSchema.Type;
+
+export const DesktopPreviewAutomationFrameSchema = PreviewAutomationFrame;
+export type DesktopPreviewAutomationFrame = typeof DesktopPreviewAutomationFrameSchema.Type;
 
 export const DesktopPreviewNavStatusSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("Idle") }),
@@ -1252,6 +1257,10 @@ export interface DesktopPreviewBridge {
     scroll: (tabId: string, input: PreviewAutomationScrollInput) => Promise<void>;
     evaluate: (tabId: string, input: PreviewAutomationEvaluateInput) => Promise<unknown>;
     waitFor: (tabId: string, input: PreviewAutomationWaitForInput) => Promise<void>;
+    captureFrame: (tabId: string) => Promise<DesktopPreviewAutomationFrame>;
+    clonePointer: (tabId: string, input: PreviewClonePointerInput) => Promise<void>;
+    cloneText: (tabId: string, text: string) => Promise<void>;
+    cloneClipboardCopy: (tabId: string) => Promise<string>;
   };
   onStateChange: (listener: (tabId: string, state: DesktopPreviewTabState) => void) => () => void;
   onPointerEvent: (listener: (event: DesktopPreviewPointerEvent) => void) => () => void;

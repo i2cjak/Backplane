@@ -3,6 +3,7 @@ import {
   DesktopPreviewArtifactInputSchema,
   DesktopPreviewAutomationClickInputSchema,
   DesktopPreviewAutomationEvaluateInputSchema,
+  DesktopPreviewAutomationFrameSchema,
   DesktopPreviewAutomationPressInputSchema,
   DesktopPreviewAutomationScrollInputSchema,
   DesktopPreviewAutomationStatusSchema,
@@ -25,6 +26,7 @@ import {
   DesktopPreviewWebviewConfigSchema,
   PreviewAnnotationSubmissionResultSchema,
   PreviewAutomationSnapshot,
+  PreviewClonePointerInput,
   DEFAULT_BROWSER_PROFILE_ID,
   INCOGNITO_BROWSER_PROFILE_ID,
 } from "@backplane/contracts";
@@ -457,6 +459,50 @@ export const automationWaitFor = DesktopIpc.makeIpcMethod({
   }),
 });
 
+export const automationCaptureFrame = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.PREVIEW_AUTOMATION_CAPTURE_FRAME_CHANNEL,
+  payload: DesktopPreviewTabInputSchema,
+  result: DesktopPreviewAutomationFrameSchema,
+  handler: Effect.fn("desktop.ipc.preview.automationCaptureFrame")(function* ({ tabId }) {
+    const manager = yield* PreviewManager.PreviewManager;
+    return yield* manager.automationCaptureFrame(tabId);
+  }),
+});
+
+export const automationClonePointer = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.PREVIEW_AUTOMATION_CLONE_POINTER_CHANNEL,
+  payload: Schema.Struct({
+    tabId: DesktopPreviewTabInputSchema.fields.tabId,
+    input: PreviewClonePointerInput,
+  }),
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.preview.automationClonePointer")(function* ({ tabId, input }) {
+    const manager = yield* PreviewManager.PreviewManager;
+    yield* manager.automationClonePointer(tabId, input);
+  }),
+});
+export const automationCloneText = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.PREVIEW_AUTOMATION_CLONE_TEXT_CHANNEL,
+  payload: Schema.Struct({
+    tabId: DesktopPreviewTabInputSchema.fields.tabId,
+    text: Schema.String.check(Schema.isMaxLength(64_000)),
+  }),
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.preview.automationCloneText")(function* ({ tabId, text }) {
+    const manager = yield* PreviewManager.PreviewManager;
+    yield* manager.automationCloneText(tabId, text);
+  }),
+});
+export const automationCloneClipboardCopy = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.PREVIEW_AUTOMATION_CLONE_CLIPBOARD_COPY_CHANNEL,
+  payload: DesktopPreviewTabInputSchema,
+  result: Schema.String,
+  handler: Effect.fn("desktop.ipc.preview.automationCloneClipboardCopy")(function* ({ tabId }) {
+    const manager = yield* PreviewManager.PreviewManager;
+    return yield* manager.automationCloneClipboardCopy(tabId);
+  }),
+});
+
 export const saveRecording = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.PREVIEW_RECORDING_SAVE_CHANNEL,
   payload: DesktopPreviewRecordingSaveInputSchema,
@@ -501,6 +547,10 @@ export const methods = [
   automationScroll,
   automationEvaluate,
   automationWaitFor,
+  automationCaptureFrame,
+  automationClonePointer,
+  automationCloneText,
+  automationCloneClipboardCopy,
   startRecording,
   stopRecording,
   saveRecording,

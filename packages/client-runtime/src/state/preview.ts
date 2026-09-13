@@ -112,5 +112,20 @@ export function createPreviewEnvironmentAtoms<R, E>(
         key: previewAutomationHostFocusConcurrencyKey,
       },
     }),
+    cloneInvoke: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:preview:clone-invoke",
+      tag: WS_METHODS.previewCloneInvoke,
+      scheduler: automationScheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId, input }) =>
+          JSON.stringify([
+            environmentId,
+            input.cloneId,
+            input.tabId,
+            input.operation === "capture" ? "capture" : "input",
+          ]),
+      },
+    }),
   };
 }

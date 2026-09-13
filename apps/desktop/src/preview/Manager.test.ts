@@ -4108,6 +4108,54 @@ describe("PreviewOperationError", () => {
   });
 });
 
+describe("Preview clone capture", () => {
+  effectIt.effect("reports CSS viewport dimensions independently of resized JPEG pixels", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const capturePage = vi.fn(async () => ({
+          toJPEG: () => Buffer.from("jpeg"),
+          getSize: () => ({ width: 2400, height: 1200 }),
+          resize: () => ({
+            toJPEG: () => Buffer.from("resized"),
+            getSize: () => ({ width: 1600, height: 800 }),
+          }),
+        }));
+        const preview = makeTestPreviewWebContents(capturePage, 42);
+        preview.executeJavaScript = vi.fn(async () => ({ width: 800, height: 600 }));
+        fromId.mockReturnValue(preview);
+        yield* manager.createTab("tab_clone");
+        yield* manager.registerWebview("tab_clone", 42);
+        const frame = yield* manager.automationCaptureFrame("tab_clone");
+        expect(frame).toMatchObject({
+          width: 1600,
+          height: 800,
+          viewportWidth: 800,
+          viewportHeight: 600,
+        });
+      }),
+    ),
+  );
+
+  effectIt.effect("returns selected page text for clipboard copy", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const preview = makeTestPreviewWebContents(
+          vi.fn(async () => ({
+            toJPEG: () => Buffer.from("jpeg"),
+            getSize: () => ({ width: 800, height: 600 }),
+          })),
+          42,
+        );
+        preview.executeJavaScript = vi.fn(async () => "selected text");
+        fromId.mockReturnValue(preview);
+        yield* manager.createTab("tab_clip");
+        yield* manager.registerWebview("tab_clip", 42);
+        expect(yield* manager.automationCloneClipboardCopy("tab_clip")).toBe("selected text");
+      }),
+    ),
+  );
+});
+
 describe("Preview automation diagnostics", () => {
   it("keeps browser exception detail out of structural diagnostics", () => {
     const secret = "unrelated-browser-payload-secret";
