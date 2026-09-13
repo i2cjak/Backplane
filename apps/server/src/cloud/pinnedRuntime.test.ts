@@ -84,6 +84,42 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
     }),
   );
 
+  it.effect("stages a source-built runtime without querying the package registry", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "backplane-pinned-source-" });
+      const sourceDir = yield* fs.makeTempDirectoryScoped({ prefix: "backplane-source-build-" });
+      const sourceEntry = path.join(sourceDir, "dist", "bin.mjs");
+      yield* fs.makeDirectory(path.dirname(sourceEntry), { recursive: true });
+      yield* fs.writeFileString(sourceEntry, "export {};\n");
+      const commands: ProcessRunner.ProcessRunInput[] = [];
+
+      const paths = yield* ensurePinnedRuntimeInstalled({
+        baseDir,
+        version: "1.2.3",
+        fs,
+        path,
+        runner: ProcessRunner.ProcessRunner.of({
+          run: (input) =>
+            Effect.sync(() => commands.push(input)).pipe(
+              Effect.andThen(Effect.die("must not run")),
+            ),
+        }),
+        sourceEntryPath: sourceEntry,
+        validate: (runtime) =>
+          fs.exists(runtime.entryPath).pipe(
+            Effect.flatMap((exists) => (exists ? Effect.void : Effect.die("missing runtime"))),
+            Effect.orDie,
+          ),
+      });
+
+      assert.deepEqual(commands, []);
+      assert.equal(yield* fs.readLink(paths.entryPath), sourceEntry);
+      assert.equal(yield* fs.readFileString(paths.sentinelPath), "1.2.3\n");
+    }),
+  );
+
   it.effect("does not try a different installer for npm permission failures", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

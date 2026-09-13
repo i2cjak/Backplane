@@ -1,4 +1,5 @@
 import {
+  HostProcessArguments,
   HostProcessExecutablePath,
   HostProcessPlatform,
   HostProcessUserId,
@@ -494,6 +495,8 @@ export class BootService extends Context.Service<
 
 export interface BootServiceHost {
   readonly execPath: string;
+  /** Bundled CLI entry from a source checkout. */
+  readonly runtimeSourcePath?: string;
   readonly launcherSourcePath?: string;
 }
 
@@ -504,6 +507,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
   readonly host?: BootServiceHost;
 }) {
   const hostExecPath = yield* HostProcessExecutablePath;
+  const processArguments = yield* HostProcessArguments;
   const platform = yield* HostProcessPlatform;
   const uid = yield* HostProcessUserId;
   const homeDir = yield* Config.string("HOME").pipe(Config.withDefault(""));
@@ -511,7 +515,18 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const runner = yield* ProcessRunner.ProcessRunner;
-  const host = input.host ?? { execPath: hostExecPath };
+  const invocationEntryPath = processArguments[1];
+  const sourceRuntimePath =
+    input.host?.runtimeSourcePath ??
+    (invocationEntryPath !== undefined &&
+    !invocationEntryPath.replaceAll("\\", "/").includes("/node_modules/") &&
+    invocationEntryPath.replaceAll("\\", "/").endsWith("/apps/server/dist/bin.mjs")
+      ? invocationEntryPath
+      : undefined);
+  const host: BootServiceHost = input.host ?? {
+    execPath: hostExecPath,
+    ...(sourceRuntimePath === undefined ? {} : { runtimeSourcePath: sourceRuntimePath }),
+  };
   const xmlSafeInstallerDirectories = installerPath.split(":").filter(
     (directory) =>
       directory.length > 0 &&
@@ -547,7 +562,14 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
   const runtimePaths = pinnedRuntimePaths(path, input.baseDir, input.cliVersion);
   const launcherSourcePath =
     host.launcherSourcePath ??
-    path.join(path.dirname(runtimePaths.entryPath), SERVICE_LAUNCHER_FILE);
+    path.join(
+      path.dirname(
+        host.runtimeSourcePath ??
+          (input.host === undefined ? invocationEntryPath : undefined) ??
+          runtimePaths.entryPath,
+      ),
+      SERVICE_LAUNCHER_FILE,
+    );
   const writeDurably = (filePath: string, contents: string) =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -708,6 +730,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
       fs,
       path,
       runner,
+      ...(host.runtimeSourcePath === undefined ? {} : { sourceEntryPath: host.runtimeSourcePath }),
       validate: (runtime) =>
         runner
           .run({
