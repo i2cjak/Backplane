@@ -555,6 +555,12 @@ body,
   border-bottom: 1px solid var(--design-line);
   background: var(--background);
 }
+.design-mobile-tools-toggle {
+  display: none;
+}
+.design-inspect-actions {
+  display: contents;
+}
 .design-layer-toggle {
   display: none;
 }
@@ -660,6 +666,15 @@ body,
     gap: 2px;
     order: 3;
   }
+  .design-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .design-tabs::-webkit-scrollbar {
+    display: none;
+  }
   .design-tab {
     padding: 13px 8px;
     gap: 5px;
@@ -690,6 +705,7 @@ body,
     width: 13px;
   }
   .design-filebar {
+    min-height: 34px;
     padding: 4px 10px;
     gap: 7px;
   }
@@ -700,18 +716,40 @@ body,
     min-height: 34px;
   }
   .design-file-browser {
-    top: 145px;
+    top: 176px;
     left: 8px;
     right: 8px;
   }
   .design-inspectbar {
-    padding: 4px 10px;
-    gap: 6px;
-    min-height: 44px;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    padding: 3px 8px;
+    gap: 5px;
+    min-height: 40px;
+  }
+  .design-mobile-tools-toggle {
+    display: inline-flex;
+    order: 3;
+    min-height: 34px;
   }
   .design-inspectbar .design-search {
-    flex: 1 0 calc(100% - 6.5rem);
+    order: 1;
+    width: auto;
+    flex: 1;
+  }
+  .design-inspectbar > .design-text-button[type="submit"] {
+    order: 2;
+    min-height: 34px;
+  }
+  .design-inspect-actions {
+    display: none;
+    grid-column: 1 / -1;
+    order: 4;
+    flex-wrap: wrap;
+    padding: 2px 0;
+  }
+  .design-inspect-actions[data-open="true"] {
+    display: flex;
   }
   .design-layer-toggle {
     display: inline-flex;
@@ -728,6 +766,13 @@ body,
   .kicad-icon-button {
     width: 36px;
     height: 36px;
+  }
+  .design-selection-status {
+    max-width: 100%;
+    overflow: hidden;
+    padding: 4px 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 @media (prefers-reduced-motion: reduce) {

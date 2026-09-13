@@ -319,20 +319,49 @@
       }
       @media (max-width: 640px) {
         .schematic-hierarchy-panel {
-          top: 62px;
+          top: 8px;
           left: 8px;
-          width: min(280px, calc(100% - 16px));
+          width: calc(100% - 156px);
           max-height: 58vh;
         }
         .schematic-hierarchy-tree {
+          position: absolute;
+          top: 100%;
+          left: -1px;
+          width: min(300px, calc(100vw - 16px));
+          box-sizing: border-box;
           max-height: 50vh;
+          border: 1px solid #ffffff30;
+          background: #101214f5;
         }
+        .schematic-hierarchy-heading {
+          border-bottom: 0;
+        }
+        .schematic-hierarchy-toggle {
+          padding: 4px 6px;
+          font-size: 12px;
+        }
+        .schematic-hierarchy-actions {
+          gap: 0;
+          padding: 0;
+        }
+        .schematic-hierarchy-actions button {
+          padding: 2px 5px;
+          font-size: 12px;
+        }
+        [data-color-scheme="light"] .schematic-hierarchy-tree {
+          background: #f8faf9;
+        }
+
         .schematic-hierarchy-toggle,
         .schematic-hierarchy-actions button,
         .schematic-hierarchy-disclosure,
         .schematic-hierarchy-item {
           min-height: 42px;
         }
+      }
+      .canvas-fit-compact {
+        display: none;
       }
       .canvas-actions button {
         border: 0;
@@ -371,14 +400,36 @@
           min-height: 40px;
         }
       }
+      @media (max-width: 640px) {
+        #viewer:has(ecad-viewer) .canvas-actions {
+          top: 8px;
+          right: 8px;
+          bottom: auto;
+          padding: 0;
+          gap: 0;
+        }
+        .canvas-actions button {
+          min-width: 44px;
+          height: 44px;
+          padding: 0 5px;
+        }
+        .canvas-fit-full {
+          display: none;
+        }
+        .canvas-fit-compact {
+          display: inline;
+        }
+      }
       @media (prefers-reduced-motion: reduce) {
         .canvas-actions button {
           transition: none;
         }
       }
-      #viewer:has(ecad-viewer) .canvas-actions {
-        top: 12px;
-        bottom: auto;
+      @media (min-width: 641px) {
+        #viewer:has(ecad-viewer) .canvas-actions {
+          top: 12px;
+          bottom: auto;
+        }
       }
       ecad-viewer,
       ecad-3d-viewer {

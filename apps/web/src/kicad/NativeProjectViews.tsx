@@ -157,6 +157,7 @@ export function NativeProjectViews({
   const [probe, setProbe] = useState<Probe>();
   const [netHighlight, setNetHighlight] = useState<NetHighlightCommand>();
   const [crossProbeEnabled, setCrossProbeEnabled] = useState(false);
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const [status, setStatus] = useState("");
   const [visited, setVisited] = useState(new Set<NativeView>());
   const [layers, setLayers] = useState<NativeLayer[]>([]);
@@ -282,6 +283,15 @@ export function NativeProjectViews({
           if (view) runProbe(query, net ? "net" : "component", view);
         }}
       >
+        <button
+          type="button"
+          className="design-text-button design-mobile-tools-toggle"
+          aria-expanded={mobileToolsOpen}
+          aria-controls="native-inspect-tools"
+          onClick={() => setMobileToolsOpen((open) => !open)}
+        >
+          Tools
+        </button>
         <div className="design-search">
           <Search size={14} />
           <input
@@ -292,55 +302,65 @@ export function NativeProjectViews({
             className="min-w-0 flex-1 bg-transparent px-1 py-1 outline-none"
           />
         </div>
-        <label>
-          <input type="checkbox" checked={net} onChange={(event) => setNet(event.target.checked)} />
-          Net
-        </label>
         <button type="submit" className="design-text-button">
           Find
         </button>
-        <button
-          type="button"
-          disabled={!selection || !pcb || !schematic}
-          onClick={() => selection && crossProbe(selection)}
-          className="design-text-button"
-          aria-label={`Show selection in ${view === "pcb" ? "schematic" : "PCB"}`}
+        <div
+          id="native-inspect-tools"
+          className="design-inspect-actions"
+          data-open={mobileToolsOpen}
         >
-          <ArrowLeftRight size={14} />
-          <span className="design-crossprobe-label">
-            Show in {view === "pcb" ? "schematic" : "PCB"}
-          </span>
-        </button>
-        <button
-          type="button"
-          className="design-text-button"
-          data-active={crossProbeEnabled}
-          aria-pressed={crossProbeEnabled}
-          aria-label="Toggle cross-probe mode"
-          onClick={() => setCrossProbeEnabled((current) => !current)}
-        >
-          Cross-probe (X)
-        </button>
-        <button
-          type="button"
-          className="design-text-button"
-          disabled={!selection?.net?.trim() && !selection?.uuid}
-          onClick={() => handleCrossProbeShortcut("h")}
-          aria-label="Highlight selected net"
-        >
-          Highlight net (H)
-        </button>
-        {view === "pcb" && (
+          <label>
+            <input
+              type="checkbox"
+              checked={net}
+              onChange={(event) => setNet(event.target.checked)}
+            />
+            Net
+          </label>
           <button
             type="button"
-            className="design-text-button design-layer-toggle"
-            aria-expanded={mobileLayersOpen}
-            aria-controls="native-pcb-layers"
-            onClick={() => setMobileLayersOpen((open) => !open)}
+            disabled={!selection || !pcb || !schematic}
+            onClick={() => selection && crossProbe(selection)}
+            className="design-text-button"
+            aria-label={`Show selection in ${view === "pcb" ? "schematic" : "PCB"}`}
           >
-            Layers
+            <ArrowLeftRight size={14} />
+            <span className="design-crossprobe-label">
+              Show in {view === "pcb" ? "schematic" : "PCB"}
+            </span>
           </button>
-        )}
+          <button
+            type="button"
+            className="design-text-button"
+            data-active={crossProbeEnabled}
+            aria-pressed={crossProbeEnabled}
+            aria-label="Toggle cross-probe mode"
+            onClick={() => setCrossProbeEnabled((current) => !current)}
+          >
+            Cross-probe (X)
+          </button>
+          <button
+            type="button"
+            className="design-text-button"
+            disabled={!selection?.net?.trim() && !selection?.uuid}
+            onClick={() => handleCrossProbeShortcut("h")}
+            aria-label="Highlight selected net"
+          >
+            Highlight net (H)
+          </button>
+          {view === "pcb" && (
+            <button
+              type="button"
+              className="design-text-button design-layer-toggle"
+              aria-expanded={mobileLayersOpen}
+              aria-controls="native-pcb-layers"
+              onClick={() => setMobileLayersOpen((open) => !open)}
+            >
+              Layers
+            </button>
+          )}
+        </div>
       </form>
       {status && (
         <div role="status" className="design-selection-status">

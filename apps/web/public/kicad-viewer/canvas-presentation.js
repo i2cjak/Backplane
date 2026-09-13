@@ -136,6 +136,15 @@ export async function installCanvasPresentation(element) {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = text;
+    if (label === "Fit design") {
+      const full = document.createElement("span");
+      full.className = "canvas-fit-full";
+      full.textContent = text;
+      const compact = document.createElement("span");
+      compact.className = "canvas-fit-compact";
+      compact.textContent = "Fit";
+      button.replaceChildren(full, compact);
+    }
     button.setAttribute("aria-label", label);
     button.addEventListener("click", () => {
       const viewer = activeViewer();
