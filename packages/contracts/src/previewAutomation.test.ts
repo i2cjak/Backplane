@@ -5,6 +5,7 @@ import {
   PreviewAutomationFrame,
   PreviewAutomationOperation,
   PreviewCloneInvokeInput,
+  previewCloneHostOperation,
 } from "./previewAutomation.ts";
 
 const isOperation = Schema.is(PreviewAutomationOperation);
@@ -78,6 +79,16 @@ describe("clone input validation", () => {
     expect(() =>
       decodeClone({ ...base, operation: "forward", input: { tabId: "tab", action: "forward" } }),
     ).not.toThrow();
+  });
+  it("advertises clone navigation separately from generic automation navigation", () => {
+    expect(isOperation("navigate")).toBe(true);
+    expect(isOperation("cloneNavigate")).toBe(true);
+  });
+  it("maps clone requests to host operations without changing generic navigation", () => {
+    expect(previewCloneHostOperation("capture")).toBe("captureFrame");
+    expect(previewCloneHostOperation("navigate")).toBe("cloneNavigate");
+    expect(previewCloneHostOperation("back")).toBe("back");
+    expect(isOperation("navigate")).toBe(true);
   });
   it("accepts pinned address navigation and reload actions", () => {
     expect(() =>

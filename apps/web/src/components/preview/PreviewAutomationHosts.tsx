@@ -343,7 +343,7 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           "clipboardPaste",
           "back",
           "forward",
-          "navigate",
+          "cloneNavigate",
           "reload",
         ].includes(request.operation);
         const needsSessionSync = needsPreviewAutomationSessionSync(state, request.tabId);
@@ -570,6 +570,12 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
             );
             return await currentStatus(threadRef, ready.tabId);
           }
+          case "cloneNavigate": {
+            const ready = await requireReadyTab();
+            const url = normalizePreviewUrl((request.input as { url: string }).url);
+            await ready.bridge.navigate(ready.runtimeTabId, url);
+            return { tabId: ready.tabId, ok: true };
+          }
           case "resize": {
             const ready = await requireReadyTab();
             const input = request.input as PreviewAutomationResizeInput;
@@ -675,12 +681,6 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           case "forward": {
             const ready = await requireReadyTab();
             await ready.bridge.goForward(ready.runtimeTabId);
-            return { tabId: ready.tabId, ok: true };
-          }
-          case "navigate": {
-            const ready = await requireReadyTab();
-            const url = normalizePreviewUrl((request.input as { url: string }).url);
-            await ready.bridge.navigate(ready.runtimeTabId, url);
             return { tabId: ready.tabId, ok: true };
           }
           case "reload": {

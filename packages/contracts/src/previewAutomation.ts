@@ -51,7 +51,7 @@ export const PREVIEW_AUTOMATION_OPERATIONS = [
   "clipboardPaste",
   "back",
   "forward",
-  "navigate",
+  "cloneNavigate",
   "reload",
 ] as const;
 
@@ -587,6 +587,17 @@ export const PreviewCloneOperation = Schema.Literals([
   "reload",
 ]);
 export type PreviewCloneOperation = typeof PreviewCloneOperation.Type;
+
+/** Translate a clone-only request into the host capability namespace. */
+export function previewCloneHostOperation(
+  operation: PreviewCloneOperation,
+): PreviewAutomationOperation {
+  return operation === "capture"
+    ? "captureFrame"
+    : operation === "navigate"
+      ? "cloneNavigate"
+      : operation;
+}
 const CloneTab = { tabId: PreviewTabId };
 export const PreviewClonePointerInput = Schema.Struct({
   ...CloneTab,
