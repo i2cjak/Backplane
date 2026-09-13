@@ -55,6 +55,7 @@ import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import { previewBridge } from "./previewBridge";
+import { normalizePreviewUrl } from "@backplane/shared/preview";
 import {
   PreviewAutomationOperationError,
   PreviewAutomationOverlayTimeoutError,
@@ -342,6 +343,8 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           "clipboardPaste",
           "back",
           "forward",
+          "navigate",
+          "reload",
         ].includes(request.operation);
         const needsSessionSync = needsPreviewAutomationSessionSync(state, request.tabId);
         if (needsSessionSync && !cloneOperation) {
@@ -672,6 +675,17 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           case "forward": {
             const ready = await requireReadyTab();
             await ready.bridge.goForward(ready.runtimeTabId);
+            return { tabId: ready.tabId, ok: true };
+          }
+          case "navigate": {
+            const ready = await requireReadyTab();
+            const url = normalizePreviewUrl((request.input as { url: string }).url);
+            await ready.bridge.navigate(ready.runtimeTabId, url);
+            return { tabId: ready.tabId, ok: true };
+          }
+          case "reload": {
+            const ready = await requireReadyTab();
+            await ready.bridge.refresh(ready.runtimeTabId);
             return { tabId: ready.tabId, ok: true };
           }
           case "pointer": {

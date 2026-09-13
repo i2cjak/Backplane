@@ -6,6 +6,7 @@ import {
   type CloneGestureInput,
 } from "@backplane/client-runtime/browser-clone-gestures";
 import type { PreviewAutomationFrame } from "@backplane/contracts";
+import { normalizePreviewUrl } from "@backplane/shared/preview";
 import {
   Clipboard,
   Keyboard,
@@ -41,6 +42,8 @@ interface Props {
   readonly canGoForward: boolean;
   readonly onBack: () => Promise<void>;
   readonly onForward: () => Promise<void>;
+  readonly onNavigate: (url: string) => Promise<void>;
+  readonly onReload: () => Promise<void>;
 }
 const HELP = [
   ["Back and Forward", "Move through the desktop browser tab's history."],
@@ -64,6 +67,8 @@ export function BrowserCloneSurface(props: Props) {
   const [draft, setDraft] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [address, setAddress] = useState("");
+  const editingAddress = useRef(false);
   const [surface, setSurface] = useState({ width: 1, height: 1 });
   const [, redraw] = useState(0);
   const surfaceRef = useRef<HTMLDivElement>(null);
@@ -75,6 +80,9 @@ export function BrowserCloneSurface(props: Props) {
     createCloneGestureController((gesture) => callbackRef.current(gesture)),
   );
   const frame = props.frame;
+  useEffect(() => {
+    if (!editingAddress.current) setAddress(frame?.url ?? "");
+  }, [frame?.url]);
   const viewportWidth = frame?.viewportWidth ?? 1;
   const viewportHeight = frame?.viewportHeight ?? 1;
   useEffect(() => {
@@ -150,6 +158,48 @@ export function BrowserCloneSurface(props: Props) {
   };
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-[#111] text-white" data-browser-clone>
+      <div className="flex shrink-0 items-center gap-1 border-b border-white/10 bg-[#171717] p-1">
+        <form
+          className="flex min-w-0 flex-1"
+          onSubmit={(event) => {
+            event.preventDefault();
+            editingAddress.current = false;
+            void run(async () => props.onNavigate(normalizePreviewUrl(address)));
+          }}
+        >
+          <input
+            aria-label="Browser address"
+            placeholder="Enter URL"
+            inputMode="url"
+            spellCheck={false}
+            disabled={!frame || !!props.error}
+            value={address}
+            onFocus={() => (editingAddress.current = true)}
+            onBlur={() => {
+              editingAddress.current = false;
+              setAddress(frame?.url ?? "");
+            }}
+            onChange={(event) => setAddress(event.target.value)}
+            className="min-w-0 flex-1 border border-white/20 bg-black px-3 py-2 text-sm text-white"
+            autoCapitalize="none"
+            autoCorrect="off"
+          />
+        </form>
+        <Button
+          variant="ghost"
+          size="icon-lg"
+          aria-label="Reload"
+          disabled={!frame || !!props.error}
+          onClick={() => void run(props.onReload)}
+        >
+          <span aria-hidden>↻</span>
+        </Button>
+      </div>
+      {actionError ? (
+        <p role="alert" className="shrink-0 bg-red-950 px-3 py-1 text-xs text-red-200">
+          {actionError}
+        </p>
+      ) : null}
       <div
         ref={surfaceRef}
         className="relative min-h-0 flex-1 touch-none select-none overflow-hidden"

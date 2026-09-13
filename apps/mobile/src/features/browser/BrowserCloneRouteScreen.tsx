@@ -155,6 +155,12 @@ export function BrowserCloneRouteScreen({ route }: Props) {
       forward: async () => {
         if (tabId) await send({ tabId, action: "forward" });
       },
+      navigate: async (url) => {
+        if (tabId) await send({ tabId, action: "navigate", url });
+      },
+      reload: async () => {
+        if (tabId) await send({ tabId, action: "reload" });
+      },
     }),
     [failed, send, tabId],
   );

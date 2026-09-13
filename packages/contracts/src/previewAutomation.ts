@@ -51,6 +51,8 @@ export const PREVIEW_AUTOMATION_OPERATIONS = [
   "clipboardPaste",
   "back",
   "forward",
+  "navigate",
+  "reload",
 ] as const;
 
 export const PreviewAutomationOperation = Schema.Literals(PREVIEW_AUTOMATION_OPERATIONS);
@@ -567,6 +569,8 @@ export const PreviewAutomationFrame = Schema.Struct({
   /** Optional for compatibility with desktop hosts predating clone history controls. */
   canGoBack: Schema.optional(Schema.Boolean),
   canGoForward: Schema.optional(Schema.Boolean),
+  /** Live URL when it fits the wire bound; navigation remains available via the address field. */
+  url: Schema.optional(Schema.String.check(Schema.isMaxLength(8192))),
 });
 export type PreviewAutomationFrame = typeof PreviewAutomationFrame.Type;
 
@@ -579,6 +583,8 @@ export const PreviewCloneOperation = Schema.Literals([
   "clipboardPaste",
   "back",
   "forward",
+  "navigate",
+  "reload",
 ]);
 export type PreviewCloneOperation = typeof PreviewCloneOperation.Type;
 const CloneTab = { tabId: PreviewTabId };
@@ -596,6 +602,14 @@ export type PreviewClonePointerInput = typeof PreviewClonePointerInput.Type;
 export const PreviewCloneInput = Schema.Union([
   Schema.Struct({ ...CloneTab, action: Schema.Literal("capture") }),
   Schema.Struct({ ...CloneTab, action: Schema.Literals(["back", "forward"]) }),
+  Schema.Struct({ ...CloneTab, action: Schema.Literal("reload") }),
+  Schema.Struct({
+    ...CloneTab,
+    action: Schema.Literal("navigate"),
+    url: Schema.String.check(Schema.isTrimmed())
+      .check(Schema.isNonEmpty())
+      .check(Schema.isMaxLength(2048)),
+  }),
   PreviewClonePointerInput,
   Schema.Struct({
     ...CloneTab,

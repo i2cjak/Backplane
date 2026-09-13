@@ -79,6 +79,25 @@ describe("clone input validation", () => {
       decodeClone({ ...base, operation: "forward", input: { tabId: "tab", action: "forward" } }),
     ).not.toThrow();
   });
+  it("accepts pinned address navigation and reload actions", () => {
+    expect(() =>
+      decodeClone({ ...base, operation: "reload", input: { tabId: "tab", action: "reload" } }),
+    ).not.toThrow();
+    expect(() =>
+      decodeClone({
+        ...base,
+        operation: "navigate",
+        input: { tabId: "tab", action: "navigate", url: "localhost:3000" },
+      }),
+    ).not.toThrow();
+    expect(() =>
+      decodeClone({
+        ...base,
+        operation: "reload",
+        input: { tabId: "tab", action: "navigate", url: "https://example.com" },
+      }),
+    ).toThrow();
+  });
   it("rejects mismatched actions, cross-tab input, and non-finite coordinates", () => {
     const decode = decodeClone;
     expect(() =>

@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { PreviewAutomationFrame } from "@backplane/contracts";
+import { normalizePreviewUrl } from "@backplane/shared/preview";
 import {
   cloneImageRect,
   createCloneGestureController,
@@ -30,6 +31,8 @@ export interface BrowserCloneTransport {
   readonly paste: (text: string) => Promise<void>;
   readonly back: () => Promise<void>;
   readonly forward: () => Promise<void>;
+  readonly navigate: (url: string) => Promise<void>;
+  readonly reload: () => Promise<void>;
 }
 interface Props {
   readonly frame: PreviewAutomationFrame | null;
@@ -103,6 +106,8 @@ export function BrowserCloneViewer({ frame, transport, onDone, canGoBack, canGoF
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [address, setAddress] = useState("");
+  const editingAddress = useRef(false);
   const [surface, setSurface] = useState({ width: 1, height: 1 });
   const [, redraw] = useState(0);
   const transportRef = useRef(transport);
@@ -112,6 +117,7 @@ export function BrowserCloneViewer({ frame, transport, onDone, canGoBack, canGoF
   }, [transport]);
   useEffect(() => {
     readyRef.current = frame !== null;
+    if (!editingAddress.current) setAddress(frame?.url ?? "");
   }, [frame]);
   const touches = useRef(new Set<number>());
   const [controller] = useState(() =>
@@ -186,6 +192,43 @@ export function BrowserCloneViewer({ frame, transport, onDone, canGoBack, canGoF
   };
   return (
     <View style={{ flex: 1, minHeight: 0, backgroundColor: "#111" }}>
+      <View className="flex-row items-center gap-1 px-2 py-1">
+        <TextInput
+          accessibilityLabel="Browser address"
+          value={address}
+          onFocus={() => (editingAddress.current = true)}
+          onBlur={() => {
+            editingAddress.current = false;
+            setAddress(frame?.url ?? "");
+          }}
+          onChangeText={setAddress}
+          onSubmitEditing={(event) => {
+            const submitted = event.nativeEvent.text;
+            editingAddress.current = false;
+            void run(() => transportRef.current.navigate(normalizePreviewUrl(submitted)));
+          }}
+          returnKeyType="go"
+          keyboardType="url"
+          selectTextOnFocus
+          placeholder="Enter URL"
+          placeholderTextColor="#888"
+          editable={frame !== null}
+          autoCapitalize="none"
+          autoCorrect={false}
+          className="min-h-11 flex-1 border border-white/20 bg-black px-3 text-sm text-white"
+        />
+        <Tool
+          label="Reload"
+          icon="arrow.clockwise"
+          disabled={!frame}
+          onPress={() => void run(() => transportRef.current.reload())}
+        />
+      </View>
+      {error ? (
+        <AppText accessibilityRole="alert" className="bg-red-950 px-3 py-1 text-xs text-red-200">
+          {error}
+        </AppText>
+      ) : null}
       <View
         style={{ flex: 1, overflow: "hidden" }}
         onLayout={(event) =>
@@ -241,13 +284,13 @@ export function BrowserCloneViewer({ frame, transport, onDone, canGoBack, canGoF
       >
         <Tool
           label="Back"
-          icon={{ ios: "chevron.left", android: "chevron.left" }}
+          icon={{ ios: "chevron.left", android: "chevron_left" }}
           disabled={!frame || !canGoBack}
           onPress={() => void run(() => transportRef.current.back())}
         />
         <Tool
           label="Forward"
-          icon={{ ios: "chevron.right", android: "chevron.right" }}
+          icon={{ ios: "chevron.right", android: "chevron_right" }}
           disabled={!frame || !canGoForward}
           onPress={() => void run(() => transportRef.current.forward())}
         />

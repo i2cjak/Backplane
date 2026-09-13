@@ -92,6 +92,12 @@ function RemoteBrowserPanel({ threadRef, tabId: requestedTabId, visible }: Props
         onForward={async () => {
           await clone.send({ tabId, action: "forward" });
         }}
+        onNavigate={async (url) => {
+          await clone.send({ tabId, action: "navigate", url });
+        }}
+        onReload={async () => {
+          await clone.send({ tabId, action: "reload" });
+        }}
         onText={async (text) => {
           await clone.send({ tabId, action: "text", text });
         }}
