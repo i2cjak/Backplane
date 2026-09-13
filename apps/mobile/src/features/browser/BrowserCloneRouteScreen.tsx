@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Pressable, ScrollView, StatusBar, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useIsFocused, useNavigation, type StaticScreenProps } from "@react-navigation/native";
+import { StackActions } from "@react-navigation/native";
 import {
   EnvironmentId,
   ThreadId,
@@ -44,6 +45,16 @@ export function BrowserCloneRouteScreen({ route }: Props) {
   const sessionRef = useRef<ReturnType<typeof createBrowserCloneSession> | null>(null);
   const failedRef = useRef(false);
   const tabs = AsyncResult.isSuccess(list) ? list.value.sessions : [];
+  const backToThread = useCallback(
+    () =>
+      navigation.dispatch(
+        StackActions.popTo("Thread", {
+          environmentId: String(environmentId),
+          threadId: String(threadId),
+        }),
+      ),
+    [environmentId, navigation, threadId],
+  );
   const tabId = tabs.some((tab) => tab.tabId === selectedTab)
     ? selectedTab
     : (tabs[0]?.tabId ?? null);
@@ -138,6 +149,12 @@ export function BrowserCloneRouteScreen({ route }: Props) {
       paste: async (text) => {
         if (tabId) await send({ tabId, action: "clipboardPaste", text });
       },
+      back: async () => {
+        if (tabId) await send({ tabId, action: "back" });
+      },
+      forward: async () => {
+        if (tabId) await send({ tabId, action: "forward" });
+      },
     }),
     [failed, send, tabId],
   );
@@ -165,10 +182,11 @@ export function BrowserCloneRouteScreen({ route }: Props) {
         </Pressable>
         <Pressable
           accessibilityRole="button"
-          onPress={() => navigation.goBack()}
-          className="px-5 py-3"
+          accessibilityLabel="Back to thread"
+          onPress={backToThread}
+          className="border border-border px-5 py-3"
         >
-          <AppText className="text-foreground">Done</AppText>
+          <AppText className="text-foreground">Back to thread</AppText>
         </Pressable>
       </View>
     );
@@ -184,6 +202,16 @@ export function BrowserCloneRouteScreen({ route }: Props) {
     >
       <StatusBar barStyle="light-content" />
       <View className="shrink-0 border-b border-white/10">
+        <View className="flex-row items-center justify-between px-2 pt-2">
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Back to thread"
+            onPress={backToThread}
+            className="min-h-11 justify-center px-3"
+          >
+            <AppText className="text-white">Back to thread</AppText>
+          </Pressable>
+        </View>
         <ScrollView
           horizontal
           style={{ flexGrow: 0 }}
@@ -211,7 +239,9 @@ export function BrowserCloneRouteScreen({ route }: Props) {
         key={`${tabId}:${generation}`}
         frame={frame}
         transport={transport}
-        onDone={() => navigation.goBack()}
+        canGoBack={tabs.find((tab) => tab.tabId === tabId)?.canGoBack ?? false}
+        canGoForward={tabs.find((tab) => tab.tabId === tabId)?.canGoForward ?? false}
+        onDone={backToThread}
       />
     </View>
   );

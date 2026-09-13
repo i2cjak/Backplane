@@ -51,7 +51,7 @@ function RemoteBrowserPanel({ threadRef, tabId: requestedTabId, visible }: Props
               : "Open a browser tab in this thread on the desktop, then select it here."}
         </p>
         <Button variant="outline" onClick={close}>
-          Done
+          Back to thread
         </Button>
       </div>
     );
@@ -78,6 +78,14 @@ function RemoteBrowserPanel({ threadRef, tabId: requestedTabId, visible }: Props
         onRetry={clone.retry}
         onGesture={clone.gesture}
         onDone={close}
+        canGoBack={tabs.find((tab) => tab.tabId === tabId)?.canGoBack ?? false}
+        canGoForward={tabs.find((tab) => tab.tabId === tabId)?.canGoForward ?? false}
+        onBack={async () => {
+          await clone.send({ tabId, action: "back" });
+        }}
+        onForward={async () => {
+          await clone.send({ tabId, action: "forward" });
+        }}
         onText={async (text) => {
           await clone.send({ tabId, action: "text", text });
         }}

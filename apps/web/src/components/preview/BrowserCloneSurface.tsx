@@ -14,6 +14,8 @@ import {
   LocateFixed,
   Maximize,
   HelpCircle,
+  ArrowLeft,
+  ArrowRight,
 } from "lucide-react";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Button } from "~/components/ui/button";
@@ -35,8 +37,13 @@ interface Props {
   readonly onCopy: () => Promise<string>;
   readonly onPaste: (text: string) => Promise<void>;
   readonly onDone: () => void;
+  readonly canGoBack: boolean;
+  readonly canGoForward: boolean;
+  readonly onBack: () => Promise<void>;
+  readonly onForward: () => Promise<void>;
 }
 const HELP = [
+  ["Back and Forward", "Move through the desktop browser tab's history."],
   ["Scroll", "Drag with two fingers."],
   ["Click and drag", "Tap to click where you tapped. Drag with one finger."],
   ["Right-click", "Tap with two fingers, or press and hold, then release."],
@@ -208,6 +215,24 @@ export function BrowserCloneSurface(props: Props) {
         <Button
           variant="ghost"
           size="icon-lg"
+          aria-label="Back"
+          disabled={!frame || !!props.error || !props.canGoBack}
+          onClick={() => void run(props.onBack)}
+        >
+          <ArrowLeft />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-lg"
+          aria-label="Forward"
+          disabled={!frame || !!props.error || !props.canGoForward}
+          onClick={() => void run(props.onForward)}
+        >
+          <ArrowRight />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-lg"
           aria-label="Keyboard"
           disabled={!frame || !!props.error}
           onClick={() => open("typing")}
@@ -231,7 +256,7 @@ export function BrowserCloneSurface(props: Props) {
         >
           <MoreHorizontal />
         </Button>
-        <Button variant="ghost" onClick={props.onDone}>
+        <Button variant="ghost" aria-label="Back to thread" onClick={props.onDone}>
           Done
         </Button>
       </div>

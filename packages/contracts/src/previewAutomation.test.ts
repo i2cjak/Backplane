@@ -69,6 +69,14 @@ describe("clone input validation", () => {
       }),
     ).not.toThrow();
   });
+  it("accepts pinned browser history actions", () => {
+    expect(() =>
+      decodeClone({ ...base, operation: "back", input: { tabId: "tab", action: "back" } }),
+    ).not.toThrow();
+    expect(() =>
+      decodeClone({ ...base, operation: "forward", input: { tabId: "tab", action: "forward" } }),
+    ).not.toThrow();
+  });
   it("rejects mismatched actions, cross-tab input, and non-finite coordinates", () => {
     const decode = decodeClone;
     expect(() =>

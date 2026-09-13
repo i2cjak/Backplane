@@ -49,6 +49,8 @@ export const PREVIEW_AUTOMATION_OPERATIONS = [
   "text",
   "clipboardCopy",
   "clipboardPaste",
+  "back",
+  "forward",
 ] as const;
 
 export const PreviewAutomationOperation = Schema.Literals(PREVIEW_AUTOMATION_OPERATIONS);
@@ -572,6 +574,8 @@ export const PreviewCloneOperation = Schema.Literals([
   "text",
   "clipboardCopy",
   "clipboardPaste",
+  "back",
+  "forward",
 ]);
 export type PreviewCloneOperation = typeof PreviewCloneOperation.Type;
 const CloneTab = { tabId: PreviewTabId };
@@ -588,6 +592,7 @@ export type PreviewClonePointerInput = typeof PreviewClonePointerInput.Type;
 
 export const PreviewCloneInput = Schema.Union([
   Schema.Struct({ ...CloneTab, action: Schema.Literal("capture") }),
+  Schema.Struct({ ...CloneTab, action: Schema.Literals(["back", "forward"]) }),
   PreviewClonePointerInput,
   Schema.Struct({
     ...CloneTab,

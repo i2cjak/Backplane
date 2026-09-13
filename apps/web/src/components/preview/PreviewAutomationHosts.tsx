@@ -340,6 +340,8 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           "text",
           "clipboardCopy",
           "clipboardPaste",
+          "back",
+          "forward",
         ].includes(request.operation);
         const needsSessionSync = needsPreviewAutomationSessionSync(state, request.tabId);
         if (needsSessionSync && !cloneOperation) {
@@ -661,6 +663,16 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           case "captureFrame": {
             const ready = await requireReadyTab();
             return await ready.bridge.automation.captureFrame(ready.runtimeTabId);
+          }
+          case "back": {
+            const ready = await requireReadyTab();
+            await ready.bridge.goBack(ready.runtimeTabId);
+            return { tabId: ready.tabId, ok: true };
+          }
+          case "forward": {
+            const ready = await requireReadyTab();
+            await ready.bridge.goForward(ready.runtimeTabId);
+            return { tabId: ready.tabId, ok: true };
           }
           case "pointer": {
             const ready = await requireReadyTab();

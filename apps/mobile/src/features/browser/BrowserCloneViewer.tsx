@@ -28,13 +28,18 @@ export interface BrowserCloneTransport {
   readonly key: (key: string) => Promise<void>;
   readonly copy: () => Promise<string>;
   readonly paste: (text: string) => Promise<void>;
+  readonly back: () => Promise<void>;
+  readonly forward: () => Promise<void>;
 }
 interface Props {
   readonly frame: PreviewAutomationFrame | null;
   readonly transport: BrowserCloneTransport;
   readonly onDone: () => void;
+  readonly canGoBack: boolean;
+  readonly canGoForward: boolean;
 }
 const HELP = [
+  ["Browser history", "Back and Forward", "Move through the desktop browser tab's history."],
   ["Moving around", "Scroll", "Drag with two fingers."],
   ["", "Click and drag", "Tap to click where you tapped. Drag with one finger."],
   ["", "Right-click", "Tap with two fingers, or press and hold, then release."],
@@ -92,7 +97,7 @@ function Tool({
   );
 }
 
-export function BrowserCloneViewer({ frame, transport, onDone }: Props) {
+export function BrowserCloneViewer({ frame, transport, onDone, canGoBack, canGoForward }: Props) {
   const insets = useSafeAreaInsets();
   const [dialog, setDialog] = useState<"help" | "keyboard" | "clipboard" | "menu" | null>(null);
   const [draft, setDraft] = useState("");
@@ -234,6 +239,18 @@ export function BrowserCloneViewer({ frame, transport, onDone }: Props) {
         className="flex-row items-center justify-around border-t border-white/10 bg-[#171717] pt-1"
         style={{ flexShrink: 0, paddingBottom: Math.max(8, insets.bottom) }}
       >
+        <Tool
+          label="Back"
+          icon={{ ios: "chevron.left", android: "chevron.left" }}
+          disabled={!frame || !canGoBack}
+          onPress={() => void run(() => transportRef.current.back())}
+        />
+        <Tool
+          label="Forward"
+          icon={{ ios: "chevron.right", android: "chevron.right" }}
+          disabled={!frame || !canGoForward}
+          onPress={() => void run(() => transportRef.current.forward())}
+        />
         <Tool
           label="Keyboard"
           icon={{ ios: "keyboard", android: "keyboard" }}
