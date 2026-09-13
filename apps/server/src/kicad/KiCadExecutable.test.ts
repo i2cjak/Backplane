@@ -6,13 +6,12 @@ import { expect, it } from "vite-plus/test";
 
 import {
   resolveKiCadEnvironment,
-  resolveKiCadEditor,
-  launchKiCadEditor,
+  launchKiCadProject,
   resolveKiCadExecutable,
   resolveKiCadRuntime,
 } from "./KiCadExecutable.ts";
 
-it("launches the selected editor with an exact file argument after spawn receipt", async () => {
+it("launches the project manager with an exact project argument after spawn receipt", async () => {
   const calls: Array<{
     command: string;
     args: readonly string[];
@@ -24,9 +23,8 @@ it("launches the selected editor with an exact file argument after spawn receipt
       return child;
     },
   } as never;
-  await launchKiCadEditor(
-    "pcb",
-    "/work/main.kicad_pcb",
+  await launchKiCadProject(
+    "/work/main.kicad_pro",
     "/work",
     { BACKPLANE_KICAD_CLI: "/opt/kicad/bin/kicad-cli" },
     ((command: string, args: readonly string[], options: { cwd?: string; detached?: boolean }) => {
@@ -35,13 +33,13 @@ it("launches the selected editor with an exact file argument after spawn receipt
     }) as never,
   );
   expect(calls[0]).toMatchObject({
-    command: "/opt/kicad/bin/pcbnew",
-    args: ["/work/main.kicad_pcb"],
+    command: "/opt/kicad/bin/kicad",
+    args: ["/work/main.kicad_pro"],
     options: { cwd: "/work", detached: true, stdio: "ignore" },
   });
 });
 
-it("rejects asynchronous editor spawn failures", async () => {
+it("rejects asynchronous project manager spawn failures", async () => {
   const child = {
     once: (event: string, listener: (error?: Error) => void) => {
       if (event === "error") queueMicrotask(() => listener(new Error("missing")));
@@ -49,23 +47,13 @@ it("rejects asynchronous editor spawn failures", async () => {
     },
   } as never;
   await expect(
-    launchKiCadEditor(
-      "schematic",
-      "/work/main.kicad_sch",
+    launchKiCadProject(
+      "/work/main.kicad_pro",
       "/work",
       { BACKPLANE_KICAD_CLI: "/opt/kicad/bin/kicad-cli" },
       (() => child) as never,
     ),
   ).rejects.toThrow("missing");
-});
-
-it("selects only the bundled editor matching the validated KiCad file kind", () => {
-  expect(resolveKiCadEditor("schematic", { BACKPLANE_KICAD_CLI: "/opt/kicad/bin/kicad-cli" })).toBe(
-    "/opt/kicad/bin/eeschema",
-  );
-  expect(resolveKiCadEditor("pcb", { BACKPLANE_KICAD_CLI: "/opt/kicad/bin/kicad-cli" })).toBe(
-    "/opt/kicad/bin/pcbnew",
-  );
 });
 
 it("honours an explicit Backplane override", () => {

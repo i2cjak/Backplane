@@ -55,8 +55,12 @@ import {
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
-import { discoverKiCadProject, resolveKiCadProjectFile } from "./kicad/KiCadProject.ts";
-import { launchKiCadEditor } from "./kicad/KiCadExecutable.ts";
+import {
+  discoverKiCadProject,
+  resolveKiCadProject,
+  resolveKiCadProjectFile,
+} from "./kicad/KiCadProject.ts";
+import { launchKiCadProject } from "./kicad/KiCadExecutable.ts";
 import {
   gerberLayerColour,
   renderPrismGerber,
@@ -476,21 +480,38 @@ export const kicadOpenRouteLayer = HttpRouter.add(
     const asset = yield* Effect.tryPromise(() => resolveKiCadProjectFile(cwd, input.path));
     if (!asset || (asset.file.kind !== "pcb" && asset.file.kind !== "schematic"))
       return HttpServerResponse.text("KiCad file not found", { status: 404 });
-    const kind = asset.file.kind;
+    const projectResult = yield* Effect.result(
+      Effect.tryPromise({
+        try: () => resolveKiCadProject(cwd, asset),
+        catch: (error) => (error instanceof Error ? error : new Error("KiCad project not found")),
+      }),
+    );
+    if (projectResult._tag === "Failure")
+      return HttpServerResponse.text(
+        projectResult.failure instanceof Error
+          ? projectResult.failure.message
+          : "KiCad project not found",
+        { status: 404 },
+      );
+    const project = projectResult.success;
     if (process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY)
-      return HttpServerResponse.text("KiCad editor requires a graphical display", { status: 503 });
+      return HttpServerResponse.text("KiCad project manager requires a graphical display", {
+        status: 503,
+      });
     const launch = yield* Effect.result(
       Effect.tryPromise({
-        try: () => launchKiCadEditor(kind, asset.absolutePath, cwd),
-        catch: () => new Error("Unable to launch the bundled KiCad editor"),
+        try: () => launchKiCadProject(project.absolutePath, cwd),
+        catch: () => new Error("Unable to launch the bundled KiCad project manager"),
       }),
     );
     if (launch._tag === "Failure")
-      return HttpServerResponse.text("Unable to launch the bundled KiCad editor", { status: 503 });
+      return HttpServerResponse.text("Unable to launch the bundled KiCad project manager", {
+        status: 503,
+      });
     const child = launch.success;
     child.unref();
     return yield* HttpServerResponse.json(
-      { ok: true, editor: kind === "pcb" ? "pcbnew" : "eeschema" },
+      { ok: true, project: project.relativePath },
       { headers: { "Cache-Control": "no-store" } },
     );
   }).pipe(

@@ -350,7 +350,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         ),
       ]);
       await NodeFSP.mkdir(NodePath.join(root, "bin"));
-      for (const program of ["kicad-cli", "eeschema", "pcbnew"])
+      for (const program of ["kicad-cli", "kicad", "eeschema", "pcbnew"])
         await NodeFSP.writeFile(NodePath.join(root, "bin", program), "executable");
       await validateKiCadRuntimeBundle(root);
       await NodeFSP.rm(NodePath.join(root, "bin", "eeschema"));

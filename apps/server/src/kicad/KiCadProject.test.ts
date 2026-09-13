@@ -1,7 +1,11 @@
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off globalTimers:off cryptoRandomUUID:off globalDateInEffect:off
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
-import { discoverKiCadProject, resolveKiCadProjectFile } from "./KiCadProject.ts";
+import {
+  discoverKiCadProject,
+  resolveKiCadProject,
+  resolveKiCadProjectFile,
+} from "./KiCadProject.ts";
 import { afterEach, expect, vi } from "vite-plus/test";
 import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -150,6 +154,74 @@ it.effect("reads explicit library assignments and reports missing assigned asset
       "Configured footprint file not found: generated/controller.kicad_mod",
     );
   }),
+);
+
+it.effect(
+  "resolves the exact project first and rejects missing, ambiguous, and escaping projects",
+  () =>
+    Effect.promise(async () => {
+      const root = tempRoot();
+      const outside = tempRoot();
+      NodeFS.mkdirSync(NodePath.join(root, "nested"), { recursive: true });
+      NodeFS.mkdirSync(outside, { recursive: true });
+      NodeFS.mkdirSync(NodePath.join(root, "missing"));
+      NodeFS.writeFileSync(NodePath.join(root, "missing", "unowned.kicad_sch"), "sch");
+      NodeFS.mkdirSync(NodePath.join(root, "ambiguous"));
+      NodeFS.writeFileSync(NodePath.join(root, "ambiguous", "unowned.kicad_sch"), "sch");
+      NodeFS.writeFileSync(NodePath.join(root, "ambiguous", "first.kicad_pro"), "{}");
+      NodeFS.writeFileSync(NodePath.join(root, "ambiguous", "second.kicad_pro"), "{}");
+      NodeFS.writeFileSync(NodePath.join(root, "nested", "board.kicad_sch"), "sch");
+      NodeFS.writeFileSync(NodePath.join(root, "nested", "board.kicad_pro"), "{}");
+      NodeFS.writeFileSync(NodePath.join(root, "nested", "other.kicad_sch"), "sch");
+      NodeFS.writeFileSync(NodePath.join(root, "nested", "other.kicad_pro"), "{}");
+      vi.spyOn(Date, "now").mockReturnValue(Date.now() + 400);
+      NodeFS.mkdirSync(NodePath.join(root, "parent", "sheets"), { recursive: true });
+      NodeFS.writeFileSync(NodePath.join(root, "parent", "Main.kicad_pro"), "{}");
+      NodeFS.writeFileSync(NodePath.join(root, "parent", "sheets", "Child.kicad_sch"), "sch");
+      await expect(
+        resolveKiCadProject(root, "parent/sheets/Child.kicad_sch"),
+      ).resolves.toMatchObject({
+        relativePath: "parent/Main.kicad_pro",
+      });
+      const file = await resolveKiCadProjectFile(root, "nested/board.kicad_sch");
+      expect(file).toBeDefined();
+      expect(await resolveKiCadProject(root, file!)).toMatchObject({
+        relativePath: "nested/board.kicad_pro",
+      });
+
+      await expect(resolveKiCadProject(root, "nested/other.kicad_sch")).resolves.toMatchObject({
+        relativePath: "nested/other.kicad_pro",
+      });
+
+      await expect(resolveKiCadProject(root, "missing/unowned.kicad_sch")).rejects.toThrow(
+        "No .kicad_pro project found",
+      );
+      await expect(resolveKiCadProject(root, "ambiguous/unowned.kicad_sch")).rejects.toThrow(
+        "Ambiguous KiCad project",
+      );
+
+      NodeFS.writeFileSync(NodePath.join(outside, "escape.kicad_pro"), "{}");
+      NodeFS.mkdirSync(NodePath.join(root, "escape"));
+      NodeFS.symlinkSync(
+        NodePath.join(outside, "escape.kicad_pro"),
+        NodePath.join(root, "escape", "escape.kicad_pro"),
+      );
+      NodeFS.writeFileSync(NodePath.join(root, "escape", "escape.kicad_sch"), "sch");
+      await expect(
+        resolveKiCadProject(root, {
+          absolutePath: NodePath.join(root, "escape", "escape.kicad_sch"),
+          file: {
+            path: "escape/escape.kicad_sch",
+            kind: "schematic",
+            mimeType: "",
+            size: 3,
+            mtimeMs: 0,
+          },
+        }),
+      ).rejects.toThrow("KiCad project is outside the workspace");
+      NodeFS.rmSync(root, { recursive: true, force: true });
+      NodeFS.rmSync(outside, { recursive: true, force: true });
+    }),
 );
 
 it.effect(

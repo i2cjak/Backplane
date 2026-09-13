@@ -314,9 +314,8 @@ function App() {
   const nativeView = view === "pcb" || view === "schematic" ? view : null;
   const openInKiCad = async () => {
     if (!file || openingEditor || (file.kind !== "schematic" && file.kind !== "pcb")) return;
-    const editorName = file.kind === "schematic" ? "Schematic Editor" : "PCB Editor";
     setOpeningEditor(true);
-    setEditorStatus(`Opening ${editorName} on desktop…`);
+    setEditorStatus("Opening KiCad project on desktop…");
     try {
       const response = await fetch(apiUrl("open"), {
         method: "POST",
@@ -325,7 +324,7 @@ function App() {
       });
       if (!response.ok)
         throw new Error((await response.text()).slice(0, 300) || "Could not open KiCad.");
-      setEditorStatus(`${editorName} launched on desktop. Save in KiCad to update this viewer.`);
+      setEditorStatus("KiCad project launched on desktop. Open its schematic and PCB from KiCad.");
     } catch (cause) {
       setEditorStatus(cause instanceof Error ? cause.message : "Could not open KiCad on desktop.");
     } finally {
@@ -504,13 +503,13 @@ function App() {
               type="button"
               className="design-text-button design-open-kicad"
               disabled={openingEditor}
-              aria-label={`Open ${view === "schematic" ? "schematic" : "PCB"} in KiCad on desktop`}
-              title={`Open ${file.path} in ${view === "schematic" ? "Eeschema" : "PCB Editor"} on desktop`}
+              aria-label="Open KiCad project on desktop"
+              title={`Open the KiCad project containing ${file.path} on desktop`}
               onClick={() => void openInKiCad()}
             >
               <ExternalLink size={14} aria-hidden="true" />
               <span className="design-open-kicad-full">
-                {openingEditor ? "Opening…" : "Open in KiCad"}
+                {openingEditor ? "Opening…" : "Open KiCad project"}
               </span>
               <span className="design-open-kicad-short">KiCad</span>
             </button>

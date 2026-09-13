@@ -255,3 +255,82 @@ export async function resolveKiCadProjectFile(
     return undefined;
   }
 }
+
+export interface ResolvedKiCadProject {
+  readonly absolutePath: string;
+  readonly relativePath: string;
+}
+
+/** Resolve the owning KiCad project for a validated schematic or PCB file. */
+export async function resolveKiCadProject(
+  root: string,
+  input: string | { readonly absolutePath: string; readonly file: KiCadProjectFile },
+): Promise<ResolvedKiCadProject> {
+  const file =
+    typeof input === "string"
+      ? await resolveKiCadProjectFile(root, input).then((value) => {
+          if (!value) throw new Error(`KiCad file not found: ${input}`);
+          return value;
+        })
+      : input;
+  if (file.file.kind !== "pcb" && file.file.kind !== "schematic")
+    throw new Error("KiCad project can only be resolved for a schematic or PCB file");
+
+  const workspaceRoot = await NodeFSP.realpath(root);
+  const rootPrefix = workspaceRoot.endsWith(NodePath.sep)
+    ? workspaceRoot
+    : `${workspaceRoot}${NodePath.sep}`;
+  const candidateIsValid = async (candidate: string): Promise<string | undefined> => {
+    try {
+      const info = await NodeFSP.lstat(candidate);
+      if (!info.isFile() || info.isSymbolicLink()) return undefined;
+      const canonical = await NodeFSP.realpath(candidate);
+      if (!canonical.startsWith(rootPrefix)) return undefined;
+      return canonical;
+    } catch {
+      return undefined;
+    }
+  };
+  const requested = await candidateIsValid(file.absolutePath);
+  if (!requested) throw new Error("KiCad file is outside the workspace");
+
+  const requestedDirectory = NodePath.dirname(requested);
+  const stem = NodePath.basename(requested).replace(/\.[^.]+$/, "");
+  const exactPath = NodePath.join(requestedDirectory, `${stem}.kicad_pro`);
+  const exact = await candidateIsValid(exactPath);
+  const exactExists = await NodeFSP.lstat(exactPath).then(
+    () => true,
+    () => false,
+  );
+  if (exactExists && !exact) throw new Error("KiCad project is outside the workspace");
+  if (exact)
+    return {
+      absolutePath: exact,
+      relativePath: NodePath.relative(workspaceRoot, exact).split(NodePath.sep).join("/"),
+    };
+
+  let directory = requestedDirectory;
+  while (directory === workspaceRoot || directory.startsWith(rootPrefix)) {
+    let entries: string[];
+    try {
+      entries = await NodeFSP.readdir(directory);
+    } catch {
+      entries = [];
+    }
+    const projects: string[] = [];
+    for (const name of entries.filter((entry) => entry.toLowerCase().endsWith(".kicad_pro"))) {
+      const candidate = await candidateIsValid(NodePath.join(directory, name));
+      if (candidate) projects.push(candidate);
+    }
+    if (projects.length > 1)
+      throw new Error(`Ambiguous KiCad project for ${file.file.path}: multiple .kicad_pro files`);
+    if (projects.length === 1)
+      return {
+        absolutePath: projects[0]!,
+        relativePath: NodePath.relative(workspaceRoot, projects[0]!).split(NodePath.sep).join("/"),
+      };
+    if (directory === workspaceRoot) break;
+    directory = NodePath.dirname(directory);
+  }
+  throw new Error(`No .kicad_pro project found for ${file.file.path}`);
+}

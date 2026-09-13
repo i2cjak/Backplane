@@ -44,28 +44,17 @@ export function resolveKiCadExecutable(env: NodeJS.ProcessEnv = process.env): st
   return "kicad-cli";
 }
 
-export function resolveKiCadEditor(
-  kind: "schematic" | "pcb",
-  env: NodeJS.ProcessEnv = process.env,
-): string {
-  const cli = resolveKiCadExecutable(env);
-  const name = kind === "schematic" ? "eeschema" : "pcbnew";
-  if (NodePath.isAbsolute(cli)) {
-    const suffix = process.platform === "win32" ? ".exe" : "";
-    return NodePath.join(NodePath.dirname(cli), `${name}${suffix}`);
-  }
-  return name;
-}
-
-export function launchKiCadEditor(
-  kind: "schematic" | "pcb",
-  filePath: string,
+export function launchKiCadProject(
+  projectPath: string,
   cwd: string,
   env: NodeJS.ProcessEnv = process.env,
   spawn: typeof NodeChildProcess.spawn = NodeChildProcess.spawn,
 ): Promise<NodeChildProcess.ChildProcess> {
-  const editor = resolveKiCadEditor(kind, env);
-  const child = spawn(editor, [filePath], {
+  const cli = resolveKiCadExecutable(env);
+  const manager = NodePath.isAbsolute(cli)
+    ? NodePath.join(NodePath.dirname(cli), `kicad${process.platform === "win32" ? ".exe" : ""}`)
+    : "kicad";
+  const child = spawn(manager, [projectPath], {
     cwd,
     detached: true,
     stdio: "ignore",

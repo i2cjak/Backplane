@@ -2320,7 +2320,7 @@ export async function validateKiCadRuntimeBundle(source: string): Promise<void> 
     () => ".exe",
     () => "",
   );
-  for (const program of ["kicad-cli", "eeschema", "pcbnew"]) {
+  for (const program of ["kicad-cli", "kicad", "eeschema", "pcbnew"]) {
     if (
       !(await NodeFSP.stat(NodePath.join(source, "bin", `${program}${editorSuffix}`)).then(
         (file) => file.isFile(),
