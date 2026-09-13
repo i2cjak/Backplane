@@ -217,6 +217,123 @@
         box-shadow: 0 4px 20px #0003;
         z-index: 20;
       }
+      .schematic-hierarchy-panel {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        z-index: 22;
+        width: min(290px, calc(100% - 24px));
+        max-height: min(72vh, 560px);
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        border: 1px solid #ffffff30;
+        background: #101214ed;
+        color: #dce5e0;
+        font:
+          14px/1.25 "Berkeley Mono",
+          ui-monospace,
+          monospace;
+      }
+      .schematic-hierarchy-status:empty {
+        display: none;
+      }
+      .schematic-hierarchy-status {
+        padding: 8px;
+      }
+      .schematic-hierarchy-heading {
+        display: flex;
+        align-items: stretch;
+        border-bottom: 1px solid #ffffff24;
+      }
+      .schematic-hierarchy-toggle,
+      .schematic-hierarchy-actions button,
+      .schematic-hierarchy-disclosure,
+      .schematic-hierarchy-item {
+        min-height: 30px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      .schematic-hierarchy-toggle {
+        flex: 1;
+        padding: 7px 10px;
+        text-align: left;
+      }
+      .schematic-hierarchy-actions {
+        display: flex;
+        gap: 2px;
+        padding: 3px;
+      }
+      .schematic-hierarchy-actions button {
+        padding: 2px 7px;
+        border: 1px solid #ffffff30;
+      }
+      .schematic-hierarchy-actions button:hover,
+      .schematic-hierarchy-toggle:hover,
+      .schematic-hierarchy-row:hover,
+      .schematic-hierarchy-row[aria-selected="true"] {
+        background: #b8f3c426;
+        color: #d8ffe0;
+      }
+      .schematic-hierarchy-actions button:disabled {
+        cursor: default;
+        opacity: 0.4;
+      }
+      .schematic-hierarchy-tree {
+        min-height: 0;
+        max-height: min(64vh, 510px);
+        overflow: auto;
+        padding: 4px;
+        scrollbar-width: thin;
+      }
+      .schematic-hierarchy-row {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        padding-left: calc(var(--schematic-depth, 0) * 14px);
+      }
+      .schematic-hierarchy-disclosure {
+        width: 24px;
+        flex: 0 0 24px;
+        padding: 0;
+      }
+      .schematic-hierarchy-disclosure-spacer {
+        width: 24px;
+        flex: 0 0 24px;
+      }
+      .schematic-hierarchy-item {
+        flex: 1;
+        min-width: 0;
+        padding: 6px 8px;
+        overflow: hidden;
+        text-align: left;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .schematic-hierarchy-panel.is-collapsed .schematic-hierarchy-tree {
+        display: none;
+      }
+      @media (max-width: 640px) {
+        .schematic-hierarchy-panel {
+          top: 62px;
+          left: 8px;
+          width: min(280px, calc(100% - 16px));
+          max-height: 58vh;
+        }
+        .schematic-hierarchy-tree {
+          max-height: 50vh;
+        }
+        .schematic-hierarchy-toggle,
+        .schematic-hierarchy-actions button,
+        .schematic-hierarchy-disclosure,
+        .schematic-hierarchy-item {
+          min-height: 42px;
+        }
+      }
       .canvas-actions button {
         border: 0;
         border-radius: 0;

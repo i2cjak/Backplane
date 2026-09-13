@@ -2,6 +2,7 @@ import { installCanvasPresentation } from "./canvas-presentation.js";
 import { installSchematicSizing } from "./schematic-sizing.js";
 import { installNativeTouch } from "./native-touch.js";
 import { installMobileProperties } from "./properties-mobile.js";
+import { installSchematicHierarchy } from "./schematic-hierarchy.js";
 
 // A frame owns each renderer's workers and GPU lifetime.
 const host = document.getElementById("viewer");
@@ -120,6 +121,8 @@ window.addEventListener("message", (event) => {
             installSchematicSizing(native);
             installNativeTouch(native);
             installMobileProperties(native);
+            if (snapshot.context === "SCH") installSchematicHierarchy(host, native);
+            else host.querySelector(".schematic-hierarchy-panel")?.__backplaneHierarchy?.dispose();
           }
           if (snapshot.probe && probeId !== snapshot.probe.id) {
             probeId = snapshot.probe.id;
