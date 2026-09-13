@@ -27,6 +27,7 @@ import {
   ServerCliDevelopmentIconTargetMissingError,
   ServerCliPublishIconSourceMissingError,
   ServerCliPublishIconTargetMissingError,
+  ServerCliWebBuildMissingError,
 } from "./cliErrors.ts";
 
 interface PackageJson {
@@ -170,7 +171,7 @@ const buildCmd = Command.make(
         yield* applyDevelopmentIconOverrides(repoRoot, serverDir);
         yield* Effect.log("[cli] Bundled web app into dist/client");
       } else {
-        yield* Effect.logWarning("[cli] Web dist not found — skipping client bundle.");
+        return yield* new ServerCliWebBuildMissingError({ webDistPath: webDist });
       }
     }),
 ).pipe(Command.withDescription("Build the server package (tsdown + bundle web client)."));

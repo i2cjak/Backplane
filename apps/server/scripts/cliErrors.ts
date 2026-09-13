@@ -58,6 +58,17 @@ export class ServerCliDevelopmentIconTargetMissingError extends Schema.TaggedErr
   }
 }
 
+export class ServerCliWebBuildMissingError extends Schema.TaggedErrorClass<ServerCliWebBuildMissingError>()(
+  "ServerCliWebBuildMissingError",
+  {
+    webDistPath: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Missing web client build output: ${this.webDistPath}. Build @backplane/web before the CLI.`;
+  }
+}
+
 export class ServerCliBuildAssetMissingError extends Schema.TaggedErrorClass<ServerCliBuildAssetMissingError>()(
   "ServerCliBuildAssetMissingError",
   {
