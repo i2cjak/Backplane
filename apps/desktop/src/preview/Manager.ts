@@ -3653,6 +3653,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       viewportWidth: viewport.width,
       viewportHeight: viewport.height,
       capturedAt,
+      canGoBack: wc.navigationHistory.canGoBack(),
+      canGoForward: wc.navigationHistory.canGoForward(),
     };
   });
   const clonePointers = new WeakMap<

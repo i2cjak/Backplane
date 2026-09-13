@@ -23,8 +23,10 @@ describe("preview cloning frame contract", () => {
         viewportWidth: 640,
         viewportHeight: 480,
         capturedAt: 1,
+        canGoBack: true,
+        canGoForward: false,
       }),
-    ).toMatchObject({ mimeType: "image/jpeg", width: 640 });
+    ).toMatchObject({ mimeType: "image/jpeg", width: 640, canGoBack: true });
   });
 
   it("rejects frames without viewport mapping dimensions", () => {

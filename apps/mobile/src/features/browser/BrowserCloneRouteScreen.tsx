@@ -239,8 +239,10 @@ export function BrowserCloneRouteScreen({ route }: Props) {
         key={`${tabId}:${generation}`}
         frame={frame}
         transport={transport}
-        canGoBack={tabs.find((tab) => tab.tabId === tabId)?.canGoBack ?? false}
-        canGoForward={tabs.find((tab) => tab.tabId === tabId)?.canGoForward ?? false}
+        canGoBack={frame?.canGoBack ?? tabs.find((tab) => tab.tabId === tabId)?.canGoBack ?? false}
+        canGoForward={
+          frame?.canGoForward ?? tabs.find((tab) => tab.tabId === tabId)?.canGoForward ?? false
+        }
         onDone={backToThread}
       />
     </View>

@@ -564,6 +564,9 @@ export const PreviewAutomationFrame = Schema.Struct({
   viewportWidth: Schema.Int.check(Schema.isGreaterThan(0)),
   viewportHeight: Schema.Int.check(Schema.isGreaterThan(0)),
   capturedAt: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  /** Optional for compatibility with desktop hosts predating clone history controls. */
+  canGoBack: Schema.optional(Schema.Boolean),
+  canGoForward: Schema.optional(Schema.Boolean),
 });
 export type PreviewAutomationFrame = typeof PreviewAutomationFrame.Type;
 

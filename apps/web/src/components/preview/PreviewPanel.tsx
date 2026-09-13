@@ -78,8 +78,14 @@ function RemoteBrowserPanel({ threadRef, tabId: requestedTabId, visible }: Props
         onRetry={clone.retry}
         onGesture={clone.gesture}
         onDone={close}
-        canGoBack={tabs.find((tab) => tab.tabId === tabId)?.canGoBack ?? false}
-        canGoForward={tabs.find((tab) => tab.tabId === tabId)?.canGoForward ?? false}
+        canGoBack={
+          clone.frame?.canGoBack ?? tabs.find((tab) => tab.tabId === tabId)?.canGoBack ?? false
+        }
+        canGoForward={
+          clone.frame?.canGoForward ??
+          tabs.find((tab) => tab.tabId === tabId)?.canGoForward ??
+          false
+        }
         onBack={async () => {
           await clone.send({ tabId, action: "back" });
         }}
