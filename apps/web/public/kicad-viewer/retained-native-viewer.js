@@ -3,6 +3,7 @@ import { installNativeLayerCache } from "./native-layer-cache.js";
 import { hydrateSchematicPinInstances } from "./schematic-compatibility.js";
 import { collectSchematicNet } from "./schematic-net.js";
 import { resolveBoardNetAtPoint } from "./board-net-selection.js";
+import { installSchematicHopOvers } from "./schematic-hop-overs.js";
 
 const sectionFor = (name) => {
   if (/\.cu$/i.test(name)) return "Copper";
@@ -230,7 +231,12 @@ function installClickPointerSync(core) {
 function cacheContext(core, sourceIndex) {
   // Schematic sheets share source files but have different instance transforms
   // and layer bboxes. Keep those presentations in separate cache domains.
-  return `${sourceIndex.context}\nscene:${core?.scene_cache_context ?? ""}`;
+  // Junction edits also change hop geometry on the otherwise unchanged wire layer.
+  const junctions = core?.schematic?.junctions?.map((item) => [
+    item.at.position.x,
+    item.at.position.y,
+  ]);
+  return `${sourceIndex.context}\nscene:${core?.scene_cache_context ?? ""}\njunctions:${JSON.stringify(junctions ?? [])}`;
 }
 
 function installSchematicHydration(core, beforePaint) {
@@ -733,6 +739,7 @@ export class RetainedNativeViewer extends EventTarget {
         const cache = loaded ? installNativeLayerCache(loaded) : undefined;
         const cacheChanged = Boolean(cache && cache !== this.cache);
         if (cache) this.cache = cache;
+        const hopOversInstalled = installSchematicHopOvers(loaded);
         installSchematicHydration(loaded, (paintedCore) => {
           const sourceIndex = this.replacing ? this.pendingIndex : this.index;
           if (this.cache && sourceIndex)
@@ -744,12 +751,12 @@ export class RetainedNativeViewer extends EventTarget {
         const hydration = loaded?.schematic
           ? hydrateSchematicPinInstances(loaded)
           : { hydrated: 0 };
-        if (hydration.hydrated > 0) {
+        if (hydration.hydrated > 0 || hopOversInstalled) {
           cache?.clear();
           loaded.paint?.();
           loaded.draw_now?.();
         }
-        if ((cacheChanged || hydration.hydrated > 0) && cache)
+        if ((cacheChanged || hydration.hydrated > 0 || hopOversInstalled) && cache)
           cache.setSignatures(next.signatures, cacheContext(loaded, next), { active: true });
         if (view && loaded?.viewport?.camera) {
           loaded.viewport.camera.center.set(view.x, view.y);

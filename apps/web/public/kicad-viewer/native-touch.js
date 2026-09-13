@@ -1,20 +1,28 @@
 // Adapt touch input to Prism's existing camera without replacing its renderer.
 const installed = new WeakSet();
 
+export function findSheetAtPoint(viewer, point) {
+  return [...(viewer?.document?.sheets ?? [])].find(
+    (candidate) => candidate.sheetfile && candidate.bbox?.contains_point(point),
+  );
+}
+
 export function installNativeTouch(element) {
   for (const name of ["kc-board-app", "kc-schematic-app"]) {
     const viewer = element.shadowRoot?.querySelector(name)?.viewer;
     if (!viewer || installed.has(viewer)) continue;
     installed.add(viewer);
-    installTouch(viewer);
+    installTouch(viewer, name === "kc-schematic-app");
   }
 }
 
-function installTouch(viewer) {
+function installTouch(viewer, schematic) {
   const canvas = viewer.renderer.canvas;
   const camera = viewer.viewport.camera;
   const fitZoom = camera.zoom;
   let previous;
+  let tapStart;
+  let tapMoved = false;
   canvas.style.touchAction = "none";
 
   const position = (touches) => {
@@ -40,6 +48,8 @@ function installTouch(viewer) {
     if (event.touches.length > 1) event.preventDefault();
     // Copy coordinates: retaining a browser TouchList can lose the previous position.
     previous = position(event.touches);
+    tapStart = event.touches.length === 1 ? previous : undefined;
+    tapMoved = false;
   };
   const move = (event) => {
     if (!viewer.active) {
@@ -49,6 +59,8 @@ function installTouch(viewer) {
     event.stopImmediatePropagation();
     event.preventDefault();
     const current = position(event.touches);
+    if (tapStart && current && Math.hypot(current.x - tapStart.x, current.y - tapStart.y) > 8)
+      tapMoved = true;
     if (previous && current && previous.count === current.count) {
       const anchor = worldPoint(previous);
       if (previous.distance > 0 && current.distance > 0) {
@@ -64,8 +76,34 @@ function installTouch(viewer) {
     previous = current;
   };
   const end = (event) => {
+    const current = position(event.changedTouches);
     event.stopImmediatePropagation();
+    // KiCad's sheet navigation is wired to dblclick, which touch browsers do
+    // not reliably synthesize after this adapter consumes touch events. A
+    // stationary single tap on a sheet uses the same mature hit test and
+    // navigation path as the renderer's double-click handler.
+    const isTap =
+      event.type === "touchend" &&
+      event.touches.length === 0 &&
+      tapStart &&
+      current &&
+      Math.hypot(current.x - tapStart.x, current.y - tapStart.y) <= 8;
+    const world = current && worldPoint(current);
+    const sheet = world && findSheetAtPoint(viewer, world);
+    if (
+      schematic &&
+      viewer.active &&
+      isTap &&
+      tapStart &&
+      !tapMoved &&
+      sheet &&
+      typeof viewer.on_dblclick === "function"
+    ) {
+      event.preventDefault();
+      viewer.on_dblclick(world);
+    }
     previous = position(event.touches);
+    tapStart = undefined;
   };
   // Capture prevents Prism's legacy touch handler from applying a second camera move.
   const options = { capture: true, passive: false };
