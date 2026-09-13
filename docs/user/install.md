@@ -1,6 +1,9 @@
 # Install Backplane
 
-Download the Linux x64 AppImage from [Backplane Releases](https://github.com/i2cjak/Backplane/releases).
+Download the current Linux x64 AppImage nightly from
+[Backplane Releases](https://github.com/i2cjak/Backplane/releases). These are
+usable prerelease builds; Backplane does not currently publish a separate stable
+release channel.
 The desktop app includes its Chromium browser, server, Python, the matching Backplane KiCad runtime, and the official KiCad symbols, footprints, 3D models, and project templates.
 You do not need to install Chrome, Node.js, Python, or KiCad separately.
 
@@ -54,13 +57,14 @@ Download the newer AppImage from the same releases page, close Backplane, and
 replace the previous AppImage. Your saved threads and settings remain in your
 user data directory.
 
-Desktop releases currently support Linux x64. Native Windows and macOS
+Nightly desktop releases currently support Linux x64. Native Windows and macOS
 installers are not available yet.
 
 ## Command-line hosts
 
-Backplane does not currently publish a standalone CLI package to npm. To run a
-command-line host, build from source with Node 24:
+The desktop nightly is the normal installation path. Backplane does not
+currently publish a standalone CLI package to npm, so `npx @backplane/cli@latest`
+cannot be used for a command-line host. Build from source with Node 24 instead:
 
 ```sh
 git clone https://github.com/i2cjak/Backplane.git
