@@ -57,4 +57,17 @@ user data directory.
 Desktop releases currently support Linux x64. Native Windows and macOS
 installers are not available yet.
 
-For source builds, see the [development instructions](../../README.md#develop).
+## Command-line hosts
+
+Backplane does not currently publish a standalone CLI package to npm. To run a
+command-line host, build from source with Node 24:
+
+```sh
+git clone https://github.com/i2cjak/Backplane.git
+cd Backplane
+vp i
+vp run --filter @backplane/cli build
+node apps/server/dist/bin.mjs serve
+```
+
+For development, see the [development instructions](../../README.md#develop).

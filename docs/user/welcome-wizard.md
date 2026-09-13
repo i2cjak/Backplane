@@ -8,12 +8,15 @@ hosted app for the first time. Existing workspaces skip this flow.
 - **This computer** runs agents on the computer that hosts Backplane. It does not
   require an account.
 - **Backplane Connect** connects computers that are signed in to your account. Run
-  `npx @backplane/cli connect` on each computer you want to add, then start Backplane or run
-  `npx @backplane/cli serve` so the computer stays available.
+  `node apps/server/dist/bin.mjs connect` on each computer you want to add, then start
+  Backplane or run `node apps/server/dist/bin.mjs serve` so the computer stays available.
+  For command-line hosts,
+  [build Backplane from source](./install.md#command-line-hosts) first.
 - **Pair a server** connects directly to a server on your network or tailnet.
-  Start the server with `npx @backplane/cli serve`, then run `npx @backplane/cli pair --tailscale` and
-  paste the pairing link. You can also run `npx @backplane/cli serve --host <address>` and
-  use `npx @backplane/cli pair` when the server is already reachable on your network.
+  Start the server with `node apps/server/dist/bin.mjs serve`, then run
+  `node apps/server/dist/bin.mjs pair --tailscale` and paste the pairing link. You can
+  also run `node apps/server/dist/bin.mjs serve --host <address>` and use
+  `node apps/server/dist/bin.mjs pair` when the server is already reachable on your network.
 
 If Backplane cannot confirm the workspace during startup, the setup flow shows
 **Still connecting** instead of opening the app. Select **Reload** to try again.

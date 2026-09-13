@@ -3,23 +3,24 @@
 On Linux and macOS, Backplane can run as a service for your user so you do not need
 to keep a terminal open.
 
+For a command-line host, [build Backplane from source](./install.md#command-line-hosts).
+
 ## Manage the service
 
 Run these commands on the machine that will host Backplane:
 
 | Task                            | Command                                       |
 | ------------------------------- | --------------------------------------------- |
-| Install and start               | `npx @backplane/cli@latest service install`   |
-| Inspect status and log location | `npx @backplane/cli@latest service status`    |
-| Update or repair                | `npx @backplane/cli@latest service update`    |
-| Stop and remove from startup    | `npx @backplane/cli@latest service uninstall` |
+| Install and start               | `node apps/server/dist/bin.mjs service install`   |
+| Inspect status and log location | `node apps/server/dist/bin.mjs service status`    |
+| Update or repair                | `node apps/server/dist/bin.mjs service update`    |
+| Stop and remove from startup    | `node apps/server/dist/bin.mjs service uninstall` |
 
 Uninstalling the service leaves your projects, threads, and settings intact.
 
-Install and update use the version of the CLI you invoke. For nightly, use
-`npx @backplane/cli@nightly service update`; replace `nightly` with an exact version to pin
-one. An older CLI refuses to replace a newer service unless you explicitly add
-`--allow-downgrade`.
+Install and update use the version of the built CLI. Rebuild from the source
+revision you want to run before updating. An older CLI refuses to replace a newer
+service unless you explicitly add `--allow-downgrade`.
 
 Updating restarts the server. Finish active work first, and wait for any remote
 update already in progress. To match a remote client's version, follow

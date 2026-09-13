@@ -3,6 +3,8 @@
 Connect a phone, browser, or another desktop app to Backplane running on a different
 machine. That machine must stay running and reachable while you work.
 
+For a command-line host, [build Backplane from source](./install.md#command-line-hosts).
+
 ## Backplane Connect
 
 Backplane Connect makes an environment available to your other devices without setting
@@ -12,12 +14,12 @@ Connections**, sign in, and enable **Backplane Connect** for that environment.
 For a command-line host, run:
 
 ```bash
-npx @backplane/cli@latest connect
+node apps/server/dist/bin.mjs connect
 ```
 
 Follow the sign-in instructions. Setup offers a
 [background service](./background-service.md); if you decline it, start the
-server with `npx @backplane/cli serve`. Saving your sign-in alone does not make the machine
+server with `node apps/server/dist/bin.mjs serve`. Saving your sign-in alone does not make the machine
 reachable.
 
 On your other device, sign in to the same Backplane Connect account and choose the
@@ -41,13 +43,13 @@ For a command-line host, replace `<private-ip>` with the host's LAN or tailnet
 address:
 
 ```bash
-npx @backplane/cli serve --host <private-ip>
+node apps/server/dist/bin.mjs serve --host <private-ip>
 ```
 
 If a server is already running, generate a fresh link without restarting it:
 
 ```bash
-npx @backplane/cli pair
+node apps/server/dist/bin.mjs pair
 ```
 
 Scan the QR code on your phone or paste the pairing URL into **Add environment**
@@ -86,13 +88,13 @@ HTTPS** in **Settings → Connections**. Turn it off there to remove that route.
 To start a command-line server with Tailscale HTTPS:
 
 ```bash
-npx @backplane/cli serve --tailscale-serve
+node apps/server/dist/bin.mjs serve --tailscale-serve
 ```
 
 For an already-running server:
 
 ```bash
-npx @backplane/cli pair --tailscale
+node apps/server/dist/bin.mjs pair --tailscale
 ```
 
 The pairing link uses an address such as `https://machine.tailnet.ts.net/`.
@@ -104,7 +106,7 @@ tailscale serve --https=443 off
 ```
 
 If that port is already in use, choose another with
-`--tailscale-serve-port`. See `npx @backplane/cli pair --help` for other pairing options.
+`--tailscale-serve-port`. See `node apps/server/dist/bin.mjs pair --help` for other pairing options.
 
 ### Hosted web app
 
@@ -147,7 +149,7 @@ For Antigravity's Google callback on a remote host, see
 On the host, **Settings → Connections** lets authorized administrators create
 pairing links and revoke client sessions. Revoking an unused link prevents new
 pairings; revoke a device's session to remove its existing access. Command-line
-management is available through `npx @backplane/cli auth --help`.
+management is available through `node apps/server/dist/bin.mjs auth --help`.
 
 A session with an open connection stays listed after its access credential
 expires.

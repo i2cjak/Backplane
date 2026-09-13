@@ -34,16 +34,18 @@ The offered action depends on how the server runs:
 For a background service, run the matching version's CLI on the host:
 
 ```sh
-npx @backplane/cli@<client-version> service update
+node apps/server/dist/bin.mjs service update
 ```
 
-Replace `<client-version>` with the version shown in the notice. Using
-`@latest` only resolves the mismatch if your client is on that release. An older
-service launcher may require this local update before it supports remote updates
-and rollback.
+Backplane does not currently publish a standalone CLI package. For a
+command-line host, update the source checkout to the version shown in the
+notice, rebuild it as described in [Command-line hosts](./install.md#command-line-hosts),
+then run the command above. An older service launcher may require this local
+update before it supports remote updates and rollback.
 
-For a foreground server, the copied command is `npx @backplane/cli@<client-version>`. Add
-`serve` if you normally run without a browser, and preserve options such as
+For a foreground source-built server, start the rebuilt executable with
+`node apps/server/dist/bin.mjs`. Add `serve` if you normally run without a
+browser, and preserve options such as
 `--host` or `--tailscale-serve`. See
 [background services](./background-service.md) for service management.
 
