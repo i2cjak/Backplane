@@ -16,6 +16,12 @@ fail packaging; nightlies never substitute system KiCad. Manual native
 workflows remain available for macOS and Windows builds but are not part of the
 nightly release.
 
+The Linux staging step completes the pinned KiCad archive's glibc companion
+libraries from [`kicad-linux-glibc.json`](../../assets/runtime/kicad-linux-glibc.json).
+It verifies the package checksum and compares its libc, loader, and math library
+with the archive before adding missing files. Keep that package pin matched to
+the KiCad runtime; copying libraries from the build host can break native editors.
+
 Android uses a permanent PKCS12 release key stored in repository secrets:
 `BACKPLANE_ANDROID_KEYSTORE_BASE64`, `BACKPLANE_ANDROID_KEYSTORE_PASSWORD`,
 `BACKPLANE_ANDROID_KEY_ALIAS`, and `BACKPLANE_ANDROID_KEY_PASSWORD`. Keep a secure

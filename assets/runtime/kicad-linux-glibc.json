@@ -1,0 +1,7 @@
+{
+  "package": "libc6",
+  "version": "2.39-0ubuntu8.8",
+  "architecture": "amd64",
+  "url": "https://snapshot.ubuntu.com/ubuntu/20260909T000000Z/pool/main/g/glibc/libc6_2.39-0ubuntu8.8_amd64.deb",
+  "sha256": "3b8d5391b6b484a4c81fd000b6064885ad967ec3cb966bc57603f3fb3ebf0ed5"
+}

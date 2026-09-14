@@ -61,7 +61,7 @@ jobs:
           run-install: true
       - name: Check release behavior
         run: |
-          node --test scripts/collect-nightly-assets.test.mjs scripts/publish-nightly.test.mjs scripts/verify-nightly-desktop.test.mjs
+          node --test scripts/collect-nightly-assets.test.mjs scripts/publish-nightly.test.mjs scripts/verify-nightly-desktop.test.mjs scripts/supplement-kicad-glibc.test.mjs
           vp test run scripts/build-desktop-artifact.test.ts scripts/merge-update-manifests.test.ts apps/server/src/kicad/KiCadExecutable.test.ts apps/server/src/provider/RuntimeInstructions.test.ts
   desktop_linux:
     needs: [prepare, validate]
