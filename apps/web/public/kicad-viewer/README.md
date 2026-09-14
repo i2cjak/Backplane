@@ -32,3 +32,7 @@ at version 1.0.0. It is included under the theme's CC BY 4.0 license; American
 Embedded is the author. The original metadata is available in the repository's
 `packages/themes/american-embedded-dark/metadata.json`; see the
 [Creative Commons Attribution 4.0 license](https://creativecommons.org/licenses/by/4.0/).
+
+`schematic-theme.js` adapts that schematic palette for the viewer. Its foreground
+colors meet WCAG AA contrast against the canvas, symbol bodies, and sheet fills;
+the original bundled theme remains available for PCB rendering.

@@ -62,7 +62,10 @@ function button(label, className) {
 export function installSchematicHierarchy(host, viewer) {
   if (!host || !viewer?.getSchematicPages) return undefined;
   let panel = host.querySelector(".schematic-hierarchy-panel");
-  if (panel?.__backplaneHierarchy?.viewer === viewer) return panel.__backplaneHierarchy;
+  if (panel?.__backplaneHierarchy?.viewer === viewer) {
+    panel.__backplaneHierarchy.sync?.();
+    return panel.__backplaneHierarchy;
+  }
   panel?.__backplaneHierarchy?.dispose?.();
   panel?.remove();
 
@@ -75,7 +78,9 @@ export function installSchematicHierarchy(host, viewer) {
   };
   const root = document.createElement("section");
   root.className = "schematic-hierarchy-panel";
-  if (matchMedia("(max-width: 640px)").matches) root.classList.add("is-collapsed");
+  // The iframe can be narrow on desktop too; keep its sheet tree visible.
+  if (matchMedia("(max-width: 640px) and (pointer: coarse)").matches)
+    root.classList.add("is-collapsed");
   root.setAttribute("aria-label", "Schematic hierarchy");
   const heading = document.createElement("div");
   heading.className = "schematic-hierarchy-heading";

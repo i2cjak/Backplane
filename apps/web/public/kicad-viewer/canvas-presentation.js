@@ -1,3 +1,6 @@
+import { schematicTheme } from "./schematic-theme.js";
+import { installSchematicContrast } from "./schematic-contrast.js";
+
 const presentations = new WeakMap();
 const fitted = new WeakSet();
 let themePromise;
@@ -10,21 +13,7 @@ const darkFallback = {
     f_silks: "rgb(220, 220, 220)",
     b_silks: "rgb(143, 188, 187)",
   },
-  schematic: {
-    background: "rgb(30, 30, 30)",
-    sheet_background: "rgba(60, 65, 70, 0.600)",
-    component_body: "rgb(50, 50, 55)",
-    component_outline: "rgb(224, 122, 95)",
-    fields: "rgb(143, 188, 187)",
-    reference: "rgb(200, 200, 200)",
-    value: "rgb(143, 188, 187)",
-    wire: "rgb(143, 188, 187)",
-    pin: "rgb(224, 122, 95)",
-    pin_name: "rgb(200, 200, 200)",
-    pin_number: "rgb(224, 122, 95)",
-    grid: "rgb(50, 50, 50)",
-    grid_axes: "rgb(50, 50, 50)",
-  },
+  schematic: schematicTheme,
 };
 
 function loadTheme() {
@@ -58,8 +47,18 @@ export async function installCanvasPresentation(element) {
     const section = name === "kc-board-app" ? "board" : "schematic";
     viewer.theme = {
       ...viewer.theme,
-      ...convertPalette(definition?.[section] ?? darkFallback[section], color),
+      ...convertPalette(
+        section === "schematic" ? schematicTheme : (definition?.[section] ?? darkFallback[section]),
+        color,
+      ),
     };
+    if (section === "schematic") {
+      // The engine initializes these defaults before our theme is loaded.
+      // Primitives without an explicit color must use the new palette too.
+      viewer.renderer.state.fill = viewer.theme.note;
+      viewer.renderer.state.stroke = viewer.theme.note;
+      installSchematicContrast(viewer);
+    }
     viewer.__backplaneLayerCache?.clear();
     if (!viewer.__backplaneHiddenWorksheet) {
       const paint = viewer.paint.bind(viewer);
