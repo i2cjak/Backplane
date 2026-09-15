@@ -242,6 +242,21 @@ it.layer(testLayer)("checkOpenCodeProviderStatus", (it) => {
     }).pipe(Effect.provide(TestClock.layer())),
   );
 
+  it.effect("accepts a v-prefixed OpenCode version", () =>
+    Effect.gen(function* () {
+      runtimeMock.state.versionStdout = "opencode v2.0.3\n";
+
+      const snapshot = yield* checkProvider(makeOpenCodeSettings());
+
+      NodeAssert.equal(snapshot.installed, true);
+      NodeAssert.equal(snapshot.status, "warning");
+      NodeAssert.equal(
+        snapshot.message,
+        "OpenCode is available, but it did not report any connected upstream providers.",
+      );
+    }),
+  );
+
   it.effect("emits OpenCode variant defaults so trait picker can resolve a visible selection", () =>
     Effect.gen(function* () {
       runtimeMock.state.inventory = {

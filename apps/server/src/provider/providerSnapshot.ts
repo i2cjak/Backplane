@@ -142,7 +142,7 @@ export function extractAuthBoolean(value: unknown): boolean | undefined {
 }
 
 export function parseGenericCliVersion(output: string): string | null {
-  const match = output.match(/\b(\d+\.\d+\.\d+)\b/);
+  const match = output.match(/\bv?(\d+\.\d+\.\d+)\b/i);
   return match?.[1] ?? null;
 }
 

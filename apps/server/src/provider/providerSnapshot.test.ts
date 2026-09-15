@@ -11,6 +11,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import {
   isCommandMissingCause,
+  parseGenericCliVersion,
   providerModelsFromSettings,
   spawnAndCollect,
 } from "./providerSnapshot.ts";
@@ -32,6 +33,12 @@ const OPENCODE_CUSTOM_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabil
       currentValue: "build",
     },
   ],
+});
+
+describe("parseGenericCliVersion", () => {
+  it("normalizes a v-prefixed version", () => {
+    expect(parseGenericCliVersion("opencode v2.0.3\n")).toBe("2.0.3");
+  });
 });
 
 describe("providerModelsFromSettings", () => {
