@@ -1244,6 +1244,9 @@ def Laws.menu_renames_settled(p, id, armed):
 def Laws.menu_renames_open(id, armed):
   {==}
 
+def Laws.project_back_no_thread(s, now, client, id, pid, made):
+  {==}
+
 def Laws.rename_blank_nothing(th, now):
   {==}
 

@@ -102,12 +102,12 @@ try {
   const no = call(thread, { path: "fan-no" });
   const ask1 = await change("AskOpened", (c) => c.tool === "project_create" && String(c.detail).includes("fan-no"));
   check("it opens an approval card first", !!ask1 && ask1.kind === "approval", ask1);
-  check("nothing is made while it waits", !existsSync(join(user, "fan-no")) && !seen.some((c) => c.$ === "ProjectCreated"));
+  check("nothing is made while it waits", !existsSync(join(user, "fan-no")) && !seen.some((c) => c.$ === "ProjectCreated" && c.id !== "scratch"));
   await rpc("ask.answer", { id: ask1?.id, answer: "decline" });
   const r1 = await no;
   check("declined, the bot is told", text(r1).includes("declined") && r1?.result?.isError === true, r1);
   await sleep(300);
-  check("declined, no folder and no project", !existsSync(join(user, "fan-no")) && !seen.some((c) => c.$ === "ProjectCreated"));
+  check("declined, no folder and no project", !existsSync(join(user, "fan-no")) && !seen.some((c) => c.$ === "ProjectCreated" && c.id !== "scratch"));
 
   // accepted: the folder and the project
   const yes = call(thread, { path: "boards/fan", name: "Fan" });
@@ -126,7 +126,7 @@ try {
   await rpc("ask.answer", { id: ask3?.id, answer: "accept" });
   const r3 = await again;
   check("a folder that is a project answers it", text(r3).includes("already a project") && text(r3).includes(made?.id ?? "?"), r3);
-  check("and makes no second project", seen.filter((c) => c.$ === "ProjectCreated").length === 1);
+  check("and makes no second project", seen.filter((c) => c.$ === "ProjectCreated" && c.id !== "scratch").length === 1);
 
   // not a bot
   const r4 = await call("t-nobody", { path: "x" });

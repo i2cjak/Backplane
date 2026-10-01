@@ -4,6 +4,7 @@ import ../src/core/client.bend as U
 import ../src/core/fuzzy.bend as FZ
 import ../src/core/json.bend as J
 import ../src/core/model.bend as M
+import ../src/core/hub.bend as H
 
 def labels(ps: List<&2, U.PItem>) -> String:
   match ps:
@@ -61,6 +62,25 @@ def asks(a: U.Act) -> String:
     case U.Act{_, cs}:
       sent(cs)
 
+def tags(cs: List<&2, M.Change>) -> String:
+  match cs:
+    case Nil{}:
+      ""
+    case M.ProjectCreated{_, _, _, _} <> t:
+      "ProjectCreated " ++ tags(t)
+    case M.ThreadCreated{_, p, _, _, _, _, _, _, _} <> t:
+      "ThreadCreated:" ++ p ++ " " ++ tags(t)
+    case _ <> t:
+      "? " ++ tags(t)
+
+def step.tags(st: H.Step) -> String:
+  match st:
+    case H.Step{cs, _}:
+      tags(cs)
+
+def made(+root: String) -> String:
+  step.tags(H.Hub.project_add(M.State.replay(log(), M.State.empty()), 50n, 1, "2", json("{\"path\":\"" ++ root ++ "\"}")))
+
 def main() -> IO(Unit):
   +cd = ui(U.Ui.act(listed(), "proj-cd", "/home/h/docs"))
   +late = U.Ui.recv(cd, listing("0", "/somewhere/old"))
@@ -70,6 +90,7 @@ def main() -> IO(Unit):
   +missing = U.Ui.recv(cd, json("{\"t\":\"reply\",\"id\":2,\"ok\":false,\"result\":{\"error\":\"no such folder: /home/h/docs\"}}"))
   +gone = U.Ui.act(projects(), "proj-pick", "/home/h/board")
   +browse = ui(U.Ui.act(projects(), "proj-browse", ""))
+  +fresh = {M.ThreadCreated{"t9", "p9", "New thread", M.Local{}, "", "", "claude", "", 60n} : M.Change}
   do IO<Unit>:
     C.Check.str("no filter", at(""), "Add /home/h as a project|..|Development/|docs/|dev-notes/|")
     C.Check.str("filter ranks", at("dev"), "Development/|dev-notes/|Create project 'dev' here|Create folder 'dev' here|Add /home/h as a project|")
@@ -85,6 +106,11 @@ def main() -> IO(Unit):
     C.Check.str("refused shows in picker", U.Ui.info(refused, "proj.err"), "already a project: /home/h")
     C.Check.str("refused stays open", Bool.show(U.Ui.flag(refused, "proj")), "True")
     C.Check.str("added closes", Bool.show(U.Ui.flag(added, "proj")), "False")
+    C.Check.str("added goes to its thread", U.Ui.sel(U.Ui.recv(U.Ui.fold([fresh], adding), json("{\"t\":\"reply\",\"id\":2,\"ok\":true,\"result\":{}}"))), "t9")
+    C.Check.str("refused waits for no thread", U.Ui.sel(U.Ui.fold([fresh], refused)), "")
+    C.Check.str("added waits no more", U.Ui.sel(U.Ui.fold([fresh], added)), "")
+    C.Check.str("new project starts a thread", made("/home/h/fan"), "ProjectCreated ThreadCreated:p50-6 ")
+    C.Check.str("brought back starts none", made("/home/h/old"), "ProjectCreated ")
     C.Check.str("server error text", U.Ui.info(missing, "proj.err"), "no such folder: /home/h/docs")
     C.Check.str("opens on projects", Bool.show(U.Proj.browsing(projects())), "False")
     C.Check.str("open asks", asks(U.Ui.act(U.Ui.init(0n), "proj-open", "")), "fs.list;fs.find;")
