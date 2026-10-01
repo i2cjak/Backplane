@@ -2420,16 +2420,20 @@ def Menu.pin(pinned: Bool, +id: String) -> MItem:
     case False{}:
       MItem{"Pin", "row-pin", id, ""}
 
+# every thread can be renamed (Ren.*)
+def Menu.ren(+id: String) -> MItem:
+  MItem{"Rename", "row-rename", id, ""}
+
 def Menu.thread.k(sh: M.Shelf, pinned: Bool, +id: String, armed: Bool) -> List<&2, MItem>:
   match sh:
     case M.Settled{}:
-      [MItem{"Bring back", "row-unsettle", id, ""}, MItem{"Archive", "row-archive", id, ""}, Menu.del(id, armed)]
+      [MItem{"Bring back", "row-unsettle", id, ""}, Menu.ren(id), MItem{"Archive", "row-archive", id, ""}, Menu.del(id, armed)]
     case M.Snoozed{}:
-      [MItem{"Wake", "row-snooze", id ++ "|off", ""}, MItem{"Settle", "row-settle", id, ""}, MItem{"Archive", "row-archive", id, ""}, Menu.del(id, armed)]
+      [MItem{"Wake", "row-snooze", id ++ "|off", ""}, MItem{"Settle", "row-settle", id, ""}, Menu.ren(id), MItem{"Archive", "row-archive", id, ""}, Menu.del(id, armed)]
     case M.Hidden{}:
-      [MItem{"Unarchive", "row-unarchive", id, ""}, Menu.del(id, armed)]
+      [MItem{"Unarchive", "row-unarchive", id, ""}, Menu.ren(id), Menu.del(id, armed)]
     case _:
-      List.concat(&2, MItem, [[Menu.pin(pinned, id), MItem{"Settle", "row-settle", id, ""}], Menu.snoozes(id),
+      List.concat(&2, MItem, [[Menu.pin(pinned, id), Menu.ren(id), MItem{"Settle", "row-settle", id, ""}], Menu.snoozes(id),
         [MItem{"Archive", "row-archive", id, ""}, Menu.del(id, armed)]])
 
 # a thread's menu (armed: its Delete was picked once)
@@ -2494,7 +2498,7 @@ def Menu.set(+u: Ui, +m: String) -> Ui:
 
 def Menu.actions() -> List<&2, String>:
   ["row-menu", "proj-menu", "menu-close", "row-pin", "row-unpin", "row-archive", "row-unarchive", "side-older", "side-settled",
-   "file-menu", "file-open", "file-reveal", "file-copy"]
+   "file-menu", "file-open", "file-reveal", "file-copy", "row-rename", "rename-save", "rename-no"]
 
 # a file link's path where the hub finds it: in the selected thread's folder
 # when relative (core/links.bend's Link.file.abs)
@@ -2509,6 +2513,39 @@ def Menu.shut(a: Act) -> Act:
   match a:
     case Act{u, cs}:
       Act{Ui.scratch_set(u, "@menu", ""), cs}
+
+# Renaming a thread, any thread (a fork, a scratch one, one far away):
+# "row-rename id" opens its title for editing (@ren names the thread, the
+# field @f.title starts from its title; the window and the web edit it in
+# the thread's header, the phones in a dialog), "rename-save" keeps the
+# field (the phones send "id\u001ftitle" as its value), "rename-no" leaves
+# it as it was. A blank title is never sent (laws ren_*).
+def Ren.clear(+u: Ui) -> Ui:
+  Ui.scratch_set(Ui.scratch_set(u, "@ren", ""), "@f.title", "")
+
+def Ren.open(+u: Ui, +id: String) -> Act:
+  Act{Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, "@menu", ""), "@ren", id), "@f.title", Active.title(Ui.thread(Side.st(u), id))), [Focus{"thread-title"}]}
+
+# the thread and the title a save names ("" for none)
+def Ren.id(+u: Ui, +v: String) -> String:
+  Bool.pick(String, String.contains(v, "\u{1f}"), Maybe.default(&2, String, List.head(&2, String, String.split(v, '\u{1f}')), ""), Ui.scratch(u, "@ren"))
+
+def Ren.title(+u: Ui, +v: String) -> String:
+  String.trim(Bool.pick(String, String.contains(v, "\u{1f}"), String.join(List.drop(&2, String, String.split(v, '\u{1f}'), 1n), " "), Ui.scratch(u, "@f.title")))
+
+def Ren.save.k(blank: Bool, +u: Ui, +id: String, +title: String) -> Act:
+  match blank:
+    case True{}:
+      Act{Ren.clear(u), Nil{}}
+    case False{}:
+      Ui.rpc(Ren.clear(u), "thread.rename", [J.KV{"thread", J.Str{id}}, J.KV{"title", J.Str{title}}])
+
+def Ren.save(+u: Ui, +v: String) -> Act:
+  Ren.save.k(Bool.or(String.is_empty(Ren.id(u, v)), String.is_empty(Ren.title(u, v))), u, Ren.id(u, v), Ren.title(u, v))
+
+# the thread whose title is being edited ("" for none)
+def Ren.on(+u: Ui) -> String:
+  Ui.scratch(u, "@ren")
 
 def Menu.act.k(i: Nat, +u: Ui, +value: String) -> Act:
   match i:
@@ -2538,6 +2575,12 @@ def Menu.act.k(i: Nat, +u: Ui, +value: String) -> Act:
       Menu.shut(Flink.open(u, value, "reveal"))
     case 12n:
       Menu.shut(Act{u, [Copy{Flink.abs(u, value)}]})
+    case 13n:
+      Ren.open(u, value)
+    case 14n:
+      Ren.save(u, value)
+    case 15n:
+      Act{Ren.clear(u), Nil{}}
     case _:
       Menu.shut(Ui.rpc(u, "thread.unarchive", [J.KV{"thread", J.Str{value}}]))
 
@@ -5821,7 +5864,7 @@ def Ui.act.m(menu: Bool, +i: Nat, +u: Ui, +action: String, +value: String) -> Ac
       Menu.after(action, Ui.reselect.act(Ui.sel(u), Ui.act.k(C.Codec.pos(Ui.actions(), action), u, value)))
 
 def Ui.act(+u: Ui, +action: String, +value: String) -> Act:
-  Mpage.sync(Ui.act.m(Nat.is_lt(C.Codec.pos(Menu.actions(), action), 13n), C.Codec.pos(Menu.actions(), action), u, action, value))
+  Mpage.sync(Ui.act.m(Nat.is_lt(C.Codec.pos(Menu.actions(), action), 16n), C.Codec.pos(Menu.actions(), action), u, action, value))
 
 # the newest n of a list (oldest first), and how many are left out
 type Win is Data:

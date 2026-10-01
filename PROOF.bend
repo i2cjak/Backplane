@@ -1238,6 +1238,15 @@ def Laws.urg_pin_within(p):
     case M.PhIdle{}:
       {==}
 
+def Laws.menu_renames_settled(p, id, armed):
+  {==}
+
+def Laws.menu_renames_open(id, armed):
+  {==}
+
+def Laws.rename_blank_nothing(th, now):
+  {==}
+
 def Laws.menu_settled_brings_back(p, id, armed):
   {==}
 

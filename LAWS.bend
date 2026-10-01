@@ -961,6 +961,24 @@ law active_fold_shut:
 
 # a settled thread's menu leads with bringing it back, and ends with a
 # Delete that asks first (menu_delete_asks in test/sidebar_test.bend)
+# every thread's menu can rename it (its second item, whatever its shelf)
+law menu_renames_settled:
+  for p: Bool
+  for +id: String
+  for armed: Bool
+  {List.get(&2, U.MItem, U.Menu.thread.k(M.Settled{}, p, id, armed), 1n) == Some{U.MItem{"Rename", "row-rename", id, ""}} : Maybe<&2, U.MItem>}
+
+law menu_renames_open:
+  for +id: String
+  for armed: Bool
+  {List.get(&2, U.MItem, U.Menu.thread.k(M.Active{}, False{}, id, armed), 1n) == Some{U.MItem{"Rename", "row-rename", id, ""}} : Maybe<&2, U.MItem>}
+
+# a rename to a blank title changes nothing
+law rename_blank_nothing:
+  for +th: String
+  for +now: Nat
+  {H.Rename.changes(th, "", now) == [] : List<&2, M.Change>}
+
 law menu_settled_brings_back:
   for p: Bool
   for id: String

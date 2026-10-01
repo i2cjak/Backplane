@@ -623,7 +623,7 @@ def Ins.set(ms: List<&2, In>, +i: In) -> List<&2, In>:
 
 def Fr.methods() -> List<&2, String>:
   ["turn.start", "turn.interrupt", "ask.answer", "queue.move", "queue.remove", "queue.resume", "queue.steer", "queue.edit",
-   "thread.settle", "thread.unsettle", "thread.btw", "thread.modes", "thread.provider", "thread.effort", "bots.space", "bots.routine_run"]
+   "thread.settle", "thread.unsettle", "thread.rename", "thread.btw", "thread.modes", "thread.provider", "thread.effort", "bots.space", "bots.routine_run"]
 
 def Fr.may.go(ms: List<&2, String>, +m: String) -> Bool:
   match ms:

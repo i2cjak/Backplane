@@ -832,6 +832,20 @@ def Mob.deleting.k(none: Bool, +st: M.State, +id: String) -> J.Json:
       J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"title", J.Json.str("Delete thread?")},
         J.KV{"body", J.Json.str(Mob.title(U.Ui.thread(st, id)))}, J.KV{"yes", J.Json.str("Delete")}, J.KV{"no", J.Json.str("Cancel")}])
 
+# a thread being renamed (client.bend's Ren): its id, what to ask, the title
+# so far; the yes button sends "rename-save" with "id\u001ftitle", the no
+# "rename-no"
+def Mob.renaming.k(none: Bool, +id: String, +value: String) -> J.Json:
+  match none:
+    case True{}:
+      J.Null{}
+    case False{}:
+      J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"title", J.Json.str("Rename thread")}, J.KV{"value", J.Json.str(value)},
+        J.KV{"yes", J.Json.str("Rename")}, J.KV{"no", J.Json.str("Cancel")}])
+
+def Mob.renaming(+u: U.Ui) -> J.Json:
+  Mob.renaming.k(String.is_empty(U.Ren.on(u)), U.Ren.on(u), U.Ui.scratch(u, "@f.title"))
+
 def Mob.deleting(+u: U.Ui) -> J.Json:
   Mob.deleting.k(String.is_empty(U.Ui.row_deleting(u)), Mob.st(u), U.Ui.row_deleting(u))
 
@@ -980,6 +994,7 @@ def Mob.screen(+u: U.Ui) -> J.Json:
         J.KV{"rowMenu", Mob.rmenu(u)},
         J.KV{"search", Mob.search(u)},
         J.KV{"deleting", Mob.deleting(u)},
+        J.KV{"renaming", Mob.renaming(u)},
         J.KV{"removing", Mob.removing(u)},
         J.KV{"settings", Mob.settings(U.Ui.flag(u, "settings"), u)},
         J.KV{"find", Mob.find(U.Ui.flag(u, "palette"), u)},

@@ -367,6 +367,9 @@ def Hub.thread_title(t: M.Thread) -> String:
     case M.Thread{_, _, ti, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
       ti
 
+def Rename.changes(+th: String, +title: String, +now: Nat) -> List<&2, M.Change>:
+  Bool.pick(List<&2, M.Change>, Bool.or(String.is_empty(title), String.is_empty(th)), Nil{}, [M.ThreadRenamed{th, title, now}])
+
 def Hub.methods.git() -> List<&2, String>:
   ["git.diff", "git.revert", "git.act", "git.status", "thread.worktree", "thread.note", "term.open", "term.input", "term.resize"]
 
@@ -1677,8 +1680,9 @@ def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p:
       Step.reply(client, id, [M.ThreadPinned{J.Json.get_str(p, "thread", ""), True{}, now}])
     case 10n:
       Step.reply(client, id, [M.ThreadPinned{J.Json.get_str(p, "thread", ""), False{}, now}])
+    # a rename: the title trimmed; a blank one changes nothing
     case 11n:
-      Step.reply(client, id, [M.ThreadRenamed{J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "title", ""), now}])
+      Step.reply(client, id, Rename.changes(J.Json.get_str(p, "thread", ""), String.trim(J.Json.get_str(p, "title", "")), now))
     case 12n:
       Step{[M.ThreadDeleted{J.Json.get_str(p, "thread", ""), now}], [Reply.ok(client, id), AgentStop{J.Json.get_str(p, "thread", "")}, BotFx{"gone", J.Json.get_str(p, "thread", ""), "", ""}]}
     case 13n:

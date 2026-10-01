@@ -454,19 +454,19 @@ def Hubs.register(hs: Hubs, p: String, t: String, k: String, th: String, e: Stri
 def Hubs.routed(+action: String) -> Nat:
   C.Codec.pos(["select", "new-thread", "picker-open", "bot", "room", "remote", "bot-new", "room-new", "proj-go",
     "row-settle", "row-unsettle", "row-snooze", "row-delete", "toggle-settled", "add-project", "proj-remove",
-    "row-menu", "proj-menu", "row-pin", "row-unpin", "row-archive", "row-unarchive", "hist-tick"], action)
+    "row-menu", "proj-menu", "row-pin", "row-unpin", "row-archive", "row-unarchive", "hist-tick", "row-rename", "rename-save"], action)
 
 def Hubs.moves() -> Nat:
   9n
 
 def Hubs.routes() -> Nat:
-  23n
+  25n
 
 # answers to what any hub may be showing (its error, a delete or remove
 # to confirm); the project search is every hub's at once, since the list
 # it filters spans them all ("proj-find", "proj-find-q", unrouted, go to all)
 def Hubs.everywhere(+action: String) -> Bool:
-  Nat.is_lt(C.Codec.pos(["dismiss", "delete-no", "proj-keep", "proj-find", "proj-find-q", "menu-close", "side-older", "side-settled"], action), 8n)
+  Nat.is_lt(C.Codec.pos(["dismiss", "delete-no", "proj-keep", "proj-find", "proj-find-q", "menu-close", "side-older", "side-settled", "rename-no"], action), 9n)
 
 # The merged phone sidebar has one view preference across paired hubs.
 def Hubs.every.op(op: Op) -> Bool:
@@ -1207,6 +1207,7 @@ def Hubs.screen.k(+ss: List<&2, Shown>, +cur: String, +list: List<&2, Hub>) -> J
     J.KV{"active", J.Json.arr(Hubs.active(ss))},
     J.KV{"rowMenu", Hubs.first_obj(ss, "rowMenu")},
     J.KV{"deleting", Hubs.first_obj(ss, "deleting")},
+    J.KV{"renaming", Hubs.first_obj(ss, "renaming")},
     J.KV{"removing", Hubs.first_obj(ss, "removing")},
     J.KV{"search", Hubs.first_obj(ss, "search")},
     J.KV{"folders", J.Json.get_obj(Hubs.of(ss, cur), "folders")},

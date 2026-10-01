@@ -180,6 +180,22 @@ fun App(m: AppModel) {
         },
         dismissButton = { TextButton(onClick = { answered = true; m.act("delete-no") }) { Text(d.no) } },
     )
+    val rn = s.renaming
+    // a rename: the title edited here, sent whole with the thread's id
+    var renamed by remember(rn?.id) { mutableStateOf(false) }
+    var title by remember(rn?.id) { mutableStateOf(rn?.value ?: "") }
+    if (rn != null && !renamed) AlertDialog(
+        onDismissRequest = { renamed = true; m.act("rename-no") },
+        title = { Text(rn.title) },
+        text = {
+            OutlinedTextField(title, { title = it }, Modifier.fillMaxWidth(), singleLine = true,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
+        },
+        confirmButton = {
+            TextButton(onClick = { renamed = true; m.act("rename-save", rn.id + "\u001f" + title) }, enabled = title.isNotBlank()) { Text(rn.yes) }
+        },
+        dismissButton = { TextButton(onClick = { renamed = true; m.act("rename-no") }) { Text(rn.no) } },
+    )
     val r = s.removing
     // likewise the remove just answered
     var removed by remember(r?.id) { mutableStateOf(false) }

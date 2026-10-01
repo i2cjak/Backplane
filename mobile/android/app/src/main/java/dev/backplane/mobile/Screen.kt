@@ -43,6 +43,9 @@ data class RowMenu(val title: String, val items: List<RowMenuItem>)
 
 // a delete a row asked for, waiting for yes ("row-delete" id) or no
 data class Deleting(val id: String, val title: String, val body: String, val yes: String, val no: String)
+// a thread being renamed: its id, the dialog's title, the title so far, the
+// buttons ("rename-save" with "id\u001ftitle", or "rename-no")
+data class Renaming(val id: String, val title: String, val value: String, val yes: String, val no: String)
 
 // the list's search, always at its top: its query ("proj-find-q"), the hint
 data class Search(val open: Boolean, val query: String, val hint: String)
@@ -315,6 +318,7 @@ data class Screen(
     // "projects" (sections) or "active" (one flat list of rows, active)
     val view: String = "projects", val active: List<Row> = emptyList(),
     val older: Older? = null, val settled: Older? = null, val rowMenu: RowMenu? = null,
+    val renaming: Renaming? = null,
 )
 
 data class Cmd(
@@ -563,6 +567,9 @@ fun parseScreen(o: JSONObject) = Screen(
         RowMenu(mn.optString("title"), mn.optJSONArray("items").map {
             RowMenuItem(it.optString("label"), it.optString("action"), it.optString("value"), it.optString("tone"))
         })
+    },
+    renaming = o.optJSONObject("renaming")?.let {
+        Renaming(it.optString("id"), it.optString("title"), it.optString("value"), it.optString("yes"), it.optString("no"))
     },
 )
 

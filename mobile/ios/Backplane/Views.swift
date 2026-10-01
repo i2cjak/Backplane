@@ -6,6 +6,8 @@ struct RootView: View {
     // the delete (or remove) just answered: its dialog stays down until the screen drops it
     @State private var answered = ""
     @State private var removed = ""
+    @State private var renamed = ""
+    @State private var newTitle = ""
 
     var body: some View {
         if model.links.isEmpty {
@@ -28,6 +30,13 @@ struct RootView: View {
                 Text(d.body)
             }
             .onChange(of: s.deleting?.id) { answered = "" }
+            .alert(s.renaming?.title ?? "", isPresented: Binding(get: { s.renaming.map { $0.id != renamed } ?? false }, set: { _ in }),
+                   presenting: s.renaming) { r in
+                TextField("Title", text: $newTitle)
+                Button(r.yes) { renamed = r.id; model.act("rename-save", r.id + "\u{1f}" + newTitle) }
+                Button(r.no, role: .cancel) { renamed = r.id; model.act("rename-no") }
+            }
+            .onChange(of: s.renaming?.id) { renamed = ""; newTitle = s.renaming?.value ?? "" }
             .alert(s.removing?.title ?? "", isPresented: Binding(get: { s.removing.map { $0.id != removed } ?? false }, set: { _ in }),
                    presenting: s.removing) { d in
                 Button(d.yes, role: .destructive) { removed = d.id; model.act("proj-remove", d.id) }

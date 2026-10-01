@@ -374,6 +374,12 @@ struct Deleting: Decodable, Equatable {
     let id, title, body, yes, no: String
 }
 
+// a thread being renamed: its id, the alert's title, the title so far, the
+// buttons ("rename-save" with "id\u{1f}title", or "rename-no")
+struct Renaming: Decodable, Equatable {
+    let id, title, value, yes, no: String
+}
+
 // the list's search, always at its top: its query ("proj-find-q"), the hint
 struct Search: Decodable, Equatable {
     let open: Bool
@@ -571,6 +577,7 @@ struct Screen: Decodable {
     let deleting: Deleting?
     // a project remove to confirm ("proj-remove" id, or "proj-keep")
     let removing: Deleting?
+    let renaming: Renaming?
     let search: Search?
     let folders: Folders?
     let settings: Settings?

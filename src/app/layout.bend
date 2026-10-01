@@ -1687,7 +1687,7 @@ def Lay.fit_or_none(+ty: Ty, +k: Nat, +s: String, +px: U32) -> String:
 # branch in what the buttons leave
 # (the title keeps at least its first 160 px: buttons that would cover it
 # are left out, as buttons that do not fit are)
-def Lay.header.k(+ty: Ty, +title: String, +branch: String, +icon: String, +tint: U32, +bs: List<&2, TO.Tool>, +x0: U32, +x1: U32, +hy: U32) -> Out:
+def Lay.header.k(+ty: Ty, +id: String, +title: String, +branch: String, +icon: String, +tint: U32, +bs: List<&2, TO.Tool>, +x0: U32, +x1: U32, +hy: U32) -> Out:
   +keep = {U32.min(Ty.width(ty, 0n, title), 160) : U32}
   # labels while they fit beside the title's first 160 px, else icons only
   +full = U32.is_ge(U32.dim((x1 - x0 : U32), 80), (Lay.tools.w(ty, bs, True{}) + keep : U32))
@@ -1698,13 +1698,35 @@ def Lay.header.k(+ty: Ty, +title: String, +branch: String, +icon: String, +tint:
     Out.ops([D.Draw.rect(D.Clip.all(), x0, (hy + 51 : U32), (x1 - x0 : U32), 1, T.Th.line(), 255)]),
     Out.ops(Lay.icon(ty, icon, D.Clip.all(), (x0 + 24 : U32), (hy + 18 : U32), tint)),
     Out.ops(Ty.text(ty, 0n, t, D.Clip.all(), (x0 + 48 : U32), hy, 52, T.Th.text())),
+    # a click on the title renames the thread (client.bend's Ren)
+    Out{Nil{}, [Lay.hit((x0 + 44 : U32), (hy + 8 : U32), (tw + 8 : U32), 36, "row-rename", id)]},
     Out.ops(Ty.text(ty, 2n, Lay.fit_or_none(ty, 2n, branch, U32.dim(room, (tw + 12 : U32))), D.Clip.all(), (x0 + 60 + tw : U32), hy, 52, T.Th.faint())),
     Lay.tools(ty, bs, (hy + 12 : U32), (x1 - 16 : U32), (x0 + 60 + tw : U32), full, False{})])
+
+# The title being renamed: a field over it (Enter or Save keeps it,
+# Cancel leaves it), the client's @f.title
+def Ren.field(+ty: Ty, +text: String, +focus: String, +blink: Bool, +caret: Nat, +mark: Nat, +x0: U32, +x1: U32, +hy: U32) -> Out:
+  +fid = S.Fld.id("title", "rename-save", "")
+  +sw = Lay.button.w(ty, "Save")
+  +cw = Lay.button.w(ty, "Cancel")
+  +fw = {U32.min(520, U32.dim(U32.shr((x1 - x0 : U32)), (sw + cw + 20 : U32))) : U32}
+  Out.all([
+    Out.ops([D.Draw.rect(D.Clip.all(), (x0 + 40 : U32), (hy + 4 : U32), (fw + sw + cw + 28 : U32), 44, T.Th.bg(), 255)]),
+    Lay.field(ty, D.Clip.all(), (x0 + 44 : U32), (hy + 12 : U32), fw, text, String.eq(focus, fid), blink, caret, mark, "Thread title", fid),
+    Lay.button(ty, D.Clip.all(), (x0 + 52 + fw : U32), (hy + 12 : U32), "Save", T.Th.accent(), "rename-save", ""),
+    Lay.button(ty, D.Clip.all(), (x0 + 58 + fw + sw : U32), (hy + 12 : U32), "Cancel", T.Th.soft(), "rename-no", "")])
+
+def Ren.field.if(on: Bool, +ty: Ty, +text: String, +focus: String, +blink: Bool, +caret: Nat, +mark: Nat, +x0: U32, +x1: U32, +hy: U32) -> Out:
+  match on:
+    case True{}:
+      Ren.field(ty, text, focus, blink, caret, mark, x0, x1, hy)
+    case False{}:
+      Out.none()
 
 def Lay.header(+ty: Ty, t: M.Thread, +st: M.State, +x0: U32, +x1: U32, panel: Bool, term: Bool, +snoozed: Bool, del: Bool, +hy: U32) -> Out:
   match t:
     case M.Thread{+id, +p, +title, _, _, turn, _, +archived, override, +sa, +ua, pinned, _, +branch, _, _, _, _, _, _, _}:
-      Lay.header.k(ty, U.Label.title(st, id, title), branch, BG.Badge.icon(st, p), BG.Badge.rgb_of(st, p), Lay.header.bs(turn, override, sa, ua, pinned, panel, archived, snoozed, del, Bool.not(String.is_empty(M.Fork.source(st, id))), term), x0, x1, hy)
+      Lay.header.k(ty, id, U.Label.title(st, id, title), branch, BG.Badge.icon(st, p), BG.Badge.rgb_of(st, p), Lay.header.bs(turn, override, sa, ua, pinned, panel, archived, snoozed, del, Bool.not(String.is_empty(M.Fork.source(st, id))), term), x0, x1, hy)
 
 def Lay.lines(+ty: Ty, ls: List<&2, String>, +c: D.Clip, +x: U32, +y: U32) -> Out:
   match ls:
@@ -4239,7 +4261,7 @@ def Lay.composer.a(+ty: Ty, +draft: String, +ls: List<&2, String>, +held: String
 
 def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: String, +st: M.State, +sel: String, +live: String, +caret: Nat, +mark: Nat, +focus: String, +blink: Bool,
     +x0: U32, +x1: U32, +h: U32, +sc: U32, pa: Bool, term: Bool, +info: String, +picking: Bool, +pend: List<&2, String>, +rs: List<&2, U.SkillRow>, +now: Nat,
-    +atts: List<&2, String>, +up: String, +path: String, +pics: Map<&2, String>, del: Bool, +tsel: TSel, +moff: String, +ph: M.Phase, +hy: U32, more: Bool, +bq: String, +ba: String) -> Out:
+    +atts: List<&2, String>, +up: String, +path: String, +pics: Map<&2, String>, del: Bool, +tsel: TSel, +moff: String, +ph: M.Phase, +hy: U32, more: Bool, +bq: String, +ba: String, +ren: String, +rtext: String) -> Out:
   match t:
     case M.Thread{id, p, ti, c, a, +turn, pe, ar, o, sa, ua, pi, en, br, wt, +pr, +mo, rm, im, se, de}:
       +cw = {U32.min((x1 - x0 - 64 : U32), 780) : U32}
@@ -4264,6 +4286,7 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
         List.concat(&2, TLine, [TL.memo.shown(ty, memo, st, sel, cw, pics), TL.sending(ty, pend, cw),
           TL.live.k(ty, String.is_empty(live), ph, live, cw)]),
         cx0, cx1, top, (h - ah - qh - eh - bh : U32), sc, tsel, Out.none()) Out.all([Lay.header(ty, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, x0, x1, pa, term, M.Snooze.on(now, U.Side.until(st, sel)), del, hy),
+          Ren.field.if(String.eq(ren, sel), ty, rtext, focus, blink, caret, mark, x0, x1, hy),
           Lay.parent(ty, st, sel, cx0, (58 + hy : U32)),
           Lay.subs(ty, ts, cx0, cx1, (60 + hy + pl : U32)),
           Lay.composer.a(ty, draft, ls, held, caret, mark, focus, blink, cx0, cx1, h, U.Follow.button(st, sel, Lay.running(turn), stop, draft), U.Follow.act(stop), U.Effort.label(U.Models.label(pr, mo), U.Effort.of(st, sel)) ++ U.Usage.tail(st, sel), rs, atts, up, path),
@@ -4541,7 +4564,8 @@ def Lay.thread.at(+ty: Ty, +memo: TLMemo, +n: S.Nui, +x0: U32, +x1: U32, +hy: U3
     case S.Nui{U.Ui{+st, +sel, _, +live, +op, _, _, _, pa, _, _, _, _, _, +nf, _, _}, _, +h, _, _, _, +sc, +caret, +focus, +path, _, _, _}:
       Out.cat(Out.cat(Out.cat(Lay.drop_mark(U.Flag.get(op, "drop"), ty, U.Ui.draft_text(S.Nui.ui(n)), x0, x1, h), Lay.thread.k(ty, memo, U.Ui.thread(st, sel), U.Ui.draft_text(S.Nui.ui(n)), S.Cs.held(n), st, sel, U.Str.get(live, sel), caret, S.Nui.mark(n), focus, S.Blink.on(n), x0, x1, h, sc, pa, U.Flag.get(op, "term"),
         U.Str.get(nf, "models"), U.Flag.get(op, "models"), U.Ui.pending(S.Nui.ui(n), sel), U.Ui.skills(S.Nui.ui(n)), U.Side.now(S.Nui.ui(n)),
-        U.Ui.atts(S.Nui.ui(n), sel), U.Ui.uploading(S.Nui.ui(n), sel), path, nf, U.Ui.deleting(S.Nui.ui(n)), TSel.of(U.Ui.scratch(S.Nui.ui(n), "@ts"), sel), U.Ui.scratch(S.Nui.ui(n), "@menu.off"), U.Side.phase(st, U.Ui.thread(st, sel)), hy, Lay.more(memo, n, sel), U.Btw.question(S.Nui.ui(n)), U.Btw.reply.of(S.Nui.ui(n)))),
+        U.Ui.atts(S.Nui.ui(n), sel), U.Ui.uploading(S.Nui.ui(n), sel), path, nf, U.Ui.deleting(S.Nui.ui(n)), TSel.of(U.Ui.scratch(S.Nui.ui(n), "@ts"), sel), U.Ui.scratch(S.Nui.ui(n), "@menu.off"), U.Side.phase(st, U.Ui.thread(st, sel)), hy, Lay.more(memo, n, sel), U.Btw.question(S.Nui.ui(n)), U.Btw.reply.of(S.Nui.ui(n)),
+        U.Ren.on(S.Nui.ui(n)), U.Ui.scratch(S.Nui.ui(n), "@f.title"))),
         Vx.view(ty, n, st, sel, x0, x1, h)), Lay.earlier(Lay.more(memo, n, sel)))
 
 # the thread view with its header at the top
