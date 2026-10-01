@@ -592,7 +592,7 @@ def Bv.stop(on: Bool, +ty: L.Ty, +x1: U32) -> L.Out:
 
 # where the header's right side ends before the Viewer chip (when shown)
 def Bv.right(+viewer: Bool, +ty: L.Ty, +x1: U32) -> U32:
-  Bool.pick(U32, viewer, (x1 - 8 - L.Lay.button.w(ty, "Panel") : U32), x1)
+  Bool.pick(U32, viewer, (x1 - 8 - L.Lay.button.w(ty, "Viewer") : U32), x1)
 
 # a bot's header (BU.head, the same for a bot here, one mirrored from a
 # linked machine and one only reported by one): its cat (64 px), its name
@@ -610,7 +610,7 @@ def Bv.header(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +u: U.Ui, +ms: Nat, hd: BU.Hea
         L.Out.ops(L.Ty.text(ty, 1n, title, D.Clip.all(), (x0 + 100 : U32), 10, 30, T.Th.text())),
         L.Out.ops(L.Ty.text(ty, 2n, note ++ sub, D.Clip.all(), (x0 + 112 + nw : U32), 10, 30, Bv.note.color(mood))),
         right,
-        Bv.when(viewer, F.Fm.chip(ty, D.Clip.all(), (x1 - 16 - L.Lay.button.w(ty, "Panel") : U32), 12, "Panel", U.Ui.panel(u), "panel", "")),
+        Bv.when(viewer, F.Fm.chip(ty, D.Clip.all(), (x1 - 16 - L.Lay.button.w(ty, "Viewer") : U32), 12, "Viewer", U.Ui.panel(u), "panel", "")),
         Bv.tabs(ts, ty, tab, (x0 + 100 : U32), 48)])
 
 def Bv.tab.n(+t: String) -> Nat:
