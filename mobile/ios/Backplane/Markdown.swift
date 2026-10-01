@@ -1,7 +1,8 @@
 import SwiftUI
 
-// Draws the markdown blocks Md.render made (p, h3-h5, ul/li, pre, code,
-// strong, a) with native text styles.
+// Draws the markdown blocks Md.render made (p, h3-h5, ul/li, ol/li,
+// blockquote, hr, table/tr/th/td, pre, code, strong, em, a) with native
+// text styles.
 
 // a file link as a URL a thread's openURL handler knows: a tap asks for
 // the file's menu ("file-menu" with the path)
@@ -34,6 +35,8 @@ private func inline(_ bs: [Block]) -> AttributedString {
             part.backgroundColor = Color(.secondarySystemFill)
         case "strong":
             part.font = .body.weight(.semibold)
+        case "em":
+            part.font = .body.italic()
         // a link opens in the browser (Text follows .link on a tap); a
         // file's goes through FileLink to the thread's openURL
         case "a":
@@ -84,6 +87,26 @@ private struct BlockView: View {
                         }
                     }
                 }
+            case "ol":
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(kids.enumerated()), id: \.offset) { _, li in
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("\(li.n ?? "").").monospacedDigit()
+                            Text(inline(li.kids ?? []))
+                        }
+                    }
+                }
+            case "blockquote":
+                Text(inline(kids))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 10)
+                    .overlay(alignment: .leading) { Rectangle().fill(Color(.separator)).frame(width: 2) }
+            case "hr":
+                Rectangle().fill(Color(.separator)).frame(height: 1).padding(.vertical, 6)
+            case "table":
+                ScrollView(.horizontal, showsIndicators: false) {
+                    TableView(rows: kids.filter { $0.tag == "tr" })
+                }
             case "pre":
                 ScrollView(.horizontal, showsIndicators: false) {
                     Text(block.plain).font(.callout.monospaced()).padding(12)
@@ -93,6 +116,69 @@ private struct BlockView: View {
             case "button": EmptyView()
             default: MarkdownView(blocks: kids)
             }
+        }
+    }
+}
+
+// a table: each column as wide as its widest cell (up to 240 pt, wrapping
+// past that), each row as tall as its tallest cell; wider than the screen,
+// it scrolls sideways
+private struct TableView: View {
+    let rows: [Block]
+
+    var body: some View {
+        let cols = rows.map { ($0.kids ?? []).count }.max() ?? 0
+        TableLayout(cols: cols) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
+                let cells = r.kids ?? []
+                ForEach(0..<cols, id: \.self) { i in
+                    let c = i < cells.count ? cells[i] : nil
+                    let th = c?.tag == "th"
+                    Text(inline(c?.kids ?? []))
+                        .font(th ? .callout.weight(.semibold) : .callout)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .background(th ? Color(.secondarySystemFill) : Color.clear)
+                        .border(Color(.separator), width: 0.5)
+                }
+            }
+        }
+    }
+}
+
+private struct TableLayout: Layout {
+    let cols: Int
+    let cap: CGFloat = 240
+
+    private func grid(_ vs: Subviews) -> ([CGFloat], [CGFloat]) {
+        guard cols > 0 else { return ([], []) }
+        var w = [CGFloat](repeating: 0, count: cols)
+        for (k, v) in vs.enumerated() {
+            w[k % cols] = max(w[k % cols], min(v.sizeThatFits(.unspecified).width, cap))
+        }
+        var h = [CGFloat](repeating: 0, count: (vs.count + cols - 1) / cols)
+        for (k, v) in vs.enumerated() {
+            h[k / cols] = max(h[k / cols], v.sizeThatFits(ProposedViewSize(width: w[k % cols], height: nil)).height)
+        }
+        return (w, h)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let (w, h) = grid(subviews)
+        return CGSize(width: w.reduce(0, +), height: h.reduce(0, +))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let (w, h) = grid(subviews)
+        var y = bounds.minY
+        for r in h.indices {
+            var x = bounds.minX
+            for i in 0..<cols where r * cols + i < subviews.count {
+                subviews[r * cols + i].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: w[i], height: h[r]))
+                x += w[i]
+            }
+            y += h[r]
         }
     }
 }

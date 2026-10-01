@@ -25,6 +25,7 @@ import ./src/core/attach.bend as AT
 import ./src/core/svg.bend as SVG
 import ./src/core/lightbox.bend as LBX
 import ./src/core/links.bend as LK
+import ./src/web/dom.bend as DM
 import ./src/core/tailnet.bend as TN
 import ./src/gfx/tiles.bend as T
 import ./src/gfx/raster.bend as R
@@ -6317,3 +6318,16 @@ def Laws.keys_names_of_lines():
 
 def Laws.keys_prompt_none():
   {==}
+
+def Laws.md_head_first(cs):
+  {==}
+
+def Laws.md_head_only_first(cs, r, rs):
+  {==}
+
+def Laws.md_fence_any(s):
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{h, t}:
+      {==}

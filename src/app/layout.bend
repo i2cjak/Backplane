@@ -826,6 +826,16 @@ def TL.h.k(k: Nat) -> U32:
       24
     case 17n:
       8
+    case 18n:
+      26
+    case 19n:
+      23
+    case 20n:
+      1
+    case 21n:
+      17
+    case 22n:
+      23
     case _:
       10
 
@@ -911,12 +921,16 @@ def TL.texts(ls: List<&2, String>, +color: U32, +kind: U32) -> List<&2, TLine>:
     case l <> t:
       TLine{l, color, kind, "", 0} <> TL.texts(t, color, kind)
 
-def TL.bullets(ls: List<&2, String>, first: Bool, +enc: String) -> List<&2, TLine>:
+# an item's lines: the first after its mark (p0), the rest indented (p1)
+def TL.marked(ls: List<&2, String>, first: Bool, +p0: String, +p1: String, +enc: String) -> List<&2, TLine>:
   match ls:
     case Nil{}:
       Nil{}
     case l <> t:
-      TLine{Bool.pick(String, first, "•  ", "   ") ++ l, T.Th.soft(), Bool.pick(U32, String.is_empty(enc), 0, 13), enc, 0} <> TL.bullets(t, False{}, enc)
+      TLine{Bool.pick(String, first, p0, p1) ++ l, T.Th.soft(), Bool.pick(U32, String.is_empty(enc), 0, 13), enc, 0} <> TL.marked(t, False{}, p0, p1, enc)
+
+def TL.bullets(ls: List<&2, String>, first: Bool, +enc: String) -> List<&2, TLine>:
+  TL.marked(ls, first, "•  ", "   ", enc)
 
 def TL.items(+ty: Ty, ns: List<&2, N.Node>, +px: U32) -> List<&2, TLine>:
   match ns:
@@ -924,6 +938,198 @@ def TL.items(+ty: Ty, ns: List<&2, N.Node>, +px: U32) -> List<&2, TLine>:
       Nil{}
     case +n <> t:
       List.append(&2, TLine, TL.bullets(Ty.wrap(ty, 3n, Nd.plain([n]), (px - 24 : U32)), True{}, LK.Link.enc(Nd.links([n]))), TL.items(ty, t, px))
+
+# an ordered item's number as written (Md.oli's value)
+def Nd.value(xs: List<&2, N.Attr>) -> String:
+  match xs:
+    case Nil{}:
+      ""
+    case N.At{"value", v} <> _:
+      v
+    case _ <> t:
+      Nd.value(t)
+
+def TL.num(+ty: Ty, n: N.Node, +px: U32) -> List<&2, TLine>:
+  match n:
+    case N.El{_, _, at, +ks}:
+      TL.marked(Ty.wrap(ty, 3n, Nd.plain(ks), (px - 28 : U32)), True{}, Nd.value(at) ++ ". ", "    ", LK.Link.enc(Nd.links(ks)))
+    case N.Txt{s}:
+      TL.texts(Ty.wrap(ty, 3n, s, px), T.Th.soft(), 0)
+
+def TL.nums(+ty: Ty, ns: List<&2, N.Node>, +px: U32) -> List<&2, TLine>:
+  match ns:
+    case Nil{}:
+      Nil{}
+    case n <> t:
+      List.append(&2, TLine, TL.num(ty, n, px), TL.nums(ty, t, px))
+
+# Tables
+# ------
+# A table lays out as kind 18 lines (a row's first line: a rule above it)
+# and kind 19 lines (the rest of a wrapped row), then a kind 20 rule. A
+# line's text is its cells' text joined by tabs (so a selection copies
+# into a spreadsheet); its copy field is a flag (1: the head row) and then
+# each column's width, one character each; w is the table's width. Each
+# column is as wide as its widest cell, all scaled down to fit the panel,
+# and a cell wraps within its column.
+
+type TRow is Data:
+  TRow{head: Bool, cells: List<&2, String>}
+
+def TL.cells(ns: List<&2, N.Node>) -> List<&2, String>:
+  match ns:
+    case Nil{}:
+      Nil{}
+    case N.El{_, _, _, ks} <> t:
+      Nd.plain(ks) <> TL.cells(t)
+    case N.Txt{s} <> t:
+      s <> TL.cells(t)
+
+def TL.th(ns: List<&2, N.Node>) -> Bool:
+  match ns:
+    case N.El{"th", _, _, _} <> _:
+      True{}
+    case _:
+      False{}
+
+def TL.trow(n: N.Node) -> TRow:
+  match n:
+    case N.El{_, _, _, +ks}:
+      TRow{TL.th(ks), TL.cells(ks)}
+    case N.Txt{s}:
+      TRow{False{}, [s]}
+
+def TL.trows(ns: List<&2, N.Node>) -> List<&2, TRow>:
+  match ns:
+    case Nil{}:
+      Nil{}
+    case n <> t:
+      TL.trow(n) <> TL.trows(t)
+
+# column widths widened to fit a row's cells (16 px of padding each)
+def TL.tw.row(cs: List<&2, String>, ws: List<&2, U32>, +ty: Ty) -> List<&2, U32>:
+  match cs ws:
+    case Nil{} +rest:
+      rest
+    case +c <> ct Nil{}:
+      (Ty.width(ty, 3n, c) + 16 : U32) <> TL.tw.row(ct, Nil{}, ty)
+    case +c <> ct +w <> wt:
+      U32.max(w, (Ty.width(ty, 3n, c) + 16 : U32)) <> TL.tw.row(ct, wt, ty)
+
+def TL.tw(rs: List<&2, TRow>, ws: List<&2, U32>, +ty: Ty) -> List<&2, U32>:
+  match rs:
+    case Nil{}:
+      ws
+    case TRow{_, cs} <> t:
+      TL.tw(t, TL.tw.row(cs, ws, ty), ty)
+
+def TL.sum(ws: List<&2, U32>, +acc: U32) -> U32:
+  match ws:
+    case Nil{}:
+      acc
+    case w <> t:
+      TL.sum(t, (acc + w : U32))
+
+# what the columns no wider than share take
+def TL.small(ws: List<&2, U32>, +share: U32, +acc: U32) -> U32:
+  match ws:
+    case Nil{}:
+      acc
+    case +w <> t:
+      TL.small(t, share, Bool.pick(U32, U32.is_gt(w, share), acc, (acc + w : U32)))
+
+# a column no wider than share keeps its width; the wider ones split the
+# rest of the panel in proportion
+def TL.scale(ws: List<&2, U32>, +share: U32, +rest: U32, +big: U32) -> List<&2, U32>:
+  match ws:
+    case Nil{}:
+      Nil{}
+    case +w <> t:
+      Bool.pick(U32, U32.is_gt(w, share), U32.max(48, ((w * rest : U32) / U32.max(big, 1) : U32)), w) <> TL.scale(t, share, rest, big)
+
+def TL.fit.k(+ws: List<&2, U32>, +px: U32, +total: U32, +share: U32) -> List<&2, U32>:
+  TL.scale(ws, share, U32.dim(px, TL.small(ws, share, 0)), U32.dim(total, TL.small(ws, share, 0)))
+
+# the widths shrunk to the panel when they are wider
+def TL.fit(+ws: List<&2, U32>, +px: U32, +total: U32) -> List<&2, U32>:
+  Bool.pick(List<&2, U32>, U32.is_gt(total, px), TL.fit.k(ws, px, total, (px / U32.max(U32.from_nat(List.length(&2, U32, ws)), 1) : U32)), ws)
+
+def TL.enc(ws: List<&2, U32>) -> String:
+  match ws:
+    case Nil{}:
+      SNil{}
+    case w <> t:
+      SCon{Chr{w}, TL.enc(t)}
+
+# each cell wrapped to its column
+def TL.wraps(cs: List<&2, String>, ws: List<&2, U32>, +ty: Ty) -> List<&2, List<&2, String>>:
+  match cs ws:
+    case +c <> ct +w <> wt:
+      Ty.wrap(ty, 3n, c, (U32.dim(w, 16) : U32)) <> TL.wraps(ct, wt, ty)
+    case _ _:
+      Nil{}
+
+def TL.tall(ls: List<&2, List<&2, String>>, +acc: Nat) -> Nat:
+  match ls:
+    case Nil{}:
+      acc
+    case +l <> t:
+      TL.tall(t, Bool.pick(Nat, Nat.is_gt(List.length(&2, String, l), acc), List.length(&2, String, l), acc))
+
+def TL.nth(ls: List<&2, List<&2, String>>, +k: Nat) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case l <> t:
+      Maybe.default(&2, String, List.get(&2, String, l, k), "") <> TL.nth(t, k)
+
+def TL.rowlines(n: Nat, +k: Nat, +ls: List<&2, List<&2, String>>, +color: U32, +enc: String, +w: U32) -> List<&2, TLine>:
+  match n:
+    case 0n:
+      Nil{}
+    case 1n+m:
+      TLine{String.join(TL.nth(ls, k), "\t"), color, Bool.pick(U32, Nat.is_eq(k, 0n), 18, 19), enc, w} <> TL.rowlines(m, 1n+k, ls, color, enc, w)
+
+def TL.trow.lines.k(+ls: List<&2, List<&2, String>>, +head: Bool, +ws: List<&2, U32>, +w: U32) -> List<&2, TLine>:
+  TL.rowlines(TL.tall(ls, 1n), 0n, ls, Bool.pick(U32, head, T.Th.text(), T.Th.soft()), SCon{Chr{Bool.pick(U32, head, 1, 0)}, TL.enc(ws)}, w)
+
+def TL.trow.lines(r: TRow, +ws: List<&2, U32>, +w: U32, +ty: Ty) -> List<&2, TLine>:
+  match r:
+    case TRow{+head, cs}:
+      TL.trow.lines.k(TL.wraps(cs, ws, ty), head, ws, w)
+
+def TL.table.rows(rs: List<&2, TRow>, +ws: List<&2, U32>, +w: U32, +ty: Ty) -> List<&2, TLine>:
+  match rs:
+    case Nil{}:
+      [TLine{"", T.Th.line(), 20, "", w}]
+    case r <> t:
+      List.append(&2, TLine, TL.trow.lines(r, ws, w, ty), TL.table.rows(t, ws, w, ty))
+
+def TL.table.k(+rs: List<&2, TRow>, +ws: List<&2, U32>, +ty: Ty) -> List<&2, TLine>:
+  TL.table.rows(rs, ws, TL.sum(ws, 0), ty)
+
+def TL.table(+ty: Ty, ns: List<&2, N.Node>, +px: U32) -> List<&2, TLine>:
+  +rs = TL.trows(ns)
+  +ws = TL.tw(rs, Nil{}, ty)
+  TL.table.k(rs, TL.fit(ws, U32.dim(px, 1), TL.sum(ws, 0)), ty)
+
+# a table line's cells, each in its column, with a rule left of each
+def TL.cells.draw(cs: List<&2, String>, ws: String, +ty: Ty, +c: D.Clip, +x: U32, +y: U32, +h: U32, +color: U32) -> List<&2, R.Op>:
+  match cs ws:
+    case +s <> ct SCon{Chr{+w}, wt}:
+      List.append(&2, R.Op, D.Draw.rect(c, x, y, 1, h, T.Th.line(), 255) <> Ty.text(ty, 3n, Ty.fit(ty, 3n, s, U32.dim(w, 16)), c, (x + 8 : U32), (y + h - 23 : U32), 23, color),
+        TL.cells.draw(ct, wt, ty, c, (x + w : U32), y, h, color))
+    case _ _:
+      [D.Draw.rect(c, x, y, 1, h, T.Th.line(), 255)]
+
+def TL.trow.draw(+ty: Ty, +first: Bool, +text: String, +color: U32, +enc: String, +bw: U32, +c: D.Clip, +x0: U32, +y: U32) -> Out:
+  match enc:
+    case SCon{Chr{+flag}, ws}:
+      Out.ops(List.concat(&2, R.Op, [Bool.pick(List<&2, R.Op>, U32.is_eq(flag, 1), [D.Draw.rect(c, x0, y, bw, Bool.pick(U32, first, 26, 23), T.Th.raise(), 255)], Nil{}),
+        Bool.pick(List<&2, R.Op>, first, [D.Draw.rect(c, x0, y, bw, 1, T.Th.line(), 255)], Nil{}),
+        TL.cells.draw(String.split(text, '\t'), ws, ty, c, x0, y, Bool.pick(U32, first, 26, 23), color)]))
+    case SNil{}:
+      Out.none()
 
 def TL.code(ls: List<&2, String>) -> List<&2, TLine>:
   match ls:
@@ -950,7 +1156,13 @@ def TL.block(+ty: Ty, n: N.Node, +px: U32) -> List<&2, TLine>:
     case N.El{"ul", _, _, ks}:
       TL.items(ty, ks, px)
     case N.El{"ol", _, _, ks}:
-      TL.items(ty, ks, px)
+      TL.nums(ty, ks, px)
+    case N.El{"table", _, _, ks}:
+      TL.table(ty, ks, px)
+    case N.El{"blockquote", _, _, ks}:
+      TL.texts(Ty.wrap(ty, 3n, Nd.plain(ks), (px - 12 : U32)), T.Th.faint(), 22)
+    case N.El{"hr", _, _, _}:
+      [TLine{"", T.Th.line(), 21, "", 0}]
     case N.El{"div", _, _, +ks}:
       List.concat(&2, TLine, [[TLine{"code", T.Th.faint(), 8, Nd.plain(ks), 0}], TL.code(TL.trim(String.split(Nd.plain(ks), '\n'))), [TLine{"", 0, 9, "", 0}]])
     case N.El{_, _, _, ks}:
@@ -1184,6 +1396,16 @@ def TL.draw.k(+ty: Ty, k: Nat, +text: String, +color: U32, +copy: String, +bw: U
         [Lay.hit(x0, y, (Ty.width(ty, 2n, text) + 26 : U32), 24, "hist-show", copy)]}
     case 17n:
       Out.ops([D.Draw.rect(c, x0, (y + 3 : U32), (x1 - x0 : U32), 2, T.Th.accent(), 255)])
+    case 18n:
+      TL.trow.draw(ty, True{}, text, color, copy, bw, c, x0, y)
+    case 19n:
+      TL.trow.draw(ty, False{}, text, color, copy, bw, c, x0, y)
+    case 20n:
+      Out.ops([D.Draw.rect(c, x0, y, bw, 1, color, 255)])
+    case 21n:
+      Out.ops([D.Draw.rect(c, x0, (y + 8 : U32), (x1 - x0 : U32), 1, color, 255)])
+    case 22n:
+      Out.ops(D.Draw.rect(c, x0, y, 2, 23, T.Th.line(), 255) <> Ty.text(ty, 3n, text, c, (x0 + 12 : U32), y, 23, color))
     case _:
       Out.ops(Ty.text(ty, 3n, text, c, x0, y, 23, color))
 
@@ -1238,7 +1460,7 @@ def TSel.of(+raw: String, +thread: String) -> TSel:
 # which lines hold text a selection can take, the face they are drawn in
 # and where that text starts (as TL.draw.k draws them)
 def TL.textual(+k: Nat) -> Bool:
-  Bool.not(Bool.or(Bool.or(Bool.or(Nat.is_eq(k, 4n), Nat.is_eq(k, 6n)), Bool.or(Nat.is_eq(k, 7n), Nat.is_eq(k, 9n))), Nat.is_eq(k, 12n)))
+  Bool.not(Bool.or(Bool.or(Bool.or(Nat.is_eq(k, 4n), Nat.is_eq(k, 6n)), Bool.or(Nat.is_eq(k, 7n), Nat.is_eq(k, 9n))), Bool.or(Nat.is_eq(k, 12n), Bool.or(Nat.is_eq(k, 20n), Nat.is_eq(k, 21n)))))
 
 def TL.face(+k: Nat) -> Nat:
   Bool.pick(Nat, Nat.is_eq(k, 1n), 4n, Bool.pick(Nat, Bool.or(Bool.or(Nat.is_eq(k, 8n), Nat.is_eq(k, 3n)), Bool.or(Bool.or(Nat.is_eq(k, 10n), Nat.is_eq(k, 11n)), Nat.is_eq(k, 15n))), 2n,
@@ -1246,7 +1468,8 @@ def TL.face(+k: Nat) -> Nat:
 
 def TL.tx(+ty: Ty, +k: Nat, +text: String, +bw: U32, +x0: U32, +x1: U32) -> U32:
   Bool.pick(U32, Bool.or(Bool.or(Nat.is_eq(k, 1n), Nat.is_eq(k, 8n)), Nat.is_eq(k, 15n)), (x0 + 14 : U32), Bool.pick(U32, Nat.is_eq(k, 2n), (x1 - bw + 20 : U32),
-    Bool.pick(U32, Nat.is_eq(k, 10n), (x0 + 10 : U32), Bool.pick(U32, Nat.is_eq(k, 11n), (x1 - Ty.width(ty, 2n, text) : U32), x0))))
+    Bool.pick(U32, Nat.is_eq(k, 10n), (x0 + 10 : U32), Bool.pick(U32, Nat.is_eq(k, 11n), (x1 - Ty.width(ty, 2n, text) : U32),
+      Bool.pick(U32, Nat.is_eq(k, 22n), (x0 + 12 : U32), Bool.pick(U32, Bool.or(Nat.is_eq(k, 18n), Nat.is_eq(k, 19n)), (x0 + 8 : U32), x0))))))
 
 # the characters of text before window x (text starting at tx)
 def TL.col(+ty: Ty, +k: Nat, +text: String, +tx: U32, +x: U32) -> Nat:

@@ -50,25 +50,29 @@ type Inl is Data:
   ICode{acc: String}
   IBold{acc: String}
   IBoldStar{acc: String}
+  IEm{acc: String}
 
 type Glyph is Data:
   KTick{}
   KStar{}
+  KSpace{}
   KOther{}
 
-def Md.glyph.k(tick: Bool, star: Bool) -> Glyph:
-  match tick star:
-    case True{} _:
+def Md.glyph.k(tick: Bool, star: Bool, space: Bool) -> Glyph:
+  match tick star space:
+    case True{} _ _:
       KTick{}
-    case False{} True{}:
+    case False{} True{} _:
       KStar{}
-    case False{} False{}:
+    case False{} False{} True{}:
+      KSpace{}
+    case False{} False{} False{}:
       KOther{}
 
 def Md.glyph(c: Char) -> Glyph:
   match c:
     case Chr{+u}:
-      Md.glyph.k(U32.is_eq(u, 96), U32.is_eq(u, 42))
+      Md.glyph.k(U32.is_eq(u, 96), U32.is_eq(u, 42), Bool.or(U32.is_eq(u, 32), U32.is_eq(u, 9)))
 
 # a link to a file: a click asks the hub to open it ("file-open"), a
 # right-click opens its menu ("file-menu"); href is the path as written
@@ -122,18 +126,27 @@ def Md.code(+acc: String) -> Node:
 def Md.bold(acc: String) -> Node:
   El{"strong", "", Nil{}, [Txt{String.reverse(acc)}]}
 
+def Md.em(acc: String) -> Node:
+  El{"em", "", Nil{}, [Txt{String.reverse(acc)}]}
+
 def Md.istep(st: Inl, k: Glyph, c: Char, out: List<&2, Node>) -> Inl & List<&2, Node>:
   match st k:
     case IText{acc} KTick{}:
       (ICode{SNil{}}, Md.text(acc, out))
     case IText{acc} KStar{}:
       (IStar{acc}, out)
-    case IText{acc} KOther{}:
+    case IText{acc} _:
       (IText{SCon{c, acc}}, out)
     case IStar{acc} KStar{}:
       (IBold{SNil{}}, Md.text(acc, out))
-    case IStar{acc} _:
+    case IStar{acc} KSpace{}:
       (IText{SCon{c, SCon{'*', acc}}}, out)
+    case IStar{acc} _:
+      (IEm{SCon{c, SNil{}}}, Md.text(acc, out))
+    case IEm{acc} KStar{}:
+      (IText{SNil{}}, Md.em(acc) <> out)
+    case IEm{acc} _:
+      (IEm{SCon{c, acc}}, out)
     case ICode{acc} KTick{}:
       (IText{SNil{}}, Md.code(acc) <> out)
     case ICode{acc} _:
@@ -164,6 +177,8 @@ def Md.ifin(r: Inl & List<&2, Node>) -> List<&2, Node>:
       List.reverse(&2, Node, Md.text(String.append(acc, "**"), out))
     case IBoldStar{acc}:
       List.reverse(&2, Node, Md.text(String.append(SCon{'*', acc}, "**"), out))
+    case IEm{acc}:
+      List.reverse(&2, Node, Md.text(String.append(acc, "*"), out))
 
 def Md.igo(s: String, r: Inl & List<&2, Node>) -> List<&2, Node>:
   match s:
@@ -179,41 +194,179 @@ def Md.inline(s: String) -> List<&2, Node>:
 # Blocks
 # ------
 
+# a table row: the one a separator row (|---|) follows is the head
+type Row is Data:
+  RHead{cells: List<&2, String>}
+  RBody{cells: List<&2, String>}
+
+# an ordered list's item, its number as written
+type OItem is Data:
+  OItem{n: String, text: String}
+
 type Blk is Data:
   BNone{}
   BPara{lines: List<&2, String>}
   BCode{lines: List<&2, String>}
   BList{items: List<&2, String>}
+  BOl{items: List<&2, OItem>}
+  BQuote{lines: List<&2, String>}
+  BTable{rows: List<&2, Row>}
 
 type Line is Data:
   LFence{}
   LHead{level: Nat, text: String}
   LItem{text: String}
+  LNum{n: String, text: String}
+  LQuote{text: String}
+  LRow{cells: List<&2, String>}
+  LSep{text: String}
+  LHr{}
   LBlank{}
   LText{text: String}
 
-def Md.line.k(fence: Bool, h3: Bool, h2: Bool, h1: Bool, item: Bool, blank: Bool, +t: String, l: String) -> Line:
-  match fence h3 h2 h1 item blank:
-    case True{} _ _ _ _ _:
-      LFence{}
-    case _ True{} _ _ _ _:
-      LHead{3n, String.drop(t, 4n)}
-    case _ _ True{} _ _ _:
-      LHead{2n, String.drop(t, 3n)}
-    case _ _ _ True{} _ _:
-      LHead{1n, String.drop(t, 2n)}
-    case _ _ _ _ True{} _:
-      LItem{String.drop(t, 2n)}
-    case _ _ _ _ _ True{}:
+def Md.is_u(s: String, +u: U32) -> Bool:
+  match s:
+    case SNil{}:
+      False{}
+    case SCon{Chr{+v}, _}:
+      U32.is_eq(v, u)
+
+def Md.is_digit(s: String) -> Bool:
+  match s:
+    case SNil{}:
+      False{}
+    case SCon{h, _}:
+      Char.is_digit(h)
+
+# how many leading characters pass (h: whether the head does), and the rest
+def Md.run.hash(s: String, h: Bool, +n: Nat) -> Nat & String:
+  match s h:
+    case SCon{_, +t} True{}:
+      Md.run.hash(t, Md.is_u(t, 35), 1n+n)
+    case _ _:
+      (n, s)
+
+def Md.run.digit(s: String, h: Bool, +n: Nat) -> Nat & String:
+  match s h:
+    case SCon{_, +t} True{}:
+      Md.run.digit(t, Md.is_digit(t), 1n+n)
+    case _ _:
+      (n, s)
+
+# every character one of | - : and space
+def Md.sep.ok(s: String, ok: Bool) -> Bool:
+  match s:
+    case SNil{}:
+      ok
+    case SCon{Chr{+u}, t}:
+      Md.sep.ok(t, Bool.and(ok, Bool.or(Bool.or(U32.is_eq(u, 124), U32.is_eq(u, 45)), Bool.or(U32.is_eq(u, 58), U32.is_eq(u, 32)))))
+
+# a table's separator row: | --- | :-: |
+def Md.is_sep(+t: String) -> Bool:
+  Bool.and(String.contains(t, "-"), Md.sep.ok(String.trim(t), True{}))
+
+# every character u
+def Md.all(s: String, +u: U32, ok: Bool) -> Bool:
+  match s:
+    case SNil{}:
+      ok
+    case SCon{Chr{+v}, t}:
+      Md.all(t, u, Bool.and(ok, U32.is_eq(v, u)))
+
+# a rule: three or more of - * or _
+def Md.is_hr(+t: String) -> Bool:
+  Bool.and(Nat.is_ge(String.length(t), 3n), Bool.or(Md.all(t, 45, True{}), Bool.or(Md.all(t, 42, True{}), Md.all(t, 95, True{}))))
+
+def Md.cells.end(+xs: List<&2, String>) -> List<&2, String>:
+  Bool.pick(List<&2, String>, String.is_empty(String.trim(Maybe.default(&2, String, List.last(&2, String, xs), "x"))),
+    List.take(&2, String, xs, Nat.sub(List.length(&2, String, xs), 1n)), xs)
+
+def Md.trims(xs: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case x <> t:
+      String.trim(x) <> Md.trims(t)
+
+# a row's cells: | a | b | gives a and b
+def Md.cells(+t: String) -> List<&2, String>:
+  Md.trims(Md.cells.end(List.drop(&2, String, String.split(String.trim(t), '|'), 1n)))
+
+def Md.line.text(blank: Bool, +l: String) -> Line:
+  match blank:
+    case True{}:
       LBlank{}
-    case _ _ _ _ _ _:
+    case False{}:
       LText{l}
+
+def Md.line.num.k(num: Bool, +n: Nat, +r: String, +t: String, +l: String) -> Line:
+  match num:
+    case True{}:
+      LNum{String.take(t, n), String.drop(r, 2n)}
+    case False{}:
+      Md.line.text(String.is_empty(String.trim(t)), l)
+
+def Md.line.num(p: Nat & String, +t: String, +l: String) -> Line:
+  (+n, +r) = p
+  Md.line.num.k(Bool.and(Bool.and(Nat.is_gt(n, 0n), Nat.is_lt(n, 10n)), Bool.or(String.starts_with(r, ". "), String.starts_with(r, ") "))), n, r, t, l)
+
+def Md.line.quote(q: Bool, +t: String, +l: String) -> Line:
+  match q:
+    case True{}:
+      LQuote{String.trim_start(String.drop(t, 1n))}
+    case False{}:
+      Md.line.num(Md.run.digit(t, Md.is_digit(t), 0n), t, l)
+
+def Md.line.row(sep: Bool, +t: String, +l: String) -> Line:
+  match sep:
+    case True{}:
+      LSep{l}
+    case False{}:
+      LRow{Md.cells(t)}
+
+def Md.line.table(pipe: Bool, +t: String, +l: String) -> Line:
+  match pipe:
+    case True{}:
+      Md.line.row(Md.is_sep(t), t, l)
+    case False{}:
+      Md.line.quote(String.starts_with(t, ">"), t, l)
+
+def Md.line.hr(hr: Bool, +t: String, +l: String) -> Line:
+  match hr:
+    case True{}:
+      LHr{}
+    case False{}:
+      Md.line.table(String.starts_with(t, "|"), t, l)
+
+def Md.line.item(item: Bool, +t: String, +l: String) -> Line:
+  match item:
+    case True{}:
+      LItem{String.drop(t, 2n)}
+    case False{}:
+      Md.line.hr(Md.is_hr(String.trim(t)), t, l)
+
+def Md.line.head.k(head: Bool, +n: Nat, +r: String, +t: String, +l: String) -> Line:
+  match head:
+    case True{}:
+      LHead{n, String.trim_start(r)}
+    case False{}:
+      Md.line.item(Bool.or(Bool.or(String.starts_with(t, "- "), String.starts_with(t, "* ")), String.starts_with(t, "+ ")), t, l)
+
+# a heading: one to six #, then a space
+def Md.line.head(p: Nat & String, +t: String, +l: String) -> Line:
+  (+n, +r) = p
+  Md.line.head.k(Bool.and(Bool.and(Nat.is_gt(n, 0n), Nat.is_lt(n, 7n)), String.starts_with(r, " ")), n, r, t, l)
+
+def Md.line.k(fence: Bool, +t: String, +l: String) -> Line:
+  match fence:
+    case True{}:
+      LFence{}
+    case False{}:
+      Md.line.head(Md.run.hash(t, Md.is_u(t, 35), 0n), t, l)
 
 def Md.line(+l: String) -> Line:
   +t = String.trim_start(l)
-  Md.line.k(String.starts_with(t, "```"), String.starts_with(t, "### "), String.starts_with(t, "## "),
-    String.starts_with(t, "# "), Bool.or(String.starts_with(t, "- "), String.starts_with(t, "* ")),
-    String.is_empty(String.trim(t)), t, l)
+  Md.line.k(String.starts_with(t, "```"), t, l)
 
 def Md.nl(first: Bool, acc: String) -> String:
   match first:
@@ -247,6 +400,47 @@ def Md.lis(xs: List<&2, String>) -> List<&2, Node>:
     case x <> t:
       Md.li(x) <> Md.lis(t)
 
+def Md.oli(i: OItem) -> Node:
+  match i:
+    case OItem{n, t}:
+      El{"li", "", [At{"value", n}], Md.inline(t)}
+
+def Md.olis(xs: List<&2, OItem>) -> List<&2, Node>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case x <> t:
+      Md.oli(x) <> Md.olis(t)
+
+def Md.tds(xs: List<&2, String>, +tag: String) -> List<&2, Node>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case x <> t:
+      El{tag, "", Nil{}, Md.inline(x)} <> Md.tds(t, tag)
+
+def Md.tr(r: Row) -> Node:
+  match r:
+    case RHead{cs}:
+      El{"tr", "", Nil{}, Md.tds(cs, "th")}
+    case RBody{cs}:
+      El{"tr", "", Nil{}, Md.tds(cs, "td")}
+
+def Md.trs(rs: List<&2, Row>) -> List<&2, Node>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case r <> t:
+      Md.tr(r) <> Md.trs(t)
+
+# a separator after the first row makes it the head
+def Md.headed(rs: List<&2, Row>) -> List<&2, Row>:
+  match rs:
+    case RBody{cs} <> Nil{}:
+      [RHead{cs}]
+    case _:
+      rs
+
 def Md.codeblock(ls: List<&2, String>) -> Node:
   +text = Md.unlines(ls)
   El{"div", "", [At{"class", "codeblock"}], [Dom.copy(text), El{"pre", "", Nil{}, [El{"code", "", Nil{}, [Txt{text}]}]}]}
@@ -262,6 +456,12 @@ def Md.close(b: Blk, out: List<&2, Node>) -> List<&2, Node>:
       Md.codeblock(ls) <> out
     case BList{xs}:
       El{"ul", "", Nil{}, Md.lis(List.reverse(&2, String, xs))} <> out
+    case BOl{xs}:
+      El{"ol", "", Nil{}, Md.olis(List.reverse(&2, OItem, xs))} <> out
+    case BQuote{ls}:
+      El{"blockquote", "", Nil{}, Md.inline(Md.unlines(ls))} <> out
+    case BTable{rs}:
+      El{"table", "", Nil{}, Md.trs(List.reverse(&2, Row, rs))} <> out
 
 def Md.head(n: Nat, t: String) -> Node:
   match n:
@@ -286,6 +486,26 @@ def Md.bstep(b: Blk, ln: Line, +raw: String, out: List<&2, Node>) -> Blk & List<
       (BList{t <> xs}, out)
     case _ LItem{t}:
       (BList{[t]}, Md.close(b, out))
+    case BOl{xs} LNum{n, t}:
+      (BOl{OItem{n, t} <> xs}, out)
+    case _ LNum{n, t}:
+      (BOl{[OItem{n, t}]}, Md.close(b, out))
+    case BQuote{ls} LQuote{t}:
+      (BQuote{t <> ls}, out)
+    case _ LQuote{t}:
+      (BQuote{[t]}, Md.close(b, out))
+    case BTable{rs} LRow{cs}:
+      (BTable{RBody{cs} <> rs}, out)
+    case _ LRow{cs}:
+      (BTable{[RBody{cs}]}, Md.close(b, out))
+    case BTable{rs} LSep{_}:
+      (BTable{Md.headed(rs)}, out)
+    case BPara{ls} LSep{t}:
+      (BPara{t <> ls}, out)
+    case _ LSep{t}:
+      (BPara{[t]}, Md.close(b, out))
+    case _ LHr{}:
+      (BNone{}, El{"hr", "", Nil{}, Nil{}} <> Md.close(b, out))
     case _ LBlank{}:
       (BNone{}, Md.close(b, out))
     case BPara{ls} LText{t}:

@@ -64,7 +64,8 @@ data class Tool(
 
 sealed interface Block {
     // a link's target, and whether it is a file's (Mob.href)
-    data class El(val tag: String, val kids: List<Block>, val href: String? = null, val file: Boolean = false) : Block
+    // n: an ordered item's number as written
+    data class El(val tag: String, val kids: List<Block>, val href: String? = null, val file: Boolean = false, val n: String? = null) : Block
     data class Txt(val text: String) : Block
 }
 
@@ -336,7 +337,8 @@ private fun <T> JSONArray?.map(f: (JSONObject) -> T): List<T> =
     if (this == null) emptyList() else (0 until length()).map { f(getJSONObject(it)) }
 
 private fun blocks(a: JSONArray?): List<Block> = a.map { o ->
-    if (o.has("tag")) Block.El(o.getString("tag"), blocks(o.optJSONArray("kids")), if (o.has("href")) o.optString("href") else null, o.optBoolean("file"))
+    if (o.has("tag")) Block.El(o.getString("tag"), blocks(o.optJSONArray("kids")), if (o.has("href")) o.optString("href") else null, o.optBoolean("file"),
+        if (o.has("n")) o.optString("n") else null)
     else Block.Txt(o.optString("text"))
 }
 

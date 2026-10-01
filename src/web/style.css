@@ -122,6 +122,12 @@ button.icon:hover { color: var(--text); border-color: var(--line); }
 .body code { font-family: var(--mono); font-size: 12px; background: var(--raise); padding: 0 3px; }
 .body h3, .body h4, .body h5 { margin: 12px 0 6px; }
 .body ul { margin: 0 0 8px; padding-left: 20px; }
+.body ol { margin: 0 0 8px; padding-left: 28px; }
+.body blockquote { margin: 0 0 8px; padding: 2px 0 2px 10px; border-left: 2px solid var(--line); color: var(--dim); white-space: pre-wrap; }
+.body hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
+.body table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 0 0 8px; }
+.body th, .body td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; }
+.body th { background: var(--raise); font-weight: 600; }
 .codeblock { position: relative; margin: 0 0 8px; border: 1px solid var(--line); background: var(--panel); }
 .codeblock pre { margin: 0; padding: 10px 12px; overflow-x: auto; }
 .codeblock pre code { background: none; padding: 0; }
