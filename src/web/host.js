@@ -191,16 +191,33 @@ let focus = null;
 let jump = null;
 let earlierAsked = false;
 
+// the entry at the top of the timeline's view, and how far into the view
+// it sits: kept there across a render while the reader is not at the end
+function anchorOf(tl) {
+  const top = tl.getBoundingClientRect().top;
+  for (const el of tl.querySelectorAll("[data-id]")) {
+    const r = el.getBoundingClientRect();
+    if (r.bottom > top + 1) return { id: el.getAttribute("data-id"), off: r.top - top };
+  }
+  return null;
+}
+
 function render() {
   queued = false;
   const tl = document.getElementById("timeline");
   const pinned = tl ? tl.scrollHeight - tl.scrollTop - tl.clientHeight < 40 : true;
+  const anchor = tl && !pinned ? anchorOf(tl) : null;
   const fromEnd = tl ? tl.scrollHeight - tl.scrollTop : 0;
   patch(root, { $: "El", tag: "div", key: "", attrs: { $: "Nil" }, kids: { $: "Con", head: App.view(ui), tail: { $: "Nil" } } });
   const tl2 = document.getElementById("timeline");
   if (tl2 && (scroll || pinned)) tl2.scrollTop = tl2.scrollHeight;
-  // earlier entries added above keep the view where it was
-  else if (tl2 && tl === tl2) tl2.scrollTop = tl2.scrollHeight - fromEnd;
+  // read further up, the view stays on what is read: text streaming in
+  // below and earlier entries added above move nothing on screen
+  else if (tl2 && tl === tl2) {
+    const el = anchor && tl2.querySelector(`[data-id="${CSS.escape(anchor.id)}"]`);
+    if (el) tl2.scrollTop += el.getBoundingClientRect().top - tl2.getBoundingClientRect().top - anchor.off;
+    else tl2.scrollTop = tl2.scrollHeight - fromEnd;
+  }
   scroll = false;
   // an entry the history went back to (Jump): brought into view, flashed
   if (jump && tl2) {
