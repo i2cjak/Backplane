@@ -1,12 +1,23 @@
 # Backplane
 
-Agentic hardware development. Claude Code, Codex and Grok work on your KiCad boards and FreeCAD parts, and every change they make is drawn live beside the conversation: on your desktop, in a browser, or on your phone.
+Agentic hardware development. Claude Code, Codex and Grok work on your KiCad boards and FreeCAD parts, and every change they make is drawn live beside the conversation, in a browser, on your phone, or in the desktop app.
 
-![A thread beside the board it is changing](docs/media/web-board.png)
+<p>
+<img src="docs/media/web-board.png" width="75.5%" alt="A thread beside the board it is changing, in the browser">
+<img src="docs/media/phone-compare.png" width="21.5%" alt="The same change on a phone: the tracks the agent widened">
+</p>
 
 ## Why
 
 Agents edit text, and a board file is text no one can review by reading it. Backplane puts the design next to the thread: the board, schematic and 3D model redraw as the agent saves, each step it takes is kept, and you compare any two versions the way you would read a diff. It runs on your own machine, with your KiCad, your files and your agent subscriptions, and your other devices reach it over Tailscale.
+
+## Web and phone, the same work
+
+The hub runs on your machine. The browser and the native Android and iOS apps reach it over your tailnet and show the same threads, live: start a turn at your desk, then follow it, answer its questions and review the board from your phone. The phone apps are not a reduced view: threads, the board, schematic, 3D model, Mech parts, files and the design history with Compare are all there, drawn natively, with a notification when a turn ends or an agent needs you. Several machines show as one list.
+
+| | | | |
+|---|---|---|---|
+| ![](docs/media/phone-list.png) | ![](docs/media/phone-thread.png) | ![](docs/media/phone-3d.png) | ![](docs/media/phone-mech.png) |
 
 ## What it does
 
@@ -27,12 +38,6 @@ Agents edit text, and a board file is text no one can review by reading it. Back
 | Schematic sheets | Datasheets and files |
 |---|---|
 | ![](docs/media/web-schematic.png) | ![](docs/media/web-files.png) |
-
-**On your phone.** Native Android and iOS apps: every thread, the board, the 3D model and Mech, with notifications when a turn ends or an agent needs you. Several machines show as one list.
-
-| | | | |
-|---|---|---|---|
-| ![](docs/media/phone-list.png) | ![](docs/media/phone-thread.png) | ![](docs/media/phone-3d.png) | ![](docs/media/phone-mech.png) |
 
 **A native window.** The desktop app is the same client drawn by Bend itself, with its own board and 3D renderer.
 
