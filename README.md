@@ -24,7 +24,7 @@ The hub runs on your machine. The browser and the native Android and iOS apps re
 
 **Viewers that follow the files.** Board, Schematic (with its sheets), 3D (the board with its parts), Mech, Files, Diff and Browser, all next to the thread. They draw only finished saves and fade in only what changed. Click a pad, track, symbol or pin to see its net, reference, value and footprint, and mention it in chat.
 
-![A thread beside the board it is changing](docs/media/web-board.png)
+![The power sheet of the schematic beside the thread](docs/media/web-schematic.png)
 
 **Mechanical parts.** Agents model enclosures and brackets in FreeCAD, headless. The Mech tab turns any STEP in 3D, with the project's other parts beside it, and draws standard views on request.
 
@@ -36,9 +36,9 @@ The hub runs on your machine. The browser and the native Android and iOS apps re
 
 **Threads per project.** Each thread is an agent session with its own model and provider. Tool calls fold into one line, todo lists and tables render as they should, and threads settle on their own when you stop touching them. Fork a thread, rename it, pin it, or hand it to another.
 
-| Schematic sheets | Datasheets and files |
+| The board | Datasheets and files |
 |---|---|
-| ![](docs/media/web-schematic.png) | ![](docs/media/web-files.png) |
+| ![](docs/media/web-board.png) | ![](docs/media/web-files.png) |
 
 **A native window.** The desktop app is the same client drawn by Bend itself, with its own board and 3D renderer.
 
