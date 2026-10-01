@@ -13,23 +13,55 @@ struct RootView: View {
         if model.links.isEmpty {
             NavigationStack { PairView(link: "") { model.pair($0) } }
         } else if let s = model.screen {
-            NavigationStack(path: Binding(get: { model.path }, set: { model.navigate($0) })) {
-                ProjectsView(model: model, screen: s, pairing: $pairing)
-                    .navigationDestination(for: String.self) { id in
-                        ThreadDestination(model: model, id: id)
+            asked(s)
+                .sheet(isPresented: settingsShown) {
+                    if let st = model.screen?.settings { SettingsSheet(model: model, settings: st, version: model.screen?.version ?? "") }
+                }
+                .sheet(isPresented: findShown) {
+                    if let f = model.screen?.find { FindSheet(model: model, find: f) }
+                }
+                .sheet(isPresented: $pairing) {
+                    NavigationStack {
+                        HubsView(model: model, screen: model.screen ?? s)
+                            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { pairing = false } } }
                     }
-            }
-            .alert(s.error, isPresented: Binding(get: { !s.error.isEmpty }, set: { if !$0 { model.act("dismiss") } })) {
-                Button("OK") { model.act("dismiss") }
-            }
-            .alert(s.deleting?.title ?? "", isPresented: Binding(get: { s.deleting.map { $0.id != answered } ?? false }, set: { _ in }),
-                   presenting: s.deleting) { d in
-                Button(d.yes, role: .destructive) { answered = d.id; model.act("row-delete", d.id) }
-                Button(d.no, role: .cancel) { answered = d.id; model.act("delete-no") }
-            } message: { d in
-                Text(d.body)
-            }
-            .onChange(of: s.deleting?.id) { answered = "" }
+                }
+        } else {
+            ProgressView()
+        }
+    }
+
+    // split up so Swift type-checks each part in reasonable time
+    private var settingsShown: Binding<Bool> {
+        Binding(get: { model.screen?.settings != nil }, set: { if !$0, model.screen?.settings != nil { model.act("flag", "settings") } })
+    }
+
+    private var findShown: Binding<Bool> {
+        Binding(get: { model.screen?.find != nil }, set: { if !$0, model.screen?.find != nil { model.act("find-close") } })
+    }
+
+    private func stack(_ s: Screen) -> some View {
+        NavigationStack(path: Binding(get: { model.path }, set: { model.navigate($0) })) {
+            ProjectsView(model: model, screen: s, pairing: $pairing)
+                .navigationDestination(for: String.self) { id in
+                    ThreadDestination(model: model, id: id)
+                }
+        }
+        .alert(s.error, isPresented: Binding(get: { !s.error.isEmpty }, set: { if !$0 { model.act("dismiss") } })) {
+            Button("OK") { model.act("dismiss") }
+        }
+        .alert(s.deleting?.title ?? "", isPresented: Binding(get: { s.deleting.map { $0.id != answered } ?? false }, set: { _ in }),
+               presenting: s.deleting) { d in
+            Button(d.yes, role: .destructive) { answered = d.id; model.act("row-delete", d.id) }
+            Button(d.no, role: .cancel) { answered = d.id; model.act("delete-no") }
+        } message: { d in
+            Text(d.body)
+        }
+        .onChange(of: s.deleting?.id) { answered = "" }
+    }
+
+    private func asked(_ s: Screen) -> some View {
+        stack(s)
             .alert(s.renaming?.title ?? "", isPresented: Binding(get: { s.renaming.map { $0.id != renamed } ?? false }, set: { _ in }),
                    presenting: s.renaming) { r in
                 TextField("Title", text: $newTitle)
@@ -45,21 +77,6 @@ struct RootView: View {
                 Text(d.body)
             }
             .onChange(of: s.removing?.id) { removed = "" }
-            .sheet(isPresented: Binding(get: { model.screen?.settings != nil }, set: { if !$0, model.screen?.settings != nil { model.act("flag", "settings") } })) {
-                if let st = model.screen?.settings { SettingsSheet(model: model, settings: st, version: model.screen?.version ?? "") }
-            }
-            .sheet(isPresented: Binding(get: { model.screen?.find != nil }, set: { if !$0, model.screen?.find != nil { model.act("find-close") } })) {
-                if let f = model.screen?.find { FindSheet(model: model, find: f) }
-            }
-            .sheet(isPresented: $pairing) {
-                NavigationStack {
-                    HubsView(model: model, screen: model.screen ?? s)
-                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { pairing = false } } }
-                }
-            }
-        } else {
-            ProgressView()
-        }
     }
 }
 
