@@ -5,6 +5,7 @@ import ../src/core/diff.bend as DF
 import ../src/core/attach.bend as AT
 import ../src/core/refs.bend as RF
 import ../src/core/model.bend as M
+import ../src/core/hist.bend as HI
 
 # Long texts the clients label or search a line at a time: a fork's
 # handed-over context (thousands of characters) went through String.lines,
@@ -32,4 +33,6 @@ def main() -> IO(Unit):
     +log : String = Long.go(14n, "line of a log\n")
     C.Check.str("a long message's body", Nat.show(String.length(AT.Att.body(log ++ "end"))), Nat.show(String.length(log ++ "end")))
     C.Check.str("the word typed after a long draft", RF.Refs.token(log ++ "see @mis"), "@mis")
+    # the history's step label: a long message's first line, trimmed
+    C.Check.str("a step labels a long message by its first line", HI.Hist.line("  Paste this \n" ++ log), "Paste this")
     C.Check.str("a long message names nothing", Nat.show(List.length(&2, RF.Hit, RF.Refs.found(M.State.empty(), "t1", log))), "0")
