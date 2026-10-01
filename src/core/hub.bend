@@ -262,6 +262,10 @@ def Hub.thread_create(+s: M.State, +now: Nat, +client: U32, +id: String, +p: J.J
     J.Json.get_str(p, "model", M.Setting.get(s, "agent.model", "")), now}],
     Reply.ok(client, id) <> Hub.new.outs(M.Scratch.is(project), th, Hub.project.root(Hub.project(s, project)), env)}
 
+# the project's first thread, made as thread.create would, after it
+def Hub.project_add.thread(+s: M.State, +now: Nat, +client: U32, +id: String, +pid: String, +made: M.Change) -> Step:
+  Step.before([made], Nil{}, Hub.thread_create(s, now, client, id, J.Json.obj([J.KV{"project", J.Str{pid}}, J.KV{"title", J.Str{"New thread"}}])))
+
 def Hub.root.norm.fin(+r: String) -> String:
   Bool.pick(String, String.is_empty(r), "/", r)
 
@@ -313,12 +317,22 @@ def Hub.projects(s: M.State) -> List<&2, M.Project>:
 def Hub.project_id(+old: String, +s: M.State, +now: Nat) -> String:
   Bool.pick(String, String.is_empty(old), Hub.id("p", now, Hub.seq(s)), old)
 
+# a project made afresh starts with a thread (the client that asked selects
+# it); one brought back has its own
+def Hub.project_add.new(old: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +pid: String, +made: M.Change) -> Step:
+  match old:
+    case True{}:
+      Step.reply(client, id, [made])
+    case False{}:
+      Hub.project_add.thread(M.State.apply(s, made), now, client, id, pid, made)
+
 def Hub.project_add.k(dup: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json, +root: String) -> Step:
   match dup:
     case True{}:
       Step.outs([Reply.err(client, id, "already a project: " ++ root)])
     case False{}:
-      Step.reply(client, id, [M.ProjectCreated{Hub.project_id(Hub.removed_id(Hub.projects(s), root), s, now), J.Json.get_str(p, "title", Hub.base(root)), Hub.root.norm(root), now}])
+      Hub.project_add.new(Bool.not(String.is_empty(Hub.removed_id(Hub.projects(s), root))), s, now, client, id, Hub.project_id(Hub.removed_id(Hub.projects(s), root), s, now),
+        M.ProjectCreated{Hub.project_id(Hub.removed_id(Hub.projects(s), root), s, now), J.Json.get_str(p, "title", Hub.base(root)), Hub.root.norm(root), now})
 
 # a folder becomes a project once (the same root twice is refused; a
 # removed project's folder brings that project back). The

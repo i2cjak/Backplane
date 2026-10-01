@@ -975,6 +975,16 @@ law menu_renames_open:
   {List.get(&2, U.MItem, U.Menu.thread.k(M.Active{}, False{}, id, armed), 1n) == Some{U.MItem{"Rename", "row-rename", id, ""}} : Maybe<&2, U.MItem>}
 
 # a rename to a blank title changes nothing
+# a project brought back has its threads: adding its folder starts none
+law project_back_no_thread:
+  for +s: M.State
+  for +now: Nat
+  for +client: U32
+  for +id: String
+  for +pid: String
+  for +made: M.Change
+  {H.Hub.project_add.new(True{}, s, now, client, id, pid, made) == H.Step.reply(client, id, [made]) : H.Step}
+
 law rename_blank_nothing:
   for +th: String
   for +now: Nat

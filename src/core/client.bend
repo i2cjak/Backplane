@@ -763,10 +763,11 @@ def Ui.fork(u: Ui) -> Act:
     case Ui{st, +sel, dr, live, op, on, now, ad, pa, v, rid, _, er, note, nf, ob, tr}:
       Ui.rpc(Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, True{}, er, note, nf, ob, tr}, "thread.fork", [J.KV{"thread", J.Str{sel}}])
 
-def Ui.add_project(u: Ui, +path: String) -> Act:
+# the add form shut (the folder goes to Proj.adding)
+def Ui.add_project(u: Ui) -> Ui:
   match u:
     case Ui{st, sel, dr, live, op, on, now, _, pa, v, rid, w, er, note, nf, ob, tr}:
-      Ui.rpc(Ui{st, sel, dr, live, op, on, now, False{}, pa, v, rid, w, er, note, nf, ob, tr}, "project.add", [J.KV{"path", J.Str{path}}])
+      Ui{st, sel, dr, live, op, on, now, False{}, pa, v, rid, w, er, note, nf, ob, tr}
 
 def Ui.toggle_add(u: Ui) -> Act:
   match u:
@@ -2851,6 +2852,17 @@ def Ui.error_put(u: Ui, e: String) -> Ui:
 def Proj.rpc(+u: Ui, m: String, p: List<&2, J.KV>) -> Act:
   Ui.rpc(Ui.scratch_set(u, "@proj.rid", Nat.show(Ui.rid(u))), m, p)
 
+# whether a new thread is waited for (Ui.see selects it when it comes)
+def Ui.want_new(u: Ui, b: Bool) -> Ui:
+  match u:
+    case Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, _, er, note, nf, ob, tr}:
+      Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, b, er, note, nf, ob, tr}
+
+# a folder added or made as a project: the hub starts a thread there with
+# it (Hub.project_add), and this client goes to it
+def Proj.adding(+u: Ui, m: String, +path: String) -> Act:
+  Proj.rpc(Ui.want_new(Ui.info_set(u, "proj.err", ""), True{}), m, [J.KV{"path", J.Str{path}}])
+
 def Proj.mine(+u: Ui, +o: J.Json) -> Bool:
   Bool.and(Bool.not(String.is_empty(Ui.scratch(u, "@proj.rid"))), String.eq(J.Json.as_raw(J.Json.get(o, "id"), ""), Ui.scratch(u, "@proj.rid")))
 
@@ -2943,9 +2955,9 @@ def Proj.reply.k(i: Nat, +u: Ui, +o: J.Json) -> Ui:
       Ui.info_set(Ui.info_set(Ui.info_set(Ui.scratch_set(u, "@proj.rid", ""), "proj.dir", J.Json.get_str(J.Json.get_obj(o, "result"), "dir", "")), "proj.entries",
         String.join(Proj.names(J.Json.elems(J.Json.get_obj(J.Json.get_obj(o, "result"), "entries"))), SCon{Proj.sep(), SNil{}})), "proj.err", "")
     case 2n:
-      Ui.info_set(Ui.flag_off(Ui.scratch_set(u, "@proj.rid", ""), "proj"), "proj.err", "")
+      Ui.want_new(Ui.info_set(Ui.flag_off(Ui.scratch_set(u, "@proj.rid", ""), "proj"), "proj.err", ""), False{})
     case 3n:
-      Proj.failed(Ui.flag(u, "proj"), Ui.scratch_set(u, "@proj.rid", ""), Ui.reply.err(o))
+      Proj.failed(Ui.flag(u, "proj"), Ui.want_new(Ui.scratch_set(u, "@proj.rid", ""), False{}), Ui.reply.err(o))
     case _:
       u
 
@@ -3263,17 +3275,17 @@ def Proj.browse(+u: Ui) -> Act:
 def Proj.run.k(i: Nat, +u: Ui, +v: String) -> Act:
   match i:
     case 0n:
-      Proj.rpc(Ui.info_set(u, "proj.err", ""), "project.add", [J.KV{"path", J.Str{v}}])
+      Proj.adding(u, "project.add", v)
     case 1n:
       Proj.rpc(Proj.mode(u, "dir"), "fs.list", [J.KV{"path", J.Str{v}}])
     case 2n:
       Proj.rpc(Proj.reset(u, ""), "fs.mkdir", [J.KV{"path", J.Str{v}}])
     case 3n:
-      Proj.rpc(Ui.info_set(u, "proj.err", ""), "project.new", [J.KV{"path", J.Str{v}}])
+      Proj.adding(u, "project.new", v)
     case 4n:
       Proj.go(u, v)
     case 5n:
-      Proj.rpc(Ui.info_set(u, "proj.err", ""), "project.add", [J.KV{"path", J.Str{v}}])
+      Proj.adding(u, "project.add", v)
     case 6n:
       Proj.browse(u)
     case 7n:
@@ -5861,7 +5873,7 @@ def Ui.act.k(i: Nat, u: Ui, +value: String) -> Act:
     case 3n:
       Ui.send(u, False{})
     case 4n:
-      Ui.add_project(u, value)
+      Proj.adding(Ui.add_project(u), "project.add", value)
     case 5n:
       Ui.toggle_add(u)
     case 6n:
