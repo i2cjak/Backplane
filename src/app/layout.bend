@@ -2,6 +2,7 @@ import Base
 import ../core/model.bend as M
 import ../core/json.bend as J
 import ../core/client.bend as U
+import ../core/fm.bend as FM
 import ../core/todo.bend as TD
 import ../core/edit.bend as ED
 import ../core/images.bend as IM
@@ -2963,11 +2964,12 @@ def Lay.viewer.k(+ty: Ty, +x0: U32, +x1: U32, +h: U32, +empty: Bool, x: V.Vx, +i
       +mw = Lay.button.w(ty, "Mech")
       +rw = Lay.button.w(ty, "Browser")
       +dw = Lay.button.w(ty, "Diff")
-      +tabs = {(x0 + 64 + bw + sw + tw + mw + rw + dw : U32) : U32}
+      +fw = Lay.button.w(ty, "Files")
+      +tabs = {(x0 + 72 + bw + sw + tw + mw + fw + rw + dw : U32) : U32}
       +ko = Bool.and(Bool.and(Lay.kicad.on(k, empty, ts, bm), Bool.and(Bool.not(MC.Mech.is_model(p)), Bool.not(mech))),
         U32.is_le((tabs + Lay.kicad.w(ty, True{}) + 8 : U32), x1))
       +kw = Lay.kicad.w(ty, ko)
-      +room = Lay.room((x1 - x0 : U32), (80 + bw + sw + tw + mw + rw + dw + kw : U32))
+      +room = Lay.room((x1 - x0 : U32), (88 + bw + sw + tw + mw + fw + rw + dw + kw : U32))
       Out.all([
         Out.ops([D.Draw.rect(D.Clip.all(), x0, 0, (x1 - x0 : U32), 52, T.Th.bg(), 255), D.Draw.rect(D.Clip.all(), x0, 51, (x1 - x0 : U32), 1, T.Th.line(), 255),
           D.Draw.rect(D.Clip.all(), x0, 0, 1, h, T.Th.line(), 255)]),
@@ -2975,8 +2977,9 @@ def Lay.viewer.k(+ty: Ty, +x0: U32, +x1: U32, +h: U32, +empty: Bool, x: V.Vx, +i
         Lay.fits(U32.is_le((x0 + 24 + bw + sw : U32), (x1 - 8 : U32)), Lay.tab(ty, "Schematic", 1, k, (x0 + 24 + bw : U32))),
         Lay.fits(U32.is_le((x0 + 32 + bw + sw + tw : U32), (x1 - 8 : U32)), Lay.chip(ty, (x0 + 32 + bw + sw : U32), 12, "3D", Bool.and(U32.is_eq(k, 2), Bool.not(mech)), "vw-kind", "2")),
         Lay.fits(U32.is_le((x0 + 40 + bw + sw + tw + mw : U32), (x1 - 8 : U32)), Lay.chip(ty, (x0 + 40 + bw + sw + tw : U32), 12, "Mech", Bool.or(U32.is_eq(k, 5), mech), "mech", "")),
-        Lay.fits(U32.is_le((x0 + 48 + bw + sw + tw + mw + rw : U32), (x1 - 8 : U32)), Lay.tab(ty, "Browser", 3, k, (x0 + 48 + bw + sw + tw + mw : U32))),
-        Lay.fits(U32.is_le((x0 + 56 + bw + sw + tw + mw + rw + dw : U32), (x1 - 8 : U32)), Lay.tab(ty, "Diff", 4, k, (x0 + 56 + bw + sw + tw + mw + rw : U32))),
+        Lay.fits(U32.is_le((x0 + 48 + bw + sw + tw + mw + fw : U32), (x1 - 8 : U32)), Lay.chip(ty, (x0 + 48 + bw + sw + tw + mw : U32), 12, "Files", U32.is_ge(k, 6), "fm", "")),
+        Lay.fits(U32.is_le((x0 + 56 + bw + sw + tw + mw + fw + rw : U32), (x1 - 8 : U32)), Lay.tab(ty, "Browser", 3, k, (x0 + 56 + bw + sw + tw + mw + fw : U32))),
+        Lay.fits(U32.is_le((x0 + 64 + bw + sw + tw + mw + fw + rw + dw : U32), (x1 - 8 : U32)), Lay.tab(ty, "Diff", 4, k, (x0 + 64 + bw + sw + tw + mw + fw + rw : U32))),
         Lay.diff.if(U32.is_eq(k, 4), ty, diff, x0, x1, h, scroll),
         Lay.kicad(ko, ty, x1),
         Lay.fits(U32.is_ge(room, 60), Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, help, room), D.Clip.all(),
@@ -3520,6 +3523,116 @@ def Hb.for(on: Bool, +u: U.Ui) -> U.HBar:
 def Hb.draw(+ty: Ty, +u: U.Ui, +b: U.HBar, +ss: List<&2, V.Seen>, +x0: U32, +x1: U32, +h: U32) -> Out:
   Hb.draw.k(Hb.on(b), ty, u, b, ss, x0, x1, h)
 
+# The Files tab (client.bend's Fm): the folder's trail and Up, then its rows
+# (a page of them when long, with buttons for the rest); an image fitted in
+# the pane; a PDF a page at a time, drawn on the hub by pdftoppm (a click
+# opens either in the lightbox)
+def Fv.trail(ps: List<&2, U.PItem>, +ty: Ty, +x: U32, +x1: U32) -> List<&2, Out>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case U.PItem{+l, +a, +v} <> t:
+      Lay.fits(U32.is_le((x + Lay.button.w(ty, l) : U32), x1), Lay.chip(ty, x, 64, l, False{}, a, v)) <> Fv.trail(t, ty, (x + Lay.button.w(ty, l) + 4 : U32), x1)
+
+def Fv.row(r: U.FmRow, +ty: Ty, +x0: U32, +x1: U32, +y: U32) -> Out:
+  match r:
+    case U.FmRow{+l, +a, +v, +d, +k}:
+      +c = Bool.pick(U32, String.is_empty(a), T.Th.faint(), T.Th.text())
+      +sw = Ty.width(ty, 2n, d)
+      Out{List.concat(&2, R.Op, [Lay.icon(ty, U.Fm.icon(k), D.Clip.all(), (x0 + 16 : U32), (y + 7 : U32), Bool.pick(U32, String.eq(k, "folder"), T.Th.accent(), c)),
+          Ty.text(ty, 2n, Ty.fit(ty, 2n, l, U32.dim((x1 - x0 : U32), (sw + 72 : U32))), D.Clip.all(), (x0 + 42 : U32), y, 30, c),
+          Ty.text(ty, 2n, d, D.Clip.all(), (x1 - 16 - sw : U32), y, 30, T.Th.faint())]),
+        Bool.pick(List<&2, S.Hit>, String.is_empty(a), Nil{}, [Lay.hit(x0, y, (x1 - x0 : U32), 30, a, v)])}
+
+def Fv.rows(rs: List<&2, U.FmRow>, +ty: Ty, +x0: U32, +x1: U32, +y: U32) -> List<&2, Out>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case r <> t:
+      Fv.row(r, ty, x0, x1, y) <> Fv.rows(t, ty, x0, x1, (y + 30 : U32))
+
+def Fv.list.k(ready: Bool, +ty: Ty, +u: U.Ui, +x0: U32, +x1: U32, +h: U32) -> Out:
+  match ready:
+    case True{}:
+      +all = U.Fm.rows(u)
+      +fit = {U32.to_nat(U32.max(((h - 150 : U32) / 30 : U32), 1)) : Nat}
+      +top = U.Fm.top(u)
+      +n = List.length(&2, U.FmRow, all)
+      Out.all(List.concat(&2, Out, [
+        Bool.pick(List<&2, Out>, Nat.is_eq(n, 0n), [Out.ops(Ty.text(ty, 2n, "This folder is empty", D.Clip.all(), (x0 + 16 : U32), 104, 30, T.Th.faint()))], Nil{}),
+        Fv.rows(List.take(&2, U.FmRow, List.drop(&2, U.FmRow, all, top), fit), ty, x0, x1, 104),
+        [Lay.fits(Nat.is_gt(top, 0n), Lay.button(ty, D.Clip.all(), (x0 + 16 : U32), (h - 40 : U32), "Earlier", T.Th.soft(), "fm-page", Nat.show(Nat.sub(top, fit)))),
+         Lay.fits(Nat.is_gt(n, Nat.add(top, fit)), Lay.button(ty, D.Clip.all(), (x1 - 16 - Lay.button.w(ty, "More") : U32), (h - 40 : U32), "More", T.Th.soft(), "fm-page", Nat.show(Nat.add(top, fit)))),
+         Lay.fits(Nat.is_gt(n, fit), Out.ops(Ty.text(ty, 2n, Nat.show(1n+top) ++ "–" ++ Nat.show(Bool.pick(Nat, Nat.is_lt(Nat.add(top, fit), n), Nat.add(top, fit), n)) ++ " of " ++ Nat.show(n),
+           D.Clip.all(), (x0 + U32.shr((x1 - x0 : U32)) - 40 : U32), (h - 40 : U32), 28, T.Th.faint())))]]))
+    case False{}:
+      Out.ops(Ty.text(ty, 2n, "Listing the folder…", D.Clip.all(), (x0 + 16 : U32), 104, 30, T.Th.faint()))
+
+def Fv.files(+ty: Ty, +u: U.Ui, +x0: U32, +x1: U32, +h: U32) -> Out:
+  +uw = Lay.button.w(ty, "Up")
+  Out.all(List.concat(&2, Out, [[Out.ops([D.Draw.rect(D.Clip.all(), x0, 52, (x1 - x0 : U32), (h - 52 : U32), T.Th.panel(), 255)])],
+    Fv.trail(U.Fm.trail(u), ty, (x0 + 16 : U32), (x1 - 24 - uw : U32)),
+    [Lay.button(ty, D.Clip.all(), (x1 - 16 - uw : U32), 64, "Up", T.Th.soft(), "fm-up", ""),
+     Out.ops([D.Draw.rect(D.Clip.all(), x0, 99, (x1 - x0 : U32), 1, T.Th.line(), 255)]),
+     Fv.list.k(U.Fm.ready(u), ty, u, x0, x1, h)]]))
+
+# a picture (an image, or a PDF's page) fitted under the head; its key is
+# the window's image key ("full:" decodes it large)
+def Fv.pic(+ty: Ty, +u: U.Ui, +key: String, +x0: U32, +x1: U32, +y: U32, +h: U32) -> Out:
+  +size = U.Ui.info(u, "img:" ++ key)
+  +bw = Page.num(size, 0n)
+  +bh = Page.num(size, 1n)
+  +pw = {(x1 - x0 - 32 : U32) : U32}
+  +ph = {(h - y - 16 : U32) : U32}
+  +fw = Page.fit.w(bw, bh, pw, ph)
+  +fh = {((fw * bh : U32) / U32.max(bw, 1) : U32) : U32}
+  +ix = {(x0 + 16 + U32.shr((pw - fw : U32)) : U32) : U32}
+  Out.all([
+    Out.when(String.is_empty(size), Out.ops(Ty.text(ty, 2n, "Loading…", D.Clip.all(), (x0 + 16 : U32), y, 30, T.Th.faint()))),
+    Out.when(String.starts_with(size, "err:"), Out.ops(Ty.text(ty, 2n, "This picture cannot be shown here", D.Clip.all(), (x0 + 16 : U32), y, 30, T.Th.faint()))),
+    Out{Bool.pick(List<&2, R.Op>, Bool.or(String.is_empty(size), String.starts_with(size, "err:")), Nil{}, D.Draw.frame(D.Clip.all(), (ix - 1 : U32), (y - 1 : U32), (fw + 2 : U32), (fh + 2 : U32), T.Th.line())),
+      [Lay.hit(ix, y, U32.max(fw, 1), U32.max(fh, 1), "img", key)]}])
+
+def Fv.head(+ty: Ty, +u: U.Ui, +x0: U32, +x1: U32, +h: U32, more: Out) -> Out:
+  +bw = Lay.button.w(ty, "‹ Files")
+  Out.all([Out.ops([D.Draw.rect(D.Clip.all(), x0, 52, (x1 - x0 : U32), (h - 52 : U32), T.Th.panel(), 255)]),
+    Lay.button(ty, D.Clip.all(), (x0 + 16 : U32), 64, "‹ Files", T.Th.soft(), "fm", ""),
+    Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, U.Fm.name(u), U32.dim((x1 - x0 : U32), (bw + 260 : U32))), D.Clip.all(), (x0 + 28 + bw : U32), 64, 28, T.Th.text())),
+    more,
+    Out.ops([D.Draw.rect(D.Clip.all(), x0, 99, (x1 - x0 : U32), 1, T.Th.line(), 255)])])
+
+def Fv.image(+ty: Ty, +u: U.Ui, +x0: U32, +x1: U32, +h: U32) -> Out:
+  Out.cat(Fv.head(ty, u, x0, x1, h, Out.none()), Fv.pic(ty, u, "full:" ++ U.Ui.view_get(u, "view.path"), x0, x1, 112, h))
+
+def Fv.pdf.body(+ty: Ty, +u: U.Ui, +x0: U32, +x1: U32, +h: U32) -> Out:
+  Bool.pick(Out, Bool.not(String.is_empty(U.Pdf.err(u))), Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, U.Pdf.err(u), (x1 - x0 - 32 : U32)), D.Clip.all(), (x0 + 16 : U32), 112, 30, T.Th.dim())),
+    Bool.pick(Out, String.is_empty(U.Pdf.png(u)), Out.ops(Ty.text(ty, 2n, "Drawing page " ++ U.Pdf.page(u) ++ "…", D.Clip.all(), (x0 + 16 : U32), 112, 30, T.Th.faint())),
+      Fv.pic(ty, u, "full:" ++ U.Pdf.png(u), x0, x1, 112, h)))
+
+def Fv.pdf(+ty: Ty, +u: U.Ui, +x0: U32, +x1: U32, +h: U32) -> Out:
+  +p = Bool.pick(Nat, Nat.is_eq(FM.Fm.num(U.Pdf.page(u)), 0n), 1n, FM.Fm.num(U.Pdf.page(u)))
+  +n = FM.Fm.num(U.Pdf.pages(u))
+  +nw = Lay.button.w(ty, "Next")
+  +pw = Lay.button.w(ty, "Prev")
+  +label = "Page " ++ Nat.show(p) ++ Bool.pick(String, Nat.is_eq(n, 0n), "", " of " ++ Nat.show(n))
+  +lw = Ty.width(ty, 2n, label)
+  Out.cat(Fv.head(ty, u, x0, x1, h, Out.all([
+      Lay.fits(Nat.is_gt(p, 1n), Lay.button(ty, D.Clip.all(), (x1 - 16 - nw - 12 - lw - 12 - pw : U32), 64, "Prev", T.Th.soft(), "pdf-page", Nat.show(Nat.sub(p, 1n)))),
+      Out.ops(Ty.text(ty, 2n, label, D.Clip.all(), (x1 - 16 - nw - 12 - lw : U32), 64, 28, T.Th.dim())),
+      Lay.fits(Bool.or(Nat.is_eq(n, 0n), Nat.is_lt(p, n)), Lay.button(ty, D.Clip.all(), (x1 - 16 - nw : U32), 64, "Next", T.Th.soft(), "pdf-page", Nat.show(1n+p)))])),
+    Fv.pdf.body(ty, u, x0, x1, h))
+
+def Fv.k(i: U32, +ty: Ty, +u: U.Ui, +x0: U32, +x1: U32, +h: U32) -> Out:
+  match i:
+    case 6:
+      Fv.files(ty, u, x0, x1, h)
+    case 7:
+      Fv.image(ty, u, x0, x1, h)
+    case 8:
+      Fv.pdf(ty, u, x0, x1, h)
+    case _:
+      Out.none()
+
 def Lay.viewer.b(+ty: Ty, +n: S.Nui, +b: U.HBar, +x0: U32, +x1: U32, +h: U32) -> Out:
   Out.all([
     Lay.mech.if(U32.is_eq(S.Vw.kind(S.Nui.vw(n)), 5), ty, S.Nui.ui(n), x0, x1, h),
@@ -3528,7 +3641,8 @@ def Lay.viewer.b(+ty: Ty, +n: S.Nui, +b: U.HBar, +x0: U32, +x1: U32, +h: U32) ->
     Lay.page.if(U32.is_eq(S.Vw.kind(S.Nui.vw(n)), 3), ty, S.Nui.ui(n), x0, x1, h),
     Side.k(U32.is_lt(S.Vw.kind(S.Nui.vw(n)), 2), ty, n, S.Vw.kind(S.Nui.vw(n)), Lay.scene(n), x0, x1, (h - Hb.h(b) : U32)),
     Side.ground.if(U32.is_eq(S.Vw.kind(S.Nui.vw(n)), 2), ty, n, x1),
-    Hb.draw(ty, S.Nui.ui(n), b, Lay.scene(n), x0, x1, h)])
+    Hb.draw(ty, S.Nui.ui(n), b, Lay.scene(n), x0, x1, h),
+    Fv.k(S.Vw.kind(S.Nui.vw(n)), ty, S.Nui.ui(n), x0, x1, h)])
 
 # the viewer, with the design history's bar at its foot when it has one
 # (only a board or a schematic: the native kind agrees with the client's)

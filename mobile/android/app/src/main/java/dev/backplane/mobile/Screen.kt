@@ -154,7 +154,18 @@ data class Viewer(
     val mech: MechPage? = null,
     // the design history's bar under a board or schematic (null: none)
     val hist: HistBar? = null,
+    // the Files tab (open "files"), and an image or a PDF it opened
+    val files: FilesPage? = null, val file: FileView? = null,
 )
+
+// the Files tab: where the folder is, its rows (a tap sends action with
+// value; "" when the file is only listed), whether the hub has listed it
+data class FileCrumb(val label: String, val action: String, val value: String)
+data class FileRow(val label: String, val action: String, val value: String, val detail: String, val kind: String, val icon: String)
+data class FilesPage(val trail: List<FileCrumb>, val rows: List<FileRow>, val ready: Boolean)
+// an image or a PDF from the Files tab: its name, "image" or "pdf", where
+// the hub serves it (a path the app makes a URL of, Core.web)
+data class FileView(val name: String, val kind: String, val url: String)
 
 // The design history (src/mobile/view.bend's Hist.json): the steps in the
 // track and the one shown (0 the live file), what to call it, what the
@@ -465,6 +476,12 @@ private fun viewer(o: JSONObject) = Viewer(
             h.optJSONArray("menu")?.let { a -> a.map { HistRow(it.optString("label"), it.optString("sub"), it.optString("value")) } },
             ints(h.optJSONArray("keys")))
     },
+    files = o.optJSONObject("files")?.let { f ->
+        FilesPage(f.optJSONArray("trail").map { FileCrumb(it.optString("label"), it.optString("action"), it.optString("value")) },
+            f.optJSONArray("rows").map { FileRow(it.optString("label"), it.optString("action"), it.optString("value"), it.optString("detail"), it.optString("kind"), it.optString("icon")) },
+            f.optBoolean("ready"))
+    },
+    file = o.optJSONObject("file")?.let { FileView(it.optString("name"), it.optString("kind"), it.optString("url")) },
 )
 
 private fun strs(a: JSONArray?): List<String> =

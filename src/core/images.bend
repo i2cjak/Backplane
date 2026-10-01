@@ -126,13 +126,19 @@ def Img.url(+p: String) -> String:
   "/img?path=" ++ Img.enc.bytes(U.Utf8.encode(p))
 
 def Img.ctype.k(+p: String) -> String:
+  Bool.pick(String, String.ends_with(p, ".pdf"), "application/pdf",
   Bool.pick(String, String.ends_with(p, ".png"), "image/png",
     Bool.pick(String, Bool.or(String.ends_with(p, ".jpg"), String.ends_with(p, ".jpeg")), "image/jpeg",
       Bool.pick(String, String.ends_with(p, ".gif"), "image/gif",
-        Bool.pick(String, String.ends_with(p, ".webp"), "image/webp", "image/bmp"))))
+        Bool.pick(String, String.ends_with(p, ".webp"), "image/webp", "image/bmp")))))
 
 def Img.ctype(+p: String) -> String:
   Img.ctype.k(String.to_lower(p))
+
+# what a hub serves from /img: an image, or a PDF for the viewer's Files tab
+# (core/fm.bend), at a path it can be shown from
+def Img.viewable(+p: String) -> Bool:
+  Bool.or(Img.is_image(p), Bool.and(Bool.or(String.starts_with(p, "/"), String.starts_with(p, "~/")), String.ends_with(String.to_lower(String.drop(p, Nat.sub(String.length(p), 4n))), ".pdf")))
 
 # the largest image a hub serves (bytes)
 def Img.cap() -> U32:

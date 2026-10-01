@@ -85,7 +85,7 @@ def Tools.term(on: Bool, a: String, v: String) -> Tool:
   Tool{"terminal", "Terminal", "A shell in the thread's folder (ctrl+j)", a, v, on, False{}, True{}}
 
 def Tools.panel(on: Bool) -> Tool:
-  Tool{"panel-right", "Viewer", "Board, schematic, 3D, Mech, diff and browser beside the thread", "panel", "", on, False{}, False{}}
+  Tool{"panel-right", "Viewer", "Board, schematic, 3D, Mech, files, diff and browser beside the thread", "panel", "", on, False{}, False{}}
 
 # the header's buttons, left to right; (sa, sv) opens the client's snooze
 # choices and (ta, tv) its terminal

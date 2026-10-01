@@ -1436,10 +1436,60 @@ def View.tabs(+cur: String) -> D.Node:
     View.tab(cur, "schematic", "view-kind", "schematic", "The project's schematic", "Schematic"),
     View.tab(cur, "3d", "view-kind", "3d", "The board in 3D, with its parts", "3D"),
     View.tab(cur, "mech", "mech", "", "Mechanical parts: their renders, and each in 3D", "Mech"),
+    View.tab(cur, "files", "fm", "", "The project's files: open a board, a model, an image or a PDF", "Files"),
     View.tab(cur, "diff", "diff", "", "What this thread changed (ctrl+d)", "Diff"),
     View.tab(cur, "browser", "view-kind", "browser", "What this thread's browser shows", "Browser"),
     D.El{"span", "", [D.At{"class", "grow"}], Nil{}},
     WI.WIcon.button("icon", "panel", "", "Close the viewer", "x", 16, "")]}
+
+# The Files tab (client.bend's Fm): where the folder is, then its folders
+# and files; a file the viewer can open is a button, any other is listed
+def View.fm.trail(ps: List<&2, U.PItem>) -> List<&2, D.Node>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case U.PItem{+l, +a, +v} <> t:
+      D.Dom.button("crumb", a, v, "Go to " ++ l, l) <> View.fm.trail(t)
+
+def View.fm.row(r: U.FmRow) -> D.Node:
+  match r:
+    case U.FmRow{+l, +a, +v, +d, +k}:
+      D.El{"button", "", List.append(&2, D.Attr, [D.At{"class", "fm-row " ++ Bool.pick(String, String.is_empty(a), "off", k)}, D.At{"title", Bool.pick(String, String.is_empty(a), l ++ ": no preview here", l)}],
+          Bool.pick(List<&2, D.Attr>, String.is_empty(a), [D.At{"disabled", ""}], [D.At{"data-value", v}, D.On{"click", a}])),
+        [WI.WIcon.svg(U.Fm.icon(k), 16), D.Dom.span("fm-name", l), D.Dom.span("fm-size", d)]}
+
+def View.fm.rows(rs: List<&2, U.FmRow>) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case r <> t:
+      View.fm.row(r) <> View.fm.rows(t)
+
+def View.fm.body(ready: Bool, +u: U.Ui) -> List<&2, D.Node>:
+  match ready:
+    case True{}:
+      Bool.pick(List<&2, D.Node>, List.is_empty(&2, U.FmRow, U.Fm.rows(u)), [D.Dom.span("fm-note", "This folder is empty")], View.fm.rows(U.Fm.rows(u)))
+    case False{}:
+      [D.Dom.span("fm-note", "Listing the folder…")]
+
+def View.files(+u: U.Ui) -> List<&2, D.Node>:
+  [D.El{"div", "", [D.At{"class", "fm-bar"}], List.append(&2, D.Node, View.fm.trail(U.Fm.trail(u)),
+     [D.El{"span", "", [D.At{"class", "grow"}], Nil{}}, D.Dom.button("", "fm-up", "", "The folder above", "Up")])},
+   D.El{"div", "files-list", [D.At{"class", "fm-list"}], View.fm.body(U.Fm.ready(u), u)}]
+
+# an image or a PDF opened from the Files tab: its name, back to the folder
+def View.fm.head(+u: U.Ui, more: List<&2, D.Node>) -> D.Node:
+  D.El{"div", "", [D.At{"class", "fm-bar"}], List.append(&2, D.Node, [D.Dom.button("", "fm", "", "Back to the folder", "‹ Files"), D.Dom.span("fm-file", U.Fm.name(u)),
+    D.El{"span", "", [D.At{"class", "grow"}], Nil{}}], more)}
+
+def View.image(+u: U.Ui) -> List<&2, D.Node>:
+  [View.fm.head(u, [D.El{"a", "", [D.At{"class", "btn"}, D.At{"href", IM.Img.url(U.Ui.view_get(u, "view.path"))}, D.At{"target", "_blank"}], [D.Txt{"Open"}]}]),
+   D.El{"div", "", [D.At{"class", "fm-image"}], [D.El{"a", "", [D.At{"href", IM.Img.url(U.Ui.view_get(u, "view.path"))}, D.At{"data-lightbox", IM.Img.url(U.Ui.view_get(u, "view.path"))}],
+     [D.El{"img", "", [D.At{"src", IM.Img.url(U.Ui.view_get(u, "view.path"))}, D.At{"alt", U.Fm.name(u)}], Nil{}}]}]}]
+
+def View.pdf(+u: U.Ui) -> List<&2, D.Node>:
+  [View.fm.head(u, [D.El{"a", "", [D.At{"class", "btn"}, D.At{"href", IM.Img.url(U.Ui.view_get(u, "view.path"))}, D.At{"target", "_blank"}], [D.Txt{"Open in a tab"}]}]),
+   D.El{"iframe", "", [D.At{"class", "fm-pdf"}, D.At{"src", IM.Img.url(U.Ui.view_get(u, "view.path"))}, D.At{"title", U.Fm.name(u)}], Nil{}}]
 
 def View.aside.k(i: Nat, +u: U.Ui) -> List<&2, D.Node>:
   match i:
@@ -1453,17 +1503,24 @@ def View.aside.k(i: Nat, +u: U.Ui) -> List<&2, D.Node>:
       View.solid(u)
     case 4n:
       View.plot(u, List.append(&2, D.Node, View.sheets(u), [View.kicad()]))
+    case 6n:
+      View.files(u)
+    case 7n:
+      View.image(u)
+    case 8n:
+      View.pdf(u)
     case _:
       View.plot(u, [D.Dom.span("what", "The project's board"), View.kicad()])
 
 def View.aside.n(+kind: String) -> Nat:
   Bool.pick(Nat, String.eq(kind, "diff"), 0n, Bool.pick(Nat, String.eq(kind, "browser"), 1n, Bool.pick(Nat, String.eq(kind, "mech"), 2n,
-    Bool.pick(Nat, String.eq(kind, "3d"), 3n, Bool.pick(Nat, String.eq(kind, "schematic"), 4n, 5n)))))
+    Bool.pick(Nat, String.eq(kind, "3d"), 3n, Bool.pick(Nat, String.eq(kind, "schematic"), 4n,
+      Bool.pick(Nat, String.eq(kind, "files"), 6n, Bool.pick(Nat, String.eq(kind, "image"), 7n, Bool.pick(Nat, String.eq(kind, "pdf"), 8n, 5n))))))))
 
 # the side pane of the selected thread: the tabs, then what they show
 def View.aside(+kind: String, +u: U.Ui) -> D.Node:
   D.El{"aside", "viewer", [D.At{"class", "viewer " ++ Bool.pick(String, String.is_empty(kind), "board", kind)}, D.At{"id", "viewer"}],
-    View.tabs(Bool.pick(String, U.Mpage.onpart(u), "mech", U.Solid.kind(u))) <> View.aside.k(View.aside.n(kind), u)}
+    View.tabs(Bool.pick(String, U.Mpage.onpart(u), "mech", U.Fm.tab(U.Solid.kind(u)))) <> View.aside.k(View.aside.n(kind), u)}
 
 def View.aside.if(open: Bool, +kind: String, +u: U.Ui) -> List<&2, D.Node>:
   match open:

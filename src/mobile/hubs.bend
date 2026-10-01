@@ -260,11 +260,21 @@ def One.act.k(i: Nat, +u: U.Ui, +action: String, +value: String) -> U.Act:
       VW.View.mech.act(u, action, value, "mech")
     case 15n:
       VW.View.mech.act(u, action, value, "renders")
+    case 16n:
+      VW.View.fm.act(u, action, value)
+    case 17n:
+      VW.View.fm.act(u, action, value)
+    case 18n:
+      VW.View.fm.act(u, action, value)
+    case 19n:
+      VW.View.fm.act(u, action, value)
+    case 20n:
+      VW.View.fm.act(u, action, value)
     case _:
       One.act.rest(Bool.or(String.starts_with(action, "hist-"), String.starts_with(action, "cmp")), u, action, value)
 
 def One.act(+u: U.Ui, +action: String, +value: String) -> U.Act:
-  One.act.k(C.Codec.pos(["view", "view-mention", "view-pick", "view-unpick", "picker-open", "picker-type", "picker-mkdir", "find-open", "find-q", "find-close", "form-close", "view-sheet", "view-layer", "view-parts", "mech-3d", "mech-renders"], action), u, action, value)
+  One.act.k(C.Codec.pos(["view", "view-mention", "view-pick", "view-unpick", "picker-open", "picker-type", "picker-mkdir", "find-open", "find-q", "find-close", "form-close", "view-sheet", "view-layer", "view-parts", "mech-3d", "mech-renders", "fm", "fm-cd", "fm-up", "fm-open", "fm-page"], action), u, action, value)
 
 # what a step does to one hub's client
 type Op is Data:

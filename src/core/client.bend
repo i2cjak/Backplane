@@ -19,6 +19,7 @@ import ./hist.bend as HI
 import ./links.bend as LK
 import ./apikeys.bend as AK
 import ./diff.bend as DF
+import ./fm.bend as FM
 
 # The client state, Elm-style, shared by the native window and the web
 # page: a host feeds server messages to Ui.recv and user actions to Ui.act,
@@ -875,7 +876,7 @@ def Ui.actions() -> List<&2, String>:
    "mech", "mech-part", "mech-3d", "mech-refresh", "mech-renders", "mech-render", "view-kind", "view-sheet", "view-layer",
    "attach-up", "attach-end",
    "hist-go", "hist-prev", "hist-next", "hist-first", "hist-last", "hist-play", "hist-tick", "hist-diff", "hist-live", "hist-jump",
-   "hist-show", "cmp", "cmp-pick", "cmp-close", "cmp-side", "cmp-shut", "key-add", "key-del"]
+   "hist-show", "cmp", "cmp-pick", "cmp-close", "cmp-side", "cmp-shut", "key-add", "key-del", "fm", "fm-cd", "fm-up", "fm-open", "pdf-page", "fm-page"]
 
 # Reading the client state
 # ------------------------
@@ -1997,7 +1998,7 @@ def Palette.actions(+pid: String) -> List<&2, PItem>:
    PItem{"Settle thread", "settle", ""}, PItem{"Pin thread", "pin", ""}, PItem{"Archive thread", "archive", ""}, PItem{"Unarchive thread", "unarchive", ""}, PItem{"Delete thread", "delete", ""},
    PItem{"Snooze 1 hour", "snooze", "1h"}, PItem{"Snooze until tomorrow 9:00", "snooze", "tomorrow"}, PItem{"Snooze 1 week", "snooze", "1w"}, PItem{"Unsnooze", "snooze", "off"},
    PItem{"Search threads", "key:search", ""}, PItem{"Find file", "key:files", ""},
-   PItem{"Panel: board, schematic, 3D, Mech, diff, browser", "panel", ""}, PItem{"Open in KiCad", "kicad-open", ""}, PItem{"Settings", "flag", "settings"}, PItem{"Update Backplane", "update", ""}]
+   PItem{"Viewer: board, schematic, 3D, Mech, files, diff, browser", "panel", ""}, PItem{"Open in KiCad", "kicad-open", ""}, PItem{"Settings", "flag", "settings"}, PItem{"Update Backplane", "update", ""}]
 
 def Palette.words(ws: List<&2, String>, +l: String) -> Bool:
   match ws:
@@ -3366,12 +3367,42 @@ def Ui.reply.att(+r: J.Json, +ok: Bool, u: Ui) -> Ui:
   Ui.reply.att.k(Bool.not(String.is_empty(J.Json.get_str(r, "attached", ""))), Bool.and(Bool.not(ok), J.Json.get_bool(r, "upload", False{})),
     J.Json.get_str(r, "thread", ""), J.Json.get_str(r, "attached", ""), u)
 
+# The viewer's Files tab (core/fm.bend): a folder the hub listed is kept
+# per thread (fm.list:<t>, and fm.dir:<t> the folder it is), and a PDF's
+# page drawn for the window (pdf.png:<path>#<page>, pdf.n:<path> its pages,
+# pdf.err:<path> why not)
+def Fm.got.k(has: Bool, u: Ui, +r: J.Json) -> Ui:
+  match has:
+    case True{}:
+      Ui.info_set(Ui.info_set(u, "fm.list:" ++ J.Json.get_str(r, "thread", ""), J.Json.get_str(r, "fmEntries", "")), "fm.dir:" ++ J.Json.get_str(r, "thread", ""), J.Json.get_str(r, "fmDir", ""))
+    case False{}:
+      u
+
+def Pdf.got.k(has: Bool, u: Ui, +r: J.Json) -> Ui:
+  match has:
+    case True{}:
+      Ui.info_set(Ui.info_set(Ui.info_set(u, "pdf.err:" ++ J.Json.get_str(r, "pdfPath", ""), J.Json.get_str(r, "pdfErr", "")),
+        "pdf.n:" ++ J.Json.get_str(r, "pdfPath", ""), J.Json.get_str(r, "pdfPages", "")),
+        "pdf.png:" ++ J.Json.get_str(r, "pdfPath", "") ++ "#" ++ J.Json.get_str(r, "pdfPage", ""), J.Json.get_str(r, "pdfPng", ""))
+    case False{}:
+      u
+
+def Fm.has(+r: J.Json, +k: String) -> Bool:
+  Bool.not(String.eq(J.Json.show(Maybe.default(&2, J.Json, J.Json.get(r, k), J.Null{})), "null"))
+
+def Fm.reply(u: Ui, +o: J.Json) -> Ui:
+  Pdf.got.k(Fm.has(J.Json.get_obj(o, "result"), "pdfPath"), Fm.got.k(Fm.has(J.Json.get_obj(o, "result"), "fmEntries"), u, J.Json.get_obj(o, "result")), J.Json.get_obj(o, "result"))
+
 # a diff opens the diff view; a file list (files.list) is kept for the
-# file picker; a finished upload becomes an attachment of its thread
-def Ui.reply.body(u: Ui, +o: J.Json) -> Ui:
+# file picker; a finished upload becomes an attachment of its thread; a
+# folder or a PDF page for the viewer's Files tab is kept (Fm.reply)
+def Ui.reply.body.k(u: Ui, +o: J.Json) -> Ui:
   Ui.reply.att(J.Json.get_obj(o, "result"), J.Json.get_bool(o, "ok", True{}),
     Ui.reply.files(Bool.not(String.eq(J.Json.show(Maybe.default(&2, J.Json, J.Json.get(J.Json.get_obj(o, "result"), "files"), J.Null{})), "null")),
       Ui.reply.diff(Bool.not(String.eq(J.Json.show(Maybe.default(&2, J.Json, J.Json.get(J.Json.get_obj(o, "result"), "diff"), J.Null{})), "null")), u, o), o))
+
+def Ui.reply.body(u: Ui, +o: J.Json) -> Ui:
+  Fm.reply(Ui.reply.body.k(u, o), o)
 
 # an answer: its request leaves the outbox; a diff opens the diff view; a
 # skills list is kept for the composer
@@ -3411,6 +3442,118 @@ def Ui.view_put.at(u: Ui, +th: String, +kind: String, +path: String) -> Ui:
   match u:
     case Ui{st, +sel, dr, live, op, on, now, ad, +pa, v, rid, w, er, note, +nf, ob, tr}:
       Ui{st, sel, dr, live, op, on, now, ad, Bool.or(pa, String.eq(th, sel)), v, rid, w, er, note, Map.set(&2, String, Viewer.put(nf, th, kind, path), "panel:" ++ th, "1"), ob, tr}
+
+# The Files tab's actions: "fm" opens it on the folder last shown, "fm-cd"
+# goes to a folder (from the project's root), "fm-up" to the one above,
+# "fm-open" opens a file in the viewer (a board or schematic in the board
+# viewer, a STEP or GLB in 3D, an image or a PDF in a view of its own; any
+# other file is only listed), "pdf-page" turns a PDF's page in the window
+def Fm.dir(+u: Ui) -> String:
+  Ui.info(u, "fm.want:" ++ Ui.sel(u))
+
+def Fm.ask(+u: Ui, +dir: String) -> Act:
+  Ui.on_thread.p(Ui.info_set(Ui.info_set(Ui.view_put(u, "files", ""), "fm.want:" ++ Ui.sel(u), dir), "fm.top:" ++ Ui.sel(u), ""), "files.dir", [J.KV{"path", J.Str{dir}}])
+
+def Pdf.ask(+u: Ui, +path: String, +page: String) -> Act:
+  Ui.rpc(Ui.info_set(u, "pdf.page:" ++ Ui.sel(u), page), "pdf.page", [J.KV{"path", J.Str{path}}, J.KV{"page", J.Str{page}}])
+
+def Fm.open.k(i: Nat, +u: Ui, +kind: String, +path: String) -> Act:
+  match i:
+    case 0n:
+      Act{Ui.view_put(u, kind, path), Nil{}}
+    case 1n:
+      Pdf.ask(Ui.view_put(u, "pdf", path), path, "1")
+    case _:
+      Act{u, Nil{}}
+
+def Fm.open(+u: Ui, +rel: String) -> Act:
+  Fm.open.k(Bool.pick(Nat, String.eq(FM.Fm.kind(rel), "pdf"), 1n, Bool.pick(Nat, String.is_empty(FM.Fm.kind(rel)), 2n, 0n)), u, FM.Fm.kind(rel), FM.Fm.abs(Ui.root(u), rel))
+
+# the page a PDF shows in the window, its picture, how many pages, why not
+def Pdf.page(+u: Ui) -> String:
+  Bool.pick(String, String.is_empty(Ui.info(u, "pdf.page:" ++ Ui.sel(u))), "1", Ui.info(u, "pdf.page:" ++ Ui.sel(u)))
+
+def Pdf.png(+u: Ui) -> String:
+  Ui.info(u, "pdf.png:" ++ Ui.view_get(u, "view.path") ++ "#" ++ Pdf.page(u))
+
+def Pdf.pages(+u: Ui) -> String:
+  Ui.info(u, "pdf.n:" ++ Ui.view_get(u, "view.path"))
+
+def Pdf.err(+u: Ui) -> String:
+  Ui.info(u, "pdf.err:" ++ Ui.view_get(u, "view.path"))
+
+def Fm.act(i: Nat, +u: Ui, +value: String) -> Act:
+  match i:
+    case 0n:
+      Fm.ask(u, Fm.dir(u))
+    case 1n:
+      Fm.ask(u, value)
+    case 2n:
+      Fm.ask(u, FM.Fm.parent(Fm.dir(u)))
+    case 3n:
+      Fm.open(u, value)
+    case 4n:
+      Pdf.ask(u, Ui.view_get(u, "view.path"), value)
+    # (the window shows a long folder a page at a time: the first row shown)
+    case _:
+      Act{Ui.info_set(u, "fm.top:" ++ Ui.sel(u), value), Nil{}}
+
+# A listed entry as every client shows it: its name, what a tap sends, its
+# size (files), and its kind ("folder", "board", "schematic", "3d",
+# "image", "pdf", or "" for a file only listed)
+type FmRow is Data:
+  FmRow{label: String, action: String, value: String, detail: String, kind: String}
+
+def Fm.row(e: FM.FEnt, +dir: String) -> FmRow:
+  match e:
+    case FM.FEnt{True{}, _, +n}:
+      FmRow{n, "fm-cd", FM.Fm.join(dir, n), "", "folder"}
+    case FM.FEnt{False{}, +size, +n}:
+      FmRow{n, Bool.pick(String, String.is_empty(FM.Fm.kind(n)), "", "fm-open"), FM.Fm.join(dir, n), FM.Fm.size(size), FM.Fm.kind(n)}
+
+def Fm.rows.go(es: List<&2, FM.FEnt>, +dir: String) -> List<&2, FmRow>:
+  match es:
+    case Nil{}:
+      Nil{}
+    case e <> t:
+      Fm.row(e, dir) <> Fm.rows.go(t, dir)
+
+# whether the listing on screen is the folder asked for
+def Fm.ready(+u: Ui) -> Bool:
+  Bool.and(String.eq(Ui.info(u, "fm.dir:" ++ Ui.sel(u)), Fm.dir(u)), Bool.not(String.is_empty(Ui.info(u, "fm.dir:" ++ Ui.sel(u)) ++ Ui.info(u, "fm.list:" ++ Ui.sel(u)))))
+
+# the folder's rows, once the hub has listed it
+def Fm.rows(+u: Ui) -> List<&2, FmRow>:
+  Bool.pick(List<&2, FmRow>, Fm.ready(u), Fm.rows.go(FM.Fm.parse(Ui.info(u, "fm.list:" ++ Ui.sel(u))), Fm.dir(u)), Nil{})
+
+def Fm.trail.go(ps: List<&2, String>, +at: String) -> List<&2, PItem>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case +p <> t:
+      PItem{p, "fm-cd", FM.Fm.join(at, p)} <> Fm.trail.go(t, FM.Fm.join(at, p))
+
+# where the folder is: the project, then each folder down to it
+def Fm.trail(+u: Ui) -> List<&2, PItem>:
+  PItem{"Project", "fm-cd", ""} <> Fm.trail.go(Bool.pick(List<&2, String>, String.is_empty(Fm.dir(u)), Nil{}, String.split(Fm.dir(u), '/')), "")
+
+# a row's icon (core/icons.bend), the same on every client
+def Fm.icon(+kind: String) -> String:
+  Bool.pick(String, String.eq(kind, "folder"), "folder", Bool.pick(String, String.eq(kind, "board"), "circuit-board",
+    Bool.pick(String, String.eq(kind, "schematic"), "cpu", Bool.pick(String, String.eq(kind, "3d"), "box",
+      Bool.pick(String, String.eq(kind, "image"), "image", Bool.pick(String, String.eq(kind, "pdf"), "file-text", "file"))))))
+
+# the tab a kind lights: an image or a PDF is the Files tab's
+def Fm.tab(+kind: String) -> String:
+  Bool.pick(String, Bool.or(String.eq(kind, "image"), String.eq(kind, "pdf")), "files", kind)
+
+# the first row the window shows of a long folder
+def Fm.top(+u: Ui) -> Nat:
+  FM.Fm.num(Ui.info(u, "fm.top:" ++ Ui.sel(u)))
+
+# an open file's name, for the image and PDF views' heads
+def Fm.name(+u: Ui) -> String:
+  FM.Fm.last(Ui.view_get(u, "view.path"))
 
 def Mpage.first.k(m: Maybe<&2, MC.MPart>, +root: String) -> String:
   match m:
@@ -5088,6 +5231,14 @@ def Upload.rest(hist: Bool, +i: Nat, +u: Ui, +value: String) -> Act:
     case False{}:
       Mpage.act(Nat.sub(i, 20n), u, value)
 
+# past the API keys': the Files tab's (49-53, Fm.act)
+def Upload.more(files: Bool, +i: Nat, +u: Ui, +value: String) -> Act:
+  match files:
+    case True{}:
+      Fm.act(Nat.sub(i, 49n), u, value)
+    case False{}:
+      Upload.rest(Nat.is_ge(i, 31n), i, u, value)
+
 def Upload.act(+i: Nat, +u: Ui, +value: String) -> Act:
   match i:
     case 29n:
@@ -5099,7 +5250,7 @@ def Upload.act(+i: Nat, +u: Ui, +value: String) -> Act:
     case 48n:
       ApiKeys.del(u, value)
     case _:
-      Upload.rest(Nat.is_ge(i, 31n), i, u, value)
+      Upload.more(Nat.is_ge(i, 49n), i, u, value)
 
 # past the table's own: the project picker's (14-17), then the Mechanical
 # page's (20-28; client.bend's Mpage.act), then a phone's upload (29, 30),

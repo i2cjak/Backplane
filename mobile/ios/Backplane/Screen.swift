@@ -241,6 +241,31 @@ struct Viewer: Decodable {
     let mech: MechPage?
     // the design history's bar under a board or schematic (nil: none)
     let hist: HistBar?
+    // the Files tab (open "files"), and an image or a PDF it opened
+    let files: FilesPage?
+    let file: FileView?
+}
+
+// the Files tab: where the folder is, its rows (a tap sends action with
+// value; "" when the file is only listed), whether the hub has listed it
+struct FileCrumb: Decodable, Hashable {
+    let label, action, value: String
+}
+
+struct FileRow: Decodable, Hashable {
+    let label, action, value, detail, kind, icon: String
+}
+
+struct FilesPage: Decodable {
+    let trail: [FileCrumb]
+    let rows: [FileRow]
+    let ready: Bool
+}
+
+// an image or a PDF from the Files tab: its name, "image" or "pdf", where
+// the hub serves it (a path the app makes a URL of, AppModel.web)
+struct FileView: Decodable {
+    let name, kind, url: String
 }
 
 // The design history (src/mobile/view.bend's Hist.json): the steps in the

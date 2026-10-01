@@ -141,6 +141,14 @@ fun App(m: AppModel) {
             BackHandler { pairing = false }
             Hubs(m, s) { pairing = false }
         }
+        s.thread != null && s.thread.viewer.open == "files" && s.thread.viewer.files != null -> {
+            BackHandler { m.act("view", "") }
+            FilesScreen(m, s.thread.viewer, s.thread.viewer.files)
+        }
+        s.thread != null && (s.thread.viewer.open == "image" || s.thread.viewer.open == "pdf") && s.thread.viewer.file != null -> {
+            BackHandler { m.act("fm") }
+            FileScreen(m, s.thread.viewer, s.thread.viewer.file)
+        }
         s.thread != null && s.thread.viewer.open == "renders" && s.thread.viewer.mech != null -> {
             BackHandler { m.act("view", "") }
             MechScreen(m, s.thread.viewer, s.thread.viewer.mech)

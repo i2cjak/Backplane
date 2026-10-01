@@ -1763,10 +1763,14 @@ def Nui.prepare.k(open: Bool, +n: Nui) -> Nui:
 
 # a kind of view by name (View.kind_of reads it back)
 def View.name(+k: U32) -> String:
-  Bool.pick(String, U32.is_eq(k, 1), "schematic", Bool.pick(String, U32.is_eq(k, 2), "3d", Bool.pick(String, U32.is_eq(k, 3), "browser", Bool.pick(String, U32.is_eq(k, 4), "diff", Bool.pick(String, U32.is_eq(k, 5), "mech", "board")))))
+  Bool.pick(String, U32.is_eq(k, 1), "schematic", Bool.pick(String, U32.is_eq(k, 2), "3d", Bool.pick(String, U32.is_eq(k, 3), "browser", Bool.pick(String, U32.is_eq(k, 4), "diff", Bool.pick(String, U32.is_eq(k, 5), "mech",
+    Bool.pick(String, U32.is_eq(k, 6), "files", Bool.pick(String, U32.is_eq(k, 7), "image", Bool.pick(String, U32.is_eq(k, 8), "pdf", "board"))))))))
 
 # the kind of view for a requested file: named, else from its extension
 def View.kind_of(+kind: String, +path: String) -> U32:
+  Bool.pick(U32, String.eq(kind, "files"), 6,
+  Bool.pick(U32, String.eq(kind, "image"), 7,
+  Bool.pick(U32, String.eq(kind, "pdf"), 8,
   Bool.pick(U32, String.eq(kind, "mech"), 5,
   Bool.pick(U32, String.eq(kind, "diff"), 4,
   Bool.pick(U32, String.eq(kind, "browser"), 3,
@@ -1774,7 +1778,7 @@ def View.kind_of(+kind: String, +path: String) -> U32:
     Bool.pick(U32, Bool.or(String.eq(kind, "3d"), String.eq(kind, "step")), 2,
       Bool.pick(U32, String.eq(kind, "board"), 0,
         Bool.pick(U32, String.ends_with(path, ".kicad_sch"), 1,
-          Bool.pick(U32, Bool.or(String.ends_with(path, ".glb"), Bool.or(String.ends_with(path, ".step"), String.ends_with(path, ".stp"))), 2, 0))))))))
+          Bool.pick(U32, Bool.or(String.ends_with(path, ".glb"), Bool.or(String.ends_with(path, ".step"), String.ends_with(path, ".stp"))), 2, 0)))))))))))
 
 def Vx.seen(x: V.Vx) -> String:
   match x:

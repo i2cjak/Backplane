@@ -6340,3 +6340,39 @@ def Laws.md_fence_any(s):
       {==}
     case SCon{h, t}:
       {==}
+
+def Laws.fm_kind_board():
+  {==}
+
+def Laws.fm_kind_schematic():
+  {==}
+
+def Laws.fm_kind_model():
+  {==}
+
+def Laws.fm_kind_pdf():
+  {==}
+
+def Laws.fm_kind_image():
+  {==}
+
+def Laws.fm_kind_other():
+  {==}
+
+def Laws.fm_safe_up():
+  {==}
+
+def Laws.fm_safe_abs():
+  {==}
+
+def Laws.fm_safe_down():
+  {==}
+
+def Laws.fm_parent_top():
+  {==}
+
+def Laws.fm_parent_down():
+  {==}
+
+def Laws.fm_join_root():
+  {==}

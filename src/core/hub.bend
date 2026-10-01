@@ -6,6 +6,7 @@ import ./attach.bend as AT
 import ./agent.bend as AG
 import ./handoff.bend as HD
 import ./todo.bend as TD
+import ./fm.bend as FM
 import ./refs.bend as RF
 
 # The decider. Requests from clients and lines from agents come in; changes
@@ -440,7 +441,7 @@ def Hub.methods.fs() -> List<&2, String>:
 
 # sidebar and navigation
 def Hub.methods.nav() -> List<&2, String>:
-  ["thread.snooze", "thread.reorder", "files.list", "kicad.open", "project.reorder", "mech.list", "mech.render", "file.open"]
+  ["thread.snooze", "thread.reorder", "files.list", "kicad.open", "project.reorder", "mech.list", "mech.render", "file.open", "files.dir", "pdf.page"]
 
 # snooze a thread: {thread, for: "1h" | "1w" | "tomorrow" | "off"} or
 # {thread, until}. Tomorrow 9:00 is local time, which the server knows:
@@ -1270,6 +1271,13 @@ def Hub.agentm(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.
     case _:
       Hub.media(C.Codec.pos(Hub.methods.media(), m), s, now, client, id, p, m)
 
+def Hub.dir.k(ok: Bool, +client: U32, +id: String, +th: String, +cwd: String, +path: String) -> Step:
+  match ok:
+    case True{}:
+      Step.outs([Git{client, id, "dir", th, cwd, path, ""}])
+    case False{}:
+      Step.outs([Reply.err(client, id, "that folder is not in this project")])
+
 def Hub.nav(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json, +m: String) -> Step:
   match i:
     case 0n:
@@ -1289,6 +1297,13 @@ def Hub.nav(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Jso
     # a file link opened on this machine, or shown in its folder: {path, how}
     case 7n:
       Step.outs([Git{client, id, "open", "", "/", J.Json.get_str(p, "path", ""), J.Json.get_str(p, "how", "open")}])
+    # the viewer's Files tab: a folder of the thread's project, {thread, path}
+    # (from its root, never leaving it: core/fm.bend's Fm.safe)
+    case 8n:
+      Hub.dir.k(FM.Fm.safe(J.Json.get_str(p, "path", "")), client, id, J.Json.get_str(p, "thread", ""), Hub.cwd(s, Hub.thread(s, J.Json.get_str(p, "thread", ""))), J.Json.get_str(p, "path", ""))
+    # a PDF's page as a picture, for the window, {path, page}
+    case 9n:
+      Step.outs([Git{client, id, "pdf", "", "/", J.Json.get_str(p, "path", ""), J.Json.as_raw(J.Json.get(p, "page"), "1")}])
     case _:
       Hub.agentm(C.Codec.pos(Hub.methods.agent(), m), s, now, client, id, p, m)
 

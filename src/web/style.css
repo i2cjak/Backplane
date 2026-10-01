@@ -229,6 +229,26 @@ button.fold span { overflow: hidden; text-overflow: ellipsis; white-space: nowra
 .viewer-bar .what { color: var(--dim); }
 .viewer-bar .what.on { color: var(--text); border: 1px solid var(--accent); padding: 3px 10px; }
 .viewer-bar .hint { color: var(--faint); font-size: 12px; margin-left: auto; }
+/* the Files tab: the folder's trail, its rows; an image or a PDF opened from it */
+.fm-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--line); flex: none; }
+.fm-bar .crumb { background: none; border: 0; color: var(--dim); padding: 3px 6px; }
+.fm-bar .crumb:hover { color: var(--text); }
+.fm-bar .crumb + .crumb::before { content: "/ "; color: var(--faint); }
+.fm-bar .crumb:last-of-type { color: var(--text); }
+.fm-bar .grow { flex: 1; }
+.fm-bar .fm-file { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.fm-bar .btn { color: var(--dim); text-decoration: none; border: 1px solid var(--line); padding: 3px 10px; }
+.fm-list { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0; }
+.fm-row { display: grid; grid-template-columns: 20px 1fr auto; align-items: center; gap: 8px; width: 100%; text-align: left; background: none; border: 0; color: var(--text); padding: 6px 12px; }
+.fm-row:hover:not(.off) { background: var(--raise); }
+.fm-row.off { color: var(--faint); cursor: default; }
+.fm-row.folder svg { color: var(--accent); }
+.fm-row .fm-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-row .fm-size { color: var(--faint); font-size: 12px; font-family: var(--mono); }
+.fm-note { display: block; color: var(--faint); padding: 16px 12px; }
+.fm-image { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 12px; }
+.fm-image img { max-width: 100%; max-height: 100%; object-fit: contain; background: repeating-conic-gradient(#8882 0% 25%, transparent 0% 50%) 50% / 16px 16px; }
+.fm-pdf { flex: 1; min-height: 0; width: 100%; border: 0; background: #fff; }
 .viewer-bar button.on { border-color: var(--accent); color: var(--text); }
 .viewer-stage { position: relative; flex: 1; min-height: 0; }
 .layers { position: relative; }

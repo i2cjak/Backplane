@@ -1,0 +1,73 @@
+import Base
+import ./check.bend as C
+import ../src/core/client.bend as U
+import ../src/core/model.bend as M
+import ../src/core/json.bend as J
+import ../src/core/fm.bend as FM
+
+# The viewer's Files tab (core/fm.bend, client.bend's Fm): a folder asked
+# for, listed, its rows; files opened in the view their kind takes; a PDF
+# asks for its page; sizes as people read them.
+
+def log() -> List<&2, M.Change>:
+  [M.ProjectCreated{"p1", "board", "/w/board", 1n}, M.ThreadCreated{"t1", "p1", "Bring-up", M.Local{}, "", "", "claude", "", 2n}]
+
+def ui(a: U.Act) -> U.Ui:
+  match a:
+    case U.Act{u, _}:
+      u
+
+def base() -> U.Ui:
+  ui(U.Ui.act(U.Ui.fold(log(), U.Ui.init(10n)), "select", "t1"))
+
+def crumbs(ps: List<&2, U.PItem>) -> List<&2, String>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case U.PItem{l, _, _} <> t:
+      l <> crumbs(t)
+
+def act(+u: U.Ui, +a: String, +v: String) -> U.Ui:
+  ui(U.Ui.act(u, a, v))
+
+def sent.go(cs: List<&2, U.Cmd>) -> String:
+  match cs:
+    case Nil{}:
+      ""
+    case U.Send{t} <> _:
+      t
+    case _ <> r:
+      sent.go(r)
+
+def sent(a: U.Act) -> String:
+  match a:
+    case U.Act{_, cs}:
+      sent.go(cs)
+
+def listed(+u: U.Ui, +dir: String, +entries: String) -> U.Ui:
+  U.Ui.recv(u, J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{"1"}}, J.KV{"ok", J.Flag{True{}}},
+    J.KV{"result", J.Json.obj([J.KV{"fmEntries", J.Str{entries}}, J.KV{"fmDir", J.Str{dir}}, J.KV{"fmRoot", J.Str{"/w/board"}}, J.KV{"thread", J.Str{"t1"}}])}]))
+
+def labels(rs: List<&2, U.FmRow>) -> List<&2, String>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case U.FmRow{l, a, _, d, k} <> t:
+      (l ++ ":" ++ a ++ ":" ++ k ++ ":" ++ d) <> labels(t)
+
+def main() -> IO(Unit):
+  do IO<Unit>:
+    C.Check.str("Files asks for the folder", sent(U.Ui.act(base(), "fm", "")), "{\"id\":0,\"m\":\"files.dir\",\"p\":{\"thread\":\"t1\",\"path\":\"\"}}")
+    C.Check.str("the viewer shows Files", U.Ui.view_get(act(base(), "fm", ""), "view.kind"), "files")
+    C.Check.str("not ready before the hub answers", Bool.show(U.Fm.ready(act(base(), "fm", ""))), "False")
+    C.Check.str("the rows, folders first", String.join(labels(U.Fm.rows(listed(act(base(), "fm", ""), "", "d\t0\thw\nf\t2048\tboard.kicad_pcb\nf\t5\tnotes.txt\n"))), "|"),
+      "hw:fm-cd:folder:|board.kicad_pcb:fm-open:board:2 KB|notes.txt:::5 B")
+    C.Check.str("a folder below", sent(U.Ui.act(act(base(), "fm", ""), "fm-cd", "hw/main")), "{\"id\":1,\"m\":\"files.dir\",\"p\":{\"thread\":\"t1\",\"path\":\"hw/main\"}}")
+    C.Check.str("an old answer is not shown", Bool.show(U.Fm.ready(listed(act(act(base(), "fm", ""), "fm-cd", "hw"), "", "d\t0\thw\n"))), "False")
+    C.Check.str("up from a folder", sent(U.Ui.act(act(act(base(), "fm", ""), "fm-cd", "hw/main"), "fm-up", "")), "{\"id\":2,\"m\":\"files.dir\",\"p\":{\"thread\":\"t1\",\"path\":\"hw\"}}")
+    C.Check.str("the trail", String.join(crumbs(U.Fm.trail(act(act(base(), "fm", ""), "fm-cd", "hw/main"))), "|"), "Project|hw|main")
+    C.Check.str("a board opens in the board viewer", U.Ui.view_get(act(base(), "fm-open", "hw/x.kicad_pcb"), "view.kind") ++ " " ++ U.Ui.view_get(act(base(), "fm-open", "hw/x.kicad_pcb"), "view.path"), "board /w/board/hw/x.kicad_pcb")
+    C.Check.str("a model opens in 3D", U.Ui.view_get(act(base(), "fm-open", "mech/case.step"), "view.kind"), "3d")
+    C.Check.str("a PDF asks for its first page", sent(U.Ui.act(base(), "fm-open", "docs/ds.pdf")), "{\"id\":0,\"m\":\"pdf.page\",\"p\":{\"path\":\"/w/board/docs/ds.pdf\",\"page\":\"1\"}}")
+    C.Check.str("a file only listed opens nothing", U.Ui.view_get(act(base(), "fm-open", "notes.txt"), "view.kind"), "")
+    C.Check.str("sizes", String.join([FM.Fm.size(0n), FM.Fm.size(1500n), FM.Fm.size(3500000n), FM.Fm.size(2147483648n)], "|"), "0 B|1 KB|3.3 MB|2.0 GB")
