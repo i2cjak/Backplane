@@ -378,7 +378,7 @@ def Mob.entry.k(mine: Bool, e: M.Entry, +st: M.State, +dr: Map<&2, String>) -> L
     case True{} _:
       [Mob.own(e, dr)]
     case False{} M.Msg{+id, +t, _, x, _}:
-      [Mob.link(id, "→ " ++ U.Tasks.title(st, t) ++ ": " ++ Maybe.default(&2, String, List.head(&2, String, String.split(x, '\n')), ""), t)]
+      [Mob.link(id, "→ " ++ U.Tasks.title(st, t) ++ ": " ++ DF.Diff.first(x), t)]
     case False{} _:
       Nil{}
 

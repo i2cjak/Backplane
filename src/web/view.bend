@@ -839,7 +839,7 @@ def View.entry.k(mine: Bool, e: M.Entry, +st: M.State) -> List<&2, D.Node>:
     case True{} _:
       [View.entry.own(e)]
     case False{} M.Msg{_, +t, _, x, _}:
-      [View.link("out", "→ " ++ U.Tasks.title(st, t) ++ ": " ++ Maybe.default(&2, String, List.head(&2, String, String.split(x, '\n')), ""), t)]
+      [View.link("out", "→ " ++ U.Tasks.title(st, t) ++ ": " ++ DF.Diff.first(x), t)]
     case False{} _:
       Nil{}
 

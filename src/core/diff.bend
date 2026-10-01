@@ -56,6 +56,29 @@ def Diff.lines.fin(st: LS) -> List<&2, String>:
 def Diff.lines(s: String) -> List<&2, String>:
   Diff.lines.fin(Diff.lines.go(s, LS{SNil{}, Nil{}}))
 
+def Diff.first.add(nl: Bool, c: Char, acc: String) -> String:
+  match nl:
+    case True{}:
+      acc
+    case False{}:
+      SCon{c, acc}
+
+def Diff.first.go(s: String, acc: String, done: Bool) -> String:
+  match s done:
+    case _ True{}:
+      String.reverse(acc)
+    case SNil{} False{}:
+      String.reverse(acc)
+    case SCon{+c, t} False{}:
+      Diff.first.go(t, Diff.first.add(Char.is_eq(c, '\n'), c, acc), Char.is_eq(c, '\n'))
+
+# a text's first line, in one tail-recursive walk that stops at the first
+# line break (String.lines recurses once per character, outside a tail
+# call: a fork's handed-over context, thousands of characters, overflowed
+# the browser's stack and the web stopped drawing the fork)
+def Diff.first(s: String) -> String:
+  Diff.first.go(s, SNil{}, False{})
+
 # Line tags
 # ---------
 

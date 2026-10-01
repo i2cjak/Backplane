@@ -18,6 +18,7 @@ import ./desk.bend as DK
 import ./hist.bend as HI
 import ./links.bend as LK
 import ./apikeys.bend as AK
+import ./diff.bend as DF
 
 # The client state, Elm-style, shared by the native window and the web
 # page: a host feeds server messages to Ui.recv and user actions to Ui.act,
@@ -2052,7 +2053,7 @@ def Search.line(ls: List<&2, String>, +q: String) -> String:
 
 def Search.put.k(r: Map<&2, String> & String, +th: String, +text: String, +q: String) -> Map<&2, String>:
   (+m, +cur) = r
-  Bool.pick(Map<&2, String>, String.is_empty(cur), Map.set(&2, String, m, th, Search.line(String.lines(text), q)), m)
+  Bool.pick(Map<&2, String>, String.is_empty(cur), Map.set(&2, String, m, th, Search.line(DF.Diff.lines(text), q)), m)
 
 def Search.put(hit: Bool, m: Map<&2, String>, +th: String, +text: String, +q: String) -> Map<&2, String>:
   match hit:
@@ -3906,7 +3907,7 @@ def Qu.tag(+run: Bool, +msg: String) -> String:
 
 # a queued row's text: context says what it is, a message itself
 def Qu.label(+msg: String, +text: String) -> String:
-  Bool.pick(String, String.starts_with(msg, "handoff:"), Maybe.default(&2, String, List.head(&2, String, String.lines(String.drop(text, 12n))), "") ++ " (goes with the next message)", text)
+  Bool.pick(String, String.starts_with(msg, "handoff:"), DF.Diff.first(String.drop(text, 12n)) ++ " (goes with the next message)", text)
 
 # a thread's todo list as it shows (TD.Todo.shown): empty when hidden
 def Todos.of(+st: M.State, +th: String) -> List<&2, TD.Todo>:
