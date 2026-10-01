@@ -2,10 +2,7 @@
 
 Agentic hardware development. Claude Code, Codex and Grok work on your KiCad boards and FreeCAD parts, and every change they make is drawn live beside the conversation, in a browser, on your phone, or in the desktop app.
 
-<p>
-<img src="docs/media/web-board.png" width="75.5%" alt="A thread beside the board it is changing, in the browser">
-<img src="docs/media/phone-compare.png" width="21.5%" alt="The same change on a phone: the tracks the agent widened">
-</p>
+![A thread beside the board in 3D in the browser, and the same change compared on a phone](docs/media/hero.png)
 
 ## Why
 
@@ -27,7 +24,7 @@ The hub runs on your machine. The browser and the native Android and iOS apps re
 
 **Viewers that follow the files.** Board, Schematic (with its sheets), 3D (the board with its parts), Mech, Files, Diff and Browser, all next to the thread. They draw only finished saves and fade in only what changed. Click a pad, track, symbol or pin to see its net, reference, value and footprint, and mention it in chat.
 
-![The board in 3D with its parts](docs/media/web-3d.png)
+![A thread beside the board it is changing](docs/media/web-board.png)
 
 **Mechanical parts.** Agents model enclosures and brackets in FreeCAD, headless. The Mech tab turns any STEP in 3D, with the project's other parts beside it, and draws standard views on request.
 
