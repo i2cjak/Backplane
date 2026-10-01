@@ -215,14 +215,22 @@ def Mob.rmenu(+u: U.Ui) -> J.Json:
 # markdown blocks from the same Md.render the web page uses; built onto a
 # reversed accumulator so a long reply's many blocks cost no stack (only
 # nesting does)
-# a link's target, the one attribute a phone needs, and whether it is a
+# a link's target, the attribute a phone needs, and whether it is a
 # file's (a tap opens the file's menu: "file-menu" with href)
+# an ordered item's number as written ("n")
+def Mob.num(n: Bool, +v: String, rest: List<&2, J.KV>) -> List<&2, J.KV>:
+  match n:
+    case True{}:
+      J.KV{"n", J.Json.str(v)} <> rest
+    case False{}:
+      rest
+
 def Mob.href(as: List<&2, D.Attr>) -> List<&2, J.KV>:
   match as:
     case Nil{}:
       Nil{}
     case D.At{+k, +v} <> t:
-      Bool.pick(List<&2, J.KV>, String.eq(k, "href"), [J.KV{"href", J.Json.str(v)}, J.KV{"file", J.Json.bool(Bool.not(LK.Link.is_web(v)))}], Mob.href(t))
+      Bool.pick(List<&2, J.KV>, String.eq(k, "href"), [J.KV{"href", J.Json.str(v)}, J.KV{"file", J.Json.bool(Bool.not(LK.Link.is_web(v)))}], Mob.num(String.eq(k, "value"), v, Mob.href(t)))
     case _ <> t:
       Mob.href(t)
 

@@ -83,6 +83,8 @@ struct Block: Decodable, Hashable {
     // a link's target, and whether it is a file's (Mob.href)
     let href: String?
     let file: Bool?
+    // an ordered item's number as written
+    let n: String?
 
     var plain: String { text ?? (kids ?? []).map(\.plain).joined() }
 }

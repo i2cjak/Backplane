@@ -35,6 +35,7 @@ import ./src/core/icons.bend as ICO
 import ./src/core/tools.bend as TOOL
 import ./src/core/lightbox.bend as LBX
 import ./src/core/links.bend as LK
+import ./src/web/dom.bend as DM
 import ./src/core/client.bend as U
 import ./src/core/gh.bend as GH
 import ./src/gfx/text.bend as X
@@ -4215,3 +4216,21 @@ law keys_names_of_lines:
 
 law keys_prompt_none:
   {AK.Keys.prompt("/h/secrets/api.env", "") == "" : String}
+
+# Markdown
+# a separator row makes the row above it the table's head, and only when
+# that row is the table's first
+law md_head_first:
+  for cs: List<&2, String>
+  {DM.Md.headed([DM.RBody{cs}]) == [DM.RHead{cs}] : List<&2, DM.Row>}
+
+law md_head_only_first:
+  for cs: List<&2, String>
+  for r: DM.Row
+  for rs: List<&2, DM.Row>
+  {DM.Md.headed(DM.RBody{cs} <> r <> rs) == DM.RBody{cs} <> r <> rs : List<&2, DM.Row>}
+
+# a fence opens a code block whatever follows it on the line
+law md_fence_any:
+  for s: String
+  {DM.Md.line("```" ++ s) == DM.LFence{} : DM.Line}
