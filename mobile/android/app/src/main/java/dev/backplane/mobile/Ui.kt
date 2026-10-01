@@ -191,7 +191,7 @@ fun App(m: AppModel) {
     val rn = s.renaming
     // a rename: the title edited here, sent whole with the thread's id
     var renamed by remember(rn?.id) { mutableStateOf(false) }
-    var title by remember(rn?.id) { mutableStateOf(rn?.value ?: "") }
+    var title by remember(rn?.id) { mutableStateOf(rn?.text ?: "") }
     if (rn != null && !renamed) AlertDialog(
         onDismissRequest = { renamed = true; m.act("rename-no") },
         title = { Text(rn.title) },

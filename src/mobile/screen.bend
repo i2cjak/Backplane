@@ -833,14 +833,14 @@ def Mob.deleting.k(none: Bool, +st: M.State, +id: String) -> J.Json:
         J.KV{"body", J.Json.str(Mob.title(U.Ui.thread(st, id)))}, J.KV{"yes", J.Json.str("Delete")}, J.KV{"no", J.Json.str("Cancel")}])
 
 # a thread being renamed (client.bend's Ren): its id, what to ask, the title
-# so far; the yes button sends "rename-save" with "id\u001ftitle", the no
-# "rename-no"
+# so far ("text": a phone makes every "value" an id of its hub); the yes
+# button sends "rename-save" with "id\u001ftitle", the no "rename-no"
 def Mob.renaming.k(none: Bool, +id: String, +value: String) -> J.Json:
   match none:
     case True{}:
       J.Null{}
     case False{}:
-      J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"title", J.Json.str("Rename thread")}, J.KV{"value", J.Json.str(value)},
+      J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"title", J.Json.str("Rename thread")}, J.KV{"text", J.Json.str(value)},
         J.KV{"yes", J.Json.str("Rename")}, J.KV{"no", J.Json.str("Cancel")}])
 
 def Mob.renaming(+u: U.Ui) -> J.Json:

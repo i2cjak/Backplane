@@ -36,7 +36,7 @@ struct RootView: View {
                 Button(r.yes) { renamed = r.id; model.act("rename-save", r.id + "\u{1f}" + newTitle) }
                 Button(r.no, role: .cancel) { renamed = r.id; model.act("rename-no") }
             }
-            .onChange(of: s.renaming?.id) { renamed = ""; newTitle = s.renaming?.value ?? "" }
+            .onChange(of: s.renaming?.id) { renamed = ""; newTitle = s.renaming?.text ?? "" }
             .alert(s.removing?.title ?? "", isPresented: Binding(get: { s.removing.map { $0.id != removed } ?? false }, set: { _ in }),
                    presenting: s.removing) { d in
                 Button(d.yes, role: .destructive) { removed = d.id; model.act("proj-remove", d.id) }

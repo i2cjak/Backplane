@@ -402,7 +402,7 @@ struct Deleting: Decodable, Equatable {
 // a thread being renamed: its id, the alert's title, the title so far, the
 // buttons ("rename-save" with "id\u{1f}title", or "rename-no")
 struct Renaming: Decodable, Equatable {
-    let id, title, value, yes, no: String
+    let id, title, text, yes, no: String
 }
 
 // the list's search, always at its top: its query ("proj-find-q"), the hint

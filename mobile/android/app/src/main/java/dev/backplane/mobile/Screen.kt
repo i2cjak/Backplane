@@ -45,7 +45,7 @@ data class RowMenu(val title: String, val items: List<RowMenuItem>)
 data class Deleting(val id: String, val title: String, val body: String, val yes: String, val no: String)
 // a thread being renamed: its id, the dialog's title, the title so far, the
 // buttons ("rename-save" with "id\u001ftitle", or "rename-no")
-data class Renaming(val id: String, val title: String, val value: String, val yes: String, val no: String)
+data class Renaming(val id: String, val title: String, val text: String, val yes: String, val no: String)
 
 // the list's search, always at its top: its query ("proj-find-q"), the hint
 data class Search(val open: Boolean, val query: String, val hint: String)
@@ -586,7 +586,7 @@ fun parseScreen(o: JSONObject) = Screen(
         })
     },
     renaming = o.optJSONObject("renaming")?.let {
-        Renaming(it.optString("id"), it.optString("title"), it.optString("value"), it.optString("yes"), it.optString("no"))
+        Renaming(it.optString("id"), it.optString("title"), it.optString("text"), it.optString("yes"), it.optString("no"))
     },
 )
 
