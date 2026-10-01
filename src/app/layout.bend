@@ -3593,10 +3593,11 @@ def Fv.pic(+ty: Ty, +u: U.Ui, +key: String, +x0: U32, +x1: U32, +y: U32, +h: U32
     Out{Bool.pick(List<&2, R.Op>, Bool.or(String.is_empty(size), String.starts_with(size, "err:")), Nil{}, D.Draw.frame(D.Clip.all(), (ix - 1 : U32), (y - 1 : U32), (fw + 2 : U32), (fh + 2 : U32), T.Th.line())),
       [Lay.hit(ix, y, U32.max(fw, 1), U32.max(fh, 1), "img", key)]}])
 
+# (no panel painted under it: the window draws a picture into the frame's
+# base, under the UI, and a panel would cover it, as the Mech page's renders)
 def Fv.head(+ty: Ty, +u: U.Ui, +x0: U32, +x1: U32, +h: U32, more: Out) -> Out:
   +bw = Lay.button.w(ty, "‹ Files")
-  Out.all([Out.ops([D.Draw.rect(D.Clip.all(), x0, 52, (x1 - x0 : U32), (h - 52 : U32), T.Th.panel(), 255)]),
-    Lay.button(ty, D.Clip.all(), (x0 + 16 : U32), 64, "‹ Files", T.Th.soft(), "fm", ""),
+  Out.all([Lay.button(ty, D.Clip.all(), (x0 + 16 : U32), 64, "‹ Files", T.Th.soft(), "fm", ""),
     Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, U.Fm.name(u), U32.dim((x1 - x0 : U32), (bw + 260 : U32))), D.Clip.all(), (x0 + 28 + bw : U32), 64, 28, T.Th.text())),
     more,
     Out.ops([D.Draw.rect(D.Clip.all(), x0, 99, (x1 - x0 : U32), 1, T.Th.line(), 255)])])
