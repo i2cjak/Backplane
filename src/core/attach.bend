@@ -1,6 +1,7 @@
 import Base
 import ./json.bend as J
 import ./utf8.bend as U
+import ./diff.bend as DF
 
 # Attachments. A file a user attaches to a turn is stored by the server
 # under <home>/attachments/<thread>/<key>-<name>; the message then carries
@@ -67,6 +68,16 @@ def Att.kind(ls: List<&2, String>) -> AK:
 type Parts is Data:
   Parts{body: String, paths: List<&2, String>}
 
+# lines kept last first, joined first to last with line breaks, in one
+# tail-recursive walk (String.join recursed once per line: a pasted log of
+# thousands of lines overflowed the web's stack)
+def Att.unlines(rs: List<&2, String>, acc: String, first: Bool) -> String:
+  match rs:
+    case Nil{}:
+      acc
+    case +l <> t:
+      Att.unlines(t, l ++ Bool.pick(String, first, "", "\n") ++ acc, False{})
+
 # walk the lines from the end: attachment lines (and blank lines between
 # them) are the attachments; the rest is the body
 def Att.split.go(rs: List<&2, String>, k: AK, paths: List<&2, String>) -> Parts:
@@ -78,11 +89,11 @@ def Att.split.go(rs: List<&2, String>, k: AK, paths: List<&2, String>) -> Parts:
     case _ <> +t AkBlank{}:
       Att.split.go(t, Att.kind(t), paths)
     case +l <> +t _:
-      Parts{String.join(List.reverse(&2, String, l <> t), "\n"), paths}
+      Parts{Att.unlines(l <> t, "", True{}), paths}
 
 # a message's text split into what was written and what was attached
 def Att.split(+text: String) -> Parts:
-  Att.split.go(List.reverse(&2, String, String.lines(text)), Att.kind(List.reverse(&2, String, String.lines(text))), Nil{})
+  Att.split.go(List.reverse(&2, String, DF.Diff.lines(text)), Att.kind(List.reverse(&2, String, DF.Diff.lines(text))), Nil{})
 
 def Att.paths.k(p: Parts) -> List<&2, String>:
   match p:
@@ -267,7 +278,7 @@ def Att.pasted.keep(ls: List<&2, String>) -> List<&2, String>:
 # manager's copy) or the absolute path of an image; otherwise none, and the
 # paste is text
 def Att.pasted(+text: String) -> List<&2, String>:
-  Bool.pick(List<&2, String>, Att.pasted.all(String.lines(text)), Att.pasted.keep(String.lines(text)), Nil{})
+  Bool.pick(List<&2, String>, Att.pasted.all(DF.Diff.lines(text)), Att.pasted.keep(DF.Diff.lines(text)), Nil{})
 
 # Drops
 # -----

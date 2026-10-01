@@ -6,6 +6,8 @@ struct RootView: View {
     // the delete (or remove) just answered: its dialog stays down until the screen drops it
     @State private var answered = ""
     @State private var removed = ""
+    @State private var renamed = ""
+    @State private var newTitle = ""
 
     var body: some View {
         if model.links.isEmpty {
@@ -28,6 +30,13 @@ struct RootView: View {
                 Text(d.body)
             }
             .onChange(of: s.deleting?.id) { answered = "" }
+            .alert(s.renaming?.title ?? "", isPresented: Binding(get: { s.renaming.map { $0.id != renamed } ?? false }, set: { _ in }),
+                   presenting: s.renaming) { r in
+                TextField("Title", text: $newTitle)
+                Button(r.yes) { renamed = r.id; model.act("rename-save", r.id + "\u{1f}" + newTitle) }
+                Button(r.no, role: .cancel) { renamed = r.id; model.act("rename-no") }
+            }
+            .onChange(of: s.renaming?.id) { renamed = ""; newTitle = s.renaming?.text ?? "" }
             .alert(s.removing?.title ?? "", isPresented: Binding(get: { s.removing.map { $0.id != removed } ?? false }, set: { _ in }),
                    presenting: s.removing) { d in
                 Button(d.yes, role: .destructive) { removed = d.id; model.act("proj-remove", d.id) }
@@ -817,7 +826,9 @@ struct ThreadScreen: View {
         .onChange(of: fileMenu) { _, m in if m == nil { shutFile = nil } }
         .fullScreenCover(isPresented: Binding(get: { !thread.viewer.open.isEmpty }, set: { if !$0 { model.act("view", "") } })) {
             if let v = model.screen?.thread?.viewer {
-                if v.open == "renders", let p = v.mech { MechScreen(model: model, viewer: v, page: p) } else { PlotScreen(model: model, viewer: v) }
+                if v.open == "files", let f = v.files { FilesScreen(model: model, viewer: v, page: f) }
+                else if v.open == "image" || v.open == "pdf", let f = v.file { FileScreen(model: model, viewer: v, file: f) }
+                else if v.open == "renders", let p = v.mech { MechScreen(model: model, viewer: v, page: p) } else { PlotScreen(model: model, viewer: v) }
             }
         }
         .fullScreenCover(item: $shown) { s in Lightbox(shown: s) { shown = nil } }

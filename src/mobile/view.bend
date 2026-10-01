@@ -8,6 +8,8 @@ import ../core/board.bend as B
 import ../core/schematic.bend as SC
 import ../core/mech.bend as MC
 import ../core/hist.bend as HS
+import ../core/fm.bend as FM
+import ../core/images.bend as IM
 
 # The phones' board viewer, as the Bend client decides it. The viewer
 # shows the selected thread's project board, schematic or 3D model
@@ -41,6 +43,16 @@ def View.slot(+u: U.Ui) -> String:
 def View.kind(+u: U.Ui) -> String:
   U.Ui.scratch(u, View.slot(u))
 
+# a file opened from the Files tab ("@view.file:<thread>", its absolute
+# path): the board, schematic or model the viewer shows in place of the
+# project's own until a view is picked by hand
+def View.file(+u: U.Ui) -> String:
+  U.Ui.scratch(u, "@view.file:" ++ U.Ui.sel(u))
+
+# the Files tab and what it opened that is not a plot (an image, a PDF)
+def View.fm(+u: U.Ui) -> Bool:
+  Bool.or(String.eq(View.kind(u), "files"), Bool.or(String.eq(View.kind(u), "image"), String.eq(View.kind(u), "pdf")))
+
 # The schematic's sheet ("@view.sheet:<thread>", "" for the root) and the
 # 3D model's parts ("@view.bare" set: the board alone, the hub's kind 3)
 # are part of the source: the key a plot carries, the hub's Src.key
@@ -70,14 +82,21 @@ def View.as_client(+u: U.Ui) -> U.Ui:
 # the file the source names: a version while the history shows one, else
 # a schematic's sheet ("" the project's own)
 def View.src(+u: U.Ui) -> String:
-  Bool.pick(String, View.hist(u), U.Ui.view_get(u, "view.path"), Bool.pick(String, String.eq(View.kind(u), "schematic"), View.sheet(u), ""))
+  Bool.pick(String, View.hist(u), U.Ui.view_get(u, "view.path"), Bool.pick(String, Bool.not(String.is_empty(View.file(u))), View.file(u),
+    Bool.pick(String, String.eq(View.kind(u), "schematic"), View.sheet(u), "")))
+
+# a board view's own path: a version of the board, or a board file opened
+# from the Files tab (never a schematic's sheet)
+def View.board.path(+path: String) -> Bool:
+  Bool.or(Bool.not(Nat.is_eq(HS.Hist.kind(path), 0n)), String.ends_with(path, ".kicad_pcb"))
 
 def View.key.at(+kind: String, +root: String, +path: String, bare: Bool) -> String:
-  Bool.pick(String, Bool.or(String.eq(kind, "schematic"), Bool.and(String.eq(kind, "board"), Bool.not(Nat.is_eq(HS.Hist.kind(path), 0n)))), View.key(kind, root) ++ path,
+  Bool.pick(String, Bool.or(String.eq(kind, "schematic"), Bool.and(String.eq(kind, "board"), View.board.path(path))), View.key(kind, root) ++ path,
     Bool.pick(String, Bool.and(bare, Bool.not(String.is_empty(View.key(kind, root)))), "3|" ++ root ++ "|", View.key(kind, root)))
 
 def View.layers.at(+kind: String, +root: String, +path: String) -> String:
-  Bool.pick(String, Bool.or(String.eq(kind, "schematic"), Bool.and(String.eq(kind, "board"), Bool.not(Nat.is_eq(HS.Hist.kind(path), 0n)))), View.key.at(kind, root, path, False{}), View.layers(kind, root))
+  Bool.pick(String, Bool.or(String.eq(kind, "schematic"), Bool.and(String.eq(kind, "board"), View.board.path(path))), View.key.at(kind, root, path, False{}),
+    Bool.pick(String, Bool.and(String.eq(kind, "3d"), String.ends_with(path, ".kicad_pcb")), "0|" ++ root ++ "|" ++ path, View.layers(kind, root)))
 
 # Mech ("mech") shows the part on show in 3D, with the parts over it;
 # Renders ("renders") its pictures (client.bend's Mpage decides the part)
@@ -101,7 +120,8 @@ def View.on_part(+u: U.Ui) -> Bool:
 # the source the screen shows now
 def View.want(+u: U.Ui) -> String:
   Bool.pick(String, Bool.and(View.on_part(u), Bool.not(String.is_empty(U.Ui.root(u)))), "2|" ++ U.Ui.root(u) ++ "|" ++ View.part(u),
-    View.key.at(View.kind(u), U.Ui.root(u), View.src(u), Bool.and(String.eq(View.kind(u), "3d"), View.bare(u))))
+    Bool.pick(String, Bool.and(String.eq(View.kind(u), "3d"), Bool.not(String.is_empty(View.file(u)))), "2|" ++ U.Ui.root(u) ++ "|" ++ View.file(u),
+    View.key.at(View.kind(u), U.Ui.root(u), View.src(u), Bool.and(String.eq(View.kind(u), "3d"), View.bare(u)))))
 
 # the file a source names: a version, a schematic's sheet, or Mech's part
 def View.path(+u: U.Ui) -> String:
@@ -110,7 +130,7 @@ def View.path(+u: U.Ui) -> String:
 # (Mech's part is a 3D model to the hub)
 def View.ask(+want: String, +kind: String, +root: String, +path: String) -> List<&2, J.KV>:
   [J.KV{"kind", J.Str{Bool.pick(String, String.is_empty(want), "", Bool.pick(String, String.starts_with(want, "3|"), "3d-bare", Bool.pick(String, String.eq(kind, "mech"), "3d", kind)))}}, J.KV{"root", J.Str{root}},
-   J.KV{"path", J.Str{Bool.pick(String, Bool.or(Bool.or(String.eq(kind, "schematic"), String.eq(kind, "board")), String.eq(kind, "mech")), path, "")}}]
+   J.KV{"path", J.Str{Bool.pick(String, Bool.or(Bool.or(String.eq(kind, "schematic"), String.eq(kind, "board")), Bool.or(String.eq(kind, "mech"), String.eq(kind, "3d"))), path, "")}}]
 
 def View.join(a: U.Act, cmds: List<&2, U.Cmd>) -> U.Act:
   match a:
@@ -139,7 +159,23 @@ def View.sync(a: U.Act) -> U.Act:
 # open a viewer ("board", "schematic", "3d") or close it (""); what was
 # picked is let go
 def View.open.k(+u: U.Ui, v: String) -> U.Act:
-  View.sync(U.Act{U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.scratch_set(u, View.slot(u), v), "@pick", ""), "@card", ""), "@pick.rid", ""), Nil{}})
+  View.sync(U.Act{U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.scratch_set(u, "@view.file:" ++ U.Ui.sel(u), ""), View.slot(u), v), "@pick", ""), "@card", ""), "@pick.rid", ""), Nil{}})
+
+# The Files tab (client.bend's Fm): its actions are the client's; the
+# phone's view follows them: the folder ("files"), or a file opened in the
+# view its kind takes (a board, schematic or model is the source; an image
+# or a PDF is shown by the app)
+def View.fm.to(a: U.Act, +slot: String, +file: String) -> U.Act:
+  match a:
+    case U.Act{+u, cs}:
+      View.sync(U.Act{U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.scratch_set(u, "@view.file:" ++ U.Ui.sel(u), file), View.slot(u), slot), "@pick", ""), "@card", ""), cs})
+
+def View.fm.open(+u: U.Ui, +rel: String) -> U.Act:
+  Bool.pick(U.Act, String.is_empty(FM.Fm.kind(rel)), U.Act{u, Nil{}},
+    View.fm.to(U.Ui.act(u, "fm-open", rel), FM.Fm.kind(rel), Bool.pick(String, Bool.or(String.eq(FM.Fm.kind(rel), "image"), String.eq(FM.Fm.kind(rel), "pdf")), "", FM.Fm.abs(U.Ui.root(u), rel))))
+
+def View.fm.act(+u: U.Ui, +action: String, +value: String) -> U.Act:
+  Bool.pick(U.Act, String.eq(action, "fm-open"), View.fm.open(u, value), View.fm.to(U.Ui.act(u, action, value), "files", ""))
 
 # going back to the thread shuts the phone's viewer over it
 def View.hist.jump(jump: Bool, a: U.Act) -> U.Act:
@@ -171,8 +207,12 @@ def View.open.mech(mech: Bool, a: U.Act) -> U.Act:
     case False{} _:
       a
 
-def View.open(+u: U.Ui, +v: String) -> U.Act:
+def View.open.go(+u: U.Ui, +v: String) -> U.Act:
   View.open.mech(String.eq(v, "mech"), View.open.k(u, v))
+
+# (Files asks the hub for the folder last shown)
+def View.open(+u: U.Ui, +v: String) -> U.Act:
+  Bool.pick(U.Act, String.eq(v, "files"), View.fm.act(u, "fm", ""), View.open.go(u, v))
 
 # a Mech action the client takes (the part, its view), then the phone's
 # view on Mech ("mech") or Renders ("renders")
@@ -563,15 +603,49 @@ def Hist.json(+b: U.HBar, +u: U.Ui) -> J.Json:
 # micrometre, how far from a tap (points) an item still counts as tapped,
 # and for 3D the faces' layers, the board's colour before its model
 # arrives, and the field of view (degrees)
+# the Files tab as the apps draw it: the trail, the rows (each with what a
+# tap sends), whether the listing is in; null when not shown
+def Files.trail(ps: List<&2, U.PItem>) -> List<&2, J.Json>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case U.PItem{+l, +a, +v} <> t:
+      J.Json.obj([J.KV{"label", J.Str{l}}, J.KV{"action", J.Str{a}}, J.KV{"value", J.Str{v}}]) <> Files.trail(t)
+
+def Files.rows(rs: List<&2, U.FmRow>) -> List<&2, J.Json>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case U.FmRow{+l, +a, +v, +d, +k} <> t:
+      J.Json.obj([J.KV{"label", J.Str{l}}, J.KV{"action", J.Str{a}}, J.KV{"value", J.Str{v}}, J.KV{"detail", J.Str{d}}, J.KV{"kind", J.Str{k}}, J.KV{"icon", J.Str{U.Fm.icon(k)}}]) <> Files.rows(t)
+
+def Files.json(on: Bool, +u: U.Ui) -> J.Json:
+  match on:
+    case True{}:
+      J.Json.obj([J.KV{"trail", J.Json.arr(Files.trail(U.Fm.trail(u)))}, J.KV{"rows", J.Json.arr(Files.rows(U.Fm.rows(u)))}, J.KV{"ready", J.Json.bool(U.Fm.ready(u))}])
+    case False{}:
+      J.Null{}
+
+# an image or a PDF opened from the Files tab: its name, its kind, where
+# the hub serves it (the app adds the hub and its token)
+def File.json(on: Bool, +u: U.Ui) -> J.Json:
+  match on:
+    case True{}:
+      J.Json.obj([J.KV{"name", J.Str{U.Fm.name(u)}}, J.KV{"kind", J.Str{View.kind(u)}}, J.KV{"url", J.Str{IM.Img.url(U.Ui.view_get(u, "view.path"))}}])
+    case False{}:
+      J.Null{}
+
 def View.json(+u: U.Ui) -> J.Json:
-  J.Json.obj([J.KV{"open", J.Str{Bool.pick(String, Bool.or(Bool.not(String.is_empty(View.want(u))), View.mech(u)), View.kind(u), "")}}, J.KV{"key", J.Str{View.want(u)}},
+  J.Json.obj([J.KV{"open", J.Str{Bool.pick(String, Bool.or(Bool.or(Bool.not(String.is_empty(View.want(u))), View.mech(u)), View.fm(u)), View.kind(u), "")}}, J.KV{"key", J.Str{View.want(u)}},
+    J.KV{"files", Files.json(String.eq(View.kind(u), "files"), u)}, J.KV{"file", File.json(Bool.or(String.eq(View.kind(u), "image"), String.eq(View.kind(u), "pdf")), u)},
     J.KV{"layers", J.Str{Bool.pick(String, View.mech(u), "", View.layers.at(View.kind(u), U.Ui.root(u), View.src(u)))}},
     J.KV{"hist", Hist.json(U.Hs.bar.for(View.as_client(u), Nat.is_lt(View.hist.num(View.kind(u)), 2n)), View.as_client(u))},
     J.KV{"mech", Mech.json(View.mech(u), u)},
     J.KV{"sheets", J.Json.arr(View.sheet.list(u))}, J.KV{"layerList", J.Json.arr(View.layer.list(u))}, J.KV{"off", J.Num{U32.show(View.off(u))}},
     J.KV{"parts", J.Flag{Bool.not(View.bare(u))}}, J.KV{"note", J.Str{View.note(u)}},
     J.KV{"choices", J.Json.arr(Bool.pick(List<&2, J.Json>, String.is_empty(U.Ui.root(u)), Nil{},
-      [View.choice("Board", "board", View.kind(u)), View.choice("Schematic", "schematic", View.kind(u)), View.choice("3D", "3d", View.kind(u)), View.choice("Mech", "mech", Bool.pick(String, View.mech(u), "mech", ""))]))},
+      [View.choice("Board", "board", View.kind(u)), View.choice("Schematic", "schematic", View.kind(u)), View.choice("3D", "3d", View.kind(u)), View.choice("Mech", "mech", Bool.pick(String, View.mech(u), "mech", "")),
+       View.choice("Files", "files", Bool.pick(String, View.fm(u), "files", ""))]))},
     J.KV{"bg", J.Num{U32.show(View.bg(View.kind(u), View.light(u)))}}, J.KV{"light", J.Json.bool(View.light(u))}, J.KV{"look", J.Json.arr(View.look(View.light(u), View.kind(u)))}, J.KV{"fade", J.Num{Nat.show(V.Fade.ms())}}, J.KV{"margin", J.Num{"0.9"}},
     J.KV{"zmin", J.Num{"0.5"}}, J.KV{"zmax", J.Num{"0.5"}}, J.KV{"tap", J.Num{"14"}},
     J.KV{"top", J.Json.arr(View.nums(View.top()))}, J.KV{"bottom", J.Json.arr(View.nums(View.bottom()))},

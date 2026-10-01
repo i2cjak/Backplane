@@ -3,6 +3,10 @@ package dev.backplane.mobile
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.os.ParcelFileDescriptor
+import android.system.Os
+import android.system.OsConstants
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
@@ -13,7 +17,11 @@ import okhttp3.WebSocketListener
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.json.JSONObject
-import java.util.concurrent.TimeUnit
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.net.SocketAddress
+import javax.net.SocketFactory
 
 // A pairing link as the desktop shows it (http://host:3787/#token=abc)
 // becomes the hub's socket address (ws://host:3787/ws?token=abc).
@@ -60,6 +68,37 @@ object Pairing {
     }
 }
 
+// A socket that tells a dead link by TCP keepalive: probed after 15 s with
+// nothing heard, every 10 s, given up after 4 unanswered (about a minute).
+// The kernels answer the probes beside the data, so a 3D model of many MB
+// coming over a slow link is never taken for a dead one. A WebSocket ping
+// did that: its pong waits behind the model, OkHttp dropped the link when
+// it came late, and the phone asked again, never to see the parts.
+private class LiveSocket : Socket() {
+    override fun connect(endpoint: SocketAddress?, timeout: Int) {
+        super.connect(endpoint, timeout)
+        keepAlive = true
+        // TCP_KEEPIDLE, TCP_KEEPINTVL, TCP_KEEPCNT (Linux's; OsConstants lacks them)
+        runCatching {
+            ParcelFileDescriptor.fromSocket(this).use { p ->
+                Os.setsockoptInt(p.fileDescriptor, OsConstants.IPPROTO_TCP, 4, 15)
+                Os.setsockoptInt(p.fileDescriptor, OsConstants.IPPROTO_TCP, 5, 10)
+                Os.setsockoptInt(p.fileDescriptor, OsConstants.IPPROTO_TCP, 6, 4)
+            }
+        }
+    }
+}
+
+private object LiveSockets : SocketFactory() {
+    override fun createSocket(): Socket = LiveSocket()
+    override fun createSocket(host: String, port: Int): Socket = LiveSocket().apply { connect(InetSocketAddress(host, port)) }
+    override fun createSocket(host: String, port: Int, local: InetAddress, localPort: Int): Socket =
+        LiveSocket().apply { bind(InetSocketAddress(local, localPort)); connect(InetSocketAddress(host, port)) }
+    override fun createSocket(host: InetAddress, port: Int): Socket = LiveSocket().apply { connect(InetSocketAddress(host, port)) }
+    override fun createSocket(host: InetAddress, port: Int, local: InetAddress, localPort: Int): Socket =
+        LiveSocket().apply { bind(InetSocketAddress(local, localPort)); connect(InetSocketAddress(host, port)) }
+}
+
 // The socket to the hub, reconnecting with backoff like host.js. The
 // address is asked for afresh on every attempt, so each reconnect resumes
 // from what the client already holds.
@@ -70,7 +109,7 @@ class Hub(
     private val onMessage: (ByteArray) -> Unit,
     private val onClose: () -> Unit,
 ) {
-    private val client = OkHttpClient.Builder().pingInterval(20, TimeUnit.SECONDS).build()
+    private val client = OkHttpClient.Builder().socketFactory(LiveSockets).build()
     private val main = Handler(Looper.getMainLooper())
     private var socket: WebSocket? = null
     private var backoff = 250L
@@ -120,7 +159,10 @@ class Hub(
             }
 
             override fun onClosed(ws: WebSocket, code: Int, reason: String) = lost(ws)
-            override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) = lost(ws)
+            override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+                Log.w("Backplane", "hub socket lost: $t")
+                lost(ws)
+            }
         })
     }
 

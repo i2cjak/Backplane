@@ -1238,6 +1238,15 @@ def Laws.urg_pin_within(p):
     case M.PhIdle{}:
       {==}
 
+def Laws.menu_renames_settled(p, id, armed):
+  {==}
+
+def Laws.menu_renames_open(id, armed):
+  {==}
+
+def Laws.rename_blank_nothing(th, now):
+  {==}
+
 def Laws.menu_settled_brings_back(p, id, armed):
   {==}
 
@@ -6331,3 +6340,39 @@ def Laws.md_fence_any(s):
       {==}
     case SCon{h, t}:
       {==}
+
+def Laws.fm_kind_board():
+  {==}
+
+def Laws.fm_kind_schematic():
+  {==}
+
+def Laws.fm_kind_model():
+  {==}
+
+def Laws.fm_kind_pdf():
+  {==}
+
+def Laws.fm_kind_image():
+  {==}
+
+def Laws.fm_kind_other():
+  {==}
+
+def Laws.fm_safe_up():
+  {==}
+
+def Laws.fm_safe_abs():
+  {==}
+
+def Laws.fm_safe_down():
+  {==}
+
+def Laws.fm_parent_top():
+  {==}
+
+def Laws.fm_parent_down():
+  {==}
+
+def Laws.fm_join_root():
+  {==}

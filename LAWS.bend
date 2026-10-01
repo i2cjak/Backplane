@@ -14,6 +14,7 @@ import ./src/core/hub.bend as H
 import ./src/core/refs.bend as RF
 import ./src/core/todo.bend as TD
 import ./src/core/apikeys.bend as AK
+import ./src/core/fm.bend as FMG
 import ./src/core/acp.bend as AC
 import ./src/core/mcp.bend as MC
 import ./src/core/handoff.bend as HD
@@ -961,6 +962,24 @@ law active_fold_shut:
 
 # a settled thread's menu leads with bringing it back, and ends with a
 # Delete that asks first (menu_delete_asks in test/sidebar_test.bend)
+# every thread's menu can rename it (its second item, whatever its shelf)
+law menu_renames_settled:
+  for p: Bool
+  for +id: String
+  for armed: Bool
+  {List.get(&2, U.MItem, U.Menu.thread.k(M.Settled{}, p, id, armed), 1n) == Some{U.MItem{"Rename", "row-rename", id, ""}} : Maybe<&2, U.MItem>}
+
+law menu_renames_open:
+  for +id: String
+  for armed: Bool
+  {List.get(&2, U.MItem, U.Menu.thread.k(M.Active{}, False{}, id, armed), 1n) == Some{U.MItem{"Rename", "row-rename", id, ""}} : Maybe<&2, U.MItem>}
+
+# a rename to a blank title changes nothing
+law rename_blank_nothing:
+  for +th: String
+  for +now: Nat
+  {H.Rename.changes(th, "", now) == [] : List<&2, M.Change>}
+
 law menu_settled_brings_back:
   for p: Bool
   for id: String
@@ -4234,3 +4253,41 @@ law md_head_only_first:
 law md_fence_any:
   for s: String
   {DM.Md.line("```" ++ s) == DM.LFence{} : DM.Line}
+
+# The viewer's Files tab (core/fm.bend): what a file opens as, any case;
+# paths from the project's root that never leave it
+law fm_kind_board:
+  {FMG.Fm.kind("hw/main.kicad_pcb") == "board" : String}
+
+law fm_kind_schematic:
+  {FMG.Fm.kind("main.kicad_sch") == "schematic" : String}
+
+law fm_kind_model:
+  {FMG.Fm.kind("mech/case.STEP") == "3d" : String}
+
+law fm_kind_pdf:
+  {FMG.Fm.kind("docs/Datasheet.PDF") == "pdf" : String}
+
+law fm_kind_image:
+  {FMG.Fm.kind("render.png") == "image" : String}
+
+law fm_kind_other:
+  {FMG.Fm.kind("notes.txt") == "" : String}
+
+law fm_safe_up:
+  {FMG.Fm.safe("lib/../../etc") == False{} : Bool}
+
+law fm_safe_abs:
+  {FMG.Fm.safe("/etc") == False{} : Bool}
+
+law fm_safe_down:
+  {FMG.Fm.safe("hw/main") == True{} : Bool}
+
+law fm_parent_top:
+  {FMG.Fm.parent("hw") == "" : String}
+
+law fm_parent_down:
+  {FMG.Fm.parent("hw/main") == "hw" : String}
+
+law fm_join_root:
+  {FMG.Fm.join("", "hw") == "hw" : String}

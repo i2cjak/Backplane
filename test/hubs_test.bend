@@ -128,4 +128,8 @@ def main() -> IO(Unit):
     C.Check.str("dialog names it", obj(act(two(), "proj-remove", "box:3787|p2"), "removing", "title"), "Remove Box?")
     C.Check.str("confirm sends remove", cmds(H.Hubs.cmds(H.Hubs.act(act(two(), "proj-remove", "box:3787|p2"), "proj-remove", "box:3787|p2"))), "send@box:3787 ")
     C.Check.str("cancel disarms", obj(act(act(two(), "proj-remove", "box:3787|p2"), "proj-keep", ""), "removing", "id"), "")
+    # renaming another hub's thread: its id routed, its title left as it is
+    C.Check.str("rename names the thread on its hub", obj(act(two(), "row-rename", "box:3787|t2"), "renaming", "id"), "box:3787|t2")
+    C.Check.str("rename's title is the title alone", obj(act(two(), "row-rename", "box:3787|t2"), "renaming", "text"), "Two")
+    C.Check.str("rename goes to the thread's hub", cmds(H.Hubs.cmds(H.Hubs.act(act(two(), "row-rename", "box:3787|t2"), "rename-save", "box:3787|t2\u{1f}Deux"))), "send@box:3787 ")
     C.Check.str("no match says so", screen(act(searching(), "proj-find-q", "zzz"), "empty"), "No project matches.")

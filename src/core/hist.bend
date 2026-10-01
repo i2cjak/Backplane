@@ -1,5 +1,6 @@
 import Base
 import ./board.bend as B
+import ./diff.bend as DF
 import ./json.bend as J
 import ./model.bend as M
 
@@ -627,8 +628,10 @@ def Hist.anchor(+es: List<&2, M.Entry>, +s: Step) -> String:
   Hist.anchor.k(Bool.not(String.is_empty(Step.entry(s))), es, s)
 
 # an entry in a line: a tool call's name and summary, a message's first line
-def Hist.line(+s: String) -> String:
-  String.trim(Hist.at(String.split(s, '\n'), 0n))
+# (one walk to the first break: splitting a long message recursed once per
+# character and overflowed the phones' engine, so its thread never opened)
+def Hist.line(s: String) -> String:
+  String.trim(DF.Diff.first(s))
 
 def Hist.label.of(m: Maybe<&2, M.Entry>) -> String:
   match m:

@@ -141,6 +141,14 @@ fun App(m: AppModel) {
             BackHandler { pairing = false }
             Hubs(m, s) { pairing = false }
         }
+        s.thread != null && s.thread.viewer.open == "files" && s.thread.viewer.files != null -> {
+            BackHandler { m.act("view", "") }
+            FilesScreen(m, s.thread.viewer, s.thread.viewer.files)
+        }
+        s.thread != null && (s.thread.viewer.open == "image" || s.thread.viewer.open == "pdf") && s.thread.viewer.file != null -> {
+            BackHandler { m.act("fm") }
+            FileScreen(m, s.thread.viewer, s.thread.viewer.file)
+        }
         s.thread != null && s.thread.viewer.open == "renders" && s.thread.viewer.mech != null -> {
             BackHandler { m.act("view", "") }
             MechScreen(m, s.thread.viewer, s.thread.viewer.mech)
@@ -179,6 +187,22 @@ fun App(m: AppModel) {
             }
         },
         dismissButton = { TextButton(onClick = { answered = true; m.act("delete-no") }) { Text(d.no) } },
+    )
+    val rn = s.renaming
+    // a rename: the title edited here, sent whole with the thread's id
+    var renamed by remember(rn?.id) { mutableStateOf(false) }
+    var title by remember(rn?.id) { mutableStateOf(rn?.text ?: "") }
+    if (rn != null && !renamed) AlertDialog(
+        onDismissRequest = { renamed = true; m.act("rename-no") },
+        title = { Text(rn.title) },
+        text = {
+            OutlinedTextField(title, { title = it }, Modifier.fillMaxWidth(), singleLine = true,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
+        },
+        confirmButton = {
+            TextButton(onClick = { renamed = true; m.act("rename-save", rn.id + "\u001f" + title) }, enabled = title.isNotBlank()) { Text(rn.yes) }
+        },
+        dismissButton = { TextButton(onClick = { renamed = true; m.act("rename-no") }) { Text(rn.no) } },
     )
     val r = s.removing
     // likewise the remove just answered

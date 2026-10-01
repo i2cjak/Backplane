@@ -140,8 +140,29 @@ def Refs.sigil(+kind: String) -> String:
     Bool.pick(String, String.eq(kind, "project"), "%", Bool.pick(String, String.eq(kind, "room"), "#", ""))))
 
 # the draft's last word
+# Words, walked once and tail-recursively (String.lines and String.split
+# recurse once per character: a long pasted draft overflowed the web's
+# stack at every key)
+def Refs.sep(+c: U32) -> Bool:
+  Bool.or(Bool.or(U32.is_eq(c, 32), U32.is_eq(c, 10)), Bool.or(U32.is_eq(c, 9), U32.is_eq(c, 13)))
+
+def Refs.cur(sep: Bool, +c: U32, cur: String) -> String:
+  match sep:
+    case True{}:
+      SNil{}
+    case False{}:
+      SCon{Chr{c}, cur}
+
+def Refs.last.go(s: String, cur: String) -> String:
+  match s:
+    case SNil{}:
+      String.reverse(cur)
+    case SCon{Chr{+c}, t}:
+      Refs.last.go(t, Refs.cur(Refs.sep(c), c, cur))
+
+# the word being typed: the draft's last, after its last space or line break
 def Refs.token(+draft: String) -> String:
-  Maybe.default(&2, String, List.last(&2, String, String.split(Maybe.default(&2, String, List.last(&2, String, String.lines(draft)), ""), ' ')), "")
+  Refs.last.go(draft, SNil{})
 
 # a bot on a linked machine: what follows the sigil is `name@machine`.
 # The machine a word names ("" for a bot here); its name comes first
@@ -707,16 +728,40 @@ def Refs.words.go(ws: List<&2, String>, +s: M.State, +sel: String) -> List<&2, H
     case +w <> t:
       List.append(&2, Hit, Bool.pick(List<&2, Hit>, String.is_empty(Refs.kind(w)), Nil{}, Refs.find(s, sel, w)), Refs.words.go(t, s, sel))
 
-def Refs.lines.go(ls: List<&2, String>, +s: M.State, +sel: String) -> List<&2, Hit>:
-  match ls:
-    case Nil{}:
-      Nil{}
-    case +l <> t:
-      List.append(&2, Hit, Refs.words.go(String.split(String.join(String.split(l, '\t'), " "), ' '), s, sel), Refs.lines.go(t, s, sel))
+# a text's words that start with a sigil (Refs.kind), in order: one walk
+type RW is Data:
+  RW{cur: String, acc: List<&2, String>}
+
+def Refs.sig.keep.k(none: Bool, +w: String, acc: List<&2, String>) -> List<&2, String>:
+  match none:
+    case True{}:
+      acc
+    case False{}:
+      w <> acc
+
+def Refs.sig.keep(+w: String, acc: List<&2, String>) -> List<&2, String>:
+  Refs.sig.keep.k(String.is_empty(Refs.kind(w)), w, acc)
+
+def Refs.rw.step(sep: Bool, +c: U32, st: RW) -> RW:
+  match sep st:
+    case True{} RW{cur, acc}:
+      RW{SNil{}, Refs.sig.keep(String.reverse(cur), acc)}
+    case False{} RW{cur, acc}:
+      RW{SCon{Chr{c}, cur}, acc}
+
+def Refs.rw.go(s: String, st: RW) -> List<&2, String>:
+  match s st:
+    case SNil{} RW{cur, acc}:
+      List.reverse(&2, String, Refs.sig.keep(String.reverse(cur), acc))
+    case SCon{Chr{+c}, t} _:
+      Refs.rw.go(t, Refs.rw.step(Refs.sep(c), c, st))
+
+def Refs.sigil.words(+text: String) -> List<&2, String>:
+  Refs.rw.go(text, RW{SNil{}, Nil{}})
 
 # everything a message sent in thread sel names, in order, each once
 def Refs.found(+s: M.State, +sel: String, +text: String) -> List<&2, Hit>:
-  Refs.uniq(Refs.lines.go(String.lines(text), s, sel), Nil{})
+  Refs.uniq(Refs.words.go(Refs.sigil.words(text), s, sel), Nil{})
 
 # the hits of one kind
 def Refs.only(hs: List<&2, Hit>, +kind: String) -> List<&2, Hit>:

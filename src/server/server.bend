@@ -1498,6 +1498,43 @@ def FileJob.done(r: P.Ran, +inbox: Chan(Msg), +client: U32, +id: String) -> IO(U
 def FileJob.run(+inbox: Chan(Msg), +client: U32, +id: String, +path: String, +how: String) -> IO(Unit):
   IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", LK.Link.file.cmd(how), "sh", path], "/"), r => FileJob.done(r, inbox, client, id))
 
+# The viewer's Files tab (core/fm.bend): one folder of a thread's project,
+# its folders then its files ("d|f <tab> size <tab> name"), hidden ones and
+# symlinked folders left out, 2000 of each at most
+def DirJob.sh() -> String:
+  "cd \"$1\" 2>/dev/null || { echo 'no such folder'; exit 1; }; [ -z \"$2\" ] || cd \"./$2\" 2>/dev/null || { echo 'no such folder'; exit 1; }; for f in *; do [ -d \"$f\" ] && [ ! -L \"$f\" ] && printf 'd\\t0\\t%s\\n' \"$f\"; done | head -n 2000; for f in *; do [ -f \"$f\" ] && printf 'f\\t%s\\t%s\\n' \"$(wc -c < \"$f\" | tr -d ' ')\" \"$f\"; done | head -n 2000; true"
+
+def DirJob.sent(r: P.Ran, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +rel: String) -> IO(Unit):
+  match r:
+    case P.Ran{0, out}:
+      GitJob.reply(inbox, client, id, True{}, J.Json.obj([J.KV{"fmEntries", J.Str{out}}, J.KV{"fmDir", J.Str{rel}}, J.KV{"fmRoot", J.Str{cwd}}, J.KV{"thread", J.Str{thread}}]))
+    case P.Ran{_, out}:
+      GitJob.reply(inbox, client, id, False{}, J.Json.obj([J.KV{"text", J.Str{String.trim(out)}}]))
+
+def DirJob.run(+inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +rel: String) -> IO(Unit):
+  IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", DirJob.sh(), "sh", cwd, rel], "/"), r => DirJob.sent(r, inbox, client, id, thread, cwd, rel))
+
+# a PDF's page drawn to a PNG for the window (which cannot draw a PDF), by
+# poppler's pdftoppm when this machine has it, kept in <home>/pdf per file
+# version and page: "<png> <tab> <pages>"
+def PdfJob.sh() -> String:
+  "command -v pdftoppm >/dev/null 2>&1 || { echo 'nopoppler'; exit 3; }; [ -f \"$1\" ] || { echo 'no such file'; exit 1; }; m=$(stat -c %Y \"$1\" 2>/dev/null || stat -f %m \"$1\"); k=$(printf '%s %s' \"$1\" \"$m\" | cksum | cut -d' ' -f1); mkdir -p \"$3\"; o=\"$3/$k-$2\"; [ -f \"$o.png\" ] || pdftoppm -png -r 110 -f \"$2\" -l \"$2\" -singlefile \"$1\" \"$o\" >/dev/null 2>&1 || { echo \"could not draw page $2\"; exit 1; }; n=$(pdfinfo \"$1\" 2>/dev/null | awk '/^Pages:/{print $2}'); printf '%s\\t%s' \"$o.png\" \"${n:-0}\""
+
+def PdfJob.why(+out: String) -> String:
+  Bool.pick(String, String.contains(out, "nopoppler"), "PDFs show here with poppler's pdftoppm (the poppler or poppler-utils package)", String.trim(out))
+
+def PdfJob.sent(r: P.Ran, +inbox: Chan(Msg), +client: U32, +id: String, +path: String, +page: String) -> IO(Unit):
+  match r:
+    case P.Ran{0, +out}:
+      GitJob.reply(inbox, client, id, True{}, J.Json.obj([J.KV{"pdfPath", J.Str{path}}, J.KV{"pdfPage", J.Str{page}},
+        J.KV{"pdfPng", J.Str{Maybe.default(&2, String, List.head(&2, String, String.split(out, '\t')), "")}},
+        J.KV{"pdfPages", J.Str{String.trim(Maybe.default(&2, String, List.get(&2, String, String.split(out, '\t'), 1n), "0"))}}]))
+    case P.Ran{_, +out}:
+      GitJob.reply(inbox, client, id, True{}, J.Json.obj([J.KV{"pdfPath", J.Str{path}}, J.KV{"pdfPage", J.Str{page}}, J.KV{"pdfErr", J.Str{PdfJob.why(out)}}]))
+
+def PdfJob.run(+inbox: Chan(Msg), +client: U32, +id: String, +home: String, +path: String, +page: String) -> IO(Unit):
+  IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", PdfJob.sh(), "sh", path, page, home ++ "/pdf"], "/"), r => PdfJob.sent(r, inbox, client, id, path, page))
+
 def GitJob.run.k(i: Nat, +tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +a: String, +b: String, +home: String) -> IO(Unit):
   match i:
     case 0n:
@@ -1528,12 +1565,16 @@ def GitJob.run.k(i: Nat, +tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U
       RefsJob.run(inbox, client, id, thread, cwd)
     case 13n:
       FileJob.run(inbox, client, id, a, b)
+    case 14n:
+      DirJob.run(inbox, client, id, thread, cwd, a)
+    case 15n:
+      PdfJob.run(inbox, client, id, home, a, b)
     case _:
       GitJob.run.git(tx, job, inbox, client, id, thread, cwd, a, b, home)
 
 # a job the hub asked for: a git job, or one of the sidebar's
 def GitJob.run(+tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +a: String, +b: String, +home: String) -> IO(Unit):
-  GitJob.run.k(C.Codec.pos(["files", "snooze", "worktree", "merged", "wt_remove", "kicad", "title", "btw", "summary", "mech", "render", "step", "refs", "open"], job), tx, job, inbox, client, id, thread, cwd, a, b, home)
+  GitJob.run.k(C.Codec.pos(["files", "snooze", "worktree", "merged", "wt_remove", "kicad", "title", "btw", "summary", "mech", "render", "step", "refs", "open", "dir", "pdf"], job), tx, job, inbox, client, id, thread, cwd, a, b, home)
 
 # Grok (grok agent stdio, ACP)
 # ----------------------------
@@ -2915,7 +2956,7 @@ def Img.serve.k(image: Bool, s: Socket, +path: String) -> IO(Unit):
 def Img.serve(allowed: Bool, s: Socket, +path: String) -> IO(Unit):
   match allowed:
     case True{}:
-      Img.serve.k(IM.Img.is_image(path), s, path)
+      Img.serve.k(IM.Img.viewable(path), s, path)
     case False{}:
       Conn.finish(s, W.Http.text("401 Unauthorized", "this Backplane needs its pairing token"))
 
