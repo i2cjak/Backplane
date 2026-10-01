@@ -922,10 +922,10 @@ def FsJob.path.sh() -> String:
 
 # a folder that exists and can be opened, printed resolved (symlinks too)
 def FsJob.dir.sh() -> String:
-  "[ -e \"$d\" ] || { echo \"no such folder: $d\"; exit 2; }; d=$(realpath -e -- \"$d\"); [ -d \"$d\" ] || { echo \"not a folder: $d\"; exit 2; }; [ -r \"$d\" ] && [ -x \"$d\" ] || { echo \"cannot open: $d\"; exit 2; }; "
+  "[ -e \"$d\" ] || { echo \"no such folder: $d\"; exit 2; }; [ -d \"$d\" ] || { echo \"not a folder: $d\"; exit 2; }; [ -r \"$d\" ] && [ -x \"$d\" ] || { echo \"cannot open: $d\"; exit 2; }; d=$(CDPATH= cd -P \"$d\" && pwd -P); "
 
 def FsJob.list.sh() -> String:
-  "exec 2>&1; set -e; " ++ FsJob.path.sh() ++ FsJob.dir.sh() ++ "echo \"$d\"; find \"$d\" -mindepth 1 -maxdepth 1 -type d -printf '%f\\n' 2>/dev/null | LC_ALL=C sort | head -n 5000"
+  "exec 2>&1; set -e; " ++ FsJob.path.sh() ++ FsJob.dir.sh() ++ "echo \"$d\"; cd \"$d\"; find . -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sed 's|^./||' | LC_ALL=C sort | head -n 5000"
 
 # a new folder (and any missing parents); an existing one is refused
 def FsJob.mkdir.sh() -> String:
