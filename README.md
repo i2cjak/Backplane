@@ -1,19 +1,53 @@
-# Backplane (Bend)
+# Backplane
 
-An agentic hardware development environment, written in
-[Bend](https://bend-lang.com). It pairs agent threads (Claude Code and
-Codex) with live KiCad viewers, in a native window drawn entirely by Bend.
+Agentic hardware development. Claude Code, Codex and Grok work on your KiCad boards and FreeCAD parts, and every change they make is drawn live beside the conversation: on your desktop, in a browser, or on your phone.
 
-- **Threads** per project, as in T3Code. They go *Settled* after three days of inactivity (configurable), and everything is kept in a local event log. Each thread picks its provider and model.
-- **Models working together.** An agent can delegate tasks to other models through Backplane's MCP tools. The subagent viewer shows each child task, its model and state, under its parent thread. Laws bound the delegation depth and deliver each result exactly once.
-- **KiCad viewers that stay truthful.** Board, schematic and 3D tabs follow the project's canonical files live, never a half-written save. Only what changed fades in. Click any pad, track, symbol or pin to see what it is (net, ref, value, footprint) and mention it in chat. STEP files open in the 3D view.
-- **KiCad-aware agents.** Every agent is told the exact kicad-cli to use and the project's canonical files (from `.backplane.json` or the `.kicad_pro`). They also get the [KiStack](https://github.com/American-Embedded/KiStack) skills: the latest is fetched in the background at each start and used from the next one (a pinned revision until then). Without KiCad on the machine, Settings and the agents say so. With the [Backplane KiCad fork](https://github.com/i2cjak/Backplane_KiCad) they also get its IPC API server, which you can turn off in Settings. Settings can also install the fork.
-- **Mechanical parts.** Agents model enclosures, brackets and assemblies with [FreeCAD](https://www.freecad.org), headless (install it yourself; Settings and the agents say where when it is missing). Parts live in the project's `mech/` folder as a Python script, `.FCStd` and STEP. The Mech tab (window, web, phones) opens a part straight in 3D, with the project's other parts beside it; Renders shows its iso, front, top and right views and draws them on request (a job on the hub). `backplane --render mech/part.step [more.step]` draws the same views from the command line with Backplane's own rasterizer. Large STEP files are meshed with FreeCAD when it is installed.
-- **A browser for the agents.** It is Chrome: an installed Google Chrome, or Google's Chrome for Testing, which Backplane downloads. Agents drive it with `preview_*` tools, and you watch it live in the Browser tab.
-- **Laws.** The rules that matter are stated in [`LAWS.bend`](LAWS.bend) and proven in [`PROOF.bend`](PROOF.bend). `bend PROOF.bend` checks every one.
-- **Anywhere on your tailnet.** Backplane also listens on your tailnet address (`--no-tailscale` turns that off). Your own devices get in without a token; anyone else needs the pairing token. Machines you own that run Backplane show up in the sidebar, and you can switch between them.
+![A thread beside the board it is changing](docs/media/web-board.png)
 
-![Backplane](docs/media/native-viewer.png)
+## Why
+
+Agents edit text, and a board file is text no one can review by reading it. Backplane puts the design next to the thread: the board, schematic and 3D model redraw as the agent saves, each step it takes is kept, and you compare any two versions the way you would read a diff. It runs on your own machine, with your KiCad, your files and your agent subscriptions, and your other devices reach it over Tailscale.
+
+## What it does
+
+**Threads per project.** Each thread is an agent session with its own model and provider. Tool calls fold into one line, todo lists and tables render as they should, and threads settle on their own when you stop touching them. Fork a thread, rename it, pin it, or hand it to another.
+
+**Viewers that follow the files.** Board, Schematic (with its sheets), 3D (the board with its parts), Mech, Files, Diff and Browser, all next to the thread. They draw only finished saves and fade in only what changed. Click a pad, track, symbol or pin to see its net, reference, value and footprint, and mention it in chat.
+
+![The board in 3D with its parts](docs/media/web-3d.png)
+
+**Design history.** Backplane snapshots the KiCad files after every tool call. Step through what the agent did, play it back, jump to the tool call behind a step, or compare any two versions (steps, turns, commits, branches): removed, changed and added items are coloured and the rest dims.
+
+![Compare: the tracks the agent widened](docs/media/web-compare.png)
+
+**Mechanical parts.** Agents model enclosures and brackets in FreeCAD, headless. The Mech tab turns any STEP in 3D, with the project's other parts beside it, and draws standard views on request.
+
+![The case, exploded, on the Mech tab](docs/media/web-mech.png)
+
+| Schematic sheets | Datasheets and files |
+|---|---|
+| ![](docs/media/web-schematic.png) | ![](docs/media/web-files.png) |
+
+**On your phone.** Native Android and iOS apps: every thread, the board, the 3D model and Mech, with notifications when a turn ends or an agent needs you. Several machines show as one list.
+
+| | | | |
+|---|---|---|---|
+| ![](docs/media/phone-list.png) | ![](docs/media/phone-thread.png) | ![](docs/media/phone-3d.png) | ![](docs/media/phone-mech.png) |
+
+**A native window.** The desktop app is the same client drawn by Bend itself, with its own board and 3D renderer.
+
+![The native window](docs/media/window-3d.png)
+
+**And more.** KiCad-aware prompts and the [KiStack](https://github.com/American-Embedded/KiStack) skills; a Chrome the agents drive while you watch; agents delegating work to other models; API keys the agents can use without ever reading them; voice input; a terminal per thread. Bots are persistent agents with a face, memory, routines and webhooks, which talk in rooms, across your machines and other people's.
+
+<img src="docs/media/cats.png" width="420" alt="Bots and their moods">
+
+## How you use it
+
+1. Add a project: any folder with a KiCad project in it (several, or one below the root, are fine).
+2. Start a thread and ask: "the SSD rails look thin, check them and widen what falls short".
+3. Watch the board change as the agent works. Scrub the history bar, open Compare, ask for changes.
+4. Leave. Answer its questions or start the next thread from your phone.
 
 ## Install
 
@@ -22,42 +56,19 @@ curl -fsSL https://github.com/i2cjak/Backplane/releases/latest/download/install.
 backplane
 ```
 
-This installs into `~/.local/share/backplane` and links the binaries into `~/.local/bin`.
-
-- The installer checks the sha256 of what it downloads.
-- Backplane updates itself from GitHub releases. Set `BACKPLANE_NO_UPDATE=1` to turn that off.
-- `backplane` opens the window. Without a display it keeps serving the web client on `127.0.0.1:3787`.
-- `backplane --render MODEL.step [--size WxH]` writes a part's standard views as PNG files beside it, in `renders/`.
-- `backplane --headless` does that on purpose, window or not, in the background: it returns at once with its pid and log (`<home>/headless.log`), and your devices connect over the tailnet. `--headless --foreground` stays attached, for a service.
-
-Each release also carries an AppImage, a `.deb` (Debian, Ubuntu), a `PKGBUILD` for the AUR (`backplane-bend-bin`) and the Android app (`backplane-<version>-android.apk`). Those update through their package, not in place. `scripts/icons.sh` redraws the app icon from `assets/icon/`.
+It installs into `~/.local/share/backplane` and keeps itself up to date (`BACKPLANE_NO_UPDATE=1` turns that off). Releases also carry an AppImage, a `.deb`, an AUR `PKGBUILD` and the Android APK. You need at least one agent CLI (`claude`, `codex` or `grok`) and KiCad; FreeCAD for mechanical work. `backplane --headless` runs it without a window. To pair a phone, paste the pairing link from Settings into the app.
 
 ## Build
 
-You need [Bend](https://bend-lang.com), clang 19+, X11 headers (`libx11-dev`), and bun for the tests.
+Needs [Bend](https://bend-lang.com), clang 19+, X11 headers and bun.
 
 ```sh
 scripts/check.sh   # type-check everything, prove every law
-scripts/test.sh    # unit tests
-scripts/build.sh   # dist/backplane, dist/backplane-serve, dist/web (+ helpers with bun)
-scripts/smoke.sh   # start the built server and poke it
+scripts/test.sh    # tests
+scripts/build.sh   # dist/: the app, the server and the web client
 ```
 
-[AGENTS.md](AGENTS.md) describes the layout and the Bend traps worth knowing.
-
-## Laws
-
-| Law | Promise |
-|---|---|
-| `settle_*` | A thread settles after its window, stays settled as time passes, and never while running, waiting on you, or brought back by hand. |
-| `replay_snoc` | The live view and a cold replay of the log never disagree. |
-| `sidebar_split_count` | Every thread is on exactly one sidebar shelf. |
-| `scene_merge_self` | Re-reading an unchanged board re-fades nothing. |
-| `fade_start`, `fade_done` | Fades start invisible and always finish. |
-| `update_never_same` | The updater never offers the version already running. |
-| `task_*`, `delegation_bounded` | A finished task never changes again or goes back to the queue. Its result reaches the parent once. Delegation stops at a fixed depth. |
-| `setting_default` | A setting never set reads as its default. |
-| `stale_board_ignored` | A file read for a view you have left changes nothing on screen. |
+Backplane is written in Bend, and the rules that matter are laws proven in [`PROOF.bend`](PROOF.bend). [AGENTS.md](AGENTS.md) describes the layout; [mobile/README.md](mobile/README.md) the phone apps.
 
 ## License
 
