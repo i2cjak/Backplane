@@ -5041,6 +5041,18 @@ law join_chunks_flat:
 law join_oversized_alone:
   {OB.Join.chunks.at(10n, ["toolong", "a", "b"], 5n, 3n) == [["toolong"], ["a", "b"]] : List<&2, List<&2, String>>}
 
+# a join frame's lines go out in byte-bounded frames: a small chunk is
+# the frame as offered; a big one is split, the later frames "boot": true
+# and the very last "boot": false when the offered frame ended the join
+law items_one_frame:
+  {OB.Items.texts("H[", ["a", "b"], "]", True{}) == ["H[a,b]"] : List<&2, String>}
+
+law items_split_by_bytes:
+  {OB.Items.texts.at("H[", ["aaa", "bb", "cccc"], "]", True{}, 5n, 4n) == ["H[aaa]", "{\"t\":\"changes\",\"boot\":true,\"items\":[bb]}", "{\"t\":\"changes\",\"boot\":false,\"items\":[cccc]}"] : List<&2, String>}
+
+law items_split_keeps_boot:
+  {OB.Items.texts.at("H[", ["aaa", "bb", "cccc"], "]", False{}, 5n, 4n) == ["H[aaa]", "{\"t\":\"changes\",\"boot\":true,\"items\":[bb]}", "{\"t\":\"changes\",\"boot\":true,\"items\":[cccc]}"] : List<&2, String>}
+
 law ui_chunked_join_equals_whole:
   {U.Ui.state(U.Ui.recv(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", True{}, True{}, [C.Change.encode(M.SettingSet{"a", "1", 1n})])),
       U.Boot.demo("changes", False{}, True{}, [C.Change.encode(M.SettingSet{"b", "2", 2n})])), U.Boot.demo("changes", False{}, False{}, [])))

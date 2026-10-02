@@ -72,7 +72,7 @@ type Wire is Data:
   WState{st: M.State, head: String}
   # a message made of a log's lines: head, the lines joined by ",", tail;
   # put together by the writer, off the hub (a join's chunk)
-  WItems{head: String, items: List<&2, String>, tail: String}
+  WItems{head: String, items: List<&2, String>, tail: String, ends: Bool}
 
 type Msg is Data:
   Announce{text: String}
@@ -837,6 +837,16 @@ def Conn.out(s: Socket, bs: List<&2, U32>, +out: Chan(Wire), k: Socket -> IO(Uni
 def Conn.put(s: Socket, +bs: List<&2, U32>, +out: Chan(Wire), k: Socket -> Nat -> IO(Unit)) -> IO(Unit):
   Conn.out(s, bs, out, s2 => k(s2, List.length(&2, U32, bs)))
 
+# a join chunk's frames (OB.Items.texts: each within the byte bound), put
+# out one by one; to the writer's count they are one frame of no bytes, as
+# the hub offered it (it charged none)
+def Conn.items(ts: List<&2, String>, s: Socket, +out: Chan(Wire), k: Socket -> Nat -> IO(Unit)) -> IO(Unit):
+  match ts:
+    case Nil{}:
+      k(s, 0n)
+    case +t <> rest:
+      Conn.out(s, W.Ws.cbor(t), out, s2 => Conn.items(rest, s2, out, k))
+
 def Conn.write(m: Maybe<&1, Wire>, s: Socket, +out: Chan(Wire), k: Socket -> Nat -> IO(Unit)) -> IO(Unit):
   match m:
     case Some{WText{t}}:
@@ -849,8 +859,8 @@ def Conn.write(m: Maybe<&1, Wire>, s: Socket, +out: Chan(Wire), k: Socket -> Nat
       Conn.finish(s, W.Ws.encode(8, Nil{}))
     case Some{WState{_, _}}:
       k(s, 0n)
-    case Some{WItems{hd, xs, tl}}:
-      Conn.put(s, Conn.frame.out(hd ++ String.join(xs, ",") ++ tl), out, k)
+    case Some{WItems{hd, xs, tl, ends}}:
+      Conn.items(OB.Items.texts(hd, xs, tl, ends), s, out, k)
     case None{}:
       Socket.close(s)
 
@@ -1348,12 +1358,12 @@ def Hub.boot_msg(xs: List<&2, String>, last: Bool) -> String:
 
 # the same, put together by the writer
 def Hub.boot_items(xs: List<&2, String>) -> Wire:
-  WItems{"{\"t\":\"changes\",\"boot\":true,\"items\":[", xs, "]}"}
+  WItems{"{\"t\":\"changes\",\"boot\":true,\"items\":[", xs, "]}", False{}}
 
 # a join's first frame, put together by the writer
-def Hub.log_items(+origin: String, +cfg: Cfg, +since: Nat, xs: List<&2, String>, more: Bool) -> Wire:
+def Hub.log_items(+origin: String, +cfg: Cfg, +since: Nat, xs: List<&2, String>, +more: Bool) -> Wire:
   WItems{"{\"t\":\"log\",\"since\":" ++ Nat.show(since) ++ ",\"origin\":\"" ++ origin ++ "\",\"version\":" ++ J.Json.show(J.Str{Cfg.version(cfg)}) ++ ",\"info\":" ++ J.Json.show(Hub.info(cfg))
-    ++ Bool.pick(String, more, ",\"more\":true", "") ++ ",\"items\":[", xs, "]}"}
+    ++ Bool.pick(String, more, ",\"more\":true", "") ++ ",\"items\":[", xs, "]}", Bool.not(more)}
 
 # Desks
 # -----

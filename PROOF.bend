@@ -6903,6 +6903,15 @@ def Laws.join_chunks_flat():
 def Laws.join_oversized_alone():
   {==}
 
+def Laws.items_one_frame():
+  {==}
+
+def Laws.items_split_by_bytes():
+  {==}
+
+def Laws.items_split_keeps_boot():
+  {==}
+
 def Laws.ui_chunked_join_equals_whole():
   {==}
 
