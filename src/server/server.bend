@@ -313,6 +313,17 @@ def Wire.all(cs: List<&2, Client>, +text: String) -> IO(Unit):
         ok : Bool <- Chan.send(Wire, o, WText{text})
         Wire.all(t, text)
 
+# A message the hub sends itself. The hub fiber is the inbox's only
+# reader, so a send into a full inbox (4096 slots) would park it for good:
+# the send runs on a fiber of its own and the hub goes on
+def Self.post.go(+inbox: Chan(Msg), m: Msg) -> IO(Unit):
+  do IO<Unit>:
+    ok : Bool <- Chan.send(Msg, inbox, m)
+    return Unit{}
+
+def Self.post(+inbox: Chan(Msg), m: Msg) -> IO(Unit):
+  IO.spawn(Unit, Self.post.go(inbox, m))
+
 # Agent processes
 # ---------------
 
@@ -661,9 +672,7 @@ def Hub.info(c: Cfg) -> J.Json:
 def Bot.dir.changed(c: M.Change, +inbox: Chan(Msg)) -> IO(Unit):
   match c:
     case M.PeerSet{peer, _, _, _, _}:
-      do IO<Unit>:
-        ok : Bool <- Chan.send(Msg, inbox, BotsRefresh{peer})
-        return Unit{}
+      Self.post(inbox, BotsRefresh{peer})
     case _:
       IO.pure(Unit, Unit{})
 
@@ -4068,7 +4077,7 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         +seen : Bool = DK.Desk.seen(Clients.looks(cl), thread, now)
         Desk.tell(DK.Desk.to(Clients.looks(cl), thread, now), cl, st, thread, state)
         IO.spawn(Unit, Hub.phone(Cfg.home(cfg), st, thread, state, seen, inbox))
-        ok : Bool <- Chan.send(Msg, inbox, Rpc{0, BH.Reply.request(thread, state)})
+        Self.post(inbox, Rpc{0, BH.Reply.request(thread, state)})
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.Fs{+client, +id, +op, +path}:
       do IO<Hub>:
@@ -4932,9 +4941,7 @@ def Hub.dir.returned(h: Hub, +mc: String) -> IO(Hub):
 def Bot.dir.awake(refresh: Bool, +inbox: Chan(Msg), +peer: String) -> IO(Unit):
   match refresh:
     case True{}:
-      do IO<Unit>:
-        ok : Bool <- Chan.send(Msg, inbox, BotsRefresh{peer})
-        return Unit{}
+      Self.post(inbox, BotsRefresh{peer})
     case False{}:
       IO.pure(Unit, Unit{})
 
