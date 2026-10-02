@@ -1204,15 +1204,45 @@ def MergeJob.tell(hs: List<&2, J.KV>, +inbox: Chan(Msg)) -> IO(Unit):
     case J.KV{th, u} <> t:
       IO.bind(Unit, Unit, GitJob.say(inbox, "thread.merged", [J.KV{"thread", J.Str{th}}, J.KV{"url", u}]), _ => MergeJob.tell(t, inbox))
 
+# the commits a due thread's worktree has been on (its HEAD reflog), so a
+# pull request pushed from a branch of another name is still found
+def MergeJob.reflog.k(none: Bool, +wt: String) -> IO(P.Ran):
+  match none:
+    case True{}:
+      IO.pure(P.Ran, P.Ran{1, ""})
+    case False{}:
+      P.Proc.run("git", ["-C", wt, "log", "-g", "-n", "500", "--format=%H", "HEAD"], "/")
+
+def MergeJob.reflog(parts: List<&2, String>) -> IO(P.Ran):
+  match parts:
+    case _ <> _ <> +wt <> Nil{}:
+      MergeJob.reflog.k(String.is_empty(wt), wt)
+    case _:
+      IO.pure(P.Ran, P.Ran{1, ""})
+
+def MergeJob.commits(r: P.Ran) -> String:
+  match r:
+    case P.Ran{0, out}:
+      String.join(String.lines(out), " ")
+    case _:
+      ""
+
+def MergeJob.more(ls: List<&2, String>, +inbox: Chan(Msg), +out: String, +acc: String) -> IO(Unit):
+  match ls:
+    case Nil{}:
+      MergeJob.tell(B.Merge.hits(out, acc), inbox)
+    case +l <> t:
+      IO.bind(P.Ran, Unit, MergeJob.reflog(String.split(l, '\t')), r => MergeJob.more(t, inbox, out, acc ++ l ++ "\t" ++ MergeJob.commits(r) ++ "\n"))
+
 def MergeJob.got(r: P.Ran, +inbox: Chan(Msg), +lines: String) -> IO(Unit):
   match r:
     case P.Ran{0, out}:
-      MergeJob.tell(B.Merge.hits(out, lines), inbox)
+      MergeJob.more(String.lines(lines), inbox, out, "")
     case _:
       IO.pure(Unit, Unit{})
 
 def MergeJob.run(+inbox: Chan(Msg), +root: String, +lines: String) -> IO(Unit):
-  IO.bind(P.Ran, Unit, GH.GhRun.run(root, "timeout", ["30", "gh", "pr", "list", "--state", "merged", "--limit", "100", "--json", "headRefName,url"], ["30", "gh", "pr", "list", "--state", "merged", "--limit", "100", "--json", "headRefName,url"]),
+  IO.bind(P.Ran, Unit, GH.GhRun.run(root, "timeout", ["30", "gh", "pr", "list", "--state", "merged", "--limit", "100", "--json", "headRefName,headRefOid,url"], ["30", "gh", "pr", "list", "--state", "merged", "--limit", "100", "--json", "headRefName,headRefOid,url"]),
     r => MergeJob.got(r, inbox, lines))
 
 def GitJob.text.k(+inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +what: String, +r: String) -> IO(Unit):

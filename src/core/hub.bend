@@ -1777,11 +1777,12 @@ def Hub.settle.window(+s: M.State) -> Nat:
 def Merge.line.k(due: Bool, +in: Bool, +t: M.Thread, rest: List<&2, String>) -> List<&2, String>:
   match due in:
     case True{} True{}:
-      (M.Merge.id(t) ++ "\t" ++ M.Merge.branch(t)) <> rest
+      (M.Merge.id(t) ++ "\t" ++ M.Merge.branch(t) ++ "\t" ++ Hub.worktree(t)) <> rest
     case _ _:
       rest
 
-# "<thread>\t<branch>" for each of a project's threads whose merge is due
+# "<thread>\t<branch>\t<worktree>" for each of a project's threads whose
+# merge is due
 def Merge.lines(ts: List<&2, M.Thread>, +s: M.State, +pid: String) -> List<&2, String>:
   match ts:
     case Nil{}:
@@ -1810,15 +1811,38 @@ def Merge.asks(ps: List<&2, M.Project>, +ts: List<&2, M.Thread>, +s: M.State) ->
     case M.Project{+id, _, +root, _, rm} <> rest:
       Merge.ask.p(rm, ts, s, id, root, Merge.asks(rest, ts, s))
 
-# gh's merged pull requests (gh pr list --json headRefName,url) against
-# "<thread>\t<branch>" lines: each thread whose branch was merged, with the
-# pull request's url
-def Merge.find(prs: List<&2, J.Json>, +branch: String) -> Maybe<&2, String>:
+# gh's merged pull requests (gh pr list --json headRefName,headRefOid,url)
+# against "<thread>\t<branch>[\t<worktree>[\t<commits>]]" lines, the
+# commits (space separated) being the ones the thread's worktree has been on
+# (its HEAD reflog): each thread whose branch was merged, with the pull
+# request's url. A pull request is the thread's when its head branch is the
+# thread's branch, or its head commit is one the worktree was on (agents
+# often push from a branch of another name)
+def Merge.has(cs: List<&2, String>, +c: String) -> Bool:
+  match cs:
+    case Nil{}:
+      False{}
+    case +h <> t:
+      Bool.or(String.eq(h, c), Merge.has(t, c))
+
+def Merge.ours(+o: J.Json, +branch: String, +cs: List<&2, String>) -> Bool:
+  +oid = J.Json.get_str(o, "headRefOid", "")
+  Bool.or(Bool.and(Bool.not(String.is_empty(branch)), String.eq(J.Json.get_str(o, "headRefName", ""), branch)),
+    Bool.and(Bool.not(String.is_empty(oid)), Merge.has(cs, oid)))
+
+def Merge.find.k(ours: Bool, +o: J.Json, rest: Maybe<&2, String>) -> Maybe<&2, String>:
+  match ours:
+    case True{}:
+      Some{J.Json.get_str(o, "url", "")}
+    case False{}:
+      rest
+
+def Merge.find(prs: List<&2, J.Json>, +branch: String, +cs: List<&2, String>) -> Maybe<&2, String>:
   match prs:
     case Nil{}:
       None{}
     case +o <> t:
-      Bool.pick(Maybe<&2, String>, String.eq(J.Json.get_str(o, "headRefName", ""), branch), Some{J.Json.get_str(o, "url", "")}, Merge.find(t, branch))
+      Merge.find.k(Merge.ours(o, branch, cs), o, Merge.find(t, branch, cs))
 
 def Merge.hit(m: Maybe<&2, String>, +th: String, rest: List<&2, J.KV>) -> List<&2, J.KV>:
   match m:
@@ -1829,8 +1853,10 @@ def Merge.hit(m: Maybe<&2, String>, +th: String, rest: List<&2, J.KV>) -> List<&
 
 def Merge.pair(parts: List<&2, String>, +prs: List<&2, J.Json>, rest: List<&2, J.KV>) -> List<&2, J.KV>:
   match parts:
-    case +th <> +br <> Nil{}:
-      Merge.hit(Merge.find(prs, br), th, rest)
+    case +th <> +br <> _ <> +cs <> Nil{}:
+      Merge.hit(Merge.find(prs, br, String.split(cs, ' ')), th, rest)
+    case +th <> +br <> _:
+      Merge.hit(Merge.find(prs, br, Nil{}), th, rest)
     case _:
       rest
 
