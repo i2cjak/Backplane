@@ -780,6 +780,8 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
             Surface(tonalElevation = 3.dp) {
                 Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(8.dp)) {
                     t.subs?.let { u -> Box(Modifier.padding(bottom = 8.dp)) { SubsView(m, u) } }
+                    // the terminals pinned to the top of the thread
+                    for (e in t.embs) if (e.pinned) key(e.key) { Box(Modifier.padding(bottom = 8.dp)) { EmbView(m, e, top = true) } }
                     for (a in t.asks) Box(Modifier.padding(bottom = 8.dp)) { AskCard(m, a) }
                     t.todos?.let { td ->
                         Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
@@ -868,7 +870,8 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
                 val on = lit == e.id
                 val tint by animateFloatAsState(if (on) 0.18f else 0f, tween(if (on) 150 else 2000), label = "jump")
                 Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.primary.copy(alpha = tint))) {
-                    EntryRow(m, e) { u -> shown = u }
+                    if (e.kind == "emb") EmbRow(m, e, t.embs.firstOrNull { it.key == e.key })
+                    else EntryRow(m, e) { u -> shown = u }
                 }
             }
             itemsIndexed(t.sending, key = { i, _ -> "sending:$i" }) { _, text -> SendingView(text) }

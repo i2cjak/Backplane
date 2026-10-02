@@ -18,6 +18,7 @@ import ../core/model.bend as M
 import ../core/bot.bend as BT
 import ../core/perf.bend as PF
 import ../core/hist.bend as HS
+import ../core/emb.bend as EM
 
 # The native window's state around the shared client state (Ui): size,
 # pointer, scroll, focus and the composer caret. Input is pure: an event
@@ -2295,8 +2296,16 @@ def Nui.paste.t(term: Bool, +n: Nui, text: String) -> Step:
     case False{}:
       Nui.paste.k(String.eq(Nui.focus_of(n), "composer"), Nui.in_path(n), n, Nui.mark(n), text)
 
+# a terminal in the chat with the focus takes it as its program would
+def Nui.paste.e(none: Bool, +key: String, +n: Nui, text: String) -> Step:
+  match none:
+    case True{}:
+      Nui.paste.t(String.eq(Nui.focus_of(n), "terminal"), n, text)
+    case False{}:
+      Nui.act.k(U.Ui.emb_keys(Nui.ui(n), key, VT.Vt.paste(U.Ui.term(Nui.ui(n), key), text)), n)
+
 def Nui.paste(+n: Nui, text: String) -> Step:
-  Nui.paste.t(String.eq(Nui.focus_of(n), "terminal"), n, text)
+  Nui.paste.e(String.is_empty(EM.Emb.focused(Nui.focus_of(n))), EM.Emb.focused(Nui.focus_of(n)), n, text)
 
 def Nui.key.3d.k(none: Bool, +n: Nui, +a: U32) -> Step:
   match none:
@@ -2541,12 +2550,20 @@ def Nui.key.term.k(term: Bool, pal: Bool, +n: Nui, +code: U32, +text: U32, +mods
 def Nui.key.term(term: Bool, +n: Nui, +code: U32, +text: U32, +mods: U32) -> Step:
   Nui.key.term.k(term, String.eq(Nui.focus_of(n), "palette"), n, code, text, mods)
 
+# keys in a terminal of the chat go to its program
+def Nui.key.emb(none: Bool, +key: String, +n: Nui, +code: U32, +text: U32, +mods: U32) -> Step:
+  match none:
+    case True{}:
+      Nui.key.term(String.eq(Nui.focus_of(n), "terminal"), n, code, text, mods)
+    case False{}:
+      Nui.act.k(U.Ui.emb_keys(Nui.ui(n), key, VT.Vt.key(U.Ui.term(Nui.ui(n), key), code, text, Keys.vt(mods))), n)
+
 def Nui.key.go.k(none: Bool, +name: String, +n: Nui, +code: U32, +text: U32, +mods: U32) -> Step:
   match none:
     case False{}:
       Nui.shortcut.k(U.Keys.pos(Keys.list(), name), n, code)
     case True{}:
-      Nui.key.term(String.eq(Nui.focus_of(n), "terminal"), n, code, text, mods)
+      Nui.key.emb(String.is_empty(EM.Emb.focused(Nui.focus_of(n))), EM.Emb.focused(Nui.focus_of(n)), n, code, text, mods)
 
 def Nui.key.go(+name: String, +n: Nui, +code: U32, +text: U32, +mods: U32) -> Step:
   Nui.key.go.k(String.is_empty(name), name, n, code, text, mods)
@@ -2558,7 +2575,7 @@ def Nui.key.menu(menu: Bool, +n: Nui, +code: U32, +text: U32, +mods: U32) -> Ste
     case True{}:
       Step{Menu.shut(False{}, n), Nil{}, True{}}
     case False{}:
-      Nui.key.go(Keys.name(code, mods, String.eq(Nui.focus_of(n), "terminal")), n, code, text, mods)
+      Nui.key.go(Keys.name(code, mods, Bool.or(String.eq(Nui.focus_of(n), "terminal"), String.starts_with(Nui.focus_of(n), "emb:"))), n, code, text, mods)
 
 def Nui.key.m(+n: Nui, +code: U32, +text: U32, +mods: U32) -> Step:
   Nui.key.menu(Bool.and(U32.is_eq(code, Key.escape()), Bool.or(Bool.or(U.Ui.flag(Nui.ui(n), "models"), U.Ui.flag(Nui.ui(n), "machines")),

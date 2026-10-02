@@ -6,6 +6,8 @@ import ./hub.bend as B
 import ./acp.bend as AC
 import ./handoff.bend as HD
 import ./bot.bend as BT
+import ./emb.bend as EM
+import ./utf8.bend as U8
 
 # The Backplane MCP server, as a decider. Each agent session gets its own
 # endpoint (/mcp/<thread>), so every call knows which thread is asking. A
@@ -109,7 +111,17 @@ def Mcp.tools() -> J.Json:
       [Tool.prop("threadId", "string", "The thread.")], ["threadId"]),
     Tool.def("viewer_show",
       "Show a file in the user's Backplane viewer panel: a .kicad_pcb on the Board tab (kind 3d: the board in 3D), a .kicad_sch on the Schematic tab, and any .step/.stp or .glb on the Mech tab, the 3D design tab (the model turned in 3D, the project's parts in mech/ beside it, their renders a tap away), wherever the file is. Use it after changing a design so the user sees the result; the viewer also follows the file live.",
-      [Tool.prop("path", "string", "Absolute path of the file."), Tool.prop("kind", "string", "board, schematic, 3d (a board in 3D) or mech (a STEP or GLB); default from the extension.")], ["path"])]
+      [Tool.prop("path", "string", "Absolute path of the file."), Tool.prop("kind", "string", "board, schematic, 3d (a board in 3D) or mech (a STEP or GLB); default from the extension.")], ["path"]),
+    Tool.def("terminal_open",
+      "Open a terminal in this chat that runs a command (through the user's shell, in this thread's folder) and that the user sees and types into right in the conversation. Use it to hand the user a small tool: a TUI, a picker, an interactive script, a live monitor, a REPL. It answers the terminal's id at once; when the command ends the terminal stays open at the user's shell. Read its screen with terminal_read; what it shows when the user next writes to you comes with their message. It stops (and greys out, a click restarts it) when the user sends another message, unless they pin it.",
+      [Tool.prop("command", "string", "The command line, e.g. python3 tools/pick.py or htop."), Tool.prop("title", "string", "A short title shown above it."),
+       Tool.prop("cols", "number", "Columns (default 80, 20 to 200)."), Tool.prop("rows", "number", "Rows (default 24, 3 to 60).")], ["command"]),
+    Tool.def("terminal_read", "Read a terminal of this chat: its state (running: the command runs; done N: it ended with status N and the shell is open; stopped or exited N: the terminal is closed) and the text on its screen. waitMs waits until the command ends, up to that long, for a script you want the result of.",
+      [Tool.prop("id", "string", "The id terminal_open answered."), Tool.prop("waitMs", "number", "Wait for the command to end, at most this long (default 0, at most 120000).")], ["id"]),
+    Tool.def("terminal_send", "Type into a terminal of this chat, as the user would: text is sent as is (\\r is Enter, \\u0003 is ctrl+c, \\u001b[A is Up).",
+      [Tool.prop("id", "string", "The terminal's id."), Tool.prop("text", "string", "The bytes to send, as text.")], ["id", "text"]),
+    Tool.def("terminal_close", "Stop a terminal of this chat (its program is hung up; the user can start it again).",
+      [Tool.prop("id", "string", "The terminal's id.")], ["id"])]
     , List.append(&2, J.Json, Mcp.preview_tools(), [Tool.def("permission_prompt", "Internal to Backplane: asks the user before a tool runs. Do not call it yourself.",
       [Tool.prop("tool_name", "string", "The tool."), Tool.prop("input", "object", "Its input."), Tool.prop("tool_use_id", "string", "The call.")], ["tool_name", "input"])])))}])
 
@@ -278,6 +290,37 @@ def Mcp.read.k(ok: Bool, +s: M.State, +target: String, +limit: Nat) -> Res:
 def Mcp.view(+thread: String, +path: String, +kind: String) -> Res:
   Res{True{}, J.Json.obj([J.KV{"shown", J.Str{path}}]),
     B.Step{Nil{}, [B.Broadcast{J.Json.show(J.Json.obj([J.KV{"t", J.Str{"view"}}, J.KV{"thread", J.Str{thread}}, J.KV{"path", J.Str{path}}, J.KV{"kind", J.Str{kind}}]))}]}}
+
+# Terminals in the chat (core/emb.bend); terminal_read is the server's
+# (it asks the terminal actor, off the hub)
+# --------------------------------------------------------------------
+
+def Mcp.term.title(+title: String, +cmd: String) -> String:
+  Bool.pick(String, String.is_empty(String.trim(title)), String.take(String.trim(cmd), 60n), String.trim(title))
+
+def Mcp.term.go(+id: String, +s: M.State, +now: Nat, +thread: String, +cmd: String, +title: String, +cols: U32, +rows: U32) -> Res:
+  Res{True{}, J.Json.obj([J.KV{"id", J.Str{id}}, J.KV{"cols", J.Num{U32.show(cols)}}, J.KV{"rows", J.Num{U32.show(rows)}}, J.KV{"state", J.Str{"running"}}]),
+    B.Step{[M.ActivityLogged{thread, id, EM.Emb.tone(), EM.Emb.kind(), EM.Emb.summary(title, cols, rows, cmd), now}],
+      [B.TermRun{EM.Emb.key(thread, id), title, B.Hub.cwd(s, B.Hub.thread(s, thread)), cmd, cols, rows, False{}}]}}
+
+def Mcp.term.open(+s: M.State, +now: Nat, +thread: String, +cmd: String, +title: String, +cols: U32, +rows: U32) -> Res:
+  Bool.pick(Res, String.is_empty(String.trim(cmd)), Res.fail("command is empty"),
+    Mcp.term.go(B.Hub.id("x", now, B.Hub.seq(s)), s, now, thread, cmd, Mcp.term.title(title, cmd), cols, rows))
+
+# keys typed in (send), or the program hung up
+def Mcp.term.op.k(send: Bool, +key: String, +text: String) -> Res:
+  match send:
+    case True{}:
+      Res{True{}, J.Json.obj([J.KV{"sent", J.Num{U32.show(U32.from_nat(String.length(text)))}}]), B.Step.outs([B.TermOp{"input", key, "", U8.Utf8.encode(text), 0, 0}])}
+    case False{}:
+      Res{True{}, J.Json.obj([J.KV{"state", J.Str{"stopped"}}]), B.Step.outs([B.TermKill{key}])}
+
+def Mcp.term.op(missing: Bool, send: Bool, +thread: String, +id: String, +text: String) -> Res:
+  match missing:
+    case True{}:
+      Res.fail("no terminal " ++ id ++ " in this thread")
+    case False{}:
+      Mcp.term.op.k(send, EM.Emb.key(thread, id), text)
 
 # More thread tools (V2's orchestrator toolkit)
 # ---------------------------------------------
@@ -484,7 +527,7 @@ def Mcp.send.k(ok: Bool, +s: M.State, +now: Nat, +thread: String, +target: Strin
 
 def Mcp.names() -> List<&2, String>:
   ["orchestrator_capabilities", "delegate_task", "task_status", "task_cancel", "thread_list", "thread_read", "thread_send", "viewer_show",
-   "thread_launch", "thread_update", "thread_wait", "thread_interrupt", "thread_wait_now"]
+   "thread_launch", "thread_update", "thread_wait", "thread_interrupt", "thread_wait_now", "terminal_open", "terminal_send", "terminal_close"]
 
 def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json, +a: J.Json) -> Res:
   match i:
@@ -515,6 +558,12 @@ def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json,
       Mcp.interrupt.k(Mcp.same_project(s, thread, J.Json.get_str(a, "threadId", "")), B.Hub.running(B.Hub.thread(s, J.Json.get_str(a, "threadId", ""))), s, now, J.Json.get_str(a, "threadId", ""))
     case 12n:
       Mcp.wait.k(Mcp.same_project(s, thread, J.Json.get_str(a, "threadId", "")), s, J.Json.get_str(a, "threadId", ""))
+    case 13n:
+      Mcp.term.open(s, now, thread, J.Json.get_str(a, "command", ""), J.Json.get_str(a, "title", ""), EM.Emb.cols(J.Json.get_u32(a, "cols", 0)), EM.Emb.rows(J.Json.get_u32(a, "rows", 0)))
+    case 14n:
+      Mcp.term.op(String.is_empty(EM.Emb.sum(M.State.mine(s, thread), J.Json.get_str(a, "id", ""))), True{}, thread, J.Json.get_str(a, "id", ""), J.Json.get_str(a, "text", ""))
+    case 15n:
+      Mcp.term.op(String.is_empty(EM.Emb.sum(M.State.mine(s, thread), J.Json.get_str(a, "id", ""))), False{}, thread, J.Json.get_str(a, "id", ""), "")
     case _:
       Res.fail("unknown tool")
 

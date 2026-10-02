@@ -79,12 +79,13 @@ data class Chip(val label: String, val path: String, val image: Boolean, val url
 data class Shot(val path: String, val url: String)
 
 // kind: user, assistant, act (a tool line), fold (a run of tool calls:
-// "fold" with value opens or shuts it), link (opens thread value)
+// "fold" with value opens or shuts it), link (opens thread value), emb (a
+// terminal in the chat: key names its item in the thread's embs)
 data class Entry(
     val id: String, val kind: String, val text: String,
     val tone: String, val label: String, val blocks: List<Block>,
     val attachments: List<Chip> = emptyList(), val images: List<Shot> = emptyList(),
-    val open: Boolean = false, val value: String = "",
+    val open: Boolean = false, val value: String = "", val key: String = "",
 )
 
 // what the agent waits on the user for: an approval, a question or a
@@ -114,6 +115,13 @@ data class Diff(val summary: String, val files: List<DiffFile>)
 data class TermRun(val t: String, val fg: Int, val bg: Int, val b: Boolean, val u: Boolean)
 data class TermCursor(val x: Int, val y: Int, val on: Boolean)
 data class Term(val title: String, val fg: Int, val bg: Int, val lines: List<List<TermRun>>, val cursor: TermCursor)
+
+// a terminal in the chat (core/emb.bend): its key, size, whether it is live
+// or pinned, the value "emb-restart" sends, and its screen while live
+data class Emb(
+    val key: String, val id: String, val title: String, val cols: Int, val rows: Int,
+    val live: Boolean, val pinned: Boolean, val restart: String, val term: Term?,
+)
 
 // settings: rows of a label, a note and buttons (each sends action with value)
 data class SetButton(val label: String, val action: String, val value: String, val on: Boolean)
@@ -242,6 +250,8 @@ data class ThreadView(
     val cap: Int = 10_485_760,
     val diff: Diff? = null,
     val term: Term? = null,
+    // the thread's terminals in the chat (entries of kind "emb" name them)
+    val embs: List<Emb> = emptyList(),
     // the phase the working line's dot shows (as a row's status)
     val phase: String = "",
 )
@@ -376,7 +386,7 @@ private fun entry(o: JSONObject) = Entry(
     o.optString("label"), blocks(o.optJSONArray("blocks")),
     chips(o.optJSONArray("attachments")),
     o.optJSONArray("images").map { Shot(it.optString("path"), it.optString("url")) },
-    o.optBoolean("open"), o.optString("value"),
+    o.optBoolean("open"), o.optString("value"), o.optString("key"),
 )
 
 private fun tool(o: JSONObject) = Tool(
@@ -426,6 +436,10 @@ private fun thread(o: JSONObject) = threadOf(o).copy(
         })
     },
     term = o.optJSONObject("term")?.let(::term),
+    embs = o.optJSONArray("embs").map {
+        Emb(it.optString("key"), it.optString("id"), it.optString("title"), it.optInt("cols", 80), it.optInt("rows", 24),
+            it.optBoolean("live"), it.optBoolean("pinned"), it.optString("restart"), it.optJSONObject("term")?.let(::term))
+    },
     phase = o.optString("phase"),
 )
 

@@ -19,6 +19,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -78,6 +79,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.PanTool
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QuestionAnswer
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
@@ -114,6 +116,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -122,6 +125,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
@@ -635,6 +639,87 @@ fun rememberTermSize(): () -> String {
     }
 }
 
+// a terminal's screen: its rows of styled runs and the cursor, in style
+@Composable
+fun TermScreen(t: Term, style: TextStyle, modifier: Modifier = Modifier) {
+    val measure = rememberTextMeasurer()
+    val cell = remember(style) { measure.measure("M", style).size }
+    val density = LocalDensity.current
+    val fg = rgb(t.fg)
+    Box(modifier) {
+        Column {
+            for (l in t.lines) Text(buildAnnotatedString {
+                for (r in l) withStyle(SpanStyle(
+                    color = rgb(r.fg),
+                    background = if (r.bg != t.bg) rgb(r.bg) else Color.Unspecified,
+                    fontWeight = if (r.b) FontWeight.Bold else null,
+                    textDecoration = if (r.u) TextDecoration.Underline else null,
+                )) { append(r.t) }
+            }, style = style, color = fg, softWrap = false, maxLines = 1)
+        }
+        if (t.cursor.on) Box(Modifier
+            .offset { IntOffset(t.cursor.x * cell.width, t.cursor.y * cell.height) }
+            .size(with(density) { cell.width.toDp() }, with(density) { cell.height.toDp() })
+            .background(fg.copy(alpha = 0.6f)))
+    }
+}
+
+// the hidden field a terminal's keys are typed in: what the field held
+// against what it holds now: what went is backspaced, what came is typed.
+// It starts with a space, so a backspace always has something to take,
+// and starts over when emptied or long (never as the value it has, which
+// the field would not take up)
+@Composable
+fun TermField(focus: FocusRequester, key: (String, Int) -> Unit, paste: (String) -> Unit, modifier: Modifier = Modifier) {
+    var buf by remember { mutableStateOf(TextFieldValue(" ", TextRange(1))) }
+    BasicTextField(buf, { v ->
+        val old = buf.text
+        val new = v.text
+        var same = 0
+        while (same < old.length && same < new.length && old[same] == new[same]) same++
+        repeat(old.length - same) { key("Backspace", 0) }
+        val parts = new.substring(same).split('\n')
+        parts.forEachIndexed { i, p ->
+            if (p.isNotEmpty()) paste(p)
+            if (i < parts.size - 1) key("Enter", 0)
+        }
+        buf = if (new.isEmpty() || new.length > 200 || '\n' in new)
+            (if (old == " ") TextFieldValue("  ", TextRange(2)) else TextFieldValue(" ", TextRange(1)))
+        else v
+    }, modifier.size(1.dp).focusRequester(focus), singleLine = true,
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false,
+            keyboardType = KeyboardType.Password, imeAction = ImeAction.Send),
+        keyboardActions = KeyboardActions(onSend = { key("Enter", 0) }),
+        textStyle = TextStyle(color = Color.Transparent))
+}
+
+// the keys a phone keyboard lacks, and the keyboard's own toggle
+@Composable
+fun TermKeys(key: (String, Int) -> Unit, keyboard: () -> Unit) {
+    Surface(tonalElevation = 3.dp) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            @Composable fun k(label: String, go: () -> Unit) = OutlinedButton(onClick = go, shape = corner,
+                contentPadding = PaddingValues(horizontal = 10.dp)) { Text(label, fontFamily = mono, style = MaterialTheme.typography.labelMedium) }
+            @Composable fun ik(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, go: () -> Unit) =
+                OutlinedButton(onClick = go, shape = corner, contentPadding = PaddingValues(horizontal = 10.dp)) {
+                    Icon(icon, label, Modifier.size(16.dp))
+                }
+            k("esc") { key("Escape", 0) }
+            k("tab") { key("Tab", 0) }
+            k("^C") { key("c", 4) }
+            k("^D") { key("d", 4) }
+            k("^Z") { key("z", 4) }
+            k("^L") { key("l", 4) }
+            ik(Icons.AutoMirrored.Filled.ArrowBack, "Left") { key("ArrowLeft", 0) }
+            ik(Icons.Filled.ArrowUpward, "Up") { key("ArrowUp", 0) }
+            ik(Icons.Filled.ArrowDownward, "Down") { key("ArrowDown", 0) }
+            ik(Icons.AutoMirrored.Filled.ArrowForward, "Right") { key("ArrowRight", 0) }
+            ik(Icons.Filled.Keyboard, "Keyboard", keyboard)
+        }
+    }
+}
+
 // the thread's shell: the screen the hub's emulator keeps, keys typed in a
 // hidden field, and a row of keys a phone keyboard lacks
 @Composable
@@ -642,13 +727,12 @@ fun TermSheet(m: AppModel, t: Term) {
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     var typing by remember { mutableStateOf(true) }
-    var buf by remember { mutableStateOf(TextFieldValue(" ", TextRange(1))) }
     val measure = rememberTextMeasurer()
     val cell = remember { measure.measure("M", termStyle).size }
     val density = LocalDensity.current
     val vs = rememberScrollState()
     val hs = rememberScrollState()
-    fun key(k: String, mods: Int = 0) = m.quiet("term-key", "$k\t$mods")
+    val key: (String, Int) -> Unit = { k, mods -> m.quiet("term-key", "$k\t$mods") }
     // the cursor's row kept in view (the rows below it are mostly blank)
     val below = with(density) { 16.dp.roundToPx() }
     LaunchedEffect(t.cursor.y, vs.maxValue, vs.viewportSize) {
@@ -662,71 +746,89 @@ fun TermSheet(m: AppModel, t: Term) {
             Box(Modifier.weight(1f).fillMaxWidth().background(bg)
                 .clickable { focus.requestFocus(); keyboard?.show(); typing = true }
                 .verticalScroll(vs).horizontalScroll(hs).padding(8.dp)) {
-                Column {
-                    for (l in t.lines) Text(buildAnnotatedString {
-                        for (r in l) withStyle(SpanStyle(
-                            color = rgb(r.fg),
-                            background = if (r.bg != t.bg) rgb(r.bg) else Color.Unspecified,
-                            fontWeight = if (r.b) FontWeight.Bold else null,
-                            textDecoration = if (r.u) TextDecoration.Underline else null,
-                        )) { append(r.t) }
-                    }, style = termStyle, color = fg, softWrap = false, maxLines = 1)
-                }
-                if (t.cursor.on) Box(Modifier
-                    .offset { IntOffset(t.cursor.x * cell.width, t.cursor.y * cell.height) }
-                    .size(with(density) { cell.width.toDp() }, with(density) { cell.height.toDp() })
-                    .background(fg.copy(alpha = 0.6f)))
+                TermScreen(t, termStyle)
             }
-            // the field keeps one space, so a backspace always has something to take
-            // what the field held against what it holds now: what went is
-            // backspaced, what came is typed. It starts with a space, so a
-            // backspace always has something to take, and starts over when
-            // emptied or long (never as the value it has, which the field
-            // would not take up)
-            BasicTextField(buf, { v ->
-                val old = buf.text
-                val new = v.text
-                var same = 0
-                while (same < old.length && same < new.length && old[same] == new[same]) same++
-                repeat(old.length - same) { key("Backspace") }
-                val parts = new.substring(same).split('\n')
-                parts.forEachIndexed { i, p ->
-                    if (p.isNotEmpty()) m.quiet("term-paste", p)
-                    if (i < parts.size - 1) key("Enter")
-                }
-                buf = if (new.isEmpty() || new.length > 200 || '\n' in new)
-                    (if (old == " ") TextFieldValue("  ", TextRange(2)) else TextFieldValue(" ", TextRange(1)))
-                else v
-            }, Modifier.size(1.dp).focusRequester(focus), singleLine = true,
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false,
-                    keyboardType = KeyboardType.Password, imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { key("Enter") }),
-                textStyle = TextStyle(color = Color.Transparent))
-            Surface(tonalElevation = 3.dp) {
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    @Composable fun k(label: String, go: () -> Unit) = OutlinedButton(onClick = go, shape = corner,
-                        contentPadding = PaddingValues(horizontal = 10.dp)) { Text(label, fontFamily = mono, style = MaterialTheme.typography.labelMedium) }
-                    @Composable fun ik(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, go: () -> Unit) =
-                        OutlinedButton(onClick = go, shape = corner, contentPadding = PaddingValues(horizontal = 10.dp)) {
-                            Icon(icon, label, Modifier.size(16.dp))
-                        }
-                    k("esc") { key("Escape") }
-                    k("tab") { key("Tab") }
-                    k("^C") { key("c", 4) }
-                    k("^D") { key("d", 4) }
-                    k("^Z") { key("z", 4) }
-                    k("^L") { key("l", 4) }
-                    ik(Icons.AutoMirrored.Filled.ArrowBack, "Left") { key("ArrowLeft") }
-                    ik(Icons.Filled.ArrowUpward, "Up") { key("ArrowUp") }
-                    ik(Icons.Filled.ArrowDownward, "Down") { key("ArrowDown") }
-                    ik(Icons.AutoMirrored.Filled.ArrowForward, "Right") { key("ArrowRight") }
-                    ik(Icons.Filled.Keyboard, "Keyboard") {
-                        typing = !typing
-                        if (typing) { focus.requestFocus(); keyboard?.show() } else keyboard?.hide()
-                    }
-                }
+            TermField(focus, key, { p -> m.quiet("term-paste", p) })
+            TermKeys(key) {
+                typing = !typing
+                if (typing) { focus.requestFocus(); keyboard?.show() } else keyboard?.hide()
             }
+        }
+    }
+}
+
+// a terminal in the chat, live: a header (its title, the pin) over its
+// screen, the font shrunk so its columns fit (7 sp at the least, then it
+// scrolls sideways); a tap types into it ("emb-key", "emb-paste" with its
+// key first). At the top of the thread (pinned) the pin is in the accent
+// and the screen is held to a height, kept on the cursor.
+@Composable
+fun EmbView(m: AppModel, e: Emb, top: Boolean = false) {
+    val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    var typing by remember { mutableStateOf(false) }
+    val key: (String, Int) -> Unit = { k, mods -> m.quiet("emb-key", "${e.key}\t$k\t$mods") }
+    val t = e.term
+    val bg = if (t != null) rgb(t.bg) else MaterialTheme.colorScheme.surfaceVariant
+    val fg = if (t != null) rgb(t.fg) else MaterialTheme.colorScheme.onSurface
+    Column(Modifier.fillMaxWidth().background(bg)) {
+        Row(Modifier.fillMaxWidth().padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Icon(Icons.Filled.Terminal, null, Modifier.size(14.dp), tint = fg.copy(alpha = 0.7f))
+            Text(e.title, Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = fg,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Box(Modifier.size(36.dp).clickable { m.act("emb-pin", e.key) }, contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.PushPin, if (e.pinned) "Unpin" else "Pin to the top", Modifier.size(16.dp),
+                    tint = if (e.pinned) PhaseColor.accent else fg.copy(alpha = 0.5f))
+            }
+        }
+        if (t != null) BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val measure = rememberTextMeasurer()
+            val density = LocalDensity.current
+            val unit = remember { measure.measure("M", termStyle).size.width / 11f }
+            val room = with(density) { maxWidth.toPx() - 8.dp.toPx() }
+            val pt = if (unit > 0f) (room / e.cols.coerceAtLeast(1) / unit * 2f).toInt() / 2f else 11f
+            val sz = pt.coerceIn(7f, 11f)
+            val style = TextStyle(fontFamily = mono, fontSize = sz.sp, lineHeight = (sz * 14f / 11f).sp)
+            val cellH = remember(style) { measure.measure("M", style).size.height }
+            val vs = rememberScrollState()
+            if (top) LaunchedEffect(t.cursor.y, vs.maxValue, vs.viewportSize) {
+                vs.scrollTo(((t.cursor.y + 1) * cellH - vs.viewportSize).coerceIn(0, vs.maxValue))
+            }
+            Box(Modifier.fillMaxWidth()
+                .then(if (top) Modifier.heightIn(max = 240.dp).verticalScroll(vs) else Modifier)
+                .clickable { focus.requestFocus(); keyboard?.show() }
+                .horizontalScroll(rememberScrollState()).padding(4.dp)) {
+                TermScreen(t, style)
+            }
+        }
+        TermField(focus, key, { p -> m.quiet("emb-paste", "${e.key}\t$p") }, Modifier.onFocusChanged { typing = it.isFocused })
+        if (typing) TermKeys(key) { keyboard?.hide(); focusManager.clearFocus() }
+    }
+}
+
+// a terminal's row in the timeline: live, its screen; pinned, a faint row
+// that unpins it; else a gray row that starts it again
+@Composable
+fun EmbRow(m: AppModel, entry: Entry, e: Emb?) {
+    val style = MaterialTheme.typography.labelMedium.copy(fontFamily = mono)
+    val faint = MaterialTheme.colorScheme.outline
+    when {
+        e == null -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Terminal, null, Modifier.size(14.dp), tint = faint)
+            Text(entry.text, style = style, color = faint, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        e.pinned -> Row(Modifier.fillMaxWidth().clickable { m.act("emb-pin", e.key) }.padding(vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.PushPin, "Unpin", Modifier.size(14.dp), tint = faint)
+            Text("${e.title} · pinned at the top", style = style, color = faint, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        e.live -> EmbView(m, e)
+        else -> Row(Modifier.fillMaxWidth().clickable { m.act("emb-restart", e.restart) }.padding(vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.PlayArrow, "Restart", Modifier.size(14.dp), tint = faint)
+            Text("${e.title} · inactive, tap to restart", style = style, color = faint, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

@@ -101,6 +101,54 @@ Not done: tab stops other than every 8 (HTS / TBC), the colon SGR form
 (`38:2::r:g:b`), REP, mouse reporting, G1 / SO / SI, double-width lines,
 reflow on resize, OSC 8 links and OSC 52.
 
+## Terminals in the chat
+
+An agent can put a terminal in its thread (core/emb.bend): a command run
+through the user's shell (`$SHELL -lc`) on a pty of its own, in the
+thread's folder, shown in the timeline where the person clicks into it
+and types. It is how an agent hands the person a small tool: a TUI, a
+picker, an interactive script, a monitor.
+
+- Tools (src/core/mcp.bend): `terminal_open {command, title, cols, rows}`
+  logs an Act of tone `term` (kind `terminal`, id the terminal's id,
+  summary `title\nCOLSxROWS\ncommand`) and runs it; `terminal_read {id,
+  waitMs}` answers its state (`running`, `stopped`, `exited N`) and the
+  text on its screen, waiting up to waitMs for it to exit (the server asks
+  the terminal actor, off the hub); `terminal_send {id, text}` types;
+  `terminal_close {id}` hangs it up.
+- Keys: a terminal's bytes travel as `{"t":"term","thread":"x:<thread>:<id>"}`
+  like a thread's own shell's, input as `term.input` with that key. The
+  hub's terminal actor (src/server/term.bend) keeps each one's screen
+  (`ETerm`, a `Vt` fed with everything it prints) and answers the
+  program's own queries (cursor reports) itself, so clients don't.
+- Snapshots: a client that shows a live terminal it holds no screen for
+  asks `term.snap {key}` once (client.bend's `Emb.sync`); the reply is a
+  `term` message with `"reset":[cols,rows]`, bytes that draw the screen on
+  a blank terminal (`Emb.snap`: alternate screen, rows, modes, cursor,
+  title). A restart sends a reset to every client.
+- Live or inactive (`Emb.live`, laws `emb_*`): a terminal is live while
+  pinned, or until the person sends a message after it was opened or last
+  restarted, or for 30 minutes. A live one is drawn as a terminal; an
+  inactive one is one gray row whose click sends `term.restart {thread,
+  id}` (the command runs again under the same key, the setting
+  `emb.at:<key>` makes it live from then). The pin is the setting
+  `emb.pin:<key>`; pinned terminals are drawn at the top of the thread with
+  the subagents and leave a row in the timeline.
+- The next message: when the person writes, the server asks the actor for
+  what the thread's terminals show that the agent has not seen
+  (`TNote`), puts it after the message as a `<terminals>` block (Claude,
+  Codex and Grok alike), and stops the ones not pinned.
+- When a program exits its last screen is written to `<home>/terms/<key>`
+  (`COLSxROWS<tab>state`, then the snapshot), so reads and snapshots work
+  after the hub starts again.
+- Clients: the window (layout.bend's `TL.emb`, kinds 23-26, `Ew.over`
+  draws each screen over its rows; `Lay.pins`; nui.bend routes keys while
+  the focus is `emb:<key>`), the web (`View.emb`, `View.pins`; host.js
+  puts a field's `data-for` first in what it sends), phones (screen.bend's
+  `embs`, entry rows of kind `emb`). Actions: `emb-key`, `emb-paste`,
+  `emb-restart`, `emb-pin`.
+- Test: `test/emb_test.bend`; end to end `bun test/tools/emb_e2e.ts`.
+
 ## Cost
 
 Printing a character rewrites one path in the row tree and one in the screen

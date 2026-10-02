@@ -493,12 +493,125 @@ struct DiffSheet: View {
     }
 }
 
+private func termColor(_ c: UInt32) -> Color {
+    Color(red: Double((c >> 16) & 255) / 255, green: Double((c >> 8) & 255) / 255, blue: Double(c & 255) / 255)
+}
+
+// a terminal's screen: its rows of styled runs and the cursor, at a size
+struct TermScreen: View {
+    let term: Term
+    var size: CGFloat = 11
+
+    // a cell's width and a row's height at a size
+    static func cell(_ size: CGFloat) -> (w: CGFloat, h: CGFloat) {
+        let f = UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        return (("M" as NSString).size(withAttributes: [.font: f]).width, ceil(f.lineHeight))
+    }
+
+    // the largest size (by halves, 7 to 11) whose cols fit in width
+    static func fit(cols: Int, width: CGFloat) -> CGFloat {
+        let unit = cell(11).w / 11
+        guard unit > 0, cols > 0 else { return 11 }
+        return min(max((width / CGFloat(cols) / unit * 2).rounded(.down) / 2, 7), 11)
+    }
+
+    private func row(_ runs: [TermRun]) -> AttributedString {
+        var out = AttributedString()
+        for r in runs {
+            var a = AttributedString(r.t)
+            a.foregroundColor = termColor(r.fg)
+            if r.bg != term.bg { a.backgroundColor = termColor(r.bg) }
+            if r.b { a.font = .system(size: size, weight: .bold, design: .monospaced) }
+            if r.u { a.underlineStyle = .single }
+            out += a
+        }
+        return out
+    }
+
+    var body: some View {
+        let c = Self.cell(size)
+        ZStack(alignment: .topLeading) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(term.lines.enumerated()), id: \.offset) { _, l in
+                    Text(row(l)).frame(height: c.h, alignment: .leading).fixedSize()
+                }
+            }
+            if term.cursor.on {
+                Rectangle().fill(termColor(term.fg).opacity(0.6))
+                    .frame(width: c.w, height: c.h)
+                    .offset(x: CGFloat(term.cursor.x) * c.w, y: CGFloat(term.cursor.y) * c.h)
+            }
+        }
+        .font(.system(size: size, design: .monospaced))
+        .foregroundStyle(termColor(term.fg))
+    }
+}
+
+// the hidden field a terminal's keys are typed in: it keeps one space, so
+// a backspace always has something to take
+struct TermField: View {
+    var typing: FocusState<Bool>.Binding
+    let key: (String, Int) -> Void
+    let paste: (String) -> Void
+    @State private var buf = " "
+
+    var body: some View {
+        TextField("", text: $buf)
+            .focused(typing)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .keyboardType(.asciiCapable)
+            .frame(width: 1, height: 1)
+            .opacity(0.01)
+            .onChange(of: buf) { old, new in
+                if new == " " { return }
+                if new.count < old.count || new.isEmpty {
+                    key("Backspace", 0)
+                } else if new.hasPrefix(" ") {
+                    let typed = String(new.dropFirst())
+                    if !typed.isEmpty { paste(typed) }
+                }
+                if buf != " " { buf = " " }
+            }
+            .onSubmit { key("Enter", 0); typing.wrappedValue = true }
+    }
+}
+
+// the keys a phone keyboard lacks, and the keyboard's own toggle
+struct TermKeys: View {
+    var typing: FocusState<Bool>.Binding
+    let key: (String, Int) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                Button("esc") { key("Escape", 0) }
+                Button("tab") { key("Tab", 0) }
+                Button("^C") { key("c", 4) }
+                Button("^D") { key("d", 4) }
+                Button("^Z") { key("z", 4) }
+                Button("^L") { key("l", 4) }
+                Button { key("ArrowLeft", 0) } label: { Image(systemName: "arrow.left") }
+                Button { key("ArrowUp", 0) } label: { Image(systemName: "arrow.up") }
+                Button { key("ArrowDown", 0) } label: { Image(systemName: "arrow.down") }
+                Button { key("ArrowRight", 0) } label: { Image(systemName: "arrow.right") }
+                Button { typing.wrappedValue.toggle() } label: {
+                    Image(systemName: typing.wrappedValue ? "keyboard.chevron.compact.down" : "keyboard")
+                }
+            }
+            .buttonStyle(.bordered)
+            .font(.caption.monospaced())
+            .padding(.horizontal).padding(.vertical, 6)
+        }
+        .background(.bar)
+    }
+}
+
 // the thread's shell: the screen the hub's emulator keeps, keys typed in a
 // hidden field, and a row of keys a phone keyboard lacks
 struct TermSheet: View {
     let model: AppModel
     let term: Term
-    @State private var buf = " "
     @FocusState private var typing: Bool
 
     static let font = UIFont.monospacedSystemFont(ofSize: 11, weight: .regular)
@@ -511,96 +624,121 @@ struct TermSheet: View {
         return "\(max(Int((b.width - 16) / cw), 20))x\(max(Int((b.height * 0.5) / lh), 8))"
     }
 
-    private static func color(_ c: UInt32) -> Color {
-        Color(red: Double((c >> 16) & 255) / 255, green: Double((c >> 8) & 255) / 255, blue: Double(c & 255) / 255)
-    }
-
-    private func row(_ runs: [TermRun]) -> AttributedString {
-        var out = AttributedString()
-        for r in runs {
-            var a = AttributedString(r.t)
-            a.foregroundColor = Self.color(r.fg)
-            if r.bg != term.bg { a.backgroundColor = Self.color(r.bg) }
-            if r.b { a.font = .system(size: 11, weight: .bold, design: .monospaced) }
-            if r.u { a.underlineStyle = .single }
-            out += a
-        }
-        return out
-    }
-
     private func key(_ k: String, _ mods: Int = 0) { model.act("term-key", "\(k)\t\(mods)") }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 ScrollView([.horizontal, .vertical]) {
-                    ZStack(alignment: .topLeading) {
-                        VStack(alignment: .leading, spacing: 0) {
-                            ForEach(Array(term.lines.enumerated()), id: \.offset) { _, l in
-                                Text(row(l)).frame(height: Self.lh, alignment: .leading).fixedSize()
-                            }
-                        }
-                        if term.cursor.on {
-                            Rectangle().fill(Self.color(term.fg).opacity(0.6))
-                                .frame(width: Self.cw, height: Self.lh)
-                                .offset(x: CGFloat(term.cursor.x) * Self.cw, y: CGFloat(term.cursor.y) * Self.lh)
-                        }
-                    }
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Self.color(term.fg))
-                    .padding(8)
+                    TermScreen(term: term).padding(8)
                 }
                 .defaultScrollAnchor(.bottomLeading)
-                .background(Self.color(term.bg))
+                .background(termColor(term.bg))
                 .onTapGesture { typing = true }
-                TextField("", text: $buf)
-                    .focused($typing)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.asciiCapable)
-                    .frame(width: 1, height: 1)
-                    .opacity(0.01)
-                    .onChange(of: buf) { old, new in
-                        // the field keeps one space, so a backspace always has something to take
-                        if new == " " { return }
-                        if new.count < old.count || new.isEmpty {
-                            key("Backspace")
-                        } else if new.hasPrefix(" ") {
-                            let typed = String(new.dropFirst())
-                            if !typed.isEmpty { model.act("term-paste", typed) }
-                        }
-                        if buf != " " { buf = " " }
-                    }
-                    .onSubmit { key("Enter"); typing = true }
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        Button("esc") { key("Escape") }
-                        Button("tab") { key("Tab") }
-                        Button("^C") { key("c", 4) }
-                        Button("^D") { key("d", 4) }
-                        Button("^Z") { key("z", 4) }
-                        Button("^L") { key("l", 4) }
-                        Button { key("ArrowLeft") } label: { Image(systemName: "arrow.left") }
-                        Button { key("ArrowUp") } label: { Image(systemName: "arrow.up") }
-                        Button { key("ArrowDown") } label: { Image(systemName: "arrow.down") }
-                        Button { key("ArrowRight") } label: { Image(systemName: "arrow.right") }
-                        Button { typing.toggle() } label: { Image(systemName: typing ? "keyboard.chevron.compact.down" : "keyboard") }
-                    }
-                    .buttonStyle(.bordered)
-                    .font(.caption.monospaced())
-                    .padding(.horizontal).padding(.vertical, 6)
-                }
-                .background(.bar)
+                TermField(typing: $typing, key: { key($0, $1) }, paste: { model.act("term-paste", $0) })
+                TermKeys(typing: $typing, key: { key($0, $1) })
             }
             .navigationTitle(term.title.isEmpty ? "Terminal" : term.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarBackground(Self.color(term.bg), for: .navigationBar)
+            .toolbarBackground(termColor(term.bg), for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Close") { model.act("term-toggle") } }
             }
             .onAppear { typing = true }
+        }
+    }
+}
+
+// a terminal in the chat, live: a header (its title, the pin) over its
+// screen, the font shrunk so its columns fit (7 pt at the least, then it
+// scrolls sideways); a tap types into it ("emb-key", "emb-paste" with its
+// key first). At the top of the thread (pinned) the pin is in the accent
+// and the screen is held to a height, kept at the bottom.
+struct EmbView: View {
+    let model: AppModel
+    let emb: Emb
+    var top = false
+    @FocusState private var typing: Bool
+    @State private var width = UIScreen.main.bounds.width - 32
+
+    private func key(_ k: String, _ mods: Int) { model.act("emb-key", "\(emb.key)\t\(k)\t\(mods)") }
+
+    var body: some View {
+        let fg = emb.term.map { termColor($0.fg) } ?? .primary
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "terminal").foregroundStyle(fg.opacity(0.7))
+                Text(emb.title).lineLimit(1).foregroundStyle(fg)
+                Spacer(minLength: 0)
+                Button { model.act("emb-pin", emb.key) } label: {
+                    Image(systemName: emb.pinned ? "pin.fill" : "pin")
+                        .foregroundStyle(emb.pinned ? AnyShapeStyle(PhaseColor.accent) : AnyShapeStyle(fg.opacity(0.5)))
+                        .frame(width: 32, height: 28)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(emb.pinned ? "Unpin" : "Pin to the top")
+            }
+            .font(.caption)
+            .padding(.leading, 8)
+            if let t = emb.term {
+                let size = TermScreen.fit(cols: emb.cols, width: width - 8)
+                let h = TermScreen.cell(size).h * CGFloat(max(emb.rows, t.lines.count)) + 8
+                Group {
+                    if top {
+                        ScrollView([.horizontal, .vertical]) { TermScreen(term: t, size: size).padding(4) }
+                            .defaultScrollAnchor(.bottomLeading)
+                            .frame(height: min(h, 240))
+                    } else {
+                        ScrollView(.horizontal) { TermScreen(term: t, size: size).padding(4) }
+                            .frame(height: h)
+                    }
+                }
+                .onTapGesture { typing = true }
+                .background(TermField(typing: $typing, key: { key($0, $1) }, paste: { model.act("emb-paste", "\(emb.key)\t\($0)") }))
+            }
+            if typing { TermKeys(typing: $typing, key: { key($0, $1) }) }
+        }
+        .background(emb.term.map { termColor($0.bg) } ?? Color(.secondarySystemBackground))
+        .background(GeometryReader { g in
+            Color.clear
+                .onAppear { width = g.size.width }
+                .onChange(of: g.size.width) { _, w in width = w }
+        })
+    }
+}
+
+// a terminal's row in the timeline: live, its screen; pinned, a faint row
+// that unpins it; else a gray row that starts it again
+struct EmbRow: View {
+    let model: AppModel
+    let entry: Entry
+    let emb: Emb?
+
+    private func line(_ icon: String, _ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: icon)
+            Text(text).lineLimit(1)
+        }
+        .font(.caption.monospaced())
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(.rect)
+    }
+
+    var body: some View {
+        if let e = emb, e.pinned {
+            Button { model.act("emb-pin", e.key) } label: { line("pin", e.title + " · pinned at the top") }
+                .buttonStyle(.plain)
+        } else if let e = emb, e.live {
+            EmbView(model: model, emb: e)
+        } else if let e = emb {
+            Button { model.act("emb-restart", e.restart) } label: { line("play.fill", e.title + " · inactive, tap to restart") }
+                .buttonStyle(.plain)
+        } else {
+            line("terminal", entry.text)
         }
     }
 }

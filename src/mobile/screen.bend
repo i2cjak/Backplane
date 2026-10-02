@@ -20,6 +20,7 @@ import ../core/botui.bend as B
 import ./bots.bend as MB
 import ../core/hist.bend as HS
 import ../core/tools.bend as TO
+import ../core/emb.bend as EM
 
 # Ui -> the screen the phone apps draw, as JSON. SwiftUI and Compose map
 # it onto native lists, toolbars and text fields; every decision (order,
@@ -339,9 +340,11 @@ def Mob.act(step: Bool, e: M.Entry) -> J.Json:
   match step e:
     case True{} M.Act{+id, _, _, _, _, _}:
       J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str("step")}, J.KV{"text", J.Json.str(HS.Hist.row(e))}, J.KV{"value", J.Json.str(id)}])
-    case _ M.Act{+id, _, tone, kind, summary, _}:
-      J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str("act")}, J.KV{"tone", J.Json.str(tone)},
-        J.KV{"label", J.Json.str(kind)}, J.KV{"text", J.Json.str(summary)}])
+    case _ M.Act{+id, +th, +tone, +kind, +summary, _}:
+      Bool.pick(J.Json, String.eq(tone, EM.Emb.tone()),
+        J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str("emb")}, J.KV{"key", J.Json.str(EM.Emb.key(th, id))}, J.KV{"text", J.Json.str(EM.Emb.title(summary))}]),
+        J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str("act")}, J.KV{"tone", J.Json.str(tone)},
+          J.KV{"label", J.Json.str(kind)}, J.KV{"text", J.Json.str(summary)}]))
     case _ M.Msg{+id, _, _, text, _}:
       J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str("act")}, J.KV{"tone", J.Json.str("")}, J.KV{"label", J.Json.str("")}, J.KV{"text", J.Json.str(text)}])
 
@@ -727,6 +730,28 @@ def Mob.term.of(+v: VT.Vt) -> J.Json:
   J.Json.obj([J.KV{"title", J.Json.str(VT.Vt.title(v))}, J.KV{"fg", J.Json.u32(VT.Vt.fg())}, J.KV{"bg", J.Json.u32(VT.Vt.bg())},
     J.KV{"lines", J.Json.arr(Mob.tlines(VT.Vt.lines(v, 0n)))}, J.KV{"cursor", Mob.cursor(VT.Vt.cursor(v))}])
 
+# Terminals in the chat (core/emb.bend): each of the thread's, by key, its
+# title, size, whether it is live or pinned, the value that restarts it,
+# and its screen while live. An entry row (kind "emb") names its key; a
+# live one is drawn there, a pinned one at the top, an inactive one as a
+# gray row whose tap sends "emb-restart" with "restart". Keys go as
+# "emb-key" with "key<tab>DOM key<tab>mods", text as "emb-paste" with
+# "key<tab>text", the pin as "emb-pin" with the key.
+def Mob.emb.k(live: Bool, +u: U.Ui, +key: String) -> J.Json:
+  match live:
+    case True{}:
+      Mob.term.of(U.Ui.term(u, key))
+    case False{}:
+      J.Null{}
+
+def Mob.embs(vs: List<&2, EM.EV>, +u: U.Ui, +th: String) -> List<&2, J.Json>:
+  match vs:
+    case Nil{}:
+      Nil{}
+    case EM.EV{+key, +id, +title, +cols, +rows, +live, +pinned} <> t:
+      J.Json.obj([J.KV{"key", J.Json.str(key)}, J.KV{"id", J.Json.str(id)}, J.KV{"title", J.Json.str(title)}, J.KV{"cols", J.Json.u32(cols)}, J.KV{"rows", J.Json.u32(rows)},
+        J.KV{"live", J.Json.bool(live)}, J.KV{"pinned", J.Json.bool(pinned)}, J.KV{"restart", J.Json.str(th ++ "\t" ++ id)}, J.KV{"term", Mob.emb.k(live, u, key)}]) <> Mob.embs(t, u, th)
+
 # open while "term-toggle" has it open
 def Mob.term(open: Bool, +u: U.Ui, +id: String) -> J.Json:
   match open:
@@ -774,7 +799,7 @@ def Mob.btw(+u: U.Ui) -> J.Json:
   Bool.pick(J.Json, String.is_empty(U.Btw.question(u)), J.Null{},
     J.Json.obj([J.KV{"q", J.Json.str(U.Btw.question(u))}, J.KV{"a", J.Json.str(U.Btw.text(U.Btw.reply.of(u)))}]))
 
-def Mob.thread(u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J.Json, +atts: List<&2, String>, +up: String, term: J.Json, skills: List<&2, J.Json>, +ph: M.Phase, btw: J.Json) -> J.Json:
+def Mob.thread(u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J.Json, +atts: List<&2, String>, +up: String, term: J.Json, skills: List<&2, J.Json>, +ph: M.Phase, btw: J.Json, embs: J.Json) -> J.Json:
   match u t:
     case U.Ui{+st, +sel, +drafts, +live, _, _, +now, _, pa, _, _, _, _, _, +nf, _, _} M.Thread{+id, _, title, _, _, +turn, _, archived, o, +sa, +ua, pinned, _, branch, _, +pr, +mo, _, _, _, _}:
       +pg = Mob.page(drafts, id, st)
@@ -804,6 +829,7 @@ def Mob.thread(u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J.Json, +atts: 
         J.KV{"cap", J.Json.nat(AT.Att.cap())},
         J.KV{"diff", Mob.diff(Bool.and(pa, String.eq(U.Str.get(nf, "view.kind:" ++ id), "diff")), U.Str.get(nf, "diff:" ++ id))},
         J.KV{"term", term},
+        J.KV{"embs", embs},
         J.KV{"viewer", vw}])
 
 def Mob.main(none: Bool, +u: U.Ui, +sel: String) -> J.Json:
@@ -812,7 +838,7 @@ def Mob.main(none: Bool, +u: U.Ui, +sel: String) -> J.Json:
       J.Null{}
     case False{}:
       Mob.thread(u, U.Ui.thread(Mob.st(u), sel), U.Ui.pending(u, sel), VW.View.json(u), U.Ui.atts(u, sel), U.Ui.uploading(u, sel),
-        Mob.term(U.Ui.flag(u, "term"), u, sel), Mob.skills(U.Ui.skills(u)), U.Side.phase(Mob.st(u), U.Ui.thread(Mob.st(u), sel)), Mob.btw(u))
+        Mob.term(U.Ui.flag(u, "term"), u, sel), Mob.skills(U.Ui.skills(u)), U.Side.phase(Mob.st(u), U.Ui.thread(Mob.st(u), sel)), Mob.btw(u), J.Json.arr(Mob.embs(U.Emb.views(u, sel), u, sel)))
 
 def Mob.empty(n: Nat) -> String:
   Bool.pick(String, Nat.is_eq(n, 0n), "Add a project to start.", "Pick a thread, or start one in a project.")

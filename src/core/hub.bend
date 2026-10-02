@@ -8,6 +8,7 @@ import ./handoff.bend as HD
 import ./todo.bend as TD
 import ./fm.bend as FM
 import ./refs.bend as RF
+import ./emb.bend as EM
 
 # The decider. Requests from clients and lines from agents come in; changes
 # (persisted, folded into the read model) and effects (run by the server)
@@ -36,6 +37,11 @@ type Out is Data:
   AskAnswered{id: String, answer: String}
   Git{client: U32, id: String, job: String, thread: String, cwd: String, a: String, b: String}
   TermOp{op: String, thread: String, cwd: String, data: List<&2, U32>, cols: U32, rows: U32}
+  # a terminal in the chat (core/emb.bend): its command run (again: a
+  # restart), a client's snapshot of it, hung up
+  TermRun{key: String, title: String, cwd: String, cmd: String, cols: U32, rows: U32, again: Bool}
+  TermSnap{client: U32, key: String}
+  TermKill{key: String}
   Fs{client: U32, id: String, op: String, path: String}
   # what a piece a phone tapped is: the info of piece idx of the chunk at
   # `at` of the plot key it holds (the plot actor answers)
@@ -402,7 +408,7 @@ def Rename.changes(+th: String, +title: String, +now: Nat) -> List<&2, M.Change>
   Bool.pick(List<&2, M.Change>, Bool.or(String.is_empty(title), String.is_empty(th)), Nil{}, [M.ThreadRenamed{th, title, now}])
 
 def Hub.methods.git() -> List<&2, String>:
-  ["git.diff", "git.revert", "git.act", "git.status", "thread.worktree", "thread.note", "term.open", "term.input", "term.resize"]
+  ["git.diff", "git.revert", "git.act", "git.status", "thread.worktree", "thread.note", "term.open", "term.input", "term.resize", "term.snap", "term.restart"]
 
 def Hub.git(+s: M.State, +client: U32, +id: String, +job: String, +thread: String, +a: String, +b: String) -> Step:
   Step.outs([Git{client, id, job, thread, Hub.cwd(s, Hub.thread(s, thread)), a, b}])
@@ -418,6 +424,15 @@ def Term.bytes(xs: List<&2, J.Json>) -> List<&2, U32>:
 def Hub.term(+s: M.State, +client: U32, +id: String, +op: String, +p: J.Json) -> Step:
   Step.outs([Reply.ok(client, id), TermOp{op, J.Json.get_str(p, "thread", ""), Hub.cwd(s, Hub.thread(s, J.Json.get_str(p, "thread", ""))),
     Term.bytes(J.Json.elems(J.Json.get_obj(p, "b"))), J.Json.get_u32(p, "cols", 80), J.Json.get_u32(p, "rows", 24)}])
+
+# a terminal in the chat starts again: live from now (core/emb.bend)
+def Emb.restart.k(+sum: String, +s: M.State, +now: Nat, +client: U32, +id: String, +thread: String, +term: String) -> Step:
+  Bool.pick(Step, String.is_empty(sum), Step.outs([Reply.err(client, id, "no such terminal")]),
+    Step{[M.SettingSet{EM.Emb.at.key(EM.Emb.key(thread, term)), Nat.show(now), now}],
+      [Reply.ok(client, id), TermRun{EM.Emb.key(thread, term), EM.Emb.title(sum), Hub.cwd(s, Hub.thread(s, thread)), EM.Emb.cmd(sum), EM.Emb.wide(sum), EM.Emb.tall(sum), True{}}]})
+
+def Emb.restart(+s: M.State, +now: Nat, +client: U32, +id: String, +thread: String, +term: String) -> Step:
+  Emb.restart.k(EM.Emb.sum(M.State.mine(s, thread), term), s, now, client, id, thread, term)
 
 # Phones
 # ------
@@ -1394,6 +1409,10 @@ def Hub.more(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Js
       Hub.term(s, client, id, "input", p)
     case 8n:
       Hub.term(s, client, id, "resize", p)
+    case 9n:
+      Step.outs([Reply.ok(client, id), TermSnap{client, J.Json.get_str(p, "key", "")}])
+    case 10n:
+      Emb.restart(s, now, client, id, J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "id", ""))
     case _:
       Hub.fs(C.Codec.pos(Hub.methods.fs(), m), s, now, client, id, p, m)
 

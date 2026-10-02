@@ -75,6 +75,7 @@ import ./src/core/png.bend as PNG
 import ./src/core/voice.bend as VO
 import ./src/core/once.bend as ON
 import ./src/core/desk.bend as DK
+import ./src/core/emb.bend as EMB
 
 # Backplane's rules, stated over the real code. `bend PROOF.bend` proves each
 # one. Humans own this file: an agent may add laws, never weaken or delete
@@ -4455,3 +4456,37 @@ law fm_parent_down:
 
 law fm_join_root:
   {FMG.Fm.join("", "hw") == "hw" : String}
+
+# Terminals in the chat (core/emb.bend)
+# -------------------------------------
+
+# a terminal entry's summary gives back its title, command and size
+law emb_summary_round:
+  {EMB.Emb.title(EMB.Emb.summary("Pick", 100, 30, "py pick.py")) ++ "|" ++ EMB.Emb.cmd(EMB.Emb.summary("Pick", 100, 30, "py pick.py")) == "Pick|py pick.py" : String}
+
+law emb_size_round:
+  {(EMB.Emb.wide(EMB.Emb.summary("t", 100, 30, "c")) + EMB.Emb.tall(EMB.Emb.summary("t", 100, 30, "c")) : U32) == 130 : U32}
+
+# a pinned terminal stays live whatever comes after it
+law emb_pinned_live:
+  for touched: Nat
+  for last: Nat
+  for now: Nat
+  {EMB.Emb.live(True{}, touched, last, now) == True{} : Bool}
+
+# a message the person sends after it ends it
+law emb_message_ends:
+  {EMB.Emb.live(False{}, 10n, 11n, 12n) == False{} : Bool}
+
+law emb_fresh_live:
+  {EMB.Emb.live(False{}, 10n, 9n, 12n) == True{} : Bool}
+
+# so do 30 minutes untouched
+law emb_idle_ends:
+  {EMB.Emb.live(False{}, 10n, 0n, 1810n) == False{} : Bool}
+
+law emb_note_none:
+  {EMB.Emb.note(Nil{}) == "" : String}
+
+law emb_focus_round:
+  {EMB.Emb.focused(EMB.Emb.focus(EMB.Emb.key("t1", "x5"))) == "x:t1:x5" : String}

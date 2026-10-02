@@ -34,6 +34,7 @@ import ../core/mech.bend as MC
 import ../core/hist.bend as HS
 import ../core/look.bend as LO
 import ../core/tools.bend as TO
+import ../core/emb.bend as EM
 
 # Nui -> draw ops and hit regions. Ops are gathered bottom-up (paint
 # order) and reversed once into the topmost-first order the rasterizer
@@ -837,6 +838,14 @@ def TL.h.k(k: Nat) -> U32:
       17
     case 22n:
       23
+    case 23n:
+      18
+    case 24n:
+      26
+    case 25n:
+      26
+    case 26n:
+      26
     case _:
       10
 
@@ -1351,6 +1360,32 @@ def TL.img.draw(loading: Bool, +ty: Ty, +text: String, +color: U32, +path: Strin
       Bool.pick(Out, U32.is_lt(y, (k * 20 + 8 : U32)), Out.none(),
         Out{Nil{}, [Lay.hit(x0, (y - k * 20 + 4 : U32), TL.img.size(text, 0n), TL.img.size(text, 1n), "img", path)]})
 
+# Terminals in the chat (core/emb.bend)
+# -------------------------------------
+# A live one is a head line (kind 24: its title and pin, the copy its key,
+# bw its columns) and a line per row (kind 23: text its columns, color its
+# rows, the copy its key, bw the row). Each row line paints its strip of
+# the terminal's background and hits the whole screen (focus "emb:<key>"), so
+# Ew.over draws the screen over the thread wherever any row is in view and
+# a click gives it the keys. An inactive one is one row (25) a click
+# starts again; a pinned one leaves a row (26) and is drawn at the top.
+
+def Ew.cw(+ty: Ty) -> U32:
+  U32.max(Ty.width(ty, 4n, "0"), 1)
+
+def Ew.w(+ty: Ty, +cols: U32, +x0: U32, +x1: U32) -> U32:
+  U32.min((cols * Ew.cw(ty) + 24 : U32), (x1 - x0 : U32))
+
+def Ew.row(+ty: Ty, +text: String, +rows: U32, +key: String, +i: U32, +c: D.Clip, +x0: U32, +x1: U32, +y: U32) -> Out:
+  +w = Ew.w(ty, EM.Emb.num(text), x0, x1)
+  Out{[D.Draw.rect(c, x0, y, w, 18, VT.Vt.bg(), 255)], [Lay.hit(x0, (y - i * 18 : U32), w, (rows * 18 : U32), "focus", EM.Emb.focus(key))]}
+
+def Ew.head(+ty: Ty, +text: String, +color: U32, +key: String, +cols: U32, +c: D.Clip, +x0: U32, +x1: U32, +y: U32) -> Out:
+  +w = Ew.w(ty, cols, x0, x1)
+  Out{List.concat(&2, R.Op, [Lay.icon(ty, "terminal", c, x0, (y + 5 : U32), T.Th.faint()), Ty.text(ty, 2n, text, c, (x0 + 22 : U32), y, 26, color),
+      Lay.icon(ty, "pin", c, (x0 + w - 20 : U32), (y + 5 : U32), T.Th.faint())]),
+    [Lay.hit((x0 + w - 26 : U32), y, 26, 26, "emb-pin", key)]}
+
 def TL.draw.k(+ty: Ty, k: Nat, +text: String, +color: U32, +copy: String, +bw: U32, +c: D.Clip, +x0: U32, +x1: U32, +y: U32) -> Out:
   match k:
     case 1n:
@@ -1407,6 +1442,16 @@ def TL.draw.k(+ty: Ty, k: Nat, +text: String, +color: U32, +copy: String, +bw: U
       Out.ops([D.Draw.rect(c, x0, (y + 8 : U32), (x1 - x0 : U32), 1, color, 255)])
     case 22n:
       Out.ops(D.Draw.rect(c, x0, y, 2, 23, T.Th.line(), 255) <> Ty.text(ty, 3n, text, c, (x0 + 12 : U32), y, 23, color))
+    case 23n:
+      Ew.row(ty, text, color, copy, bw, c, x0, x1, y)
+    case 24n:
+      Ew.head(ty, text, color, copy, bw, c, x0, x1, y)
+    case 25n:
+      Out{List.append(&2, R.Op, Lay.icon(ty, "play", c, x0, (y + 5 : U32), color), Ty.text(ty, 2n, text, c, (x0 + 22 : U32), y, 26, color)),
+        [Lay.hit(x0, y, (Ty.width(ty, 2n, text) + 26 : U32), 26, "emb-restart", copy)]}
+    case 26n:
+      Out{List.append(&2, R.Op, Lay.icon(ty, "pin", c, x0, (y + 5 : U32), color), Ty.text(ty, 2n, text, c, (x0 + 22 : U32), y, 26, color)),
+        [Lay.hit(x0, y, (Ty.width(ty, 2n, text) + 26 : U32), 26, "emb-pin", copy)]}
     case _:
       Out.ops(Ty.text(ty, 3n, text, c, x0, y, 23, color))
 
@@ -1461,7 +1506,7 @@ def TSel.of(+raw: String, +thread: String) -> TSel:
 # which lines hold text a selection can take, the face they are drawn in
 # and where that text starts (as TL.draw.k draws them)
 def TL.textual(+k: Nat) -> Bool:
-  Bool.not(Bool.or(Bool.or(Bool.or(Nat.is_eq(k, 4n), Nat.is_eq(k, 6n)), Bool.or(Nat.is_eq(k, 7n), Nat.is_eq(k, 9n))), Bool.or(Nat.is_eq(k, 12n), Bool.or(Nat.is_eq(k, 20n), Nat.is_eq(k, 21n)))))
+  Bool.not(Bool.or(Bool.or(Bool.or(Nat.is_eq(k, 4n), Nat.is_eq(k, 6n)), Bool.or(Nat.is_eq(k, 7n), Nat.is_eq(k, 9n))), Bool.or(Nat.is_eq(k, 12n), Bool.or(Nat.is_eq(k, 20n), Bool.or(Nat.is_eq(k, 21n), Nat.is_eq(k, 23n))))))
 
 def TL.face(+k: Nat) -> Nat:
   Bool.pick(Nat, Nat.is_eq(k, 1n), 4n, Bool.pick(Nat, Bool.or(Bool.or(Nat.is_eq(k, 8n), Nat.is_eq(k, 3n)), Bool.or(Bool.or(Nat.is_eq(k, 10n), Nat.is_eq(k, 11n)), Nat.is_eq(k, 15n))), 2n,
@@ -2165,7 +2210,71 @@ def Lay.timeline(+ty: Ty, +ls: List<&2, TLine>, +x0: U32, +x1: U32, +top: U32, +
   +ry = {((top + 16 + acc : U32) - off : U32) : U32}
   Out.all([TL.draw_all(ty, rest, TL.more(rest, ry, bot), D.Clip{x0, top, x1, bot}, x0, x1, ry, bot,
     Nat.sub(List.length(&2, TLine, ls), List.length(&2, TLine, rest)), sel), TL.sel.hit(ty, ls, sel, x0, x1), chrome,
-    Out{Nil{}, [Lay.hit(0, 0, 0, 0, "tl-most", U32.show(over)), Lay.hit(0, 0, 0, 0, "tl-jump", U32.show(TL.jump.sc(TL.mark.y(ls, 0), over)))]}])
+    Out{Nil{}, [Lay.hit(0, 0, 0, 0, "tl-most", U32.show(over)), Lay.hit(0, 0, 0, 0, "tl-jump", U32.show(TL.jump.sc(TL.mark.y(ls, 0), over))), Lay.hit(0, 0, 0, 0, "tl-clip", U32.show(x0) ++ "," ++ U32.show(top) ++ "," ++ U32.show(x1) ++ "," ++ U32.show(bot))]}])
+
+# Terminals over the thread
+# -------------------------
+# Each live terminal the timeline shows left focus hits ("emb:<key>")
+# over its whole
+# screen; its screen is drawn once over them, cut to the timeline
+# ("tl-clip"). Pinned ones are drawn at the top, under the subagents.
+
+def Ew.at(+v: String, +i: Nat) -> U32:
+  EM.Emb.num(Maybe.default(&2, String, List.get(&2, String, String.split(v, ','), i), ""))
+
+# where the timeline is: a hit no pointer reaches holds it ("x0,y0,x1,y1")
+def Ew.clip(hs: List<&2, S.Hit>) -> D.Clip:
+  match hs:
+    case Nil{}:
+      D.Clip.all()
+    case S.Hit{_, _, _, _, "tl-clip", +v} <> _:
+      D.Clip{Ew.at(v, 0n), Ew.at(v, 1n), Ew.at(v, 2n), Ew.at(v, 3n)}
+    case _ <> t:
+      Ew.clip(t)
+
+# a terminal's screen: a hit that gives it the focus
+def Ew.is(+a: String, +v: String) -> Bool:
+  Bool.and(String.eq(a, "focus"), String.starts_with(v, "emb:"))
+
+def Ew.seen(ks: List<&2, String>, +k: String) -> Bool:
+  match ks:
+    case Nil{}:
+      False{}
+    case x <> t:
+      Bool.or(String.eq(x, k), Ew.seen(t, k))
+
+def Ew.take(+h: S.Hit, +ks: List<&2, String>) -> List<&2, S.Hit>:
+  match h:
+    case S.Hit{x0, y0, x1, y1, +a, +v}:
+      Bool.pick(List<&2, S.Hit>, Bool.and(Ew.is(a, v), Bool.not(Ew.seen(ks, v))), [S.Hit{x0, y0, x1, y1, a, v}], Nil{})
+
+def Ew.add(+h: S.Hit, +ks: List<&2, String>) -> List<&2, String>:
+  match h:
+    case S.Hit{_, _, _, _, +a, +v}:
+      Bool.pick(List<&2, String>, Ew.is(a, v), v <> ks, ks)
+
+# the terminals' hits, one a terminal
+def Ew.uniq(hs: List<&2, S.Hit>, +ks: List<&2, String>) -> List<&2, S.Hit>:
+  match hs:
+    case Nil{}:
+      Nil{}
+    case +h <> t:
+      List.append(&2, S.Hit, Ew.take(h, ks), Ew.uniq(t, Ew.add(h, ks)))
+
+def Ew.cut(+c: D.Clip, +x0: U32, +y0: U32, +x1: U32, +y1: U32) -> D.Clip:
+  match c:
+    case D.Clip{+a, +b, +cx, +cy}:
+      D.Clip{U32.max(a, x0), U32.max(b, y0), U32.min(cx, x1), U32.min(cy, y1)}
+
+def Pins.one(+rows: U32) -> U32:
+  (26 + rows * 18 + 12 : U32)
+
+def Pins.height(vs: List<&2, EM.EV>) -> U32:
+  match vs:
+    case Nil{}:
+      0
+    case EM.EV{_, _, _, _, +r, _, _} <> t:
+      (Pins.one(r) + Pins.height(t) : U32)
 
 # Subagents
 # ---------
@@ -2764,6 +2873,41 @@ def Term.cursor(cur: VT.VCur, +focused: Bool, +blink: Bool, +cw: U32, +c: D.Clip
       [D.Draw.rect(c, (x + cx * cw : U32), (y + cy * 18 : U32), Bool.pick(U32, focused, cw, 2), 18, T.Th.accent(), Bool.pick(U32, focused, Bool.pick(U32, blink, 150, 0), 255))]
     case VT.VCur{_, _, False{}}:
       Nil{}
+
+def Ew.screen(+ty: Ty, +v: VT.Vt, +c: D.Clip, +x: U32, +y: U32, +w: U32, +h: U32, +focused: Bool, +blink: Bool) -> List<&2, R.Op>:
+  List.concat(&2, R.Op, [Term.lines(ty, VT.Vt.lines(v, 0n), Ew.cw(ty), c, (x + 12 : U32), y), Term.cursor(VT.Vt.cursor(v), focused, blink, Ew.cw(ty), c, (x + 12 : U32), y),
+    D.Draw.frame(c, x, y, w, h, Bool.pick(U32, focused, T.Th.focus(), T.Th.line()))])
+
+def Ew.draws(hs: List<&2, S.Hit>, +ty: Ty, +ec: U.Ec, +c: D.Clip, +fkey: String, +blink: Bool) -> List<&2, R.Op>:
+  match hs:
+    case Nil{}:
+      Nil{}
+    case S.Hit{+x0, +y0, +x1, +y1, _, +k} <> t:
+      List.append(&2, R.Op, Ew.screen(ty, U.Ec.vt(ec, EM.Emb.focused(k)), Ew.cut(c, x0, y0, x1, y1), x0, y0, (x1 - x0 : U32), (y1 - y0 : U32), String.eq(EM.Emb.focused(k), fkey), blink), Ew.draws(t, ty, ec, c, fkey, blink))
+
+def Ew.over(+ty: Ty, o: Out, +ec: U.Ec, +fkey: String, +blink: Bool) -> Out:
+  match o:
+    case Out{os, +hs}:
+      Out{List.append(&2, R.Op, os, Ew.draws(Ew.uniq(hs, Nil{}), ty, ec, Ew.clip(hs), fkey, blink)), hs}
+
+def Lay.pin(+ty: Ty, +ec: U.Ec, v: EM.EV, +x0: U32, +x1: U32, +y: U32, +fkey: String, +blink: Bool) -> Out:
+  match v:
+    case EM.EV{+key, _, +title, +cols, +rows, _, _}:
+      +w = Ew.w(ty, cols, x0, x1)
+      +sy = {(y + 26 : U32) : U32}
+      Out.all([Out{List.concat(&2, R.Op, [Lay.icon(ty, "terminal", D.Clip.all(), x0, (y + 5 : U32), T.Th.faint()), Ty.text(ty, 2n, Ty.fit(ty, 2n, title, (w - 56 : U32)), D.Clip.all(), (x0 + 22 : U32), y, 26, T.Th.dim()),
+          Lay.icon(ty, "pin", D.Clip.all(), (x0 + w - 20 : U32), (y + 5 : U32), T.Th.accent()),
+          [D.Draw.rect(D.Clip.all(), x0, sy, w, (rows * 18 : U32), VT.Vt.bg(), 255)]]),
+        [Lay.hit((x0 + w - 26 : U32), y, 26, 26, "emb-pin", key), Lay.hit(x0, sy, w, (rows * 18 : U32), "focus", EM.Emb.focus(key))]},
+        Out.ops(Ew.screen(ty, U.Ec.vt(ec, key), D.Clip{x0, sy, (x0 + w : U32), (sy + rows * 18 : U32)}, x0, sy, w, (rows * 18 : U32), String.eq(key, fkey), blink))])
+
+# the thread's pinned terminals, under the subagents
+def Lay.pins(+ty: Ty, +ec: U.Ec, vs: List<&2, EM.EV>, +x0: U32, +x1: U32, +y: U32, +fkey: String, +blink: Bool) -> Out:
+  match vs:
+    case Nil{}:
+      Out.none()
+    case EM.EV{k, i, t, c, +r, l, p} <> rest:
+      Out.cat(Lay.pin(ty, ec, EM.EV{k, i, t, c, r, l, p}, x0, x1, y, fkey, blink), Lay.pins(ty, ec, rest, x0, x1, (y + Pins.one(r) : U32), fkey, blink))
 
 # the thread's terminal (ctrl+j), a shell in the thread's directory
 def Lay.term(+ty: Ty, +v: VT.Vt, +x0: U32, +x1: U32, +y0: U32, +h: U32, +focused: Bool, +blink: Bool) -> Out:
@@ -3898,7 +4042,8 @@ def TL.part.act(step: Bool, +ty: Ty, e: M.Entry, +px: U32) -> TLPart:
     case True{} M.Act{+id, _, _, _, _, _}:
       TLPart{[TLine{Ty.fit(ty, 2n, HS.Hist.row(e), (px - 22 : U32)), T.Th.accent(), 16, id, 0}], Nil{}, Nil{}}
     case _ M.Act{_, _, +tone, kind, summary, _}:
-      TLPart{[TLine{Ty.fit(ty, 2n, kind ++ "  " ++ summary, px), Bool.pick(U32, String.eq(tone, "error"), T.Th.bad(), T.Th.dim()), 3, "", 0}], Nil{}, Nil{}}
+      Bool.pick(TLPart, String.eq(tone, EM.Emb.tone()), TLPart{Nil{}, Nil{}, Nil{}},
+        TLPart{[TLine{Ty.fit(ty, 2n, kind ++ "  " ++ summary, px), Bool.pick(U32, String.eq(tone, "error"), T.Th.bad(), T.Th.dim()), 3, "", 0}], Nil{}, Nil{}})
     case _ M.Msg{_, _, _, +text, _}:
       TLPart{[TLine{Ty.fit(ty, 2n, text, px), T.Th.dim(), 3, "", 0}], Nil{}, Nil{}}
 
@@ -3931,12 +4076,45 @@ def TL.mine_of(+e: M.Entry, +sel: String) -> Bool:
 # an entry of this thread (headed by the thread it came from, if another
 # thread sent it) or one this thread sent elsewhere (a link line), from
 # its part
+# a terminal's lines, made each frame (whether it is live changes with
+# the clock, the pin and the person's messages)
+def TL.emb.rows(n: Nat, +i: U32, +cols: U32, +rows: U32, +key: String) -> List<&2, TLine>:
+  match n:
+    case 0n:
+      Nil{}
+    case 1n+j:
+      TLine{U32.show(cols), rows, 23, key, i} <> TL.emb.rows(j, (i + 1 : U32), cols, rows, key)
+
+def TL.emb.k(live: Bool, pinned: Bool, +ty: Ty, +th: String, ev: EM.EV, +px: U32) -> List<&2, TLine>:
+  match live pinned ev:
+    case True{} True{} EM.EV{+key, _, +title, _, _, _, _}:
+      [TLine{Ty.fit(ty, 2n, title ++ "  ·  pinned at the top", (px - 26 : U32)), T.Th.faint(), 26, key, 0}]
+    case True{} False{} EM.EV{+key, _, +title, +cols, +rows, _, _}:
+      TLine{Ty.fit(ty, 2n, title, (Ew.w(ty, cols, 0, px) - 56 : U32)), T.Th.dim(), 24, key, cols} <> List.append(&2, TLine, TL.emb.rows(U32.to_nat(rows), 0, cols, rows, key), [TLine{"", 0, 4, "", 0}])
+    case False{} _ EM.EV{_, +id, +title, _, _, _, _}:
+      [TLine{Ty.fit(ty, 2n, title ++ "  ·  inactive, click to restart", (px - 26 : U32)), T.Th.faint(), 25, th ++ "\t" ++ id, 0}]
+
+def TL.emb.ev(+ev: EM.EV, +ty: Ty, +th: String, +px: U32) -> List<&2, TLine>:
+  match ev:
+    case EM.EV{k, i, t, c, r, +live, +pinned}:
+      TL.emb.k(live, pinned, ty, th, EM.EV{k, i, t, c, r, live, pinned}, px)
+
+def TL.emb(+ty: Ty, +e: M.Entry, +st: M.State, +px: U32, +pics: Map<&2, String>) -> List<&2, TLine>:
+  TL.emb.ev(EM.Emb.view(st, e, EM.Emb.last_user(M.State.mine(st, TL.thread_of(e)), 0n), EM.Emb.at.num(U.Str.get(pics, "clock"), 0n)), ty, TL.thread_of(e), px)
+
+def TL.entry.t(term: Bool, +ty: Ty, +e: M.Entry, +st: M.State, +px: U32, +pics: Map<&2, String>, p: TLPart) -> List<&2, TLine>:
+  match term:
+    case True{}:
+      TL.emb(ty, e, st, px, pics)
+    case False{}:
+      TL.part.join(ty, p, pics, px)
+
 def TL.entry.p(mine: Bool, +ty: Ty, e: M.Entry, +st: M.State, +px: U32, +pics: Map<&2, String>, p: TLPart) -> List<&2, TLine>:
   match mine e:
     case True{} M.Msg{+id, _, _, _, _}:
       List.append(&2, TLine, TL.from.k(String.is_empty(M.Link.from(id)), M.Link.from(id), st, px, ty), TL.part.join(ty, p, pics, px))
-    case True{} _:
-      TL.part.join(ty, p, pics, px)
+    case True{} +a:
+      TL.entry.t(EM.Emb.is(a), ty, a, st, px, pics, p)
     case False{} M.Msg{_, +t, _, +x, _}:
       [TLine{Ty.fit(ty, 2n, "→ " ++ U.Tasks.title(st, t) ++ ":  " ++ TL.first_line(x), px), T.Th.accent(), 10, t, 0}]
     case False{} _:
@@ -4376,7 +4554,7 @@ def Lay.composer.a(+ty: Ty, +draft: String, +ls: List<&2, String>, +held: String
 
 def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: String, +st: M.State, +sel: String, +live: String, +caret: Nat, +mark: Nat, +focus: String, +blink: Bool,
     +x0: U32, +x1: U32, +h: U32, +sc: U32, pa: Bool, term: Bool, +info: String, +picking: Bool, +pend: List<&2, String>, +rs: List<&2, U.SkillRow>, +now: Nat,
-    +atts: List<&2, String>, +up: String, +path: String, +pics: Map<&2, String>, del: Bool, +tsel: TSel, +moff: String, +ph: M.Phase, +hy: U32, more: Bool, +bq: String, +ba: String, +ren: String, +rtext: String) -> Out:
+    +atts: List<&2, String>, +up: String, +path: String, +pics: Map<&2, String>, del: Bool, +tsel: TSel, +moff: String, +ph: M.Phase, +hy: U32, more: Bool, +bq: String, +ba: String, +ren: String, +rtext: String, +ec: U.Ec, +fkey: String) -> Out:
   match t:
     case M.Thread{id, p, ti, c, a, +turn, pe, ar, o, sa, ua, pi, en, br, wt, +pr, +mo, rm, im, se, de}:
       +cw = {U32.min((x1 - x0 - 64 : U32), 780) : U32}
@@ -4385,7 +4563,8 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
       +ts = SB.Subs.rows(st, pics, sel)
       # the row under the header: the parent's link
       +pl = {Bool.pick(U32, String.is_empty(U.Tasks.parent(st, sel)), 0, 32) : U32}
-      +top = {(52 + hy + pl + Subs.height(ts) : U32) : U32}
+      +pins = U.Ec.pins(ec, st, sel)
+      +top = {(52 + hy + pl + Subs.height(ts) + Pins.height(pins) : U32) : U32}
       +asks = U.Asks.open(st, sel)
       +ah = Asks.h(ty, asks, (cw - 32 : U32))
       +qs = M.Queue.items(st, sel)
@@ -4404,6 +4583,7 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
           Ren.field.if(String.eq(ren, sel), ty, rtext, focus, blink, caret, mark, x0, x1, hy),
           Lay.parent(ty, st, sel, cx0, (58 + hy : U32)),
           Lay.subs(ty, ts, cx0, cx1, (60 + hy + pl : U32)),
+          Lay.pins(ty, ec, pins, cx0, cx1, (60 + hy + pl + Subs.height(ts) : U32), fkey, blink),
           Lay.composer.a(ty, draft, ls, held, caret, mark, focus, blink, cx0, cx1, h, U.Follow.button(st, sel, Lay.running(turn), stop, draft), U.Follow.act(stop), U.Effort.label(U.Models.label(pr, mo), U.Effort.of(st, sel)) ++ U.Usage.tail(st, sel), rs, atts, up, path),
           Lay.queued(ty, qs, Lay.running(turn), cx0, cx1, (h - eh : U32)),
           Lay.todos(ty, tds, cx0, cx1, (h - eh - 124 - Lay.qh(qs) : U32)),
@@ -4674,14 +4854,17 @@ def Vx.view(+ty: Ty, +n: S.Nui, +st: M.State, +sel: String, +x0: U32, +x1: U32, 
 def Lay.more(+memo: TLMemo, +n: S.Nui, +sel: String) -> Bool:
   Nat.is_ge(TL.memo.size(memo), U.Page.shown(S.Nui.ui(n), sel))
 
-def Lay.thread.at(+ty: Ty, +memo: TLMemo, +n: S.Nui, +x0: U32, +x1: U32, +hy: U32) -> Out:
+def Lay.thread.at.k(+ty: Ty, +memo: TLMemo, +n: S.Nui, +x0: U32, +x1: U32, +hy: U32) -> Out:
   match n:
     case S.Nui{U.Ui{+st, +sel, _, +live, +op, _, _, _, pa, _, _, _, _, _, +nf, _, _}, _, +h, _, _, _, +sc, +caret, +focus, +path, _, _, _}:
       Out.cat(Out.cat(Out.cat(Lay.drop_mark(U.Flag.get(op, "drop"), ty, U.Ui.draft_text(S.Nui.ui(n)), x0, x1, h), Lay.thread.k(ty, memo, U.Ui.thread(st, sel), U.Ui.draft_text(S.Nui.ui(n)), S.Cs.held(n), st, sel, U.Str.get(live, sel), caret, S.Nui.mark(n), focus, S.Blink.on(n), x0, x1, h, sc, pa, U.Flag.get(op, "term"),
         U.Str.get(nf, "models"), U.Flag.get(op, "models"), U.Ui.pending(S.Nui.ui(n), sel), U.Ui.skills(S.Nui.ui(n)), U.Side.now(S.Nui.ui(n)),
         U.Ui.atts(S.Nui.ui(n), sel), U.Ui.uploading(S.Nui.ui(n), sel), path, nf, U.Ui.deleting(S.Nui.ui(n)), TSel.of(U.Ui.scratch(S.Nui.ui(n), "@ts"), sel), U.Ui.scratch(S.Nui.ui(n), "@menu.off"), U.Side.phase(st, U.Ui.thread(st, sel)), hy, Lay.more(memo, n, sel), U.Btw.question(S.Nui.ui(n)), U.Btw.reply.of(S.Nui.ui(n)),
-        U.Ren.on(S.Nui.ui(n)), U.Ui.scratch(S.Nui.ui(n), "@f.title"))),
+        U.Ren.on(S.Nui.ui(n)), U.Ui.scratch(S.Nui.ui(n), "@f.title"), U.Ec.of(S.Nui.ui(n), sel), EM.Emb.focused(focus))),
         Vx.view(ty, n, st, sel, x0, x1, h)), Lay.earlier(Lay.more(memo, n, sel)))
+
+def Lay.thread.at(+ty: Ty, +memo: TLMemo, +n: S.Nui, +x0: U32, +x1: U32, +hy: U32) -> Out:
+  Ew.over(ty, Lay.thread.at.k(ty, memo, n, x0, x1, hy), U.Ec.of(S.Nui.ui(n), U.Ui.sel(S.Nui.ui(n))), EM.Emb.focused(S.Nui.focus_of(n)), S.Blink.on(n))
 
 # the thread view with its header at the top
 def Lay.thread(+ty: Ty, +memo: TLMemo, +n: S.Nui, +x0: U32, +x1: U32) -> Out:

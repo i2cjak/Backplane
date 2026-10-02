@@ -299,6 +299,17 @@ button.chip:hover { border-color: var(--bad); color: var(--bad); }
 .screen .cur { position: absolute; width: 1ch; height: 17px; background: var(--accent); opacity: 0.55; margin-left: 12px; margin-top: 4px; pointer-events: none; }
 .term-in { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; resize: none; border: 0; padding: 0; background: transparent; color: transparent; caret-color: transparent; cursor: text; }
 .screen:focus-within { box-shadow: inset 0 0 0 1px var(--accent); }
+.emb { margin: 8px 0; max-width: 100%; }
+.emb-head { display: flex; align-items: center; gap: 6px; color: var(--faint); font-size: 12px; padding: 2px 0 4px; }
+.emb-head .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.emb-head .icon.on { color: var(--accent); }
+.emb-screen { flex: none; max-width: 100%; border: 1px solid var(--line); overflow: hidden; }
+.emb-row { color: var(--faint); background: none; border: 1px solid var(--line); padding: 4px 8px; display: inline-flex; gap: 6px; align-items: center; cursor: pointer; font-size: 12px; }
+.emb.off .emb-row { opacity: 0.6; }
+.work { position: sticky; top: 0; z-index: 2; background: var(--bg); max-width: 860px; }
+.work:empty { display: none; }
+.work .subs { position: static; }
+.emb-pins { padding: 0 0 4px; border-bottom: 1px solid var(--line); }
 .term-probe { position: absolute; visibility: hidden; font: 12px/17px var(--mono); white-space: pre; }
 
 /* Diff */

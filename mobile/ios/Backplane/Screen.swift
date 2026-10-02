@@ -111,6 +111,8 @@ struct Entry: Decodable, Identifiable {
     let images: [Shot]?
     let open: Bool?
     let value: String?
+    // a terminal in the chat (kind "emb"): its item in the thread's embs
+    let key: String?
 }
 
 // what the agent waits on the user for: an approval, a question or a
@@ -190,6 +192,16 @@ struct Term: Decodable {
     let fg, bg: UInt32
     let lines: [[TermRun]]
     let cursor: TermCursor
+}
+
+// a terminal in the chat (core/emb.bend): its key, size, whether it is live
+// or pinned, the value "emb-restart" sends, and its screen while live
+struct Emb: Decodable {
+    let key, id, title: String
+    let cols, rows: Int
+    let live, pinned: Bool
+    let restart: String
+    let term: Term?
 }
 
 // the board viewer (src/mobile/view.bend): the source open ("" closed),
@@ -392,6 +404,8 @@ struct ThreadView: Decodable {
     let cap: Int?
     let diff: Diff?
     let term: Term?
+    // the thread's terminals in the chat (entries of kind "emb" name them)
+    let embs: [Emb]?
 }
 
 // a delete a row asked for, waiting for yes ("row-delete" id) or no

@@ -50,6 +50,7 @@ import ../core/semver.bend as SV
 import ../core/desk.bend as DK
 import ../core/notice.bend as NO
 import ../core/hist.bend as HI
+import ../core/emb.bend as EM
 
 # The server. One hub computation owns the read model and the event log;
 # every connection and agent process is its own computation and talks to
@@ -82,6 +83,8 @@ type Msg is Data:
   # a message for one client, already CBOR
   PushBin{client: U32, cbor: List<&2, U32>}
   TermOut{thread: String, data: List<&2, U32>}
+  # a chat terminal's snapshot for a client (TM.Et.all(): every client)
+  TermTo{client: U32, key: String, cols: U32, rows: U32, data: List<&2, U32>}
   # a line for a thread's agent built off the hub (a message with images)
   AgentWrite{thread: String, line: String}
   # time to look for a release on the update channel
@@ -2271,6 +2274,10 @@ def Term.fwd.got(m: Maybe<&1, TM.TOut>, +inbox: Chan(Msg), k: Unit -> IO(Unit)) 
       do IO<Unit>:
         ok : Bool <- Chan.send(Msg, inbox, TermOut{th, bs})
         k(Unit{})
+    case Some{TM.TTo{c, key, co, ro, bs}}:
+      do IO<Unit>:
+        ok : Bool <- Chan.send(Msg, inbox, TermTo{c, key, co, ro, bs})
+        k(Unit{})
     case None{}:
       IO.pure(Unit, Unit{})
 
@@ -2535,6 +2542,24 @@ def Hub.term_out(h: Hub, +thread: String, data: List<&2, U32>) -> IO(Hub):
     case Hub{st, f, ls, +cl, as, inbox, cfg, note}:
       do IO<Hub>:
         Wire.all(cl, Term.json(thread, data))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+
+# a chat terminal from the start: a blank cols x rows screen, then bytes
+def Term.json.reset(+key: String, +cols: U32, +rows: U32, bs: List<&2, U32>) -> String:
+  "{\"t\":\"term\",\"thread\":" ++ J.Json.show(J.Str{key}) ++ ",\"b\":[" ++ String.join(Term.nums(bs), ",") ++ "],\"reset\":[" ++ U32.show(cols) ++ "," ++ U32.show(rows) ++ "]}"
+
+def Hub.term_to.k(all: Bool, +cl: List<&2, Client>, +client: U32, +text: String) -> IO(Unit):
+  match all:
+    case True{}:
+      Wire.all(cl, text)
+    case False{}:
+      Wire.send(Clients.get(cl, client), WText{text})
+
+def Hub.term_to(h: Hub, +client: U32, +key: String, +cols: U32, +rows: U32, data: List<&2, U32>) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, +cl, as, inbox, cfg, note}:
+      do IO<Hub>:
+        Hub.term_to.k(U32.is_eq(client, TM.Et.all()), cl, client, Term.json.reset(key, cols, rows, data))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
 
 def Cfg.with_models(c: Cfg, +ms: String, +mt: String) -> Cfg:
@@ -4042,6 +4067,118 @@ def Bot.fx(i: Nat, +st: M.State, +inbox: Chan(Msg), +cfg: Cfg, +a: String, +b: S
     case _:
       IO.pure(Unit, Unit{})
 
+# Terminals in the chat at the person's next message
+# --------------------------------------------------
+# What the thread's terminals show (those the agent has not seen as they
+# are) goes after the message, and the ones not pinned stop: they grey
+# out in the chat until a click starts them again (core/emb.bend).
+
+def EmbNote.ask(m: Maybe<&2, Chan(TM.TMsg)>, +thread: String) -> IO(String):
+  match m:
+    case Some{q}:
+      do IO<String>:
+        +r : Chan(String) <- Chan.new(String, 1)
+        ok : Bool <- Chan.send(TM.TMsg, q, TM.TNote{thread, r})
+        a : Maybe<&1, String> <- Chan.recv(String, r)
+        return Maybe.default(&1, String, a, "")
+    case None{}:
+      IO.pure(String, "")
+
+def EmbNote.kill(ks: List<&2, String>, +m: Maybe<&2, Chan(TM.TMsg)>) -> IO(Unit):
+  match ks:
+    case Nil{}:
+      IO.pure(Unit, Unit{})
+    case k <> t:
+      IO.bind(Unit, Unit, Term.put(m, TM.TKill{k}), u => EmbNote.kill(t, m))
+
+def EmbNote.take.k(has: Bool, +cfg: Cfg, +st: M.State, +thread: String) -> IO(String):
+  match has:
+    case True{}:
+      do IO<String>:
+        +n : String <- EmbNote.ask(Cfg.tm(cfg), thread)
+        EmbNote.kill(EM.Emb.loose(M.State.mine(st, thread), st), Cfg.tm(cfg))
+        return n
+    case False{}:
+      IO.pure(String, "")
+
+def EmbNote.take(+cfg: Cfg, +st: M.State, +thread: String) -> IO(String):
+  EmbNote.take.k(EM.Emb.any(M.State.mine(st, thread)), cfg, st, thread)
+
+def EmbNote.user.k(m: Maybe<&2, J.Json>) -> Bool:
+  match m:
+    case Some{+o}:
+      String.eq(J.Json.get_str(o, "type", ""), "user")
+    case None{}:
+      False{}
+
+def EmbNote.user(+line: String) -> Bool:
+  EmbNote.user.k(J.Json.parse(line))
+
+def EmbNote.put.k(m: Maybe<&2, J.Json>, +line: String, +n: String) -> String:
+  match m:
+    case Some{+o}:
+      B.Claude.user(Mention.user_text(o) ++ n)
+    case None{}:
+      line
+
+def EmbNote.put(+line: String, +n: String) -> String:
+  Bool.pick(String, String.is_empty(n), line, EmbNote.put.k(J.Json.parse(line), line, n))
+
+# a Claude user line, with the note after its text
+def EmbNote.claude(user: Bool, +cfg: Cfg, +st: M.State, +thread: String, +line: String) -> IO(String):
+  match user:
+    case True{}:
+      IO.bind(String, String, EmbNote.take(cfg, st, thread), n => IO.pure(String, EmbNote.put(line, n)))
+    case False{}:
+      IO.pure(String, line)
+
+# terminal_read: the actor's answer, again every 250 ms while the program
+# runs and waitMs lasts
+def TermRead.ask(+q: Chan(TM.TMsg), +key: String) -> IO(String):
+  do IO<String>:
+    +r : Chan(String) <- Chan.new(String, 1)
+    ok : Bool <- Chan.send(TM.TMsg, q, TM.TRead{key, r})
+    a : Maybe<&1, String> <- Chan.recv(String, r)
+    return Maybe.default(&1, String, a, "gone\n")
+
+def TermRead.answer(+rid: String, +text: String) -> String:
+  "{\"jsonrpc\":\"2.0\",\"id\":" ++ rid ++ ",\"result\":" ++ J.Json.show(J.Json.obj([
+    J.KV{"content", J.Json.arr([J.Json.obj([J.KV{"type", J.Str{"text"}}, J.KV{"text", J.Str{Bool.pick(String, String.starts_with(text, "gone"), "There is no such terminal in this thread.", String.join(List.drop(&2, String, String.split(text, '\n'), 1n), "\n"))}}])])},
+    J.KV{"isError", J.Flag{String.starts_with(text, "gone")}}])) ++ "}"
+
+def TermRead.got(last: Bool, +text: String, +rid: String, +reply: Chan(String), k: Unit -> IO(Unit)) -> IO(Unit):
+  match last:
+    case False{}:
+      Bool.pick(IO(Unit), String.starts_with(text, "running\n"), IO.bind(Unit, Unit, IO.sleep(250), k),
+        IO.bind(Bool, Unit, Chan.send(String, reply, TermRead.answer(rid, text)), ok => IO.pure(Unit, Unit{})))
+    case True{}:
+      IO.bind(Bool, Unit, Chan.send(String, reply, TermRead.answer(rid, text)), ok => IO.pure(Unit, Unit{}))
+
+def TermRead.loop(fuel: Nat, +q: Chan(TM.TMsg), +key: String, +rid: String, +reply: Chan(String)) -> IO(Unit):
+  match fuel:
+    case 0n:
+      IO.bind(String, Unit, TermRead.ask(q, key), t => TermRead.got(True{}, t, rid, reply, u => IO.pure(Unit, Unit{})))
+    case 1n+f:
+      IO.bind(String, Unit, TermRead.ask(q, key), t => TermRead.got(False{}, t, rid, reply, u => TermRead.loop(f, q, key, rid, reply)))
+
+def TermRead.run(m: Maybe<&2, Chan(TM.TMsg)>, +key: String, +wait: Nat, +rid: String, +reply: Chan(String)) -> IO(Unit):
+  match m:
+    case Some{q}:
+      TermRead.loop(Nat.div(Nat.min(wait, 120000n), 250n), q, key, rid, reply)
+    case None{}:
+      IO.bind(Bool, Unit, Chan.send(String, reply, TermRead.answer(rid, "gone\n")), ok => IO.pure(Unit, Unit{}))
+
+def TermRead.is(+o: J.Json) -> Bool:
+  Bool.and(String.eq(J.Json.get_str(o, "method", ""), "tools/call"), String.eq(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), "terminal_read"))
+
+def Hub.term_read(h: Hub, +thread: String, +o: J.Json, +reply: Chan(String)) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        +a : J.Json = J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments")
+        IO.spawn(Unit, TermRead.run(Cfg.tm(cfg), EM.Emb.key(thread, J.Json.get_str(a, "id", "")), U32.to_nat(J.Json.get_u32(a, "waitMs", 0)), J.Json.as_raw(J.Json.get(o, "id"), "null"), reply))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+
 def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
   match h o:
     case Hub{st, f, ls, +cl, as, inbox, cfg, note} B.Send{+client, text}:
@@ -4054,10 +4191,11 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{+st, f, ls, cl, +as, inbox, cfg, note} B.AgentStart{+thread, +cwd, _, +model, +session, r, i}:
       Hub.start.k(Agents.get(as, thread), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, cwd, model, session, r, i, Hub.effort_of(st, thread))
-    case Hub{+st, f, ls, cl, +as, inbox, cfg, note} B.AgentSend{+thread, +line}:
+    case Hub{+st, f, ls, cl, +as, inbox, +cfg, note} B.AgentSend{+thread, +line}:
       do IO<Hub>:
         +now : Nat <- Now.nat()
-        +l2 : String = Bot.line(Bool.or(BO.World.is_bot_thread(M.State.bots(st), thread), RF.Refs.maybe(line)), st, now, thread, line)
+        +l1 : String = Bot.line(Bool.or(BO.World.is_bot_thread(M.State.bots(st), thread), RF.Refs.maybe(line)), st, now, thread, line)
+        +l2 : String <- EmbNote.claude(EmbNote.user(l1), cfg, st, thread, l1)
         Hub.agent_send.k(String.contains(l2, "$"), Agents.get(as, thread), l2, B.Hub.cwd(st, B.Hub.thread(st, thread)))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{st, f, ls, cl, +as, inbox, cfg, note} B.AgentStop{+thread}:
@@ -4077,7 +4215,8 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         +fs : K.Files <- K.Files.read(cwd)
         Hub.auto(cl, thread, fs)
         +now : Nat <- Now.nat()
-        IO.spawn(Unit, Codex.go(cfg, st, thread, cwd, model, session, r, BH.Bots.turn(st, now, thread, text), fs, inbox))
+        +t2 : String = BH.Bots.turn(st, now, thread, text)
+        IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Codex.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, fs, inbox)))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{st, f, ls, cl, as, +inbox, +cfg, note} B.KiCadInstall{}:
       do IO<Hub>:
@@ -4088,7 +4227,8 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         +fs : K.Files <- K.Files.read(cwd)
         Hub.auto(cl, thread, fs)
         +now : Nat <- Now.nat()
-        IO.spawn(Unit, Grok.go(cfg, st, thread, cwd, model, session, r, BH.Bots.turn(st, now, thread, text), fs, inbox))
+        +t2 : String = BH.Bots.turn(st, now, thread, text)
+        IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Grok.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, fs, inbox)))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{st, f, ls, cl, as, inbox, cfg, note} B.DeskLook{+client, +thread, +focused}:
       Hub.desk(Hub{st, f, ls, cl, as, inbox, cfg, note}, client, thread, focused)
@@ -4107,6 +4247,18 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
     case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.TermOp{+op, +thread, +cwd, data, +cols, +rows}:
       do IO<Hub>:
         Term.put(Cfg.tm(cfg), Term.msg(op, thread, cwd, data, cols, rows))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.TermRun{key, ti, cwd, cmd, c, r, again}:
+      do IO<Hub>:
+        Term.put(Cfg.tm(cfg), TM.TRun{key, ti, cwd, cmd, c, r, again})
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.TermSnap{c, key}:
+      do IO<Hub>:
+        Term.put(Cfg.tm(cfg), TM.TSnap{c, key})
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.TermKill{key}:
+      do IO<Hub>:
+        Term.put(Cfg.tm(cfg), TM.TKill{key})
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.Git{+client, +id, +job, +thread, +cwd, +a, +b}:
       do IO<Hub>:
@@ -5873,8 +6025,15 @@ def Hub.mcp.route(pv: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +
     case False{}:
       Hub.mcp.gg(Gg.is(o), h, thread, o, body, reply, now)
 
+def Hub.mcp.tr(tr: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match tr:
+    case True{}:
+      Hub.term_read(h, thread, o, reply)
+    case False{}:
+      Hub.mcp.route(Preview.is(o), h, thread, o, body, reply, now)
+
 def Hub.mcp(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
-  Hub.mcp.route(Preview.is(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{})), h, thread, Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), body, reply, now)
+  Hub.mcp.tr(TermRead.is(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{})), h, thread, Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), body, reply, now)
 
 def Msg.kind(m: Msg) -> String:
   match m:
@@ -5906,6 +6065,8 @@ def Msg.kind(m: Msg) -> String:
       "push_bin"
     case TermOut{_, _}:
       "term_out"
+    case TermTo{_, _, _, _, _}:
+      "term_to"
     case ModelsFound{_, _}:
       "models"
     case MachinesFound{_}:
@@ -5987,6 +6148,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.push.bin(h, client, bs)
     case TermOut{thread, data}:
       Hub.term_out(h, thread, data)
+    case TermTo{c, key, co, ro, data}:
+      Hub.term_to(h, c, key, co, ro, data)
     case ModelsFound{ms, mt}:
       Hub.models(h, ms, mt)
     case MachinesFound{mc}:
@@ -6183,7 +6346,7 @@ def Main.opened(r: Result<&1, &1, U32 & String, File>, st: M.State, ls: List<&2,
         +tq : Chan(TM.TMsg) <- Chan.new(TM.TMsg, 1024)
         +to : Chan(TM.TOut) <- Chan.new(TM.TOut, 4096)
         shell : String <- Env.get("SHELL", "/bin/bash")
-        IO.spawn(Unit, TM.Term.loop(Fuel.forever(), tq, Nil{}, shell, to))
+        IO.spawn(Unit, TM.Term.start(tq, shell, home, to))
         IO.spawn(Unit, Term.fwd(Fuel.forever(), to, inbox))
         +vq : Chan(PV.PMsg) <- Chan.new(PV.PMsg, 1024)
         +vo : Chan(PV.POut) <- Chan.new(PV.POut, 1024)
