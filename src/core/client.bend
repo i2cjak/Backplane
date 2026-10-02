@@ -3,6 +3,7 @@ import ./json.bend as J
 import ./model.bend as M
 import ./codec.bend as C
 import ./vt.bend as VT
+import ./emb.bend as EM
 import ./fuzzy.bend as FZ
 import ./agent.bend as AG
 import ./attach.bend as AT
@@ -72,7 +73,6 @@ type Act is Data:
 # The machine marker for projects, sidebar rows and timeline headers.
 def Label.title(+st: M.State, +id: String, title: String) -> String:
   FR.Fr.title(st, id, title)
-
 
 def Act.cmds(a: Act) -> List<&2, Cmd>:
   match a:
@@ -2000,6 +2000,16 @@ def Ui.term_feed(u: Ui, +thread: String, bs: List<&2, U32>) -> Ui:
     case Ui{st, sel, dr, live, op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, +tr}:
       Ui{st, sel, dr, live, op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, Map.set(&2, VT.Vt, tr, thread, VT.Vt.feed(Term.get(tr, thread), bs))}
 
+# a chat terminal's snapshot ("reset": [cols, rows]) starts its screen
+# over; other bytes go onto it
+def Emb.recv(r: List<&2, J.Json>, +u: Ui, +key: String, bs: List<&2, U32>) -> Ui:
+  match r:
+    case +c <> +w <> _:
+      Ui.term_set(u, key, VT.Vt.feed(VT.Vt.new(U32.from_nat(Maybe.default(&2, Nat, Nat.read(J.Json.as_raw(Some{c}, "80")), 80n)),
+        U32.from_nat(Maybe.default(&2, Nat, Nat.read(J.Json.as_raw(Some{w}, "24")), 24n))), bs))
+    case _:
+      Ui.term_feed(u, key, bs)
+
 def Ui.term_replies.k(none: Bool, +u: Ui, +thread: String, +bs: List<&2, U32>, cs: List<&2, Cmd>) -> Act:
   match none:
     case True{}:
@@ -2586,7 +2596,6 @@ def Menu.items(+u: Ui, rich: Bool) -> List<&2, MItem>:
 def Menu.title(+u: Ui) -> String:
   Bool.pick(String, String.eq(Menu.kind(Menu.open(u)), "t"), Active.title(Ui.thread(Side.st(u), Menu.id(Menu.open(u)))),
     Bool.pick(String, String.eq(Menu.kind(Menu.open(u)), "f"), Menu.id(Menu.open(u)), Ui.project_title(Side.st(u), Menu.id(Menu.open(u)))))
-
 
 # opening one disarms any delete or remove; the same again shuts it
 def Menu.set(+u: Ui, +m: String) -> Ui:
@@ -4474,7 +4483,6 @@ def Far.pick(m: Maybe<&2, BT.Bot>, +u: Ui, +id: String) -> Act:
 def Bots.remote.select(+u: Ui, +id: String) -> Act:
   Far.pick(Far.mirrored(BT.World.bots(M.State.bots(Ui.state.of(u))), BT.Member.key(Bots.peers(u), id)), u, id)
 
-
 # the members that are not the bot k stands for (BT.Member.key: "Kit@box"
 # and "Kit@<box's id>" are one bot)
 def Bots.drop(ms: List<&2, String>, +ps: List<&2, BT.Peer>, +k: String) -> List<&2, String>:
@@ -5611,7 +5619,7 @@ def Ui.recv.k(i: Nat, u: Ui, +o: J.Json) -> Ui:
     case 5n:
       Ui.view(u, o)
     case 6n:
-      Ui.term_feed(u, J.Json.get_str(o, "thread", ""), Term.bytes(J.Json.elems(J.Json.get_obj(o, "b"))))
+      Emb.recv(J.Json.elems(J.Json.get_obj(o, "reset")), u, J.Json.get_str(o, "thread", ""), Term.bytes(J.Json.elems(J.Json.get_obj(o, "b"))))
     case 7n:
       Ui.info_merge(u, J.Json.get_obj(o, "info"))
     case 8n:
@@ -5821,7 +5829,6 @@ def Timeline.room(r: BT.Room, +u: Ui) -> Bool:
 def Ui.timeline(+u: Ui) -> Bool:
   Timeline.visible(Ui.flag(u, "settings"), Bool.not(String.is_empty(Ui.sel(u))), Timeline.room(BT.World.room(M.State.bots(Ui.state.of(u)), Ui.scratch(u, "@room")), u))
 
-
 def Ui.shows.k(delta: Bool, +sel: String, +o: J.Json) -> Bool:
   match delta:
     case True{}:
@@ -5841,18 +5848,7 @@ def Ui.shows(+u: Ui, +o: J.Json) -> Bool:
 # server's log arrives first on each) sends the outbox again, so nothing
 # the user sent is lost to a dropped link
 def Ui.recv_act.go(u: Ui, +o: J.Json) -> Act:
-  Ui.recv_act.t(String.eq(J.Json.get_str(o, "t", ""), "term"), J.Json.get_str(o, "thread", ""), Fm.again(String.eq(J.Json.get_str(o, "t", ""), "log"), Ui.recv_act.k(String.eq(J.Json.get_str(o, "t", ""), "log"), Ui.recv(u, o))))
-
-# a desktop notification ({"t":"notify"}, sent only to a desk)
-def Ui.recv_act.n(notify: Bool, u: Ui, +o: J.Json) -> Act:
-  match notify:
-    case True{}:
-      Act{u, [Notify{J.Json.get_str(o, "thread", ""), J.Json.get_str(o, "title", ""), J.Json.get_str(o, "body", ""), J.Json.get_str(o, "key", "")}]}
-    case False{}:
-      Mpage.sync(Ui.recv_act.go(u, o))
-
-def Ui.recv_act(u: Ui, +o: J.Json) -> Act:
-  Ui.recv_act.n(String.eq(J.Json.get_str(o, "t", ""), "notify"), u, o)
+  Ui.recv_act.t(Bool.and(String.eq(J.Json.get_str(o, "t", ""), "term"), Bool.not(EM.Emb.is_key(J.Json.get_str(o, "thread", "")))), J.Json.get_str(o, "thread", ""), Fm.again(String.eq(J.Json.get_str(o, "t", ""), "log"), Ui.recv_act.k(String.eq(J.Json.get_str(o, "t", ""), "log"), Ui.recv(u, o))))
 
 # Desks
 # -----
@@ -6151,6 +6147,172 @@ def Ui.act.k(i: Nat, u: Ui, +value: String) -> Act:
     case _:
       Bots.act(Nat.sub(i, 77n), u, value)
 
+def Emb.has.k(r: Map<&2, VT.Vt> & Bool) -> Bool:
+  (_, b) = r
+  b
+
+# what drawing a thread's terminals needs (every client): the screens,
+# when the person last wrote in the thread, the clock
+type Ec is Data:
+  Ec{tr: Map<&2, VT.Vt>, last: Nat, now: Nat}
+
+def Ec.none() -> Ec:
+  Ec{Map.new(&2, VT.Vt), 0n, 0n}
+
+def Ec.make(+tr: Map<&2, VT.Vt>, +st: M.State, +th: String, +now: Nat) -> Ec:
+  Ec{tr, EM.Emb.last_user(M.State.mine(st, th), 0n), now}
+
+def Ec.of(+u: Ui, +th: String) -> Ec:
+  match u:
+    case Ui{+st, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, +tr}:
+      Ec.make(tr, st, th, Side.now(u))
+
+def Ec.vt(+ec: Ec, +key: String) -> VT.Vt:
+  match ec:
+    case Ec{+tr, _, _}:
+      Term.get(tr, key)
+
+def Ec.view(+ec: Ec, +st: M.State, +e: M.Entry) -> EM.EV:
+  match ec:
+    case Ec{_, +last, +now}:
+      EM.Emb.view(st, e, last, now)
+
+def Ec.pins(+ec: Ec, +st: M.State, +th: String) -> List<&2, EM.EV>:
+  match ec:
+    case Ec{_, +last, +now}:
+      EM.Emb.pins.go(M.State.mine(st, th), st, last, now)
+
+# Terminals in the chat (core/emb.bend)
+# -------------------------------------
+# A live one the selected thread shows and this client holds no screen
+# for is asked for once (term.snap, scratch "@emb.asked:<key>"); keys and
+# pastes go to it by key; a click on an inactive one starts it again; the
+# pin is the setting "emb.pin:<key>".
+
+def Emb.has(+u: Ui, +key: String) -> Bool:
+  match u:
+    case Ui{_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, tr}:
+      Emb.has.k(Map.has(&2, VT.Vt, tr, key))
+
+def Emb.views.k(is_t: Bool, +s: M.State, +e: M.Entry, +last: Nat, +now: Nat, rest: List<&2, EM.EV>) -> List<&2, EM.EV>:
+  match is_t:
+    case True{}:
+      EM.Emb.view(s, e, last, now) <> rest
+    case False{}:
+      rest
+
+# what the thread's terminals look like now (key, live, pinned, size)
+def Emb.views.go(es: List<&2, M.Entry>, +s: M.State, +last: Nat, +now: Nat) -> List<&2, EM.EV>:
+  match es:
+    case Nil{}:
+      Nil{}
+    case +e <> t:
+      Emb.views.k(EM.Emb.is(e), s, e, last, now, Emb.views.go(t, s, last, now))
+
+def Emb.views(+u: Ui, +th: String) -> List<&2, EM.EV>:
+  Emb.views.go(M.State.mine(Ui.state(u), th), Ui.state(u), EM.Emb.last_user(M.State.mine(Ui.state(u), th), 0n), Side.now(u))
+
+def Emb.want.k(need: Bool, +key: String, a: Act) -> Act:
+  match need a:
+    case True{} Act{u, cs}:
+      Ui.also(Ui.rpc(Ui.scratch_set(u, "@emb.asked:" ++ key, "1"), "term.snap", [J.KV{"key", J.Str{key}}]), cs)
+    case False{} _:
+      a
+
+def Emb.want.go(live: Bool, +key: String, a: Act) -> Act:
+  match a:
+    case Act{+u, cs}:
+      Emb.want.k(Bool.and(live, Bool.and(Bool.not(Emb.has(u, key)), String.is_empty(Ui.scratch(u, "@emb.asked:" ++ key)))), key, Act{u, cs})
+
+def Emb.want(vs: List<&2, EM.EV>, a: Act) -> Act:
+  match vs:
+    case Nil{}:
+      a
+    case EM.EV{+key, _, _, _, _, live, _} <> t:
+      Emb.want(t, Emb.want.go(live, key, a))
+
+def Emb.sync(a: Act) -> Act:
+  match a:
+    case Act{+u, cs}:
+      Emb.want(Emb.views(u, Ui.sel(u)), Act{u, cs})
+
+# after a log, its changes or a view (not every delta)
+def Emb.sync.if(i: Nat, a: Act) -> Act:
+  match i:
+    case 0n:
+      Emb.sync(a)
+    case 1n:
+      Emb.sync(a)
+    case 2n:
+      Emb.sync(a)
+    case _:
+      a
+
+# a desktop notification ({"t":"notify"}, sent only to a desk)
+def Ui.recv_act.n(notify: Bool, u: Ui, +o: J.Json) -> Act:
+  match notify:
+    case True{}:
+      Act{u, [Notify{J.Json.get_str(o, "thread", ""), J.Json.get_str(o, "title", ""), J.Json.get_str(o, "body", ""), J.Json.get_str(o, "key", "")}]}
+    case False{}:
+      Emb.sync.if(C.Codec.pos(["log", "changes", "view"], J.Json.get_str(o, "t", "")), Mpage.sync(Ui.recv_act.go(u, o)))
+
+def Ui.recv_act(u: Ui, +o: J.Json) -> Act:
+  Ui.recv_act.n(String.eq(J.Json.get_str(o, "t", ""), "notify"), u, o)
+
+# after an action that chose another thread
+def Emb.sync.sel.k(moved: Bool, a: Act) -> Act:
+  match moved:
+    case True{}:
+      Emb.sync(a)
+    case False{}:
+      a
+
+def Emb.sync.sel(+old: String, a: Act) -> Act:
+  match a:
+    case Act{+u, cs}:
+      Emb.sync.sel.k(Bool.not(String.eq(old, Ui.sel(u))), Act{u, cs})
+
+def Ui.emb_keys(u: Ui, +key: String, bs: List<&2, U32>) -> Act:
+  Ui.rpc(u, "term.input", [J.KV{"thread", J.Str{key}}, J.KV{"b", J.Json.arr(Term.nums(bs))}])
+
+def Emb.key.k(ks: U32 & U32, +u: Ui, +key: String, +mods: U32) -> Act:
+  (+sym, +cp) = ks
+  Bool.pick(Act, U32.is_eq(sym, 0), Act{u, Nil{}}, Ui.emb_keys(u, key, VT.Vt.key(Ui.term(u, key), sym, cp, mods)))
+
+def Emb.part(+ps: List<&2, String>, +i: Nat) -> String:
+  Maybe.default(&2, String, List.get(&2, String, ps, i), "")
+
+# "key<tab>DOM key<tab>mods" (the web and phones)
+def Emb.key(+u: Ui, +ps: List<&2, String>) -> Act:
+  Emb.key.k(Keys.dom(Emb.part(ps, 1n)), u, Emb.part(ps, 0n), U32.from_nat(Maybe.default(&2, Nat, Nat.read(Emb.part(ps, 2n)), 0n)))
+
+# "key<tab>text"
+def Emb.paste(+u: Ui, +key: String, +text: String) -> Act:
+  Ui.emb_keys(u, key, VT.Vt.paste(Ui.term(u, key), text))
+
+# "thread<tab>id"
+def Emb.restart(+u: Ui, +ps: List<&2, String>) -> Act:
+  Ui.rpc(u, "term.restart", [J.KV{"thread", J.Str{Emb.part(ps, 0n)}}, J.KV{"id", J.Str{Emb.part(ps, 1n)}}])
+
+def Emb.pin(+u: Ui, +key: String) -> Act:
+  Ui.setting(u, EM.Emb.pin.key(key) ++ "=" ++ Bool.pick(String, EM.Emb.pinned(Ui.state(u), key), "", "1"))
+
+def Emb.act.k(i: Nat, +u: Ui, +value: String) -> Act:
+  match i:
+    case 0n:
+      Emb.key(u, String.split(value, '\t'))
+    case 1n:
+      Emb.paste(u, Emb.part(String.split(value, '\t'), 0n), String.join(List.drop(&2, String, String.split(value, '\t'), 1n), "\t"))
+    case 2n:
+      Emb.restart(u, String.split(value, '\t'))
+    case 3n:
+      Emb.pin(u, value)
+    case _:
+      Act{u, Nil{}}
+
+def Emb.act(+u: Ui, +action: String, +value: String) -> Act:
+  Emb.act.k(C.Codec.pos(["emb-key", "emb-paste", "emb-restart", "emb-pin"], action), u, value)
+
 # a user action with its value
 def Ui.act.m(menu: Bool, +i: Nat, +u: Ui, +action: String, +value: String) -> Act:
   match menu:
@@ -6159,8 +6321,15 @@ def Ui.act.m(menu: Bool, +i: Nat, +u: Ui, +action: String, +value: String) -> Ac
     case False{}:
       Menu.after(action, Ui.reselect.act(Ui.sel(u), Ui.act.k(C.Codec.pos(Ui.actions(), action), u, value)))
 
+def Ui.act.e(emb: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match emb:
+    case True{}:
+      Emb.act(u, action, value)
+    case False{}:
+      Emb.sync.sel(Ui.sel(u), Mpage.sync(Ui.act.m(Nat.is_lt(C.Codec.pos(Menu.actions(), action), 16n), C.Codec.pos(Menu.actions(), action), u, action, value)))
+
 def Ui.act(+u: Ui, +action: String, +value: String) -> Act:
-  Mpage.sync(Ui.act.m(Nat.is_lt(C.Codec.pos(Menu.actions(), action), 16n), C.Codec.pos(Menu.actions(), action), u, action, value))
+  Ui.act.e(String.starts_with(action, "emb-"), u, action, value)
 
 # the newest n of a list (oldest first), and how many are left out
 type Win is Data:

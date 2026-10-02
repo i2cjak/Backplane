@@ -6482,3 +6482,20 @@ def Laws.fm_parent_down():
 
 def Laws.fm_join_root():
   {==}
+
+def Laws.emb_summary_round():
+  {==}
+def Laws.emb_size_round():
+  {==}
+def Laws.emb_pinned_live(touched, last, now):
+  {==}
+def Laws.emb_message_ends():
+  {==}
+def Laws.emb_fresh_live():
+  {==}
+def Laws.emb_idle_ends():
+  {==}
+def Laws.emb_note_none():
+  {==}
+def Laws.emb_focus_round():
+  {==}

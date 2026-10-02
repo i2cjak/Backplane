@@ -2166,6 +2166,13 @@ def Vt.history(+v: Vt) -> U32:
 def Vt.alt(+v: Vt) -> Bool:
   Bool.not(Alt.main(Tm.alt(Vt.tm(v))))
 
+# application cursor keys (?1) and bracketed paste (?2004) are on
+def Vt.appk(+v: Vt) -> Bool:
+  Md.appk(Tm.md(Vt.tm(v)))
+
+def Vt.bpaste(+v: Vt) -> Bool:
+  Md.paste(Tm.md(Vt.tm(v)))
+
 # the visible rows, scrolled back by scroll lines into the scrollback;
 # trailing blank cells are left out
 def Vt.lines(+v: Vt, +scroll: Nat) -> List<&2, VLine>:

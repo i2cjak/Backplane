@@ -675,9 +675,15 @@ struct ThreadScreen: View {
                         })
                     }
                     ForEach(thread.entries) { e in
-                        EntryRow(model: model, entry: e) { shown = $0 }
-                            .background(Color.accentColor.opacity(lit == e.id ? 0.18 : 0))
-                            .id(e.id)
+                        Group {
+                            if e.kind == "emb" {
+                                EmbRow(model: model, entry: e, emb: thread.embs?.first { $0.key == e.key })
+                            } else {
+                                EntryRow(model: model, entry: e) { shown = $0 }
+                            }
+                        }
+                        .background(Color.accentColor.opacity(lit == e.id ? 0.18 : 0))
+                        .id(e.id)
                     }
                     // the client's sending rows, then those tapped here it has
                     // not answered yet, by place: one handed over keeps its place
@@ -730,6 +736,10 @@ struct ThreadScreen: View {
           VStack(spacing: 0) {
             if let u = thread.subs {
                 SubsView(model: model, subs: u).padding(.horizontal).padding(.top, 8)
+            }
+            // the terminals pinned to the top of the thread
+            ForEach((thread.embs ?? []).filter { $0.pinned }, id: \.key) { e in
+                EmbView(model: model, emb: e, top: true).padding(.horizontal).padding(.top, 8)
             }
             ForEach(thread.asks ?? []) { a in
                 AskCard(model: model, ask: a).padding(.horizontal).padding(.top, 8)

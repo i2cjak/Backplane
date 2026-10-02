@@ -22,6 +22,7 @@ import ../core/botui.bend as BI
 import ./bots.bend as WB
 import ../core/voice.bend as VC
 import ../core/hist.bend as HS
+import ../core/emb.bend as EM
 
 # Ui -> Node. Every decision (order, shelf, status) comes from core defs
 # with laws behind them; this file only lays them out.
@@ -809,43 +810,6 @@ def View.images(ps: List<&2, String>) -> List<&2, D.Node>:
       D.El{"a", "", [D.At{"class", "shot"}, D.At{"href", IM.Img.url(p)}, D.At{"target", "_blank"}, D.At{"title", p}, D.At{"data-lightbox", IM.Img.url(p)}],
         [D.El{"img", "", [D.At{"src", IM.Img.url(p)}, D.At{"alt", p}, D.At{"loading", "lazy"}], Nil{}}]} <> View.images(t)
 
-# a tool call or other activity; a design step (core/hist.bend) is a row
-# that shows it in the viewer. data-id is what host.js scrolls to (Jump)
-def View.act(step: Bool, e: M.Entry) -> D.Node:
-  match step e:
-    case True{} M.Act{+id, _, _, _, _, _}:
-      D.El{"div", id, [D.At{"class", "act step"}, D.At{"data-id", id}],
-        [WI.WIcon.button("step", "hist-show", id, "Show this change in the viewer", "history", 14, HS.Hist.row(e))]}
-    case _ M.Act{+id, _, tone, kind, summary, _}:
-      D.El{"div", id, [D.At{"class", "act " ++ tone}, D.At{"data-id", id}], [D.Dom.span("kind", kind), D.Dom.span("summary", summary)]}
-    case _ M.Msg{+id, _, _, text, _}:
-      D.El{"div", id, [D.At{"class", "act"}, D.At{"data-id", id}], [D.Dom.span("summary", text)]}
-
-def View.entry.own(e: M.Entry) -> D.Node:
-  match e:
-    case M.Msg{+id, _, M.User{}, +text, _}:
-      D.El{"div", id, [D.At{"class", "msg user"}, D.At{"data-id", id}], D.Dom.cat(View.user_body(text), [D.Dom.copy(AT.Att.body(text))])}
-    case M.Msg{+id, _, _, +text, _}:
-      D.El{"div", id, [D.At{"class", "msg assistant"}, D.At{"data-id", id}], D.Dom.cat([D.El{"div", "", [D.At{"class", "body"}], D.Md.render(text)}], D.Dom.cat(View.images(IM.Img.paths(text)), [D.Dom.copy(text)]))}
-    case M.Act{+id, +th, +tone, +kind, +summary, +at}:
-      View.act(String.eq(tone, HS.Step.tone()), M.Act{id, th, tone, kind, summary, at})
-
-# an entry of this thread (headed by the thread that sent it) or a message
-# this thread sent to another (a link)
-def View.entry.k(mine: Bool, e: M.Entry, +st: M.State) -> List<&2, D.Node>:
-  match mine e:
-    case True{} M.Msg{+id, t, r, x, at}:
-      List.append(&2, D.Node, View.from.k(String.is_empty(M.Link.from(id)), M.Link.from(id), st), [View.entry.own(M.Msg{id, t, r, x, at})])
-    case True{} _:
-      [View.entry.own(e)]
-    case False{} M.Msg{_, +t, _, x, _}:
-      [View.link("out", "→ " ++ U.Tasks.title(st, t) ++ ": " ++ DF.Diff.first(x), t)]
-    case False{} _:
-      Nil{}
-
-def View.entry(+e: M.Entry, +st: M.State, +sel: String) -> List<&2, D.Node>:
-  View.entry.k(String.eq(View.entry_thread(e), sel), e, st)
-
 # a run of tool calls, or a turn's work, folded into one row (FO.Fold
 # decides the runs, their labels and which are open); a click opens or
 # shuts it
@@ -876,34 +840,12 @@ def View.role(r: FO.Role, ns: List<&2, D.Node>) -> List<&2, D.Node>:
         case False{}:
           [View.fold.row(id, label, False{})]
 
-def View.entries.r(es: List<&2, M.Entry>, rs: List<&2, FO.Role>, +st: M.State, +sel: String) -> List<&2, D.Node>:
-  match es rs:
-    case Nil{} _:
-      Nil{}
-    case e <> t r <> rt:
-      List.append(&2, D.Node, View.role(r, View.entry(e, st, sel)), View.entries.r(t, rt, st, sel))
-    case e <> t Nil{}:
-      List.append(&2, D.Node, View.entry(e, st, sel), View.entries.r(t, Nil{}, st, sel))
-
 # the newest page of a thread's entries (core's Page), with a mark at
 # the top when earlier ones are left out: scrolled near it, the page asks
 # for them ("earlier", host.js), no button
 def View.earlier(+hidden: Nat, +id: String) -> List<&2, D.Node>:
   Bool.pick(List<&2, D.Node>, Nat.is_eq(hidden, 0n), Nil{},
     [D.Dom.el("div", [D.At{"class", "earlier"}, D.At{"data-earlier", id}], Nil{})])
-
-# a thread's entries, its runs of tool calls folded (the last stays open
-# while its turn runs)
-def View.entries(+es: List<&2, M.Entry>, +st: M.State, +sel: String, +info: Map<&2, String>, +running: Bool) -> List<&2, D.Node>:
-  View.entries.r(es, FO.Fold.roles(es, info, running), st, sel)
-
-def View.paged.w(w: U.Win, +st: M.State, +sel: String, +info: Map<&2, String>, +running: Bool) -> List<&2, D.Node>:
-  match w:
-    case U.Win{+h, es}:
-      List.append(&2, D.Node, View.earlier(h, sel), View.entries(es, st, sel, info, running))
-
-def View.paged(+drafts: Map<&2, String>, +es: List<&2, M.Entry>, +st: M.State, +sel: String, +info: Map<&2, String>, +running: Bool) -> List<&2, D.Node>:
-  View.paged.w(U.Page.newest.from(es, sel, U.Page.since(st, sel), U.Page.count(Maybe.default(&2, Nat, Nat.read(U.Str.get(drafts, "@more." ++ sel)), 0n))), st, sel, info, running)
 
 def View.sending(ps: List<&2, String>) -> List<&2, D.Node>:
   match ps:
@@ -954,6 +896,129 @@ def View.cursor(c: VT.VCur) -> List<&2, D.Node>:
       [D.El{"div", "cur", [D.At{"class", "cur"}, D.At{"style", "left:" ++ U32.show(x) ++ "ch;top:" ++ U32.show((y * 17 : U32)) ++ "px"}], Nil{}}]
     case VT.VCur{_, _, False{}}:
       Nil{}
+
+# a tool call or other activity; a design step (core/hist.bend) is a row
+# that shows it in the viewer. data-id is what host.js scrolls to (Jump)
+# Terminals in the chat (core/emb.bend): a live one is its screen, with a
+# field over it that takes keys (data-for names it); an inactive one is a
+# gray row a click starts again; a pinned one sits at the top of the
+# thread (View.pins) and leaves a row here
+def View.emb.screen(+v: VT.Vt, +key: String, +cols: U32, +rows: U32) -> D.Node:
+  D.El{"div", "", [D.At{"class", "screen emb-screen"}, D.At{"style", "background:" ++ View.hex(VT.Vt.bg()) ++ ";color:" ++ View.hex(VT.Vt.fg()) ++ ";width:calc(" ++ U32.show(cols) ++ "ch + 24px);height:" ++ U32.show((rows * 17 + 8 : U32)) ++ "px"}],
+    D.Dom.cat(View.tlines(VT.Vt.lines(v, 0n)), D.Dom.cat(View.cursor(VT.Vt.cursor(v)),
+      [D.El{"textarea", "emb:" ++ key, [D.At{"class", "term-in"}, D.At{"data-keys", "emb-key"}, D.At{"data-text", "emb-paste"}, D.At{"data-for", key},
+        D.At{"autocapitalize", "off"}, D.At{"autocomplete", "off"}, D.At{"spellcheck", "false"}, D.At{"aria-label", "Terminal input"}], Nil{}}]))}
+
+def View.emb.live(+ec: U.Ec, ev: EM.EV) -> D.Node:
+  match ev:
+    case EM.EV{+key, +id, +title, +cols, +rows, _, +pinned}:
+      D.El{"div", "emb-" ++ id, [D.At{"class", "emb"}, D.At{"data-id", id}], [
+        D.El{"div", "", [D.At{"class", "emb-head"}], [WI.WIcon.svg("terminal", 14), D.Dom.span("label", title ++ Bool.pick(String, String.is_empty(VT.Vt.title(U.Ec.vt(ec, key))), "", " · " ++ VT.Vt.title(U.Ec.vt(ec, key)))),
+          WI.WIcon.button(Bool.pick(String, pinned, "icon on", "icon"), "emb-pin", key, Bool.pick(String, pinned, "Unpin", "Pin to the top"), "pin", 14, "")]},
+        View.emb.screen(U.Ec.vt(ec, key), key, cols, rows)]}
+
+def View.emb.k(live: Bool, pinned: Bool, +ec: U.Ec, +th: String, ev: EM.EV) -> D.Node:
+  match live pinned ev:
+    case True{} True{} EM.EV{+key, +id, +title, _, _, _, _}:
+      D.El{"div", "emb-" ++ id, [D.At{"class", "emb pinned-here"}, D.At{"data-id", id}], [
+        WI.WIcon.button("emb-row", "emb-pin", key, "Unpin it back into the chat", "pin", 14, title ++ " · pinned at the top")]}
+    case True{} False{} _:
+      View.emb.live(ec, ev)
+    case False{} _ EM.EV{_, +id, +title, _, _, _, _}:
+      D.El{"div", "emb-" ++ id, [D.At{"class", "emb off"}, D.At{"data-id", id}], [
+        WI.WIcon.button("emb-row", "emb-restart", th ++ "\t" ++ id, "Start it again", "play", 14, title ++ " · inactive, click to restart")]}
+
+def View.emb.ev(+ev: EM.EV, +ec: U.Ec, +th: String) -> D.Node:
+  match ev:
+    case EM.EV{k, i, t, c, r, +live, +pinned}:
+      View.emb.k(live, pinned, ec, th, EM.EV{k, i, t, c, r, live, pinned})
+
+def View.emb(+ec: U.Ec, +st: M.State, +e: M.Entry, +th: String) -> D.Node:
+  View.emb.ev(U.Ec.view(ec, st, e), ec, th)
+
+def View.act.t(term: Bool, e: M.Entry, +st: M.State, +ec: U.Ec) -> D.Node:
+  match term e:
+    case True{} M.Act{+id, +th, tone, kind, sum, +at}:
+      View.emb(ec, st, M.Act{id, th, tone, kind, sum, at}, th)
+    case _ M.Act{+id, _, tone, kind, summary, _}:
+      D.El{"div", id, [D.At{"class", "act " ++ tone}, D.At{"data-id", id}], [D.Dom.span("kind", kind), D.Dom.span("summary", summary)]}
+    case _ M.Msg{+id, _, _, text, _}:
+      D.El{"div", id, [D.At{"class", "act"}, D.At{"data-id", id}], [D.Dom.span("summary", text)]}
+
+def View.pins.go(vs: List<&2, EM.EV>, +ec: U.Ec) -> List<&2, D.Node>:
+  match vs:
+    case Nil{}:
+      Nil{}
+    case v <> t:
+      View.emb.live(ec, v) <> View.pins.go(t, ec)
+
+# the thread's pinned terminals, at the top with the subagents
+def View.pins(vs: List<&2, EM.EV>, +ec: U.Ec) -> List<&2, D.Node>:
+  match vs:
+    case Nil{}:
+      Nil{}
+    case _ <> _:
+      [D.El{"section", "emb-pins", [D.At{"class", "emb-pins"}], View.pins.go(vs, ec)}]
+
+def View.act(step: Bool, e: M.Entry, +st: M.State, +ec: U.Ec) -> D.Node:
+  match step e:
+    case True{} M.Act{+id, _, _, _, _, _}:
+      D.El{"div", id, [D.At{"class", "act step"}, D.At{"data-id", id}],
+        [WI.WIcon.button("step", "hist-show", id, "Show this change in the viewer", "history", 14, HS.Hist.row(e))]}
+    case _ M.Act{+id, +th, +tone, +kind, +summary, +at}:
+      View.act.t(String.eq(tone, EM.Emb.tone()), M.Act{id, th, tone, kind, summary, at}, st, ec)
+    case _ M.Msg{+id, _, _, text, _}:
+      D.El{"div", id, [D.At{"class", "act"}, D.At{"data-id", id}], [D.Dom.span("summary", text)]}
+
+def View.entry.own(e: M.Entry, +st: M.State, +ec: U.Ec) -> D.Node:
+  match e:
+    case M.Msg{+id, _, M.User{}, +text, _}:
+      D.El{"div", id, [D.At{"class", "msg user"}, D.At{"data-id", id}], D.Dom.cat(View.user_body(text), [D.Dom.copy(AT.Att.body(text))])}
+    case M.Msg{+id, _, _, +text, _}:
+      D.El{"div", id, [D.At{"class", "msg assistant"}, D.At{"data-id", id}], D.Dom.cat([D.El{"div", "", [D.At{"class", "body"}], D.Md.render(text)}], D.Dom.cat(View.images(IM.Img.paths(text)), [D.Dom.copy(text)]))}
+    case M.Act{+id, +th, +tone, +kind, +summary, +at}:
+      View.act(String.eq(tone, HS.Step.tone()), M.Act{id, th, tone, kind, summary, at}, st, ec)
+
+# an entry of this thread (headed by the thread that sent it) or a message
+# this thread sent to another (a link)
+def View.entry.k(mine: Bool, e: M.Entry, +st: M.State, +ec: U.Ec) -> List<&2, D.Node>:
+  match mine e:
+    case True{} M.Msg{+id, t, r, x, at}:
+      List.append(&2, D.Node, View.from.k(String.is_empty(M.Link.from(id)), M.Link.from(id), st), [View.entry.own(M.Msg{id, t, r, x, at}, st, ec)])
+    case True{} _:
+      [View.entry.own(e, st, ec)]
+    case False{} M.Msg{_, +t, _, x, _}:
+      [View.link("out", "→ " ++ U.Tasks.title(st, t) ++ ": " ++ DF.Diff.first(x), t)]
+    case False{} _:
+      Nil{}
+
+def View.entry(+e: M.Entry, +st: M.State, +sel: String, +ec: U.Ec) -> List<&2, D.Node>:
+  View.entry.k(String.eq(View.entry_thread(e), sel), e, st, ec)
+
+def View.entries.r(es: List<&2, M.Entry>, rs: List<&2, FO.Role>, +st: M.State, +sel: String, +ec: U.Ec) -> List<&2, D.Node>:
+  match es rs:
+    case Nil{} _:
+      Nil{}
+    case e <> t r <> rt:
+      List.append(&2, D.Node, View.role(r, View.entry(e, st, sel, ec)), View.entries.r(t, rt, st, sel, ec))
+    case e <> t Nil{}:
+      List.append(&2, D.Node, View.entry(e, st, sel, ec), View.entries.r(t, Nil{}, st, sel, ec))
+
+# a thread's entries, its runs of tool calls folded (the last stays open
+# while its turn runs)
+def View.entries.e(+es: List<&2, M.Entry>, +st: M.State, +sel: String, +info: Map<&2, String>, +running: Bool, +ec: U.Ec) -> List<&2, D.Node>:
+  View.entries.r(es, FO.Fold.roles(es, info, running), st, sel, ec)
+
+def View.entries(+es: List<&2, M.Entry>, +st: M.State, +sel: String, +info: Map<&2, String>, +running: Bool) -> List<&2, D.Node>:
+  View.entries.e(es, st, sel, info, running, U.Ec.none())
+
+def View.paged.w(w: U.Win, +st: M.State, +sel: String, +info: Map<&2, String>, +running: Bool, +ec: U.Ec) -> List<&2, D.Node>:
+  match w:
+    case U.Win{+h, es}:
+      List.append(&2, D.Node, View.earlier(h, sel), View.entries.e(es, st, sel, info, running, ec))
+
+def View.paged(+drafts: Map<&2, String>, +es: List<&2, M.Entry>, +st: M.State, +sel: String, +info: Map<&2, String>, +running: Bool, +ec: U.Ec) -> List<&2, D.Node>:
+  View.paged.w(U.Page.newest.from(es, sel, U.Page.since(st, sel), U.Page.count(Maybe.default(&2, Nat, Nat.read(U.Str.get(drafts, "@more." ++ sel)), 0n))), st, sel, info, running, ec)
 
 # the thread's shell: its screen, and over it a transparent field that
 # takes keys (and a phone's keyboard)
@@ -1134,9 +1199,9 @@ def View.thread.p(u: U.Ui, t: M.Thread, pend: List<&2, String>, +atts: List<&2, 
         D.At{"data-drop", "attach"}, D.At{"data-drop-hover", "drop-hover"}], D.Dom.cat(D.Dom.cat(
         View.top(hd, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, panel, M.Snooze.on(now, U.Side.until(st, id)), U.Flag.get(op, "snooze"), term, String.eq(U.Str.get(nf, "view.kind:" ++ id), "diff"), String.eq(U.Str.get(drafts, "@del"), id), U.Str.get(drafts, "@ren"), U.Str.get(drafts, "@f.title")), [
         D.El{"div", "timeline", [D.At{"class", "timeline"}, D.At{"id", "timeline"}],
-          D.Dom.cat(View.parent(st, U.Tasks.parent(st, id)), D.Dom.cat(View.subs(SB.Subs.rows(st, nf, id)),
-          D.Dom.cat(View.paged(drafts, M.State.mine(st, id), st, id, nf, View.running(turn)), D.Dom.cat(View.sending(pend),
-            View.live.k(String.is_empty(U.Str.get(live, id)), U.Side.phase(st, U.Ui.thread(st, id)), U.Str.get(live, id))))))},
+          D.Dom.cat(View.parent(st, U.Tasks.parent(st, id)), D.Dom.cat([D.El{"div", "work", [D.At{"class", "work"}], D.Dom.cat(View.subs(SB.Subs.rows(st, nf, id)), View.pins(U.Ec.pins(U.Ec.make(tr, st, id, now), st, id), U.Ec.make(tr, st, id, now)))}], D.Dom.cat(Nil{},
+          D.Dom.cat(View.paged(drafts, M.State.mine(st, id), st, id, nf, View.running(turn), U.Ec.make(tr, st, id, now)), D.Dom.cat(View.sending(pend),
+            View.live.k(String.is_empty(U.Str.get(live, id)), U.Side.phase(st, U.Ui.thread(st, id)), U.Str.get(live, id)))))))},
         D.El{"div", "asks", [D.At{"class", "asks"}], View.asks(U.Asks.open(st, id), U.Str.get(drafts, sel))},
         View.todos(U.Todos.shown(st, id, View.running(turn))),
         View.queued(M.Queue.items(st, id), View.running(turn)),

@@ -480,13 +480,17 @@ document.addEventListener("drop", (e) => {
   if (act === el.getAttribute("data-drag-act")) dispatch(act, v + "|" + el.getAttribute("data-drag-to"));
 });
 
+// a key field that names its terminal (a terminal in the chat) puts the
+// name first: "<key>\t..."
+const forKey = (el) => (el.getAttribute("data-for") ? el.getAttribute("data-for") + "\t" : "");
+
 document.addEventListener("paste", (e) => {
   const cd = e.clipboardData;
   if (!cd) return;
   const keys = e.target.closest?.("[data-keys]");
   if (keys) {
     e.preventDefault();
-    dispatch(keys.getAttribute("data-text"), cd.getData("text/plain"));
+    dispatch(keys.getAttribute("data-text"), forKey(keys) + cd.getData("text/plain"));
     return;
   }
   const el = e.target.closest?.("[data-paste]");
@@ -504,7 +508,7 @@ document.addEventListener("input", (e) => {
   if (!el || !el.value) return;
   const v = el.value;
   el.value = "";
-  dispatch(el.getAttribute("data-text"), v);
+  dispatch(el.getAttribute("data-text"), forKey(el) + v);
 });
 
 for (const ev of EVENTS) {
@@ -541,7 +545,7 @@ document.addEventListener("keydown", (e) => {
   }
   if (field) {
     const mods = (e.shiftKey ? 1 : 0) | (e.ctrlKey ? 4 : 0) | (e.altKey ? 8 : 0);
-    if (dispatch(field.getAttribute("data-keys"), e.key + "\t" + mods)) e.preventDefault();
+    if (dispatch(field.getAttribute("data-keys"), forKey(field) + e.key + "\t" + mods)) e.preventDefault();
   }
 });
 
