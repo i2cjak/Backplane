@@ -1624,6 +1624,72 @@ def TL.live.k(+ty: Ty, empty: Bool, +ph: M.Phase, text: String, +px: U32) -> Lis
     case True{}:
       TL.phase.k(String.is_empty(M.Phase.label(ph)), M.Phase.label(ph), Lay.phase(ph))
 
+# Live text, settled prefix once (laws live_prefix_exact, live_memo_exact)
+# ----------------------------------------------------------------------
+# A reply streams in whole each frame, and laying it all out each time is
+# quadratic over the reply. Its text up to the last blank line outside a
+# fence (client.bend's Live.head) lays out exactly as it does alone, so it
+# is laid out once and kept in the thread's memo; only the text after it
+# is laid out per frame.
+
+# the streamed reply's settled prefix (client.bend's Live.head), laid out
+# once at its width: `any` says whether it rendered to any block (a gap
+# goes between it and the tail's blocks)
+type LiveMemo is Data:
+  LiveMemo{px: U32, text: String, any: Bool, lines: List<&2, TLine>}
+
+def TL.live.none() -> LiveMemo:
+  LiveMemo{0, "", False{}, Nil{}}
+
+def TL.live.any(ns: List<&2, N.Node>) -> Bool:
+  match ns:
+    case Nil{}:
+      False{}
+    case _ <> _:
+      True{}
+
+def TL.live.fresh.k(+ty: Ty, +text: String, +ns: List<&2, N.Node>, +px: U32) -> LiveMemo:
+  LiveMemo{px, text, TL.live.any(ns), TL.blocks(ty, ns, px)}
+
+def TL.live.fresh(+ty: Ty, +text: String, +px: U32) -> LiveMemo:
+  TL.live.fresh.k(ty, text, N.Md.render(text), px)
+
+def TL.live.keep(same: Bool, +ty: Ty, lm: LiveMemo, text: String, +px: U32) -> LiveMemo:
+  match same:
+    case True{}:
+      lm
+    case False{}:
+      TL.live.fresh(ty, text, px)
+
+# the prefix's lines: the memo's when it was made for this text and width
+def TL.live.get(+ty: Ty, lm: LiveMemo, +text: String, +px: U32) -> LiveMemo:
+  match lm:
+    case LiveMemo{+lpx, +ltext, +a, +ls}:
+      TL.live.keep(Bool.and(U32.is_eq(lpx, px), Q.Eq.str(ltext, text)), ty, LiveMemo{lpx, ltext, a, ls}, text, px)
+
+def TL.live.cat.k(a: Bool, ls: List<&2, TLine>, +rest: List<&2, TLine>, more: Bool) -> List<&2, TLine>:
+  match a more:
+    case True{} True{}:
+      List.append(&2, TLine, ls, TLine{"", 0, 4, "", 0} <> rest)
+    case True{} False{}:
+      ls
+    case False{} _:
+      rest
+
+# the prefix's blocks, a gap, the tail's blocks (TL.blocks's own seam)
+def TL.live.cat(+ty: Ty, lm: LiveMemo, +ns: List<&2, N.Node>, +px: U32) -> List<&2, TLine>:
+  match lm:
+    case LiveMemo{_, _, a, ls}:
+      TL.live.cat.k(a, ls, TL.blocks(ty, ns, px), TL.live.any(ns))
+
+# the reply streaming in, else the phase; the settled prefix from the memo
+def TL.live.m(+ty: Ty, empty: Bool, +ph: M.Phase, +text: String, lm: LiveMemo, +px: U32) -> List<&2, TLine>:
+  match empty:
+    case False{}:
+      TL.live.cat(ty, TL.live.get(ty, lm, U.Live.head(text), px), N.Md.render(U.Live.rest(text)), px)
+    case True{}:
+      TL.phase.k(String.is_empty(M.Phase.label(ph)), M.Phase.label(ph), Lay.phase(ph))
+
 # Main area
 # ---------
 
@@ -4218,11 +4284,22 @@ def TL.roles(es: List<&2, M.Entry>, +st: M.State, +sel: String, +pics: Map<&2, S
 type TLE is Data:
   TLE{e: M.Entry, part: TLPart}
 
+# (items: the entries' parts; lv: the live reply's settled prefix)
 type TLMemo is Data:
-  TLMemo{px: U32, sel: String, items: List<&2, TLE>}
+  TLMemo{px: U32, sel: String, items: List<&2, TLE>, lv: LiveMemo}
 
 def TL.memo.none() -> TLMemo:
-  TLMemo{0, "", Nil{}}
+  TLMemo{0, "", Nil{}, TL.live.none()}
+
+def TL.memo.lv(m: TLMemo) -> LiveMemo:
+  match m:
+    case TLMemo{_, _, _, lv}:
+      lv
+
+def TL.memo.with_live(m: TLMemo, lv: LiveMemo) -> TLMemo:
+  match m:
+    case TLMemo{px, sel, its, _}:
+      TLMemo{px, sel, its, lv}
 
 def TL.memo.item(+ty: Ty, +e: M.Entry, +px: U32, +sel: String) -> TLE:
   TLE{e, TL.part(TL.mine_of(e, sel), ty, e, px)}
@@ -4413,13 +4490,13 @@ def TL.memo.aligned(+es: List<&2, M.Entry>, +ty: Ty, +px: U32, +sel: String, +it
 def TL.memo.of.k(same: Bool, +ty: Ty, +es: List<&2, M.Entry>, +px: U32, +sel: String, prev: List<&2, TLE>) -> TLMemo:
   match same:
     case True{}:
-      TLMemo{px, sel, TL.memo.again(es, ty, px, sel, TL.memo.aligned(es, ty, px, sel, prev))}
+      TLMemo{px, sel, TL.memo.again(es, ty, px, sel, TL.memo.aligned(es, ty, px, sel, prev)), TL.live.none()}
     case False{}:
-      TLMemo{px, sel, TL.memo.make(ty, es, px, sel)}
+      TLMemo{px, sel, TL.memo.make(ty, es, px, sel), TL.live.none()}
 
 def TL.memo.of(+ty: Ty, es: List<&2, M.Entry>, +px: U32, +sel: String, prev: TLMemo) -> TLMemo:
   match prev:
-    case TLMemo{ppx, psel, items}:
+    case TLMemo{ppx, psel, items, _}:
       TL.memo.of.k(Bool.and(U32.is_eq(ppx, px), Q.Eq.str(psel, sel)), ty, es, px, sel, items)
 
 # Recently shown threads keep their memos, the latest first, so going
@@ -4433,7 +4510,7 @@ def TL.memos.max() -> Nat:
 
 def TL.memo.sel(m: TLMemo) -> String:
   match m:
-    case TLMemo{_, sel, _}:
+    case TLMemo{_, sel, _, _}:
       sel
 
 def TL.memos.pick.k(hit: Bool, m: TLMemo, rest: TLMemo) -> TLMemo:
@@ -4533,14 +4610,14 @@ def TL.entries.m(+ty: Ty, +its: List<&2, TLE>, +st: M.State, +sel: String, +px: 
 
 def TL.memo.lines.k(same: Bool, +ty: Ty, m: TLMemo, +es: List<&2, M.Entry>, +st: M.State, +sel: String, +px: U32, +pics: Map<&2, String>) -> List<&2, TLine>:
   match same m:
-    case True{} TLMemo{_, _, its}:
+    case True{} TLMemo{_, _, its, _}:
       TL.entries.m(ty, TL.memo.again(es, ty, px, sel, its), st, sel, px, pics)
     case False{} _:
       TL.entries(ty, es, st, sel, px, pics)
 
 def TL.memo.fits(m: TLMemo, +px: U32, +sel: String) -> Bool:
   match m:
-    case TLMemo{mpx, msel, _}:
+    case TLMemo{mpx, msel, _, _}:
       Bool.and(U32.is_eq(mpx, px), Q.Eq.str(msel, sel))
 
 # the timeline from a memo already brought up to this frame (Lay.memo, as
@@ -4548,7 +4625,7 @@ def TL.memo.fits(m: TLMemo, +px: U32, +sel: String) -> Bool:
 # they are not compared again (law tl_frame_exact)
 def TL.memo.shown(+ty: Ty, m: TLMemo, +st: M.State, +sel: String, +px: U32, +pics: Map<&2, String>) -> List<&2, TLine>:
   match m:
-    case TLMemo{_, _, its}:
+    case TLMemo{_, _, its, _}:
       TL.entries.m(ty, its, st, sel, px, pics)
 
 # the timeline, from the memo when it was made for this width and thread
@@ -4622,7 +4699,7 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
       # the timeline and what sits around it are laid out at once
       tl ch = Lay.timeline(ty,
         List.concat(&2, TLine, [TL.memo.shown(ty, memo, st, sel, cw, pics), TL.sending(ty, pend, cw),
-          TL.live.k(ty, String.is_empty(live), ph, live, cw)]),
+          TL.live.m(ty, String.is_empty(live), ph, live, TL.memo.lv(memo), cw)]),
         cx0, cx1, top, (h - ah - qh - eh - bh : U32), sc, tsel, Out.none()) Out.all([Lay.header(ty, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, x0, x1, pa, term, M.Snooze.on(now, U.Side.until(st, sel)), del, hy),
           Ren.field.if(String.eq(ren, sel), ty, rtext, focus, blink, caret, mark, x0, x1, hy),
           Lay.parent(ty, st, sel, cx0, (58 + hy : U32)),
@@ -4737,8 +4814,9 @@ def Lay.memo.es(none: Bool, +n: S.Nui) -> List<&2, M.Entry>:
 # (only the newest page of a thread, core's Page: a long thread laid out
 # whole cost every frame 15 ms on a real log; "earlier" shows another page)
 # the memo brought up to this frame: the open thread's entries at its width
-def Lay.memo(+ty: Ty, +n: S.Nui, prev: TLMemo) -> TLMemo:
-  TL.memo.of(ty, Lay.memo.es(String.is_empty(U.Ui.sel(S.Nui.ui(n))), n), Lay.tl.px(n), U.Ui.sel(S.Nui.ui(n)), prev)
+def Lay.memo(+ty: Ty, +n: S.Nui, +prev: TLMemo) -> TLMemo:
+  TL.memo.with_live(TL.memo.of(ty, Lay.memo.es(String.is_empty(U.Ui.sel(S.Nui.ui(n))), n), Lay.tl.px(n), U.Ui.sel(S.Nui.ui(n)), prev),
+    TL.live.get(ty, TL.memo.lv(prev), U.Live.head(U.Ui.live.of(S.Nui.ui(n), U.Ui.sel(S.Nui.ui(n)))), Lay.tl.px(n)))
 
 # the memos brought up to this frame: the open thread's in front, from the
 # one kept for it
@@ -4747,7 +4825,7 @@ def Lay.memos(+ty: Ty, +n: S.Nui, +ms: List<&2, TLMemo>) -> List<&2, TLMemo>:
 
 def TL.memo.size(m: TLMemo) -> Nat:
   match m:
-    case TLMemo{_, _, its}:
+    case TLMemo{_, _, its, _}:
       List.length(&2, TLE, its)
 
 # Voice

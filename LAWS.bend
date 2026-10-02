@@ -1226,7 +1226,7 @@ law tl_memo_exact:
   for +sel0: String
   for +px: U32
   for +sel: String
-  {L.TL.memo.of(ty, es, px, sel, L.TLMemo{px0, sel0, L.TL.memo.make(ty, old, px0, sel0)}) == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel)} : L.TLMemo}
+  {L.TL.memo.of(ty, es, px, sel, L.TLMemo{px0, sel0, L.TL.memo.make(ty, old, px0, sel0), L.TL.live.none()}) == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel), L.TL.live.none()} : L.TLMemo}
 
 # a memo lined up with the entries (an item dropped in front, or entries
 # made in front: TL.align.of's guess, whatever it is) is still exactly the
@@ -1251,7 +1251,7 @@ law tl_lines_exact:
   for +sel: String
   for +px: U32
   for +pics: Map<&2, String>
-  {L.TL.memo.lines(ty, L.TLMemo{px0, sel0, L.TL.memo.make(ty, old, px0, sel0)}, es, st, sel, px, pics) == L.TL.entries(ty, es, st, sel, px, pics) : List<&2, L.TLine>}
+  {L.TL.memo.lines(ty, L.TLMemo{px0, sel0, L.TL.memo.make(ty, old, px0, sel0), L.TL.live.none()}, es, st, sel, px, pics) == L.TL.entries(ty, es, st, sel, px, pics) : List<&2, L.TLine>}
 # Links
 # -----
 
@@ -1476,7 +1476,7 @@ law tl_frame_exact:
   for +sel: String
   for +px: U32
   for +pics: Map<&2, String>
-  {L.TL.memo.shown(ty, L.TL.memo.of(ty, es, px, sel, L.TLMemo{px0, sel0, L.TL.memo.make(ty, old, px0, sel0)}), st, sel, px, pics) == L.TL.entries(ty, es, st, sel, px, pics) : List<&2, L.TLine>}
+  {L.TL.memo.shown(ty, L.TL.memo.of(ty, es, px, sel, L.TLMemo{px0, sel0, L.TL.memo.make(ty, old, px0, sel0), L.TL.live.none()}), st, sel, px, pics) == L.TL.entries(ty, es, st, sel, px, pics) : List<&2, L.TLine>}
 
 # Tool calls folded
 # -----------------
@@ -2608,8 +2608,9 @@ law tl_memos_hit:
   for +px: U32
   for +sel: String
   for +its: List<&2, L.TLE>
+  for +lv: L.LiveMemo
   for ms: List<&2, L.TLMemo>
-  {L.TL.memos.pick(L.TL.memos.keep(L.TLMemo{px, sel, its}, ms), sel) == L.TLMemo{px, sel, its} : L.TLMemo}
+  {L.TL.memos.pick(L.TL.memos.keep(L.TLMemo{px, sel, its, lv}, ms), sel) == L.TLMemo{px, sel, its, lv} : L.TLMemo}
 
 # and the memos kept stay few
 law tl_memos_bounded:
@@ -5347,3 +5348,25 @@ law contain_plain_exit:
 
 law contain_words_gb:
   {CTN.Contain.words.g(12n, 4n) == "3 GB" : String}
+
+# A streamed reply's settled prefix (client.bend's Live.head: the text up
+# to the last blank line outside a fenced block) renders, and lays out,
+# exactly as it does alone, so a window keeps it and lays out the rest.
+law live_split_fence_safe:
+  {U.Live.at("a\n\n```\nx\n\ny\n") == 3n : Nat}
+
+law live_split_fence_closed:
+  {U.Live.at("a\n\n```\nx\n\ny\n```\nz\n\nw") == 19n : Nat}
+
+law live_split_none:
+  {U.Live.at("one paragraph\nstill one") == 0n : Nat}
+
+law live_head_rest:
+  {U.Live.head("a\n\nb\n\nc") ++ U.Live.rest("a\n\nb\n\nc") == "a\n\nb\n\nc" : String}
+
+law live_prefix_exact:
+  {List.append(&2, DM.Node, DM.Md.render(U.Live.head("# T\n\nsome *words*\nand more\n\n- a\n- b\n\n1. x\n2. y\n\n| p | q |\n|---|---|\n| 1 | 2 |\n\n> quoted\n\n```\ncode\n\nmore code\n```\n\nlast\nline")),
+    DM.Md.render(U.Live.rest("# T\n\nsome *words*\nand more\n\n- a\n- b\n\n1. x\n2. y\n\n| p | q |\n|---|---|\n| 1 | 2 |\n\n> quoted\n\n```\ncode\n\nmore code\n```\n\nlast\nline"))) == DM.Md.render("# T\n\nsome *words*\nand more\n\n- a\n- b\n\n1. x\n2. y\n\n| p | q |\n|---|---|\n| 1 | 2 |\n\n> quoted\n\n```\ncode\n\nmore code\n```\n\nlast\nline") : List<&2, DM.Node>}
+
+law live_prefix_exact_open_fence:
+  {List.append(&2, DM.Node, DM.Md.render(U.Live.head("para\n\n```\nopen\n\nstill open")), DM.Md.render(U.Live.rest("para\n\n```\nopen\n\nstill open"))) == DM.Md.render("para\n\n```\nopen\n\nstill open") : List<&2, DM.Node>}

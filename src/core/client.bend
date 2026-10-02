@@ -426,6 +426,73 @@ def Ui.live.set(u: Ui, +o: J.Json) -> Ui:
     case Ui{st, sel, dr, +live, op, on, now, ad, pa, v, rid, w, er, note, +nf, ob, tr}:
       Ui.live.put(LV.Live.set(o, live, nf), Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr})
 
+# Splitting a streamed reply (laws live_prefix_exact, live_split_fence_safe)
+# -------------------------------------------------------------------------
+# The markdown parser ends every block at a blank line (Md.bstep) except
+# inside a fenced code block, so the text up to the last blank line outside
+# a fence renders to exactly the nodes it renders to alone: it is settled,
+# and a client lays it out once and keeps it, laying out only what follows.
+
+def Live.fenced(+l: String) -> Bool:
+  String.starts_with(String.trim_start(l), "```")
+
+def Live.blank(+l: String) -> Bool:
+  String.is_empty(String.trim(l))
+
+# a fence line flips whether the next lines are inside code
+def Live.flip(fl: Bool, fence: Bool) -> Bool:
+  match fl fence:
+    case True{} True{}:
+      False{}
+    case True{} False{}:
+      True{}
+    case False{} _:
+      fence
+
+# a blank line outside code ends the settled text at `end`
+def Live.split.best(bl: Bool, fence: Bool, +end: Nat, +best: Nat) -> Nat:
+  match bl fence:
+    case True{} False{}:
+      end
+    case _ _:
+      best
+
+def Live.split.go(ls: List<&2, String>, +fence: Bool, +off: Nat, +best: Nat) -> Nat:
+  match ls:
+    case Nil{}:
+      best
+    case +l <> t:
+      Live.split.go(t, Live.flip(Live.fenced(l), fence), Nat.add(off, Nat.add(String.length(l), 1n)),
+        Live.split.best(Live.blank(l), fence, Nat.add(off, Nat.add(String.length(l), 1n)), best))
+
+# the characters of the settled prefix (0: none yet)
+def Live.at(+text: String) -> Nat:
+  Live.split.go(DF.Diff.lines(text), False{}, 0n, 0n)
+
+# the first n characters, tail-recursive (String.take is not, and a reply
+# runs to hundreds of kilobytes)
+def Live.take(+n: Nat, s: String, acc: String) -> String:
+  match n s:
+    case 0n _:
+      String.reverse(acc)
+    case 1n+k SNil{}:
+      String.reverse(acc)
+    case 1n+k SCon{c, t}:
+      Live.take(k, t, SCon{c, acc})
+
+def Live.head.k(+text: String, +n: Nat) -> String:
+  Live.take(n, text, SNil{})
+
+def Live.rest.k(+text: String, +n: Nat) -> String:
+  String.drop(text, n)
+
+# the settled prefix and the text after it: head ++ rest is the text
+def Live.head(+text: String) -> String:
+  Live.head.k(text, Live.at(text))
+
+def Live.rest(+text: String) -> String:
+  Live.rest.k(text, Live.at(text))
+
 # the live text a thread shows
 def Ui.live.of(u: Ui, +thread: String) -> String:
   match u:

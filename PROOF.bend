@@ -2879,7 +2879,7 @@ law tl_of_k:
   for +px: U32
   for +sel: String
   for +h: {Bool.and(U32.is_eq(px0, px), Q.Eq.str(sel0, sel)) == s : Bool}
-  {L.TL.memo.of.k(s, ty, es, px, sel, L.TL.memo.make(ty, old, px0, sel0)) == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel)} : L.TLMemo}
+  {L.TL.memo.of.k(s, ty, es, px, sel, L.TL.memo.make(ty, old, px0, sel0)) == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel), L.TL.live.none()} : L.TLMemo}
 
 law tl_skip_make:
   for d: Nat
@@ -2946,9 +2946,9 @@ def tl_of_k(s, ty, es, old, px0, sel0, px, sel, h):
     case True{}:
       ep = u32_eq_sound(px0, px, and_l(U32.is_eq(px0, px), Q.Eq.str(sel0, sel), h))
       el = eq_str_sound(sel0, sel, and_r(U32.is_eq(px0, px), Q.Eq.str(sel0, sel), h))
-      %Equal.sym(U32, px0, px, ep) : {L.TLMemo{px, sel, L.TL.memo.again(es, ty, px, sel, L.TL.memo.aligned(es, ty, px, sel, L.TL.memo.make(ty, old, _, sel0)))} == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel)} : L.TLMemo}
-      %Equal.sym(String, sel0, sel, el) : {L.TLMemo{px, sel, L.TL.memo.again(es, ty, px, sel, L.TL.memo.aligned(es, ty, px, sel, L.TL.memo.make(ty, old, px, _)))} == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel)} : L.TLMemo}
-      Equal.cong(List<&2, L.TLE>, L.TLMemo, x => L.TLMemo{px, sel, x}, L.TL.memo.again(es, ty, px, sel, L.TL.memo.aligned(es, ty, px, sel, L.TL.memo.make(ty, old, px, sel))), L.TL.memo.make(ty, es, px, sel), tl_again_aligned(es, ty, old, px, sel))
+      %Equal.sym(U32, px0, px, ep) : {L.TLMemo{px, sel, L.TL.memo.again(es, ty, px, sel, L.TL.memo.aligned(es, ty, px, sel, L.TL.memo.make(ty, old, _, sel0))), L.TL.live.none()} == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel), L.TL.live.none()} : L.TLMemo}
+      %Equal.sym(String, sel0, sel, el) : {L.TLMemo{px, sel, L.TL.memo.again(es, ty, px, sel, L.TL.memo.aligned(es, ty, px, sel, L.TL.memo.make(ty, old, px, _))), L.TL.live.none()} == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel), L.TL.live.none()} : L.TLMemo}
+      Equal.cong(List<&2, L.TLE>, L.TLMemo, x => L.TLMemo{px, sel, x, L.TL.live.none()}, L.TL.memo.again(es, ty, px, sel, L.TL.memo.aligned(es, ty, px, sel, L.TL.memo.make(ty, old, px, sel))), L.TL.memo.make(ty, es, px, sel), tl_again_aligned(es, ty, old, px, sel))
 
 def Laws.tl_memo_exact(ty, es, old, px0, sel0, px, sel):
   tl_of_k(Bool.and(U32.is_eq(px0, px), Q.Eq.str(sel0, sel)), ty, es, old, px0, sel0, px, sel, {==})
@@ -3018,7 +3018,7 @@ law tl_lines_k:
   for +px: U32
   for +pics: Map<&2, String>
   for +h: {Bool.and(U32.is_eq(px0, px), Q.Eq.str(sel0, sel)) == s : Bool}
-  {L.TL.memo.lines.k(s, ty, L.TLMemo{px0, sel0, L.TL.memo.make(ty, old, px0, sel0)}, es, st, sel, px, pics) == L.TL.entries(ty, es, st, sel, px, pics) : List<&2, L.TLine>}
+  {L.TL.memo.lines.k(s, ty, L.TLMemo{px0, sel0, L.TL.memo.make(ty, old, px0, sel0), L.TL.live.none()}, es, st, sel, px, pics) == L.TL.entries(ty, es, st, sel, px, pics) : List<&2, L.TLine>}
 
 def tl_lines_k(s, ty, es, old, px0, sel0, st, sel, px, pics, h):
   match s:
@@ -3268,7 +3268,7 @@ def Laws.picker_drops_stale(u, o):
   {==}
 
 def Laws.tl_frame_exact(ty, es, old, px0, sel0, st, sel, px, pics):
-  %Equal.sym(L.TLMemo, L.TL.memo.of(ty, es, px, sel, L.TLMemo{px0, sel0, L.TL.memo.make(ty, old, px0, sel0)}), L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel)},
+  %Equal.sym(L.TLMemo, L.TL.memo.of(ty, es, px, sel, L.TLMemo{px0, sel0, L.TL.memo.make(ty, old, px0, sel0), L.TL.live.none()}), L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel), L.TL.live.none()},
     Laws.tl_memo_exact(ty, es, old, px0, sel0, px, sel))
     : {L.TL.memo.shown(ty, _, st, sel, px, pics) == L.TL.entries(ty, es, st, sel, px, pics) : List<&2, L.TLine>}
   tl_entries_memo(ty, es, st, sel, px, pics)
@@ -4722,8 +4722,8 @@ def Laws.link_from_plain(c, t, e):
   %Equal.sym(Bool, Char.is_eq(c, Chr{116}), False{}, e) : {M.Link.from.b(_, t) == "" : String}
   {==}
 
-def Laws.tl_memos_hit(px, sel, its, ms):
-  %Equal.sym(Bool, Q.Eq.str(sel, sel), True{}, eq_str_refl(sel)) : {L.TL.memos.pick.k(_, L.TLMemo{px, sel, its}, L.TL.memos.pick(L.TL.memos.cut(Nat.sub(L.TL.memos.max(), 1n), L.TL.memos.drop(ms, sel)), sel)) == L.TLMemo{px, sel, its} : L.TLMemo}
+def Laws.tl_memos_hit(px, sel, its, lv, ms):
+  %Equal.sym(Bool, Q.Eq.str(sel, sel), True{}, eq_str_refl(sel)) : {L.TL.memos.pick.k(_, L.TLMemo{px, sel, its, lv}, L.TL.memos.pick(L.TL.memos.cut(Nat.sub(L.TL.memos.max(), 1n), L.TL.memos.drop(ms, sel)), sel)) == L.TLMemo{px, sel, its, lv} : L.TLMemo}
   {==}
 
 law memos_cut_le:
@@ -7113,3 +7113,96 @@ def Laws.contain_plain_exit():
 
 def Laws.contain_words_gb():
   {==}
+
+def Laws.live_split_fence_safe():
+  {==}
+
+def Laws.live_split_fence_closed():
+  {==}
+
+def Laws.live_split_none():
+  {==}
+
+def Laws.live_head_rest():
+  {==}
+
+def Laws.live_prefix_exact():
+  {==}
+
+def Laws.live_prefix_exact_open_fence():
+  {==}
+
+# A streamed reply's layout: the settled prefix's blocks, a gap and the
+# tail's blocks are the whole's blocks (the window keeps the prefix's)
+law tl_append_assoc:
+  for a: List<&2, L.TLine>
+  for +b: List<&2, L.TLine>
+  for +c: List<&2, L.TLine>
+  {List.append(&2, L.TLine, List.append(&2, L.TLine, a, b), c) == List.append(&2, L.TLine, a, List.append(&2, L.TLine, b, c)) : List<&2, L.TLine>}
+
+def tl_append_assoc(a, b, c):
+  match a:
+    case Nil{}:
+      {==}
+    case +p <> +pt:
+      Equal.cong(List<&2, L.TLine>, List<&2, L.TLine>, l => p <> l, List.append(&2, L.TLine, List.append(&2, L.TLine, pt, b), c),
+        List.append(&2, L.TLine, pt, List.append(&2, L.TLine, b, c)), tl_append_assoc(pt, b, c))
+
+law dm_append_nil:
+  for xs: List<&2, DM.Node>
+  {List.append(&2, DM.Node, xs, Nil{}) == xs : List<&2, DM.Node>}
+
+def dm_append_nil(xs):
+  match xs:
+    case Nil{}:
+      {==}
+    case +p <> +pt:
+      Equal.cong(List<&2, DM.Node>, List<&2, DM.Node>, l => p <> l, List.append(&2, DM.Node, pt, Nil{}), pt, dm_append_nil(pt))
+
+law tl_blocks_append:
+  for +hs: List<&2, DM.Node>
+  for +ty: L.Ty
+  for +px: U32
+  for +h: DM.Node
+  for +t: DM.Node
+  for +ts: List<&2, DM.Node>
+  {L.TL.blocks(ty, List.append(&2, DM.Node, h <> hs, t <> ts), px) == List.append(&2, L.TLine, L.TL.blocks(ty, h <> hs, px), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, t <> ts, px)) : List<&2, L.TLine>}
+
+def tl_blocks_append(hs, ty, px, h, t, ts):
+  match hs:
+    case Nil{}:
+      {==}
+    case +m <> +mr:
+      Equal.trans(List<&2, L.TLine>,
+        List.append(&2, L.TLine, L.TL.block(ty, h, px), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, List.append(&2, DM.Node, m <> mr, t <> ts), px)),
+        List.append(&2, L.TLine, L.TL.block(ty, h, px), L.TLine{"", 0, 4, "", 0} <> List.append(&2, L.TLine, L.TL.blocks(ty, m <> mr, px), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, t <> ts, px))),
+        List.append(&2, L.TLine, List.append(&2, L.TLine, L.TL.block(ty, h, px), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, m <> mr, px)), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, t <> ts, px)),
+        Equal.cong(List<&2, L.TLine>, List<&2, L.TLine>, l => List.append(&2, L.TLine, L.TL.block(ty, h, px), L.TLine{"", 0, 4, "", 0} <> l),
+          L.TL.blocks(ty, List.append(&2, DM.Node, m <> mr, t <> ts), px),
+          List.append(&2, L.TLine, L.TL.blocks(ty, m <> mr, px), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, t <> ts, px)),
+          tl_blocks_append(mr, ty, px, m, t, ts)),
+        Equal.sym(List<&2, L.TLine>, List.append(&2, L.TLine, List.append(&2, L.TLine, L.TL.block(ty, h, px), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, m <> mr, px)), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, t <> ts, px)),
+          List.append(&2, L.TLine, L.TL.block(ty, h, px), L.TLine{"", 0, 4, "", 0} <> List.append(&2, L.TLine, L.TL.blocks(ty, m <> mr, px), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, t <> ts, px))),
+          tl_append_assoc(L.TL.block(ty, h, px), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, m <> mr, px), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, t <> ts, px))))
+
+# the prefix kept and the tail laid out after it is the whole's layout
+law live_cat_exact:
+  for +hs: List<&2, DM.Node>
+  for +ty: L.Ty
+  for +px: U32
+  for +text: String
+  for +ts: List<&2, DM.Node>
+  {L.TL.live.cat(ty, L.TL.live.fresh.k(ty, text, hs, px), ts, px) == L.TL.blocks(ty, List.append(&2, DM.Node, hs, ts), px) : List<&2, L.TLine>}
+
+def live_cat_exact(hs, ty, px, text, ts):
+  match hs:
+    case Nil{}:
+      {==}
+    case +h <> +hr:
+      match ts:
+        case Nil{}:
+          Equal.sym(List<&2, L.TLine>, L.TL.blocks(ty, List.append(&2, DM.Node, h <> hr, Nil{}), px), L.TL.blocks(ty, h <> hr, px),
+            Equal.cong(List<&2, DM.Node>, List<&2, L.TLine>, ns => L.TL.blocks(ty, ns, px), List.append(&2, DM.Node, h <> hr, Nil{}), h <> hr, dm_append_nil(h <> hr)))
+        case +t <> +tr:
+          Equal.sym(List<&2, L.TLine>, L.TL.blocks(ty, List.append(&2, DM.Node, h <> hr, t <> tr), px),
+            List.append(&2, L.TLine, L.TL.blocks(ty, h <> hr, px), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, t <> tr, px)), tl_blocks_append(hr, ty, px, h, t, tr))
