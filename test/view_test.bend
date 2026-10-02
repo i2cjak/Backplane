@@ -27,6 +27,13 @@ def log(+origin: String, +since: String) -> J.Json:
 def diffs() -> J.Json:
   json("{\"t\":\"reply\",\"id\":1}")
 
+def sends(a: U.Act) -> String:
+  match a:
+    case U.Act{_, U.Send{t} <> _}:
+      t
+    case _:
+      ""
+
 def main() -> IO(Unit):
   +a = on(U.Ui.init(0n), "a")
   +shown = U.Ui.recv(a, view("a", "/p/a.kicad_pcb"))
@@ -43,6 +50,8 @@ def main() -> IO(Unit):
     C.Check.str("reconnect keeps the panel open", Bool.show(U.Ui.panel(U.Ui.recv(joined, log("O", "4")))), "True")
     C.Check.str("reconnect keeps the diff", U.Ui.info(U.Ui.recv(hist, log("O", "4")), "diff:a"), "x.diff")
     C.Check.str("reconnect keeps the history step", U.Ui.info(U.Ui.recv(hist, log("O", "4")), "hist.at:a"), "3")
+    C.Check.str("the relist names the folder", Bool.show(String.contains(sends(U.Ui.recv_act(U.Ui.info_set(hist, "fm.want:a", "src"), log("O", "4"))), "files.dir")), "True")
+    C.Check.str("no folder, no relist", sends(U.Ui.recv_act(hist, log("O", "4"))), "")
     C.Check.str("reconnect drops a stale listing", U.Ui.info(U.Ui.recv(hist, log("O", "4")), "fm.list:a"), "")
     C.Check.str("a hand-shut panel stays shut after reconnect", Bool.show(U.Ui.panel(U.Ui.recv(shut, log("O", "4")))), "False")
     C.Check.str("an auto view after reconnect respects the hand", Bool.show(U.Ui.panel(U.Ui.recv(U.Ui.recv(shut, log("O", "4")), json("{\"t\":\"view\",\"thread\":\"a\",\"path\":\"/p/b.kicad_pcb\",\"kind\":\"\",\"auto\":true}")))), "False")

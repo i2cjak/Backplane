@@ -1211,12 +1211,19 @@ def Hear.to(here: Bool, +n: Nui) -> Nui:
 def Hear.kept(+n: Nui, +th: String) -> Step:
   Step{n, [NKeep{th, U.Ui.scratch(Nui.ui(n), th)}], True{}}
 
+# after a message the keys stay on a visible field (Nui.recv's unpick and
+# unremote, for the path through the client's own receive)
+def Hear.refocus(s: Step) -> Step:
+  match s:
+    case Step{n, cs, d}:
+      Step{Nui.unpick(Nui.unremote(n)), cs, d}
+
 def Hear.k(text: Bool, +here: Bool, +n: Nui, +o: J.Json) -> Step:
   match text:
     case True{}:
       Hear.kept(Hear.to(here, Nui.recv(Hear.at(here, n), o)), J.Json.get_str(o, "thread", ""))
     case False{}:
-      Nui.sync.kd(Nui.recv.act(n, o), n, U.Ui.shows(Nui.ui(n), o))
+      Hear.refocus(Nui.sync.kd(Nui.recv.act(n, o), n, U.Ui.shows(Nui.ui(n), o)))
 
 # a message from the hub (another thread's streamed text draws nothing,
 # U.Ui.shows)

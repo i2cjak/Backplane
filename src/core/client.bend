@@ -3559,6 +3559,45 @@ def Fm.dir(+u: Ui) -> String:
 def Fm.ask(+u: Ui, +dir: String) -> Act:
   Ui.on_thread.p(Ui.info_set(Ui.info_set(Ui.view_put(u, "files", ""), "fm.want:" ++ Ui.sel(u), dir), "fm.top:" ++ Ui.sel(u), ""), "files.dir", [J.KV{"path", J.Str{dir}}])
 
+# A reconnect's log drops the listings (they may be stale) but keeps each
+# thread's folder (fm.want:<t>), so every kept folder is listed again;
+# else a Files tab left open waits on "Listing the folder" for good
+def Fm.again.join(cs: List<&2, Cmd>, a: Act) -> Act:
+  match a:
+    case Act{u, ds}:
+      Act{u, List.append(&2, Cmd, cs, ds)}
+
+def Fm.again.one(want: Bool, +k: String, a: Act) -> Act:
+  match want a:
+    case True{} Act{+u, cs}:
+      Fm.again.join(cs, Ui.rpc(u, "files.dir", [J.KV{"thread", J.Str{String.drop(k, 8n)}}, J.KV{"path", J.Str{Ui.info(u, k)}}]))
+    case False{} _:
+      a
+
+def Fm.again.k(+k: String, a: Act) -> Act:
+  match a:
+    case Act{+u, cs}:
+      Fm.again.one(Bool.and(String.starts_with(k, "fm.want:"), Bool.not(String.is_empty(Ui.info(u, k)))), k, Act{u, cs})
+
+def Fm.again.go(ks: List<&2, String>, a: Act) -> Act:
+  match ks:
+    case Nil{}:
+      a
+    case +k <> t:
+      Fm.again.go(t, Fm.again.k(k, a))
+
+def Fm.again.keys(u: Ui) -> List<&2, String>:
+  match u:
+    case Ui{_, _, _, _, _, _, _, _, _, _, _, _, _, _, nf, ob, tr}:
+      Map.keys(&2, String, nf)
+
+def Fm.again(log: Bool, a: Act) -> Act:
+  match log a:
+    case True{} Act{+u, cs}:
+      Fm.again.go(Fm.again.keys(u), Act{u, cs})
+    case False{} _:
+      a
+
 def Pdf.ask(+u: Ui, +path: String, +page: String) -> Act:
   Ui.rpc(Ui.info_set(u, "pdf.page:" ++ Ui.sel(u), page), "pdf.page", [J.KV{"path", J.Str{path}}, J.KV{"page", J.Str{page}}])
 
@@ -5802,7 +5841,7 @@ def Ui.shows(+u: Ui, +o: J.Json) -> Bool:
 # server's log arrives first on each) sends the outbox again, so nothing
 # the user sent is lost to a dropped link
 def Ui.recv_act.go(u: Ui, +o: J.Json) -> Act:
-  Ui.recv_act.t(String.eq(J.Json.get_str(o, "t", ""), "term"), J.Json.get_str(o, "thread", ""), Ui.recv_act.k(String.eq(J.Json.get_str(o, "t", ""), "log"), Ui.recv(u, o)))
+  Ui.recv_act.t(String.eq(J.Json.get_str(o, "t", ""), "term"), J.Json.get_str(o, "thread", ""), Fm.again(String.eq(J.Json.get_str(o, "t", ""), "log"), Ui.recv_act.k(String.eq(J.Json.get_str(o, "t", ""), "log"), Ui.recv(u, o))))
 
 # a desktop notification ({"t":"notify"}, sent only to a desk)
 def Ui.recv_act.n(notify: Bool, u: Ui, +o: J.Json) -> Act:
