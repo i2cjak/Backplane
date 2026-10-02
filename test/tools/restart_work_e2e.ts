@@ -128,9 +128,9 @@ try {
   const task = await until(15000, () => changes().find((x) => x.$ === "TaskDelegated" && x.parent === t2));
   await until(15000, () => lines().some((l) => l.startsWith("USER") && l.includes("mode:stop child work")) ? true : undefined);
   await sleep(500);
-  let b = 0;
-  for (let i = 0; i < 20 && b === 0; i++) { b = await busy(); if (!b) await sleep(500); }
-  check(b > 0, `/hello says busy (${b})`);
+  // one read, no retries: the count follows the commit, not the minute's tick
+  const b = await busy();
+  check(b > 0, `/hello says busy right after the commit (${b})`);
   const dev = Bun.spawnSync(["sh", "scripts/dev.sh", "install"], { env: { ...process.env, BACKPLANE_INSTALL_PORT: String(port) }, stdout: "pipe", stderr: "pipe" });
   const said = dev.stdout.toString() + dev.stderr.toString();
   check(dev.exitCode !== 0 && said.includes("at work"), `dev.sh install refuses while busy (${dev.exitCode}: ${said.trim().slice(0, 80)})`);
