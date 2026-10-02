@@ -6731,6 +6731,9 @@ def Laws.store_torn_tail_resyncs(rest):
 def Laws.store_torn_tail_newline():
   {==}
 
+def Laws.store_fail_names_repair():
+  {==}
+
 def Laws.task_repair_finishes_ended_child():
   {==}
 
@@ -6777,6 +6780,12 @@ def Laws.rec_burst_bounded():
   {==}
 
 def Laws.rec_release_bounded():
+  {==}
+
+def Laws.rec_release_carry_marker_on():
+  {==}
+
+def Laws.rec_release_carry_marker_off():
   {==}
 
 def Laws.rec_release_never_drains_queue():

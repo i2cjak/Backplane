@@ -3493,7 +3493,7 @@ def Task.word.of(st: M.TaskState) -> String:
 def Task.repair.has(has: Bool, wake: Bool, +s: M.State, +now: Nat, +id: String, +parent: String, +child: String, +text: String) -> Step:
   match has wake:
     case True{} True{}:
-      Step{[M.TaskDelivered{id, now}, M.TurnChanged{parent, M.Running{}, now}],
+      Step{[M.TurnChanged{parent, M.Running{}, now}, M.TaskDelivered{id, now}],
         Git{0, "", "checkpoint0", parent, Hub.cwd(s, Hub.thread(s, parent)), "", ""} <> Git{0, "", "step", parent, Hub.cwd(s, Hub.thread(s, parent)), "", ""}
           <> Hub.run(Hub.thread(s, parent), Hub.cwd(s, Hub.thread(s, parent)), text, Hub.uuid(now, parent ++ "/r/" ++ id))}
     case True{} False{}:
@@ -3787,7 +3787,7 @@ def Rel.k(run: Bool, live: Bool, r: Rec, +now: Nat, +th: String) -> Rec:
     case False{} False{} Rec{+s, cs, os}:
       Rec.add(Rec{s, cs, os}, Step{Resume.clear(s, now, th), Nil{}})
     case False{} True{} Rec{+s, cs, os}:
-      Rec.tell(True{}, Rec.carry(String.eq(Resume.why(s, th), "carry"), Rec{s, cs, os}, now, th), now, th)
+      Rec.tell(True{}, Rec.carry(Bool.and(String.eq(Resume.why(s, th), "carry"), M.Carry.on(s)), Rec{s, cs, os}, now, th), now, th)
 
 def Rel.one(r: Rec, +now: Nat, +th: String) -> Rec:
   match r:
@@ -3801,6 +3801,8 @@ def Rel.all(ts: List<&2, String>, r: Rec, +now: Nat) -> Rec:
     case +th <> t:
       Rel.all(t, Rel.one(r, now, th), now)
 
+# (a marker saved while continuing was on is read again at its release:
+# with the setting off it starts nothing and is cleared)
 # the next marked threads (Rec.burst() at most) carried on or told their
 # lost work; a running one waits for its turn's end (the server runs this
 # each minute and after each turn ends). A lost-work note never takes a
@@ -3822,6 +3824,14 @@ def Lost.demo(+on: Bool, +run: Bool) -> M.State:
 def Lost.many() -> M.State:
   M.State.replay(List.concat(&2, M.Change, [[M.ProjectCreated{"p1", "p", "/p", 1n}], Lost.demo.cs(True{}, False{}, "a1"), Lost.demo.cs(True{}, False{}, "a2"),
     Lost.demo.cs(True{}, False{}, "a3"), Lost.demo.cs(True{}, False{}, "a4"), Lost.demo.cs(True{}, False{}, "a5"), Lost.demo.cs(True{}, False{}, "a6")]), M.State.empty())
+
+# a1 marked "carry" (deferred past a restart's burst) and not running,
+# continuing on or off, then released
+def Lost.released.s(+on: Bool) -> M.State:
+  M.State.replay(List.append(&2, M.Change, Bool.pick(List<&2, M.Change>, on, Nil{}, [M.SettingSet{"restart.continue", "off", 9n}]), Resume.set(Lost.many(), 9n, "a1", "carry")), Lost.many())
+
+def Lost.released(+on: Bool) -> M.State:
+  M.State.replay(Queue.changes(Rec.release(Lost.released.s(on), 10n)), Lost.released.s(on))
 
 def Lost.marked() -> M.State:
   M.State.replay(List.append(&2, M.Change, Resume.set(Lost.demo(True{}, False{}), 4n, "t1", "restart"), [M.TurnQueued{"t1", "q1", "held", 4n}]), Lost.demo(True{}, False{}))

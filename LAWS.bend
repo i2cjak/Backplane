@@ -4794,7 +4794,7 @@ law task_repair_delivers_once:
   {H.Task.repair(H.Repair.again(H.Repair.demo(0n), 9n), 10n) == H.Step{[], []} : H.Step}
 
 law task_repair_activates_idle:
-  {H.Queue.changes(H.Task.repair(H.Repair.demo(1n), 9n)) == [M.TaskDelivered{"k1", 9n}, M.TurnChanged{"t0", M.Running{}, 9n}] : List<&2, M.Change>}
+  {H.Queue.changes(H.Task.repair(H.Repair.demo(1n), 9n)) == [M.TurnChanged{"t0", M.Running{}, 9n}, M.TaskDelivered{"k1", 9n}] : List<&2, M.Change>}
 
 law task_repair_running_marks_only:
   {H.Task.repair(H.Repair.demo(2n), 9n) == H.Step{[M.TaskDelivered{"k1", 9n}], []} : H.Step}
@@ -4809,6 +4809,9 @@ law store_torn_tail_resyncs:
 
 law store_torn_tail_newline:
   {ST.Store.tail_fix([123, 34]) ++ "|" ++ ST.Store.tail_fix([123, 10]) ++ "|" ++ ST.Store.tail_fix([]) == "\n||" : String}
+
+law store_fail_names_repair:
+  {ST.Store.fail.msg("disk full", True{}) ++ "|" ++ ST.Store.fail.msg("disk full", False{}) == "disk full|disk full; the log's tail could not be repaired" : String}
 
 # torn before the task's state: the child's turn ended, so its task ends
 law task_repair_finishes_ended_child:
@@ -4866,6 +4869,12 @@ law rec_burst_bounded:
 
 law rec_release_bounded:
   {H.Lost.running(M.State.replay(H.Queue.changes(H.Rec.release(H.Carry.after(H.Lost.many(), 10n), 11n)), H.Carry.after(H.Lost.many(), 10n))) == 6n : Nat}
+
+law rec_release_carry_marker_on:
+  {Nat.show(H.Lost.running(H.Lost.released(True{}))) ++ "/" ++ Nat.show(List.length(&2, String, H.Resume.ids(H.Lost.released(True{})))) == "1/0" : String}
+
+law rec_release_carry_marker_off:
+  {Nat.show(H.Lost.running(H.Lost.released(False{}))) ++ "/" ++ Nat.show(List.length(&2, String, H.Resume.ids(H.Lost.released(False{})))) == "0/0" : String}
 
 law rec_release_never_drains_queue:
   {H.Lost.taken(H.Queue.changes(H.Rec.release(H.Lost.marked(), 9n))) == False{} : Bool}

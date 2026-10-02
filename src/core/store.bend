@@ -102,6 +102,16 @@ def Store.tail_fix(bs: List<&2, U32>) -> String:
     case +b <> t:
       Bool.pick(String, U32.is_eq(Store.last.go(t, b), 10), "", "\n")
 
+# a failed write may have left a cut line: the log is closed off with a
+# newline before anything else is written, and the failure says when that
+# did not work either
+def Store.fail.msg(err: String, repaired: Bool) -> String:
+  match repaired:
+    case True{}:
+      err
+    case False{}:
+      err ++ "; the log's tail could not be repaired"
+
 # a line cut by a crash (the laws' example)
 def Store.torn.demo() -> String:
   "{\"$\":\"ProjectRem"

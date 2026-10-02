@@ -1315,6 +1315,14 @@ def Hub.state(h: Hub) -> M.State & Hub:
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       (st, Hub{st, f, ls, cl, as, inbox, cfg, note})
 
+# /hello's busy count follows every committed step, not the minute's tick
+def Hub.busy.set(h: Hub) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      do IO<Hub>:
+        PS.Perf.set("hub.busy", U32.from_nat(M.Work.threads(st)))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+
 def Cfg.version(c: Cfg) -> String:
   match c:
     case Cfg{_, _, _, _, _, _, v, nt}:
@@ -4328,6 +4336,18 @@ def Cfg.with_bn(c: Cfg, b: BN.Bn) -> Cfg:
 def Live.with(+cfg: Cfg, lv: List<&2, LV.Buf>) -> Cfg:
   Cfg.with_bn(cfg, BN.Bn.with_live(Cfg.bn(cfg), lv))
 
+# a write failed and may have left a cut line: it was closed off with a
+# newline (the next line starts on its own), and a repair that failed is
+# reported too
+def Hub.commit.failed(r: File & Result<&1, &1, U32 & String, Unit>, err: String, st: M.State, ls: List<&2, String>, cl: List<&2, Client>,
+    as: List<&2, Agent>, inbox: Chan(Msg), cfg: Cfg, note: String) -> IO(Hub & Wrote):
+  (f, res) = r
+  match res:
+    case Done{_}:
+      IO.pure(Hub & Wrote, (Hub{st, f, ls, cl, as, inbox, cfg, note}, Wrote{Nil{}, False{}, ST.Store.fail.msg(err, True{})}))
+    case Fail{_}:
+      IO.pure(Hub & Wrote, (Hub{st, f, ls, cl, as, inbox, cfg, note}, Wrote{Nil{}, False{}, ST.Store.fail.msg(err, False{})}))
+
 def Hub.commit.done(r: File & Result<&1, &1, U32 & String, Unit>, +cs: List<&2, M.Change>, st: M.State, ls: List<&2, String>, cl: List<&2, Client>,
     as: List<&2, Agent>, +inbox: Chan(Msg), +cfg: Cfg, note: String) -> IO(Hub & Wrote):
   (f, res) = r
@@ -4337,7 +4357,8 @@ def Hub.commit.done(r: File & Result<&1, &1, U32 & String, Unit>, +cs: List<&2, 
         Bot.dir.changed.all(cs, inbox)
         return Hub.commit.k(Hub.fold(cs, Folded{st, ls, Nil{}}), f, cl, as, inbox, Live.with(cfg, LV.Live.ends(cs, Live.of(cfg))), note)
     case Fail{e}:
-      IO.pure(Hub & Wrote, (Hub{st, f, ls, cl, as, inbox, cfg, note}, Wrote{Nil{}, False{}, Hub.err.msg(e)}))
+      IO.bind(File & Result<&1, &1, U32 & String, Unit>, Hub & Wrote, File.write(f, "\n"),
+        r2 => Hub.commit.failed(r2, Hub.err.msg(e), st, ls, cl, as, inbox, cfg, note))
 
 # persist a step's changes in one write, then fold them in
 def Hub.commit.w(+cs: List<&2, M.Change>, h: Hub) -> IO(Hub & Wrote):
@@ -4348,9 +4369,13 @@ def Hub.commit.w(+cs: List<&2, M.Change>, h: Hub) -> IO(Hub & Wrote):
       IO.bind(File & Result<&1, &1, U32 & String, Unit>, Hub & Wrote, File.write(f, ST.Store.text(Hub.lines.disk(cs))),
         r => Hub.commit.done(r, cs, st, ls, cl, as, inbox, cfg, note))
 
+def Hub.commit.b(r: Hub & List<&2, String>) -> IO(Hub & List<&2, String>):
+  (h, fr) = r
+  IO.bind(Hub, Hub & List<&2, String>, Hub.busy.set(h), h2 => IO.pure(Hub & List<&2, String>, (h2, fr)))
+
 # persist changes, fold them in; answers the hub and the new lines (newest first)
 def Hub.commit(+cs: List<&2, M.Change>, h: Hub, fresh: List<&2, String>) -> IO(Hub & List<&2, String>):
-  IO.bind(Hub & Wrote, Hub & List<&2, String>, Hub.commit.w(cs, h), r => IO.pure(Hub & List<&2, String>, Hub.commit.r(r, fresh)))
+  IO.bind(Hub & Wrote, Hub & List<&2, String>, Hub.commit.w(cs, h), r => Hub.commit.b(Hub.commit.r(r, fresh)))
 
 def Cfg.host(c: Cfg) -> String:
   match c:
@@ -6151,7 +6176,8 @@ def Hub.step.wrote(r: Hub & Wrote, +cs: List<&2, M.Change>, os: List<&2, B.Out>,
   match w:
     case Wrote{+fresh, True{}, _}:
       do IO<Hub & Bool>:
-        h2 : Hub <- Hub.announce.far((h, fresh), cs, from)
+        h1 : Hub <- Hub.busy.set(h)
+        h2 : Hub <- Hub.announce.far((h1, fresh), cs, from)
         h3 : Hub <- Hub.outs(os, h2)
         return (h3, True{})
     case Wrote{_, False{}, +err}:
@@ -8021,8 +8047,12 @@ def Main.opened(r: Result<&1, &1, U32 & String, File>, st: M.State, ls: List<&2,
       Main.nolog(e)
 
 def Main.torn.k(r: File & Result<&1, &1, U32 & String, Unit>) -> IO(Result<&1, &1, U32 & String, File>):
-  (f, _) = r
-  IO.pure(Result<&1, &1, U32 & String, File>, Done{f})
+  (f, res) = r
+  match res:
+    case Done{_}:
+      IO.pure(Result<&1, &1, U32 & String, File>, Done{f})
+    case Fail{e}:
+      IO.pure(Result<&1, &1, U32 & String, File>, Fail{e})
 
 # a log whose last line was torn by a crash ends without a newline: the
 # next line starts on its own (ST.Store.tail_fix)
