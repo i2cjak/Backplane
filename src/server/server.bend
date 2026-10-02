@@ -4328,6 +4328,18 @@ def Cfg.with_bn(c: Cfg, b: BN.Bn) -> Cfg:
 def Live.with(+cfg: Cfg, lv: List<&2, LV.Buf>) -> Cfg:
   Cfg.with_bn(cfg, BN.Bn.with_live(Cfg.bn(cfg), lv))
 
+# a write failed and may have left a cut line: it was closed off with a
+# newline (the next line starts on its own), and a repair that failed is
+# reported too
+def Hub.commit.failed(r: File & Result<&1, &1, U32 & String, Unit>, err: String, st: M.State, ls: List<&2, String>, cl: List<&2, Client>,
+    as: List<&2, Agent>, inbox: Chan(Msg), cfg: Cfg, note: String) -> IO(Hub & Wrote):
+  (f, res) = r
+  match res:
+    case Done{_}:
+      IO.pure(Hub & Wrote, (Hub{st, f, ls, cl, as, inbox, cfg, note}, Wrote{Nil{}, False{}, ST.Store.fail.msg(err, True{})}))
+    case Fail{_}:
+      IO.pure(Hub & Wrote, (Hub{st, f, ls, cl, as, inbox, cfg, note}, Wrote{Nil{}, False{}, ST.Store.fail.msg(err, False{})}))
+
 def Hub.commit.done(r: File & Result<&1, &1, U32 & String, Unit>, +cs: List<&2, M.Change>, st: M.State, ls: List<&2, String>, cl: List<&2, Client>,
     as: List<&2, Agent>, +inbox: Chan(Msg), +cfg: Cfg, note: String) -> IO(Hub & Wrote):
   (f, res) = r
@@ -4337,7 +4349,8 @@ def Hub.commit.done(r: File & Result<&1, &1, U32 & String, Unit>, +cs: List<&2, 
         Bot.dir.changed.all(cs, inbox)
         return Hub.commit.k(Hub.fold(cs, Folded{st, ls, Nil{}}), f, cl, as, inbox, Live.with(cfg, LV.Live.ends(cs, Live.of(cfg))), note)
     case Fail{e}:
-      IO.pure(Hub & Wrote, (Hub{st, f, ls, cl, as, inbox, cfg, note}, Wrote{Nil{}, False{}, Hub.err.msg(e)}))
+      IO.bind(File & Result<&1, &1, U32 & String, Unit>, Hub & Wrote, File.write(f, "\n"),
+        r2 => Hub.commit.failed(r2, Hub.err.msg(e), st, ls, cl, as, inbox, cfg, note))
 
 # persist a step's changes in one write, then fold them in
 def Hub.commit.w(+cs: List<&2, M.Change>, h: Hub) -> IO(Hub & Wrote):
@@ -8021,8 +8034,12 @@ def Main.opened(r: Result<&1, &1, U32 & String, File>, st: M.State, ls: List<&2,
       Main.nolog(e)
 
 def Main.torn.k(r: File & Result<&1, &1, U32 & String, Unit>) -> IO(Result<&1, &1, U32 & String, File>):
-  (f, _) = r
-  IO.pure(Result<&1, &1, U32 & String, File>, Done{f})
+  (f, res) = r
+  match res:
+    case Done{_}:
+      IO.pure(Result<&1, &1, U32 & String, File>, Done{f})
+    case Fail{e}:
+      IO.pure(Result<&1, &1, U32 & String, File>, Fail{e})
 
 # a log whose last line was torn by a crash ends without a newline: the
 # next line starts on its own (ST.Store.tail_fix)

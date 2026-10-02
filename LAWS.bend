@@ -4810,6 +4810,9 @@ law store_torn_tail_resyncs:
 law store_torn_tail_newline:
   {ST.Store.tail_fix([123, 34]) ++ "|" ++ ST.Store.tail_fix([123, 10]) ++ "|" ++ ST.Store.tail_fix([]) == "\n||" : String}
 
+law store_fail_names_repair:
+  {ST.Store.fail.msg("disk full", True{}) ++ "|" ++ ST.Store.fail.msg("disk full", False{}) == "disk full|disk full; the log's tail could not be repaired" : String}
+
 # torn before the task's state: the child's turn ended, so its task ends
 law task_repair_finishes_ended_child:
   {H.Task.marked(H.Queue.changes(H.Task.repair(M.State.replay([M.TurnChanged{"t1", M.Completed{}, 5n}], H.Task.demo(False{})), 9n)), "k1") == True{} : Bool}

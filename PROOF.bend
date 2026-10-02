@@ -6731,6 +6731,9 @@ def Laws.store_torn_tail_resyncs(rest):
 def Laws.store_torn_tail_newline():
   {==}
 
+def Laws.store_fail_names_repair():
+  {==}
+
 def Laws.task_repair_finishes_ended_child():
   {==}
 
