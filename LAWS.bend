@@ -4631,3 +4631,93 @@ law onboard_elsewhere_closes:
 
 law onboard_reopen:
   {U.Tour.at(OnbUi.after(U.Ui.act(OnbUi.synced(OnbUi.done()), "ob-open", ""))) == 0n : Nat}
+
+# State put back from a cache (a page's saved log, a phone's saved state) is
+# not this connection's: only a live log shows the tour
+def OnbUi.live() -> U.Ui:
+  U.Ui.recv.k(0n, U.Ui.init(1n), U.Seq.demo("log", [C.Change.encode(M.ProjectCreated{"p1", "p", "/p", 1n})]))
+
+def OnbUi.phone() -> Hb.Hubs:
+  Hb.Hubs{"c", 1n, "h", [Hb.Hub{"h", OnbUi.live()}]}
+
+law onboard_live_log_shows:
+  {U.Tour.at(OnbUi.live()) == 0n : Nat}
+
+law onboard_cache_unsynced:
+  {U.Tour.at(U.Ui.unsync(OnbUi.live())) == OBD.Ob.count() : Nat}
+
+law onboard_phone_cache_unsynced:
+  {U.Tour.at(Hb.Hubs.ui(Hb.Hubs.stale(OnbUi.phone()), "h")) == OBD.Ob.count() : Nat}
+
+# the keyboard goes back to, and the head is pointed at, only what is on
+# screen: a thread selected under a room, a remote chat, a bot's view or
+# Settings is not
+def OnbUi.thread() -> U.Ui:
+  U.Bots.sel.set(OnbUi.live(), "t1")
+
+def OnbUi.step(u: U.Ui, s: String) -> U.Ui:
+  U.Ui.scratch_set(u, "@tour", s)
+
+law onboard_focus_thread:
+  {U.Tour.focus(OnbUi.thread()) == "composer" : String}
+
+law onboard_focus_none:
+  {U.Tour.focus(OnbUi.live()) == "" : String}
+
+law onboard_focus_remote:
+  {U.Tour.focus(U.Bots.views(OnbUi.thread(), "", "", "x")) == "remote-send" : String}
+
+law onboard_focus_room:
+  {U.Tour.focus.k(False{}, True{}, "", True{}) == "room-post" : String}
+
+law onboard_focus_settings:
+  {U.Tour.focus(U.Ui.flag_on(OnbUi.thread(), "settings")) == "" : String}
+
+law onboard_head_thread:
+  {U.Tour.target(0n, OnbUi.step(OnbUi.thread(), "m3")) == "head" : String}
+
+law onboard_head_remote:
+  {U.Tour.target(0n, OnbUi.step(U.Bots.views(OnbUi.thread(), "", "", "x"), "m3")) == "" : String}
+
+law onboard_head_settings:
+  {U.Tour.target(0n, OnbUi.step(U.Ui.flag_on(OnbUi.thread(), "settings"), "m3")) == "" : String}
+
+# keys pressed while the tour is up stay quarantined until let go, however
+# the tour closes; losing the focus drops them
+def OnbN.n() -> N.Nui:
+  N.Nui.init(U.Ui.init(1n), 800, 600)
+
+law held_set_has:
+  {N.Held.has(N.Nui.ui(N.Held.set(OnbN.n(), 65293)), 65293) == True{} : Bool}
+
+law held_other_key:
+  {N.Held.has(N.Nui.ui(N.Held.set(OnbN.n(), 65293)), 97) == False{} : Bool}
+
+law held_let_frees:
+  {N.Held.has(N.Nui.ui(N.Held.let(N.Held.set(OnbN.n(), 65293), 65293)), 65293) == False{} : Bool}
+
+law held_blur_frees:
+  {N.Held.has(N.Nui.ui(N.Held.clear(N.Held.set(OnbN.n(), 65293))), 65293) == False{} : Bool}
+
+law held_none_at_first:
+  {N.Held.has(N.Nui.ui(OnbN.n()), 65293) == False{} : Bool}
+
+law held_swallowed_without_tour:
+  {N.Nui.event.t(False{}, N.Held.set(OnbN.n(), 65293), W.WKey{65293, 0, 0, True{}}) == N.Step{N.Held.set(OnbN.n(), 65293), Nil{}, False{}} : N.Step}
+
+# the wheel over the tour's card scrolls two lines a notch within what
+# overflows
+law tour_scroll_down:
+  {N.Tour.scroll(0n, 5n, False{}) == 2n : Nat}
+
+law tour_scroll_down_stops:
+  {N.Tour.scroll(4n, 5n, False{}) == 5n : Nat}
+
+law tour_scroll_up:
+  {N.Tour.scroll(3n, 5n, True{}) == 1n : Nat}
+
+law tour_scroll_up_stops:
+  {N.Tour.scroll(1n, 5n, True{}) == 0n : Nat}
+
+law tour_scroll_none:
+  {N.Tour.scroll(0n, 0n, False{}) == 0n : Nat}

@@ -7,12 +7,19 @@
 //   xpoke wheel X Y up|down
 //   xpoke drag X Y X2 Y2   press at X Y, move to X2 Y2, release there
 //   xpoke size W H         resize the window
+//   xpoke hold KEY MS      hold a key for MS ms as a keyboard does: a press, then
+//                          repeats (presses with no release between), a release
+//   xpoke holdx KEY MS     the same for a server without detectable repeat: each
+//                          repeat is a release and a press with the same time
+//   xpoke down KEY / up KEY  one press / one release
+//   xpoke blur / focus     the window loses / gets the input focus
 // Build: cc -I<x11 include> test/tools/xpoke.c -o build/xpoke -lX11
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static Window find(Display* d, Window w, const char* name) {
   char* n = NULL;
@@ -37,6 +44,28 @@ static void key(Display* d, Window w, KeySym ks, unsigned state) {
   e.keycode = XKeysymToKeycode(d, ks);
   e.type = KeyPress; XSendEvent(d, w, True, KeyPressMask, (XEvent*)&e);
   e.type = KeyRelease; XSendEvent(d, w, True, KeyReleaseMask, (XEvent*)&e);
+}
+
+static void kev(Display* d, Window w, KeySym ks, int type, Time t) {
+  XKeyEvent e = { 0 };
+  e.display = d; e.window = w; e.root = DefaultRootWindow(d);
+  e.same_screen = True; e.keycode = XKeysymToKeycode(d, ks);
+  e.type = type; e.time = t;
+  XSendEvent(d, w, True, type == KeyPress ? KeyPressMask : KeyReleaseMask, (XEvent*)&e);
+  XFlush(d);
+}
+
+static void hold(Display* d, Window w, KeySym ks, int ms, int synth) {
+  Time t = 1000;
+  kev(d, w, ks, KeyPress, t);
+  for (int at = 0; at + 30 <= ms; at += 30) {
+    usleep(30000);
+    t += 30;
+    if (synth) kev(d, w, ks, KeyRelease, t);
+    kev(d, w, ks, KeyPress, t);
+  }
+  usleep(30000);
+  kev(d, w, ks, KeyRelease, t + 30);
 }
 
 static void button(Display* d, Window w, int x, int y, unsigned b) {
@@ -86,6 +115,16 @@ int main(int argc, char** argv) {
       unsigned shift = (*c >= 'A' && *c <= 'Z') || *c == '?' || *c == '!' ? ShiftMask : 0;
       key(d, w, ks, shift);
     }
+  } else if ((!strcmp(argv[1], "hold") || !strcmp(argv[1], "holdx")) && argc == 4) {
+    hold(d, w, XStringToKeysym(argv[2]), atoi(argv[3]), argv[1][4] == 'x');
+  } else if (!strcmp(argv[1], "down") && argc == 3) {
+    kev(d, w, XStringToKeysym(argv[2]), KeyPress, 1000);
+  } else if (!strcmp(argv[1], "up") && argc == 3) {
+    kev(d, w, XStringToKeysym(argv[2]), KeyRelease, 1000);
+  } else if (!strcmp(argv[1], "blur") && argc == 2) {
+    XSetInputFocus(d, DefaultRootWindow(d), RevertToNone, CurrentTime);
+  } else if (!strcmp(argv[1], "focus") && argc == 2) {
+    XSetInputFocus(d, w, RevertToParent, CurrentTime);
   } else if (!strcmp(argv[1], "size") && argc == 4) {
     XResizeWindow(d, w, atoi(argv[2]), atoi(argv[3]));
   } else if (!strcmp(argv[1], "key") && argc == 3) {

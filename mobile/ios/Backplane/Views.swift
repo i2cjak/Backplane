@@ -8,29 +8,33 @@ struct RootView: View {
     @State private var removed = ""
     @State private var renamed = ""
     @State private var newTitle = ""
-    // Settings' sheet is up or still going away: the tour waits for it (onDismiss)
-    @State private var settingsUp = false
+    // the root's sheets (Settings, Find, Hubs) that are up or still going
+    // away: the tour waits for every one of them (each one's onDismiss lets
+    // it go), whichever was already up when this view appeared
+    @State private var up = Set<String>()
 
     var body: some View {
         if model.links.isEmpty {
             NavigationStack { PairView(link: "") { model.pair($0) } }
         } else if let s = model.screen {
             asked(s)
-                .sheet(isPresented: settingsShown, onDismiss: { settingsUp = false }) {
+                .sheet(isPresented: settingsShown, onDismiss: { up.remove("settings") }) {
                     if let st = model.screen?.settings { SettingsSheet(model: model, settings: st, version: model.screen?.version ?? "") }
                 }
-                .onChange(of: model.screen?.settings != nil) { _, up in if up { settingsUp = true } }
-                .sheet(isPresented: tourShown) {
-                    if let t = model.screen?.tour { TourSheet(model: model, tour: t) }
-                }
-                .sheet(isPresented: findShown) {
+                .onChange(of: model.screen?.settings != nil, initial: true) { _, on in if on { up.insert("settings") } }
+                .sheet(isPresented: findShown, onDismiss: { up.remove("find") }) {
                     if let f = model.screen?.find { FindSheet(model: model, find: f) }
                 }
-                .sheet(isPresented: $pairing) {
+                .onChange(of: model.screen?.find != nil, initial: true) { _, on in if on { up.insert("find") } }
+                .sheet(isPresented: $pairing, onDismiss: { up.remove("hubs") }) {
                     NavigationStack {
                         HubsView(model: model, screen: model.screen ?? s)
                             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { pairing = false } } }
                     }
+                }
+                .onChange(of: pairing, initial: true) { _, on in if on { up.insert("hubs") } }
+                .sheet(isPresented: tourShown) {
+                    if let t = model.screen?.tour { TourSheet(model: model, tour: t) }
                 }
         } else {
             ProgressView()
@@ -42,11 +46,21 @@ struct RootView: View {
         Binding(get: { model.screen?.settings != nil }, set: { if !$0, model.screen?.settings != nil { model.act("flag", "settings") } })
     }
 
+    // something else is on screen over the root: Settings, Find, Hubs (in
+    // `up`), the project folders, a bot or room form, a thread's viewer,
+    // diff or terminal
+    private var covered: Bool {
+        let s = model.screen
+        return !up.isEmpty || s?.folders != nil || s?.newBot != nil || s?.newRoom != nil
+            || !(s?.thread?.viewer.open.isEmpty ?? true) || s?.thread?.diff != nil || s?.thread?.term != nil
+    }
+
     // the first-run tour (core/onboard.bend): up while the screen carries a
-    // step, once Settings' sheet (which "Show the tour" shuts) is gone; the
-    // same as Android: dismissing it (swipe down) is Skip
+    // step and nothing else is presented (Settings' sheet, which "Show the
+    // tour" shuts, included, until it is gone); the same as Android:
+    // dismissing it (swipe down) is Skip
     private var tourShown: Binding<Bool> {
-        Binding(get: { model.screen?.tour != nil && !settingsUp && model.screen?.settings == nil },
+        Binding(get: { model.screen?.tour != nil && !covered },
                 set: { if !$0, model.screen?.tour != nil { model.act("ob-skip") } })
     }
 

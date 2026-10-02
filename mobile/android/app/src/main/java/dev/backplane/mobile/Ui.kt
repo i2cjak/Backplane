@@ -221,9 +221,13 @@ fun App(m: AppModel) {
         dismissButton = { TextButton(onClick = { removed = true; m.act("proj-keep") }) { Text(r.no) } },
     )
     // the first-run tour (core/onboard.bend): the same as iOS, dismissing it
-    // (Back, a tap outside) is Skip; it waits while Settings' sheet is up
+    // (Back, a tap outside) is Skip; it waits while anything else is
+    // presented (Settings, Find, Hubs, a menu, a dialog, a form), so two
+    // never ask at once
     s.tour?.let { t ->
-        if (s.settings == null) AlertDialog(
+        val free = !pairing && s.settings == null && s.find == null && s.rowMenu == null && d == null && rn == null && r == null &&
+            s.folders == null && s.newBot == null && s.newRoom == null
+        if (free) AlertDialog(
             onDismissRequest = { m.act("ob-skip") },
             title = {
                 Column {

@@ -747,7 +747,7 @@ def View.settings(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +not
       View.setrow(U.KiCad.ipc.label(nf), U.KiCad.ipc.note(nf), Bool.pick(List<&2, D.Node>, U.KiCad.ipc.ready(nf), View.chips(["on", "off"], ipc, "kicad.ipc"), Nil{})),
       View.setrow("Theme", "The window and the web page (phones unset follow their own system).", View.chips(["dark", "light"], Bool.pick(String, String.eq(M.Setting.get(st, "ui.theme", ""), "light"), "light", "dark"), "ui.theme")),
       View.setrow("Thread list", "Projects groups threads by project; active lists what is going on, what needs you first.", View.chips(["projects", "active"], U.Side.view(st), "sidebar.view")),
-      View.setrow("Tailscale: " ++ U.Str.get(nf, "tailnet"), "Listening on " ++ U.Str.get(nf, "listen"), Nil{}),
+      View.setrow(U.Tail.label(nf), U.Tail.note(nf), Nil{}),
       View.setrow("Pairing link", U.Pair.note(U.Pair.link(nf)), D.Dom.cat(D.Dom.when(U.Pair.qr.ready(nf), D.Dom.button(Bool.pick(String, U.Ui.flag(u, "pairqr"), "on", ""), "flag", "pairqr", "Show the link as a code to scan", "QR code")),
         D.Dom.when(Bool.not(String.is_empty(U.Pair.link(nf))), D.Dom.copy(U.Pair.link(nf)))))],
       View.pair.qr(U.Ui.flag(u, "pairqr"), nf),

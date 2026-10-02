@@ -1,5 +1,4 @@
 import Base
-import ./tools.bend as TO
 
 # The first-run tour, for every client (the window, the web, the phones):
 # a short list of steps, each a title, a few sentences and the part of the
@@ -84,48 +83,53 @@ def Ob.phone(+k: Nat) -> Bool:
 
 # the words of a step. Every claim here is checked against the code (see
 # docs in AGENTS.md): Scratch's lifetime is the "scratch.days" setting;
-# threads in a git project get their own worktree; Settings shows whether
-# each agent program is found, not whether it is signed in; the API keys'
-# file is the hub user's, and agents are only told not to print it;
-# Tailscale is looked for when Backplane starts.
+# threads in a git project get their own worktree unless asked for the
+# folder ("local", Hub.env.of); Settings shows whether each agent program is
+# found, not whether it is signed in; the API keys' file is the hub user's,
+# and agents are only told not to print it; Tailscale is looked for when
+# Backplane starts and Settings says which of on, not connected or off
+# (client.bend's Tail.*). The thread buttons are tools.bend's, named by
+# their labels (test/onboard_test.bend ties them).
 def Ob.body.0(+k: Nat) -> String:
-  Bool.pick(String, Ob.phone(k), "A short tour of what is where. Skip it any time; More, Settings shows it again.",
-    "A short tour of what is where. Enter goes on, Esc skips it, and Settings shows it again.")
+  match k:
+    case 2n:
+      "A short tour of what is where. Skip it any time; More, Settings shows it again."
+    case 1n:
+      "A short tour of what is where. Enter goes on (on a focused button it presses that button), Esc skips it, and Settings shows it again."
+    case _:
+      "A short tour of what is where. Enter goes on, Esc skips it, and Settings shows it again."
 
 def Ob.body.1(+k: Nat, +d: String) -> String:
   "A project is a folder, usually a KiCad project. Add one with " ++ Bool.pick(String, Ob.phone(k), "the folder-plus button on the project list", "+ at the top of the sidebar")
-    ++ ". Scratch is for chats with no project: it is temporary, and a thread left alone for " ++ d ++ " days is deleted with its folder, unless it is pinned."
+    ++ ". Scratch holds chats with no project. It is temporary: a thread left alone for " ++ d ++ " days is deleted with its folder, unless pinned."
 
 def Ob.body.2() -> String:
-  "A thread is a conversation with an agent working on a project. In a git project each thread works in its own worktree, so threads do not overwrite each other; without git it works in the project's folder. Long runs of tool calls fold into one row, and delegated work shows in the Subagents panel."
+  "A thread is a conversation with an agent working on a project. Git projects use separate worktrees by default; without git, or in local mode, threads share the project folder. Runs of tool calls fold into one row, and delegated work shows under Subagents."
 
 def Ob.body.3(+k: Nat) -> String:
-  Bool.pick(String, Ob.phone(k), "A thread's toolbar menu has: ", "An open thread's header has: ")
-    ++ TO.Tools.said(TO.Tools.settle(False{})) ++ " " ++ TO.Tools.said(TO.Tools.snooze(False{}, "", "")) ++ " " ++ TO.Tools.said(TO.Tools.fork()) ++ " "
-    ++ Bool.pick(String, Ob.phone(k), "The viewer shows the board, schematic, 3D model, files and diff.", TO.Tools.said(TO.Tools.panel(False{})))
-    ++ " Pin, archive and delete are there too."
+  Bool.pick(String, Ob.phone(k), "In a thread's toolbar menu, Settle takes it out of the active list. Snooze hides it until later. Fork starts a new thread from it. The viewer shows the board, schematic, 3D and files. Pin, archive and delete are there too.",
+    "Settle takes a thread out of the active list. Snooze hides it until later. Fork starts a new thread from this one. Viewer opens the board, schematic, 3D and files beside it. Pin, archive and delete are there too.")
 
 def Ob.body.4(+k: Nat) -> String:
-  "A bot is an agent that stays around between chats, with its own name, a cat and a memory. Add one under Bots in the " ++ Bool.pick(String, Ob.phone(k), "list", "sidebar")
-    ++ ", then mention it in any message, for example: @scout look at the BOM."
+  "A bot is an agent that stays between chats, with a name, a cat and a memory. Add one under Bots in the " ++ Bool.pick(String, Ob.phone(k), "list", "sidebar")
+    ++ ", then mention it in any message: @scout look at the BOM."
 
 def Ob.body.5() -> String:
-  "Backplane runs the Claude Code, Codex or Grok command-line program, so install one and sign in to it on the machine that runs this hub. Settings shows whether each is found and its version; it cannot tell whether you are signed in. Pick the provider and model from a thread's composer, or in Settings for new threads."
+  "Backplane runs the Claude Code, Codex or Grok command-line program: install one and sign in to it on the machine that runs this hub. Settings shows whether each is found, not whether you are signed in. Choose the provider and model in a thread's composer, or in Settings for new threads."
 
 def Ob.body.6(+k: Nat) -> String:
-  Bool.pick(String, Ob.phone(k),
-    "API keys for other services are kept on the hub's machine, in a file agents running there could read. They are told to use the keys without printing them; nothing enforces it. Voice dictation's OpenAI key is set in Settings on a computer or the web page.",
-    "API keys for other services are kept on the hub's machine, in a file agents running there could read. They are told to use the keys without printing them; nothing enforces it. Voice dictation needs an OpenAI key, set under Voice in Settings.")
+  "API keys for other services are kept in a file on the hub's machine that agents running there could read. They are told not to print them; nothing enforces it. "
+    ++ Bool.pick(String, Ob.phone(k), "Dictation's OpenAI key is set in Settings on a computer or the web page.", "Dictation needs an OpenAI key, set under Voice in Settings.")
 
 def Ob.body.7(+k: Nat) -> String:
   Bool.pick(String, Ob.phone(k),
-    "Each home folder runs one hub. The Hubs button lists the hubs this phone is paired with and other hubs of yours it found. A hub is reachable only if Tailscale was installed and signed in on its machine when Backplane started; its Settings say \"Tailscale: off\" otherwise.",
-    "Each home folder runs one hub. If Tailscale is installed and signed in when Backplane starts, it also listens on your tailnet and lists your other Backplane hubs in the sidebar, with a machine switch beside Settings. If Settings says \"Tailscale: off\", sign in and restart Backplane.")
+    "Each home folder runs one hub. The Hubs button lists the hubs this phone is paired with and your other hubs it found. They are usually reached over Tailscale: the hub's computer needs it signed in when Backplane starts, and this phone needs Tailscale on the same tailnet.",
+    "Each home folder runs one hub. With Tailscale signed in when Backplane starts, it also listens on your tailnet and lists your other hubs in the sidebar. Settings says Tailscale: on, not connected (sign in, then restart Backplane) or off (started with --no-tailscale).")
 
 def Ob.body.8(+k: Nat) -> String:
   Bool.pick(String, Ob.phone(k),
-    "On the hub's computer open Settings, Pairing link, QR code. Here, Hubs, Scan QR code pairs another hub. A browser can open a hub's web address too.",
-    "To pair a phone, open Settings, Pairing link, QR code and scan it with the Backplane app or the phone's camera; the link appears once Backplane listens on your tailnet. Other devices can open this hub's web address in a browser.")
+    "On the hub's computer open Settings, Pairing link, QR code. Here, Hubs, Scan QR code pairs it. This phone needs Tailscale on the same tailnet. A browser can open a hub's web address too.",
+    "To pair a phone, install Tailscale on it and join the same tailnet. Then open Settings, Pairing link, QR code and scan it with the Backplane app or the phone's camera. The link appears once Settings says Tailscale: on. A browser on a tailnet device can open this hub's web address too.")
 
 def Ob.body(+k: Nat, +d: String, i: Nat) -> String:
   match i:

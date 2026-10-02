@@ -2906,8 +2906,7 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Active") : U32), (b2 + 670 + dy + fy : U32), "Active", String.eq(U.Side.view(st), "active"), "setting", "sidebar.view=active"),
     Set.head(ty, "Network and updates", x, (b2 + 742 + dy + fy : U32)),
     Set.card(x, (b2 + 774 + dy + fy : U32), w, 216),
-    Set.row(ty, "Tailscale: " ++ U.Str.get(info, "tailnet"), Bool.pick(String, String.eq(U.Str.get(info, "tailnet"), "off"), "Listening on " ++ U.Str.get(info, "listen") ++ " only (started with --no-tailscale, or Tailscale is not up).",
-      "Also on your tailnet: your own devices get in, others need the pairing token."), x, (b2 + 776 + dy + fy : U32), w),
+    Set.row(ty, U.Tail.label(info), U.Tail.note(info), x, (b2 + 776 + dy + fy : U32), w),
     Set.pair(ty, info, Pq.on(n), x, w, (b2 + 828 + dy + fy : U32)),
     Set.row.r(ty, "Backplane " ++ v, U.Update.line(info, note), x, (b2 + 880 + dy + fy : U32), w, 150),
     Bool.pick(Out, U.Update.packaged(info), Out.none(), Bool.pick(Out, String.starts_with(note, "update "), Lay.button(ty, D.Clip.all(), (x + w - 16 - Lay.button.w(ty, "Install update") : U32), (b2 + 890 + dy + fy : U32), "Install update", T.Th.accent(), "update", ""),
@@ -4995,12 +4994,12 @@ def Tour.x(+g: String, +ww: U32, +cw: U32) -> U32:
   Bool.pick(U32, Bool.or(Bool.or(String.eq(g, "sidebar"), String.eq(g, "add")), String.eq(g, "settings")),
     U32.min(288, U32.dim(ww, (cw + 12 : U32))), U32.shr(U32.dim(ww, cw)))
 
-def Tour.lines(ls: List<&2, String>, +ty: Ty, +k: Nat, +lh: U32, +c: U32, +x: U32, +y: U32) -> List<&2, R.Op>:
+def Tour.lines(ls: List<&2, String>, +ty: Ty, +k: Nat, +lh: U32, +c: U32, +cl: D.Clip, +x: U32, +y: U32) -> List<&2, R.Op>:
   match ls:
     case Nil{}:
       Nil{}
     case l <> t:
-      List.append(&2, R.Op, Ty.text(ty, k, l, D.Clip.all(), x, y, lh, c), Tour.lines(t, ty, k, lh, c, x, (y + lh : U32)))
+      List.append(&2, R.Op, Ty.text(ty, k, l, cl, x, y, lh, c), Tour.lines(t, ty, k, lh, c, cl, x, (y + lh : U32)))
 
 def Tour.back(on: Bool, +ty: Ty, +x: U32, +y: U32) -> Out:
   match on:
@@ -5009,17 +5008,23 @@ def Tour.back(on: Bool, +ty: Ty, +x: U32, +y: U32) -> Out:
     case False{}:
       Out.none()
 
-# the body's lines that fit above the buttons, the last cut short with an
-# ellipsis when some are left out
-def Tour.clip.k(cut: Bool, +ls: List<&2, String>, +ty: Ty, +fit: Nat, +px: U32) -> List<&2, String>:
-  match cut:
+# The card never leaves the words out: the body scrolls (the wheel over the
+# card, Tour.wheel in nui.bend; "@tour.sc" lines, kept to what overflows)
+# inside an area as tall as the window leaves after the buttons, which are
+# always on the card. Where not even two body lines fit above them (the
+# window under about 250 px tall) the card is compact: the title joins the
+# text, the step's number goes beside Skip, and the card is the buttons and
+# the lines that fit; under 100 px it is no shorter, and what is below the
+# window is cut by it (the keys still work).
+def Tour.bar.k(over: Bool, +nl: U32, +nv: U32, +off: U32, +x: U32, +y: U32) -> Out:
+  match over:
     case True{}:
-      List.append(&2, String, List.take(&2, String, ls, Nat.sub(fit, 1n)), [Ty.fit(ty, 0n, Maybe.default(&2, String, List.get(&2, String, ls, Nat.sub(fit, 1n)), "") ++ " ...", px)])
+      Out.ops(Lay.box(D.Clip.all(), x, (y + (off * nv * 22 / nl : U32) : U32), 3, (nv * nv * 22 / nl : U32), 0, T.Th.accent(), T.Th.accent()))
     case False{}:
-      ls
+      Out.none()
 
-def Tour.clip(+ls: List<&2, String>, +ty: Ty, +fit: Nat, +px: U32) -> List<&2, String>:
-  Tour.clip.k(Nat.is_gt(List.length(&2, String, ls), fit), ls, ty, fit, px)
+def Tour.bar(+nl: U32, +nv: U32, +off: U32, +x: U32, +y: U32) -> Out:
+  Tour.bar.k(U32.is_gt(nl, nv), nl, nv, off, x, y)
 
 def Lay.tour(+ty: Ty, +n: S.Nui, +ww: U32, +hh: U32) -> Out:
   +u = S.Nui.ui(n)
@@ -5032,20 +5037,26 @@ def Lay.tour(+ty: Ty, +n: S.Nui, +ww: U32, +hh: U32) -> Out:
   +cx = Tour.x(g, ww, cw)
   +tl = Ty.wrap(ty, 1n, title, U32.dim(cw, 32))
   +th = {(U32.from_nat(List.length(&2, String, tl)) * 28 : U32) : U32}
-  +f0 = {(U32.dim(hh, (24 + 98 + th : U32)) / 22 : U32) : U32}
-  +fit = Nat.max(U32.to_nat(f0), 1n)
-  +ls = Tour.clip(Ty.wrap(ty, 0n, body, U32.dim(cw, 32)), ty, fit, U32.dim(cw, 32))
-  +ch = {(98 + th + U32.from_nat(List.length(&2, String, ls)) * 22 : U32) : U32}
+  +avail = {U32.dim(hh, 24) : U32}
+  +compact = {U32.is_lt(avail, (142 + th : U32)) : Bool}
+  +all = Ty.wrap(ty, 0n, Bool.pick(String, compact, title ++ ": " ++ body, body), U32.dim(cw, 32))
+  +nl = {U32.from_nat(List.length(&2, String, all)) : U32}
+  +top = {Bool.pick(U32, compact, 8, (38 + th : U32)) : U32}
+  +nv = {U32.max(1, U32.min(nl, (U32.dim(avail, (top + 60 : U32)) / 22 : U32))) : U32}
+  +ch = {(top + 60 + nv * 22 : U32) : U32}
   +cy = {U32.min(96, U32.dim(hh, (ch + 12 : U32))) : U32}
   +by = {(cy + ch - 44 : U32) : U32}
+  +bt = {(cy + top : U32) : U32}
+  +off = {U32.min(U32.from_nat(Maybe.default(&2, Nat, Nat.read(U.Ui.scratch(u, "@tour.sc")), 0n)), U32.dim(nl, nv)) : U32}
   +nb = OB.Ob.forward(i)
   +nx = {(cx + cw - 16 - Lay.button.w(ty, nb) : U32) : U32}
   Out.all([
     Out{Tour.dim(Tour.rect(g, hh, Lay.x1(n)), ww, hh), [Lay.hit(0, 0, ww, hh, "", "")]},
-    Out{Lay.box(D.Clip.all(), cx, cy, cw, ch, 0, T.Th.panel(), T.Th.line()), [Lay.hit(cx, cy, cw, ch, "", "")]},
-    Out.ops(List.concat(&2, R.Op, [Ty.text(ty, 2n, OB.Ob.counter(i), D.Clip.all(), (cx + 16 : U32), (cy + 8 : U32), 20, T.Th.faint()),
-      Tour.lines(tl, ty, 1n, 28, T.Th.text(), (cx + 16 : U32), (cy + 30 : U32)),
-      Tour.lines(ls, ty, 0n, 22, T.Th.dim(), (cx + 16 : U32), (cy + 38 + th : U32))])),
+    Out{Lay.box(D.Clip.all(), cx, cy, cw, ch, 0, T.Th.panel(), T.Th.line()), [Lay.hit(cx, cy, cw, ch, "ob-scroll", Nat.show(U32.to_nat(U32.dim(nl, nv))))]},
+    Out.ops(List.concat(&2, R.Op, [Ty.text(ty, 2n, OB.Ob.counter(i), D.Clip.all(), Bool.pick(U32, compact, (cx + 16 + Lay.button.w(ty, "Skip") + 12 : U32), (cx + 16 : U32)), Bool.pick(U32, compact, (by + 4 : U32), (cy + 8 : U32)), 20, T.Th.faint()),
+      Bool.pick(List<&2, R.Op>, compact, Nil{}, Tour.lines(tl, ty, 1n, 28, T.Th.text(), D.Clip.all(), (cx + 16 : U32), (cy + 30 : U32))),
+      Tour.lines(all, ty, 0n, 22, Bool.pick(U32, compact, T.Th.text(), T.Th.dim()), D.Clip{(cx + 16 : U32), bt, (cx + cw - 16 : U32), (bt + nv * 22 : U32)}, (cx + 16 : U32), (bt - off * 22 : U32))])),
+    Tour.bar(nl, nv, off, (cx + cw - 8 : U32), bt),
     Lay.button(ty, D.Clip.all(), (cx + 16 : U32), by, "Skip", T.Th.soft(), "ob-skip", ""),
     Tour.back(Nat.is_gt(i, 0n), ty, (nx - 6 - Lay.button.w(ty, "Back") : U32), by),
     Lay.button(ty, D.Clip.all(), nx, by, nb, T.Th.accent(), "ob-next", "")])

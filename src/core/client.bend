@@ -525,6 +525,27 @@ def Update.packaged(+nf: Map<&2, String>) -> Bool:
 def Pair.link(+nf: Map<&2, String>) -> String:
   Str.get(nf, "pair")
 
+# Tailscale in Settings, for every client: "off" is the flag (started with
+# --no-tailscale); otherwise it is up only once the hub listens on the
+# tailnet, which is when it has a pairing link ("pair"); else Tailscale was
+# not installed or signed in when Backplane started
+def Tail.off(+nf: Map<&2, String>) -> Bool:
+  String.eq(Str.get(nf, "tailnet"), "off")
+
+def Tail.up(+nf: Map<&2, String>) -> Bool:
+  Bool.not(String.is_empty(Pair.link(nf)))
+
+def Tail.state(+nf: Map<&2, String>) -> String:
+  Bool.pick(String, Tail.off(nf), "off", Bool.pick(String, Tail.up(nf), Str.get(nf, "tailnet"), "not connected"))
+
+def Tail.label(+nf: Map<&2, String>) -> String:
+  "Tailscale: " ++ Tail.state(nf)
+
+def Tail.note(+nf: Map<&2, String>) -> String:
+  Bool.pick(String, Tail.off(nf), "Listening on " ++ Str.get(nf, "listen") ++ " only: started with --no-tailscale.",
+    Bool.pick(String, Tail.up(nf), "Also on your tailnet: your own devices get in, others need the pairing token.",
+      "Listening on " ++ Str.get(nf, "listen") ++ " only. Sign in to Tailscale, then restart Backplane."))
+
 def Pair.note(+link: String) -> String:
   Bool.pick(String, String.is_empty(link), "Shown once Backplane listens on your tailnet.", link)
 
@@ -2343,6 +2364,12 @@ def Ui.scratch_set(u: Ui, +k: String, v: String) -> Ui:
   match u:
     case Ui{st, sel, dr, live, op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}:
       Ui{st, sel, Map.set(&2, String, dr, k, v), live, op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}
+
+# State put back from a cache (a page's saved log, a phone's saved state)
+# is not this connection's: only a live log sets "@sync" again (Ui.reset),
+# so the first-run tour waits for the hub (law onboard_cache_unsynced)
+def Ui.unsync(u: Ui) -> Ui:
+  Ui.scratch_set(u, "@sync", "")
 
 # The active view
 # ---------------
@@ -6338,8 +6365,10 @@ def Emb.act(+u: Ui, +action: String, +value: String) -> Act:
 # changes: a cached state is not current) and ends when the hub says it is
 # done, even from another client. Actions "ob-next", "ob-back", "ob-skip"
 # and "ob-open" (which shuts Settings: the tour shows over the usual
-# screen). Leaving puts the keyboard back where it makes sense (the
-# composer of an open thread, else nowhere), so no hidden field keeps it.
+# screen). Leaving puts the keyboard in a field of the view on screen (a
+# room's, a remote chat's, an open thread's composer), else nowhere, so no
+# hidden field keeps it; the thread's buttons are only pointed at while its
+# header shows.
 def Tour.done(+st: M.State) -> Bool:
   String.eq(M.Setting.get(st, "onboard.done", ""), "1")
 
@@ -6363,34 +6392,62 @@ def Tour.body(+k: Nat, +u: Ui) -> String:
 def Tour.target.k(+g: String, open: Bool) -> String:
   Bool.pick(String, Bool.and(String.eq(g, "head"), Bool.not(open)), "", g)
 
-# what the step points at: an open thread's buttons only when one is open
+# a bot of this thread is what the main area shows
+def Tour.bot(m: Maybe<&2, BT.Bot>, +u: Ui) -> Bool:
+  match m:
+    case Some{BT.Bot{_, _, +th, _, _, _, _}}:
+      String.eq(th, Ui.sel(u))
+    case None{}:
+      False{}
+
+# an open thread's own header is on screen: its timeline is what shows
+# (not Settings, a room, a remote chat or a bot's view, whatever thread
+# is still selected under them)
+def Tour.head(+u: Ui) -> Bool:
+  Bool.and(Ui.timeline(u), Bool.not(Tour.bot(BT.World.find.id(BT.World.bot(M.State.bots(Ui.state.of(u)), Ui.scratch(u, "@bot"))), u)))
+
+# what the step points at: the thread's buttons only when its header shows
 def Tour.target(+k: Nat, +u: Ui) -> String:
-  Tour.target.k(OB.Ob.target(k, Tour.at(u)), Bool.not(String.is_empty(Ui.sel(u))))
+  Tour.target.k(OB.Ob.target(k, Tour.at(u)), Tour.head(u))
 
-def Tour.leave.k(thread: Bool) -> Cmd:
-  Bool.pick(Cmd, thread, Focus{"composer"}, Focus{""})
+def Tour.room.on(r: BT.Room) -> Bool:
+  match r:
+    case BT.Room{_, _, _, _, deleted}:
+      Bool.not(deleted)
 
-def Tour.leave(a: Act, +thread: Bool) -> Act:
+# the field the keyboard goes back to when the tour is left: the one of the
+# view that is on screen (a room's, a remote chat's, an open thread's
+# composer), else nowhere
+def Tour.focus.k(settings: Bool, room: Bool, +remote: String, timeline: Bool) -> String:
+  Bool.pick(String, settings, "", Bool.pick(String, room, "room-post", Bool.pick(String, Bool.not(String.is_empty(remote)), "remote-send", Bool.pick(String, timeline, "composer", ""))))
+
+def Tour.focus(+u: Ui) -> String:
+  Tour.focus.k(Ui.flag(u, "settings"), Tour.room.on(BT.World.room(M.State.bots(Ui.state.of(u)), Ui.scratch(u, "@room"))), Ui.scratch(u, "@remote"), Ui.timeline(u))
+
+def Tour.leave(a: Act, +field: String) -> Act:
   match a:
     case Act{u, cs}:
-      Act{u, Tour.leave.k(thread) <> cs}
+      Act{u, Focus{field} <> cs}
 
 def Tour.finish(+u: Ui) -> Act:
-  Tour.leave(Ui.setting(Ui.scratch_set(u, "@tour", ""), "onboard.done=1"), Bool.not(String.is_empty(Ui.sel(u))))
+  Tour.leave(Ui.setting(Ui.scratch_set(u, "@tour", ""), "onboard.done=1"), Tour.focus(u))
 
 # to step i (by hand or not as the tour was), or (past the last) the end
 def Tour.go.k(live: Bool, +i: Nat, +u: Ui) -> Act:
   match live:
     case True{}:
-      Act{Ui.scratch_set(u, "@tour", OB.Ob.raw(OB.Ob.manual(Ui.scratch(u, "@tour")), i)), Nil{}}
+      Act{Ui.scratch_set(Ui.scratch_set(u, "@tour", OB.Ob.raw(OB.Ob.manual(Ui.scratch(u, "@tour")), i)), "@tour.sc", ""), Nil{}}
     case False{}:
       Tour.finish(u)
 
 def Tour.go(+i: Nat, +u: Ui) -> Act:
   Tour.go.k(OB.Ob.live(i), i, u)
 
+def Tour.open.k(+u: Ui) -> Act:
+  Tour.leave(Act{Ui.scratch_set(Ui.scratch_set(u, "@tour", OB.Ob.raw(True{}, 0n)), "@tour.sc", ""), Nil{}}, Tour.focus(u))
+
 def Tour.open(+u: Ui) -> Act:
-  Tour.leave(Act{Ui.scratch_set(Ui.flag_off(u, "settings"), "@tour", OB.Ob.raw(True{}, 0n)), Nil{}}, Bool.not(String.is_empty(Ui.sel(u))))
+  Tour.open.k(Ui.flag_off(u, "settings"))
 
 def Tour.act.k(i: Nat, +u: Ui) -> Act:
   match i:

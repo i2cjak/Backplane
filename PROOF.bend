@@ -6591,3 +6591,69 @@ def Laws.onboard_reopen():
 
 def Laws.onboard_waits(done):
   {==}
+
+def Laws.onboard_live_log_shows():
+  {==}
+
+def Laws.onboard_cache_unsynced():
+  {==}
+
+def Laws.onboard_phone_cache_unsynced():
+  {==}
+
+def Laws.onboard_focus_thread():
+  {==}
+
+def Laws.onboard_focus_none():
+  {==}
+
+def Laws.onboard_focus_remote():
+  {==}
+
+def Laws.onboard_focus_room():
+  {==}
+
+def Laws.onboard_focus_settings():
+  {==}
+
+def Laws.onboard_head_thread():
+  {==}
+
+def Laws.onboard_head_remote():
+  {==}
+
+def Laws.onboard_head_settings():
+  {==}
+
+def Laws.held_set_has():
+  {==}
+
+def Laws.held_other_key():
+  {==}
+
+def Laws.held_let_frees():
+  {==}
+
+def Laws.held_blur_frees():
+  {==}
+
+def Laws.held_none_at_first():
+  {==}
+
+def Laws.held_swallowed_without_tour():
+  {==}
+
+def Laws.tour_scroll_down():
+  {==}
+
+def Laws.tour_scroll_down_stops():
+  {==}
+
+def Laws.tour_scroll_up():
+  {==}
+
+def Laws.tour_scroll_up_stops():
+  {==}
+
+def Laws.tour_scroll_none():
+  {==}

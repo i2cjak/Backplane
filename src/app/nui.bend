@@ -2989,17 +2989,36 @@ def Nui.event.lb(open: Bool, +n: Nui, e: W.WinEv) -> Step:
 # arrow go on, the left arrow goes back, Esc ends it (OB.Ob.sym), a press on
 # one of its buttons ("ob-" hits in layout.bend's Lay.tour) acts, and nothing
 # else gets through but the window's own events: a resize, an expose, focus
-# lost or gained (so "@blur" stays true to the window), and the quit. A key
-# held down is one press: a repeat does nothing in the tour, and the key
-# that closed it is eaten until it is let go ("@kh" the key held, "@eat"
-# the one eaten), so holding Enter through Done never reaches the composer.
+# lost or gained (so "@blur" stays true to the window), and the quit.
+# Every key pressed while the tour is up is held in quarantine until it is
+# let go, whichever way the tour closes (a button, Esc, the hub saying done,
+# a lost connection): a press of a held key, a repeat included, does nothing
+# at all, so a key held through Done never reaches the composer. "@q.<keysym>"
+# says "k" + the generation ("@qg") it was pressed in; losing the focus
+# starts a new generation (the release may never come). win.c reports a
+# release with the keysym its press had, and none between repeats.
 def Tour.key(+name: String, +n: Nui) -> Step:
   Bool.pick(Step, String.is_empty(name), Step{n, Nil{}, False{}}, Nui.act(n, name, ""))
 
 def Tour.press(m: Maybe<&2, Hit>, +n: Nui) -> Step:
   match m:
     case Some{Hit{_, _, _, _, +a, _}}:
-      Bool.pick(Step, String.starts_with(a, "ob-"), Nui.act(n, a, ""), Step{n, Nil{}, False{}})
+      Bool.pick(Step, Bool.and(String.starts_with(a, "ob-"), Bool.not(String.eq(a, "ob-scroll"))), Nui.act(n, a, ""), Step{n, Nil{}, False{}})
+    case None{}:
+      Step{n, Nil{}, False{}}
+
+# the wheel over the card scrolls its words two lines a notch, kept within
+# what overflows (the card's hit says how many lines that is)
+def Tour.scroll(+cur: Nat, +mx: Nat, up: Bool) -> Nat:
+  Bool.pick(Nat, up, Bool.pick(Nat, Nat.is_lt(cur, 2n), 0n, Nat.sub(cur, 2n)), Bool.pick(Nat, Nat.is_lt(mx, Nat.add(cur, 2n)), mx, Nat.add(cur, 2n)))
+
+def Tour.wheel.k(+n: Nui, +v: String, up: Bool) -> Step:
+  Step{Nui.with_ui(n, U.Ui.scratch_set(Nui.ui(n), "@tour.sc", Nat.show(Tour.scroll(Maybe.default(&2, Nat, Nat.read(U.Ui.scratch(Nui.ui(n), "@tour.sc")), 0n), Maybe.default(&2, Nat, Nat.read(v), 0n), up)))), Nil{}, True{}}
+
+def Tour.wheel(m: Maybe<&2, Hit>, +n: Nui, up: Bool) -> Step:
+  match m:
+    case Some{Hit{_, _, _, _, +a, +v}}:
+      Bool.pick(Step, String.eq(a, "ob-scroll"), Tour.wheel.k(n, v, up), Step{n, Nil{}, False{}})
     case None{}:
       Step{n, Nil{}, False{}}
 
@@ -3009,6 +3028,8 @@ def Tour.event(+n: Nui, e: W.WinEv) -> Step:
       Tour.key(OB.Ob.sym(code), n)
     case W.WButton{+x, +y, 1, True{}}:
       Tour.press(Hit.find(Nui.hits(n), x, y), n)
+    case W.WWheel{+x, +y, +dir}:
+      Tour.wheel(Hit.find(Nui.hits(n), x, y), n, U32.is_eq(dir, 0))
     case W.WBlur{}:
       Hint.blur(n)
     case W.WFocus{}:
@@ -3037,16 +3058,27 @@ def Held.rel(e: W.WinEv) -> U32:
     case _:
       0
 
-def Held.set(+n: Nui, +k: String, +c: U32) -> Nui:
-  Nui.with_ui(n, U.Ui.scratch_set(Nui.ui(n), k, U32.show(c)))
+def Held.mark(+c: U32) -> String:
+  "@q." ++ U32.show(c)
 
-# a key let go is no longer held or eaten
-def Held.keep(+cur: String, +c: U32) -> String:
-  Bool.pick(String, String.eq(cur, U32.show(c)), "", cur)
+def Held.tag(+u: U.Ui) -> String:
+  "k" ++ U.Ui.scratch(u, "@qg")
+
+def Held.has(+u: U.Ui, +c: U32) -> Bool:
+  String.eq(U.Ui.scratch(u, Held.mark(c)), Held.tag(u))
+
+def Held.set(+n: Nui, +c: U32) -> Nui:
+  +u = Nui.ui(n)
+  Nui.with_ui(n, U.Ui.scratch_set(u, Held.mark(c), Held.tag(u)))
 
 def Held.let(+n: Nui, +c: U32) -> Nui:
   +u = Nui.ui(n)
-  Nui.with_ui(n, U.Ui.scratch_set(U.Ui.scratch_set(u, "@kh", Held.keep(U.Ui.scratch(u, "@kh"), c)), "@eat", Held.keep(U.Ui.scratch(u, "@eat"), c)))
+  Nui.with_ui(n, U.Ui.scratch_set(u, Held.mark(c), ""))
+
+# a new generation: nothing is held any more
+def Held.clear(+n: Nui) -> Nui:
+  +u = Nui.ui(n)
+  Nui.with_ui(n, U.Ui.scratch_set(u, "@qg", Nat.show(1n+Maybe.default(&2, Nat, Nat.read(U.Ui.scratch(u, "@qg")), 0n))))
 
 def Nui.event.go(tour: Bool, +n: Nui, e: W.WinEv) -> Step:
   match tour:
@@ -3055,36 +3087,34 @@ def Nui.event.go(tour: Bool, +n: Nui, e: W.WinEv) -> Step:
     case False{}:
       Nui.event.lb(Lbx.on(n), n, e)
 
-# a step that closed the tour by a key: that key is eaten until it is let go
-def Nui.event.eat.k(closed: Bool, +c: U32, +n: Nui, cs: List<&2, NCmd>, d: Bool) -> Step:
-  Step{Bool.pick(Nui, closed, Held.set(n, "@eat", c), n), cs, d}
-
-def Nui.event.eat(+was: Bool, +c: U32, s: Step) -> Step:
-  match s:
-    case Step{+n, cs, d}:
-      Nui.event.eat.k(Bool.and(Bool.and(was, U32.is_ne(c, 0)), Bool.not(U.Tour.on(Nui.ui(n)))), c, n, cs, d)
-
-def Nui.event.held(drop: Bool, +tour: Bool, +c: U32, +n: Nui, e: W.WinEv) -> Step:
+# a key held in quarantine does nothing; while the tour is up a key
+# pressed joins it
+def Nui.event.press.k(drop: Bool, +tour: Bool, +c: U32, +n: Nui, e: W.WinEv) -> Step:
   match drop:
     case True{}:
       Step{n, Nil{}, False{}}
     case False{}:
-      Nui.event.eat(tour, c, Nui.event.go(tour, n, e))
+      Nui.event.go(tour, Bool.pick(Nui, tour, Held.set(n, c), n), e)
 
-# a key pressed: a repeat of the held one does nothing in the tour, the key
-# that closed it nothing at all
 def Nui.event.press(+tour: Bool, +c: U32, +n: Nui, e: W.WinEv) -> Step:
-  Nui.event.held(Bool.or(String.eq(U.Ui.scratch(Nui.ui(n), "@eat"), U32.show(c)), Bool.and(tour, String.eq(U.Ui.scratch(Nui.ui(n), "@kh"), U32.show(c)))), tour, c, Held.set(n, "@kh", c), e)
+  Nui.event.press.k(Held.has(Nui.ui(n), c), tour, c, n, e)
 
 def Nui.event.t.k(press: Bool, +tour: Bool, +c: U32, +r: U32, +n: Nui, e: W.WinEv) -> Step:
   match press:
     case True{}:
       Nui.event.press(tour, c, n, e)
     case False{}:
-      Nui.event.go(tour, Held.let(n, r), e)
+      Nui.event.go(tour, Bool.pick(Nui, U32.is_ne(r, 0), Held.let(n, r), n), e)
+
+def Held.fresh(+n: Nui, e: W.WinEv) -> Nui:
+  match e:
+    case W.WBlur{}:
+      Held.clear(n)
+    case _:
+      n
 
 def Nui.event.t(tour: Bool, +n: Nui, +e: W.WinEv) -> Step:
-  Nui.event.t.k(U32.is_ne(Held.press(e), 0), tour, Held.press(e), Held.rel(e), n, e)
+  Nui.event.t.k(U32.is_ne(Held.press(e), 0), tour, Held.press(e), Held.rel(e), Held.fresh(n, e), e)
 
 # a paste or a drop while the tour is up goes nowhere (the window's own
 # clipboard and drop reads still happen in main.bend)

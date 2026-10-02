@@ -49,6 +49,10 @@ def fresh() -> U.Ui:
 def done() -> U.Ui:
   U.Ui.scratch_set(U.Ui.adopt.raw(U.Ui.init(1000n), finished()), "@sync", "1")
 
+# the info a hub sends for Settings' Tailscale row
+def tn(+t: String, +pair: String) -> Map<&2, String>:
+  Map.set(&2, String, Map.set(&2, String, Map.set(&2, String, Map.new(&2, String), "tailnet", t), "listen", "127.0.0.1:3787"), "pair", pair)
+
 def at(u: U.Ui) -> String:
   Nat.show(U.Tour.at(u))
 
@@ -99,15 +103,28 @@ def main() -> IO(Unit):
     C.Check.str("skip with no thread leaves no focus", focus(U.Ui.act(fresh(), "ob-skip", "")), "focus:")
     C.Check.str("skip in a thread focuses its composer", focus(U.Ui.act(U.Ui.select.k(fresh(), "t1"), "ob-skip", "")), "focus:composer")
     C.Check.str("showing it again takes the keyboard off Settings", focus(U.Ui.act(U.Ui.flag_on(done(), "settings"), "ob-open", "")), "focus:")
+    # what is on screen, not what is selected
+    C.Check.str("a cached state waits for the hub", at(U.Ui.unsync(fresh())), end())
+    C.Check.str("skip with a remote chat showing focuses its field", focus(U.Ui.act(U.Bots.views(U.Ui.select.k(fresh(), "t1"), "", "", "x"), "ob-skip", "")), "focus:remote-send")
+    C.Check.str("skip with Settings up focuses nothing", focus(U.Ui.act(U.Ui.flag_on(U.Ui.select.k(fresh(), "t1"), "settings"), "ob-skip", "")), "focus:")
+    C.Check.str("no thread's head under a remote chat", U.Tour.target(0n, U.Ui.scratch_set(U.Bots.views(U.Ui.select.k(fresh(), "t1"), "", "", "x"), "@tour", "m3")), "")
+    # Settings' Tailscale row
+    C.Check.str("tailscale off: the flag", U.Tail.label(tn("off", "")) ++ "|" ++ U.Tail.note(tn("off", "")), "Tailscale: off|Listening on 127.0.0.1:3787 only: started with --no-tailscale.")
+    C.Check.str("tailscale not connected: no pairing link", U.Tail.label(tn("on", "")) ++ "|" ++ U.Tail.note(tn("on", "")), "Tailscale: not connected|Listening on 127.0.0.1:3787 only. Sign in to Tailscale, then restart Backplane.")
+    C.Check.str("tailscale up: a pairing link", U.Tail.label(tn("on", "http://x/#token=t")) ++ "|" ++ U.Tail.label(tn("https", "https://x/#token=t")), "Tailscale: on|Tailscale: https")
     # the words
-    C.Check.str("settle says tools.bend's own sentence", Bool.show(holds(OB.Ob.body(0n, "7", 3n), TO.Tools.said(TO.Tools.settle(False{})))), "True")
-    C.Check.str("snooze says tools.bend's own sentence", Bool.show(holds(OB.Ob.body(1n, "7", 3n), TO.Tools.said(TO.Tools.snooze(False{}, "", "")))), "True")
-    C.Check.str("scratch expires, with its days", Bool.show(holds(OB.Ob.body(0n, "9", 1n), "9 days is deleted with its folder, unless it is pinned")), "True")
+    C.Check.str("the buttons are named by tools.bend's labels", Bool.show(Bool.and(Bool.and(holds(OB.Ob.body(0n, "7", 3n), TO.Tools.label(TO.Tools.settle(False{}))), holds(OB.Ob.body(0n, "7", 3n), TO.Tools.label(TO.Tools.snooze(False{}, "", "")))),
+      Bool.and(Bool.and(String.starts_with(TO.Tools.label(TO.Tools.fork()), "Fork"), holds(OB.Ob.body(0n, "7", 3n), "Fork starts")), holds(OB.Ob.body(1n, "7", 3n), TO.Tools.label(TO.Tools.panel(False{})))))), "True")
+    C.Check.str("the buttons read as sentences", Bool.show(holds(OB.Ob.body(0n, "7", 3n), "Settle takes a thread out of the active list. Snooze hides it until later. Fork starts a new thread from this one.")), "True")
+    C.Check.str("worktrees by default, shared otherwise", Bool.show(holds(OB.Ob.body(0n, "7", 2n), "Git projects use separate worktrees by default; without git, or in local mode, threads share the project folder.")), "True")
+    C.Check.str("web: Enter on a button presses it", Bool.show(holds(OB.Ob.body(1n, "7", 0n), "on a focused button it presses that button")), "True")
+    C.Check.str("tailnet: the other device needs Tailscale too", Bool.show(Bool.and(holds(OB.Ob.body(2n, "7", 7n), "this phone needs Tailscale on the same tailnet"), holds(OB.Ob.body(0n, "7", 8n), "install Tailscale on it and join the same tailnet"))), "True")
+    C.Check.str("scratch expires, with its days", Bool.show(holds(OB.Ob.body(0n, "9", 1n), "9 days is deleted with its folder, unless pinned")), "True")
     C.Check.str("days come from the setting", U.Tour.days(U.Ui.adopt.raw(U.Ui.init(1n), M.State.replay([M.SettingSet{"scratch.days", "3", 1n}], M.State.empty()))), "3")
     C.Check.str("days default to 7", U.Tour.days(U.Ui.init(1n)), "7")
     C.Check.str("keys: no guarantee claimed", Bool.show(holds(OB.Ob.body(0n, "7", 6n), "nothing enforces it")), "True")
     C.Check.str("agents: signed in on the hub", Bool.show(holds(OB.Ob.body(0n, "7", 5n), "sign in to it on the machine that runs this hub")), "True")
-    C.Check.str("tailnet: sign in, restart", Bool.show(holds(OB.Ob.body(1n, "7", 7n), "sign in and restart Backplane")), "True")
+    C.Check.str("tailnet: sign in, restart", Bool.show(holds(OB.Ob.body(1n, "7", 7n), "sign in, then restart Backplane")), "True")
     C.Check.str("pairing: the QR code", Bool.show(holds(OB.Ob.body(0n, "7", 8n), "Pairing link, QR code")), "True")
     C.Check.str("phones: folder-plus, not the sidebar", Bool.show(holds(OB.Ob.body(2n, "7", 1n), "folder-plus")) ++ Bool.show(holds(OB.Ob.body(0n, "7", 1n), "folder-plus")), "TrueFalse")
     C.Check.str("phones: no voice-key field", Bool.show(holds(OB.Ob.body(2n, "7", 6n), "on a computer or the web page")), "True")

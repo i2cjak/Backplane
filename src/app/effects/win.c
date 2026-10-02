@@ -36,6 +36,7 @@
   X(XPending, int, (Display*)) \
   X(XEventsQueued, int, (Display*, int)) \
   X(XNextEvent, int, (Display*, XEvent*)) \
+  X(XPeekEvent, int, (Display*, XEvent*)) \
   X(XLookupString, int, (XKeyEvent*, char*, int, KeySym*, XComposeStatus*)) \
   X(XCreateImage, XImage*, (Display*, Visual*, unsigned, int, int, char*, unsigned, unsigned, int, int)) \
   X(XPutImage, int, (Display*, Drawable, GC, XImage*, int, int, int, int, unsigned, unsigned)) \
@@ -53,7 +54,9 @@
 WIN_FNS(WIN_PTR)
 
 // a key held down sends presses with no releases between (so a repeat can
-// be told from a new press); older servers just go on as before
+// be told from a new press); a server without it sends a release and a
+// press of the same key at the same time for each repeat (win_pump drops
+// the release)
 static Bool (*x_detect_repeat)(Display*, Bool, Bool*);
 
 static int win_load(void) {
@@ -103,6 +106,10 @@ typedef struct {
   int       dnd_ok;
   char*     drop;
   u64       drop_len;
+  // keys: whether the server sends repeats as bare presses, and the keysym
+  // each key (by keycode) went down as, so its release says the same
+  int       detect;
+  KeySym    down[256];
 } AppWin;
 
 static void win_push(AppWin* a, u32 kind, u32 p, u32 q, u32 r, u32 s) {
@@ -428,7 +435,24 @@ static void win_pump(AppWin* a) {
       case KeyPress:
       case KeyRelease: {
         KeySym sym = 0;
+        unsigned kc = ev.xkey.keycode & 255;
+        if (ev.type == KeyRelease && !a->detect && x_XEventsQueued(a->dpy, QueuedAfterReading) > 0) {
+          // a repeat on a server without detectable repeat: this release and
+          // the next press are one event, so it is no release
+          XEvent nx;
+          x_XPeekEvent(a->dpy, &nx);
+          if (nx.type == KeyPress && nx.xkey.keycode == ev.xkey.keycode
+            && nx.xkey.time == ev.xkey.time) {
+            break;
+          }
+        }
         u32 text = win_text(&ev.xkey, &sym);
+        if (ev.type == KeyPress) {
+          a->down[kc] = sym;
+        } else if (a->down[kc] != 0) {
+          sym = a->down[kc];
+          a->down[kc] = 0;
+        }
         win_push(a, 0, (u32)sym, ev.type == KeyPress ? text : 0,
           win_mods(ev.xkey.state), ev.type == KeyPress);
         break;
@@ -591,9 +615,12 @@ Term win_open_run(Env e, Term* f, IoWork* w) {
     x_XChangeProperty(dpy, a->win, a->dnd_aware, XA_ATOM, 32, PropModeReplace,
       (unsigned char*)&xdnd_version, 1);
     x_XStoreName(dpy, a->win, title);
-    if (x_detect_repeat != NULL) {
+    // (BACKPLANE_NO_DETECTABLE_REPEAT leaves it unasked, to try the
+    // fallback on a server that supports it)
+    if (x_detect_repeat != NULL && getenv("BACKPLANE_NO_DETECTABLE_REPEAT") == NULL) {
       Bool got = False;
-      x_detect_repeat(dpy, True, &got);
+      Bool ok = x_detect_repeat(dpy, True, &got);
+      a->detect = ok && got;
     }
     win_icon(dpy, a->win);
     x_XSelectInput(dpy, a->win, KeyPressMask | KeyReleaseMask | ButtonPressMask

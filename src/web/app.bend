@@ -83,6 +83,11 @@ def desk(u: U.Ui, focused: Bool, now: Nat) -> U.Act:
 def online(u: U.Ui, b: Bool) -> U.Ui:
   U.Ui.online(u, b)
 
+# the saved log put back on load is not a connection's: nothing is synced
+# until the hub's own log arrives
+def unsync(u: U.Ui) -> U.Ui:
+  U.Ui.unsync(u)
+
 def tick(u: U.Ui, now: Nat) -> U.Ui:
   U.Ui.tick(u, now)
 

@@ -315,7 +315,7 @@ globalThis.Backplane = {
   },
   load(text) {
     try {
-      hubs = unflat(text);
+      hubs = App.stale(unflat(text));
     } catch {
       return "";
     }

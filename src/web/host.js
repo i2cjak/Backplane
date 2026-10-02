@@ -909,6 +909,8 @@ document.addEventListener("visibilitychange", () => {
 
 if (cache && Array.isArray(cache.items)) {
   ui = App.recv(ui, toJson({ t: "log", since: 0, origin: cache.origin, items: cache.items })).ui;
+  // a saved log is not this connection's: the hub's own log says when
+  ui = App.unsync(ui);
 }
 
 function connect() {
