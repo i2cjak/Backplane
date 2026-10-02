@@ -5137,6 +5137,17 @@ law items_split_marks_more:
 law items_whole_not_marked:
   {OB.Items.texts.s("L", ",i[", ",m,i[", ["a", "b"], "]", True{}, 5n, 4n) == ["L,i[a,b]"] : List<&2, String>}
 
+# a failed log write is cut back to the length before it; while that cannot
+# be done the hold keeps the length and the reason
+law store_hold_len:
+  {ST.Store.hold.len(ST.Store.hold("42", "no space")) == "42" : String}
+
+law store_hold_err:
+  {ST.Store.hold.err(ST.Store.hold("42", "no space")) == "no space" : String}
+
+law store_trunc_args:
+  {ST.Store.trunc.args("42", "/h/events.jsonl") == ["-s", "42", "/h/events.jsonl"] : List<&2, String>}
+
 law ui_chunked_join_equals_whole:
   {U.Ui.state(U.Ui.recv(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", True{}, True{}, [C.Change.encode(M.SettingSet{"a", "1", 1n})])),
       U.Boot.demo("changes", False{}, True{}, [C.Change.encode(M.SettingSet{"b", "2", 2n})])), U.Boot.demo("changes", False{}, False{}, [])))

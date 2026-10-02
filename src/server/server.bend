@@ -4451,19 +4451,34 @@ def Cfg.with_bn(c: Cfg, b: BN.Bn) -> Cfg:
 def Live.with(+cfg: Cfg, lv: List<&2, LV.Buf>) -> Cfg:
   Cfg.with_bn(cfg, BN.Bn.with_live(Cfg.bn(cfg), lv))
 
-# a write failed and may have left a cut line: it was closed off with a
-# newline (the next line starts on its own), and a repair that failed is
-# reported too
-def Hub.commit.failed(r: File & Result<&1, &1, U32 & String, Unit>, err: String, st: M.State, ls: List<&2, String>, cl: List<&2, Client>,
-    as: List<&2, Agent>, inbox: Chan(Msg), cfg: Cfg, note: String) -> IO(Hub & Wrote):
-  (f, res) = r
-  match res:
-    case Done{_}:
-      IO.pure(Hub & Wrote, (Hub{st, f, ls, cl, as, inbox, cfg, note}, Wrote{Nil{}, False{}, ST.Store.fail.msg(err, True{})}))
-    case Fail{_}:
-      IO.pure(Hub & Wrote, (Hub{st, f, ls, cl, as, inbox, cfg, note}, Wrote{Nil{}, False{}, ST.Store.fail.msg(err, False{})}))
+# A step is one append. A write that fails is taken back: the log is cut to
+# the length it had before (`truncate`, a short process), so none of the
+# step stays on disk and no torn line is joined by a later write. When the
+# cut fails too, the length and the reason are held (Bn.broken) and every
+# commit is refused with a visible error, trying the cut again first, until
+# the log is reconciled. Nothing is folded unless it was written whole.
+def Hub.cut.ok(r: P.Ran) -> Bool:
+  match r:
+    case P.Ran{c, _}:
+      U32.is_eq(c, 0)
 
-def Hub.commit.done(r: File & Result<&1, &1, U32 & String, Unit>, +cs: List<&2, M.Change>, st: M.State, ls: List<&2, String>, cl: List<&2, Client>,
+def Hub.cut(+len: String, +cfg: Cfg) -> IO(Bool):
+  IO.bind(P.Ran, Bool, P.Proc.run("truncate", ST.Store.trunc.args(len, Store.path(Cfg.home(cfg))), "/"), r => IO.pure(Bool, Hub.cut.ok(r)))
+
+def Hub.held(+hold: String, st: M.State, f: File, ls: List<&2, String>, cl: List<&2, Client>,
+    as: List<&2, Agent>, inbox: Chan(Msg), +cfg: Cfg, note: String) -> Hub & Wrote:
+  (Hub{st, f, ls, cl, as, inbox, Cfg.with_bn(cfg, BN.Bn.with_broken(Cfg.bn(cfg), hold)), note}, Wrote{Nil{}, False{}, ST.Store.held.msg(hold)})
+
+# a write failed: cut back (the log is as it was) or held
+def Hub.commit.failed(cut: Bool, +len: String, +err: String, st: M.State, f: File, ls: List<&2, String>, cl: List<&2, Client>,
+    as: List<&2, Agent>, inbox: Chan(Msg), +cfg: Cfg, note: String) -> IO(Hub & Wrote):
+  match cut:
+    case True{}:
+      IO.pure(Hub & Wrote, (Hub{st, f, ls, cl, as, inbox, cfg, note}, Wrote{Nil{}, False{}, err}))
+    case False{}:
+      IO.pure(Hub & Wrote, Hub.held(ST.Store.hold(len, err), st, f, ls, cl, as, inbox, cfg, note))
+
+def Hub.commit.done(r: File & Result<&1, &1, U32 & String, Unit>, +len: String, +cs: List<&2, M.Change>, st: M.State, ls: List<&2, String>, cl: List<&2, Client>,
     as: List<&2, Agent>, +inbox: Chan(Msg), +cfg: Cfg, note: String) -> IO(Hub & Wrote):
   (f, res) = r
   match res:
@@ -4472,17 +4487,51 @@ def Hub.commit.done(r: File & Result<&1, &1, U32 & String, Unit>, +cs: List<&2, 
         Bot.dir.changed.all(cs, inbox)
         return Hub.commit.k(Hub.fold(cs, Folded{st, ls, Nil{}}), f, cl, as, inbox, Live.with(cfg, LV.Live.ends(cs, Live.of(cfg))), note)
     case Fail{e}:
-      IO.bind(File & Result<&1, &1, U32 & String, Unit>, Hub & Wrote, File.write(f, "\n"),
-        r2 => Hub.commit.failed(r2, Hub.err.msg(e), st, ls, cl, as, inbox, cfg, note))
+      do IO<Hub & Wrote>:
+        cut : Bool <- Hub.cut(len, cfg)
+        Hub.commit.failed(cut, len, Hub.err.msg(e), st, f, ls, cl, as, inbox, cfg, note)
+
+def Hub.commit.at(r: File & Result<&1, &1, U32 & String, U32>, +cs: List<&2, M.Change>, st: M.State, ls: List<&2, String>, cl: List<&2, Client>,
+    as: List<&2, Agent>, +inbox: Chan(Msg), +cfg: Cfg, note: String) -> IO(Hub & Wrote):
+  (f, res) = r
+  match res:
+    case Done{len}:
+      IO.bind(File & Result<&1, &1, U32 & String, Unit>, Hub & Wrote, File.write(f, ST.Store.text(Hub.lines.disk(cs))),
+        w => Hub.commit.done(w, U32.show(len), cs, st, ls, cl, as, inbox, cfg, note))
+    case Fail{e}:
+      IO.pure(Hub & Wrote, (Hub{st, f, ls, cl, as, inbox, cfg, note}, Wrote{Nil{}, False{}, Hub.err.msg(e)}))
+
+def Hub.commit.go(+cs: List<&2, M.Change>, st: M.State, f: File, ls: List<&2, String>, cl: List<&2, Client>,
+    as: List<&2, Agent>, +inbox: Chan(Msg), +cfg: Cfg, note: String) -> IO(Hub & Wrote):
+  IO.bind(File & Result<&1, &1, U32 & String, U32>, Hub & Wrote, File.size(f), r => Hub.commit.at(r, cs, st, ls, cl, as, inbox, cfg, note))
+
+# the log was held: cut it back now; commit if that worked, else refuse
+def Hub.commit.heal(cut: Bool, +hold: String, +cs: List<&2, M.Change>, st: M.State, f: File, ls: List<&2, String>, cl: List<&2, Client>,
+    as: List<&2, Agent>, +inbox: Chan(Msg), +cfg: Cfg, note: String) -> IO(Hub & Wrote):
+  match cut:
+    case True{}:
+      Hub.commit.go(cs, st, f, ls, cl, as, inbox, Cfg.with_bn(cfg, BN.Bn.with_broken(Cfg.bn(cfg), "")), note)
+    case False{}:
+      IO.pure(Hub & Wrote, Hub.held(hold, st, f, ls, cl, as, inbox, cfg, note))
+
+def Hub.commit.gate(ok: Bool, +cs: List<&2, M.Change>, st: M.State, f: File, ls: List<&2, String>, cl: List<&2, Client>,
+    as: List<&2, Agent>, +inbox: Chan(Msg), +cfg: Cfg, note: String) -> IO(Hub & Wrote):
+  match ok:
+    case True{}:
+      Hub.commit.go(cs, st, f, ls, cl, as, inbox, cfg, note)
+    case False{}:
+      do IO<Hub & Wrote>:
+        +hold : String = BN.Bn.broken(Cfg.bn(cfg))
+        cut : Bool <- Hub.cut(ST.Store.hold.len(hold), cfg)
+        Hub.commit.heal(cut, hold, cs, st, f, ls, cl, as, inbox, cfg, note)
 
 # persist a step's changes in one write, then fold them in
 def Hub.commit.w(+cs: List<&2, M.Change>, h: Hub) -> IO(Hub & Wrote):
   match cs h:
     case Nil{} _:
       IO.pure(Hub & Wrote, (h, Wrote{Nil{}, True{}, ""}))
-    case _ Hub{st, f, ls, cl, as, +inbox, cfg, note}:
-      IO.bind(File & Result<&1, &1, U32 & String, Unit>, Hub & Wrote, File.write(f, ST.Store.text(Hub.lines.disk(cs))),
-        r => Hub.commit.done(r, cs, st, ls, cl, as, inbox, cfg, note))
+    case _ Hub{st, f, ls, cl, as, +inbox, +cfg, note}:
+      Hub.commit.gate(String.is_empty(BN.Bn.broken(Cfg.bn(cfg))), cs, st, f, ls, cl, as, inbox, cfg, note)
 
 def Hub.commit.b(r: Hub & List<&2, String>) -> IO(Hub & List<&2, String>):
   (h, fr) = r

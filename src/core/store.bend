@@ -112,6 +112,40 @@ def Store.fail.msg(err: String, repaired: Bool) -> String:
     case False{}:
       err ++ "; the log's tail could not be repaired"
 
+# A write that fails is taken back: the log is cut to the length it had
+# before the step (Store.trunc.args, run by the server), so no complete line
+# of it stays on disk unfolded and no torn one is joined by a later write.
+# When that cannot be done the hub holds the length and the reason
+# (Store.hold) and commits nothing until the cut works; its error says so.
+def Store.hold(len: String, err: String) -> String:
+  len ++ "\t" ++ err
+
+def Store.hold.first(+ps: List<&2, String>) -> String:
+  match ps:
+    case n <> _:
+      n
+    case Nil{}:
+      ""
+
+def Store.hold.rest(+ps: List<&2, String>) -> String:
+  match ps:
+    case _ <> t:
+      String.join(t, "\t")
+    case Nil{}:
+      ""
+
+def Store.hold.len(+h: String) -> String:
+  Store.hold.first(String.split(h, '\t'))
+
+def Store.hold.err(+h: String) -> String:
+  Store.hold.rest(String.split(h, '\t'))
+
+def Store.trunc.args(len: String, path: String) -> List<&2, String>:
+  ["-s", len, path]
+
+def Store.held.msg(+h: String) -> String:
+  "the log could not be written and its failed write could not be taken back (" ++ Store.hold.err(h) ++ "); nothing is saved until it is"
+
 # a line cut by a crash (the laws' example)
 def Store.torn.demo() -> String:
   "{\"$\":\"ProjectRem"

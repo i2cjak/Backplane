@@ -6975,6 +6975,15 @@ def Laws.items_split_marks_more():
 def Laws.items_whole_not_marked():
   {==}
 
+def Laws.store_hold_len():
+  {==}
+
+def Laws.store_hold_err():
+  {==}
+
+def Laws.store_trunc_args():
+  {==}
+
 def Laws.ui_chunked_join_equals_whole():
   {==}
 
