@@ -97,6 +97,10 @@ type Msg is Data:
   # a Codex or Grok turn's KiCad files, read off the hub: the panel opens
   # (Hub.auto) when they arrive
   AutoView{thread: String, fs: K.Files}
+  # a Claude process started (its pid) or could not, by generation: the
+  # hub registered the agent first, with a placeholder (pid 0)
+  ClaudePid{thread: String, pid: U32, gen: String}
+  ClaudeFail{thread: String, gen: String, msg: String}
   # every 15 s: a heartbeat for every client (Alive.due)
   Heart{}
   Push{client: U32, text: String}
@@ -5761,16 +5765,110 @@ def Hub.spawned(r: Result<&1, &1, U32 & String, U32 & Socket>, h: Hub, +thread: 
     case Fail{e} _:
       Hub.spawned.fail(e, h, thread)
 
+# A Claude process is started by a job of its own (its files and keys are
+# read there, never on the hub's loop). The agent is registered first, with
+# a placeholder: pid 0 (never signalled), the generation's run and the
+# input channel the process's writer will read, so a line for the thread
+# meanwhile waits in it. ClaudePid gives the pid (a stale generation's
+# process is stopped), ClaudeFail ends the turn as a process that could
+# not start does.
+def Claude.fail(+thread: String, +gen: String, +msg: String, +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    ok : Bool <- Chan.send(Msg, inbox, ClaudeFail{thread, gen, msg})
+    return Unit{}
+
+def Claude.duped(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, +thread: String, +gen: String, +input: Chan(String), +inbox: Chan(Msg)) -> IO(Unit):
+  (rd0, res) = r
+  match res:
+    case Done{wr}:
+      do IO<Unit>:
+        IO.spawn(Unit, Agent.writer(Fuel.forever(), wr, input))
+        ok : Bool <- Chan.send(Msg, inbox, ClaudePid{thread, pid, gen})
+        rd : Socket <- IO.bind(Socket & Result<&1, &1, U32 & String, Socket>, Socket, H.Sock.dup(rd0), d => Agent.watch.start(d, pid, thread, gen, inbox))
+        Agent.reader(Fuel.forever(), rd, U.Lines.new(), pid, thread, B.Tag.of(thread, pid), inbox)
+    case Fail{_}:
+      do IO<Unit>:
+        Proc.kill(pid, 15)
+        IO.spawn(Unit, Agent.end(rd0, pid, thread, inbox))
+        Claude.fail(thread, gen, "its output could not be shared", inbox)
+
+def Claude.started.ok(started: U32 & Socket, +thread: String, +gen: String, +input: Chan(String), +inbox: Chan(Msg)) -> IO(Unit):
+  (+pid, s) = started
+  IO.bind(Socket & Result<&1, &1, U32 & String, Socket>, Unit, H.Sock.dup(s), r => Claude.duped(r, pid, thread, gen, input, inbox))
+
+def Claude.started.fail(e: U32 & String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
+  (_, msg) = e
+  Claude.fail(thread, gen, msg, inbox)
+
+def Claude.started(r: Result<&1, &1, U32 & String, U32 & Socket>, +thread: String, +gen: String, +input: Chan(String), +inbox: Chan(Msg)) -> IO(Unit):
+  match r:
+    case Done{started}:
+      Claude.started.ok(started, thread, gen, input, inbox)
+    case Fail{e}:
+      Claude.started.fail(e, thread, gen, inbox)
+
+def Claude.job(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, +effort: String, +gen: String, +input: Chan(String), +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    +fs : K.Files <- K.Files.read(cwd)
+    ok : Bool <- Chan.send(Msg, inbox, AutoView{thread, fs})
+    +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
+    res : Result<&1, &1, U32 & String, U32 & Socket> <- H.Proc.spawn("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen), cwd, 0)
+    Claude.started(res, thread, gen, input, inbox)
+
+def Agents.pid.k(same: Bool, a: Agent, +pid: U32) -> Agent:
+  match same a:
+    case True{} Agent{t, i, _, k, rs}:
+      Agent{t, i, pid, k, rs}
+    case False{} _:
+      a
+
+# the thread's agent with its pid set
+def Agents.pid(as: List<&2, Agent>, +th: String, +pid: U32) -> List<&2, Agent>:
+  match as:
+    case Nil{}:
+      Nil{}
+    case Agent{+t, i, p, k, rs} <> rest:
+      Agents.pid.k(String.eq(t, th), Agent{t, i, p, k, rs}, pid) <> Agents.pid(rest, th, pid)
+
+def Hub.claude_pid.k(cur: Bool, h: Hub, +thread: String, +pid: U32) -> IO(Hub):
+  match cur h:
+    case True{} Hub{st, f, ls, cl, +as, inbox, cfg, note}:
+      IO.pure(Hub, Hub{st, f, ls, cl, Agents.pid(as, thread, pid), inbox, cfg, note})
+    case False{} _:
+      do IO<Hub>:
+        Proc.kill(pid, 15)
+        return h
+
+# a Claude process started: the thread's only if its agent is still of
+# its generation (B.Exit.current); any other is stopped at once
+def Hub.claude_pid(h: Hub, +thread: String, +pid: U32, +gen: String) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, +as, inbox, cfg, note}:
+      Hub.claude_pid.k(B.Exit.current(gen, Agents.gen(as, thread)), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, pid)
+
+def Hub.claude_fail.k(cur: Bool, h: Hub, +thread: String, +msg: String) -> IO(Hub):
+  match cur h:
+    case True{} Hub{st, f, ls, cl, +as, inbox, cfg, note}:
+      do IO<Hub>:
+        Hub.agent_stop(Agents.get(as, thread))
+        Hub.spawned.fail((0, msg), Hub{st, f, ls, cl, Agents.drop(as, thread), inbox, cfg, note}, thread)
+    case False{} _:
+      IO.pure(Hub, h)
+
+def Hub.claude_fail(h: Hub, +thread: String, +gen: String, +msg: String) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, +as, inbox, cfg, note}:
+      Hub.claude_fail.k(B.Exit.current(gen, Agents.gen(as, thread)), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, msg)
+
 def Hub.start.spawn(m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, +effort: String, +gen: String) -> IO(Hub):
   match h:
-    case Hub{+st, f, ls, cl0, +as, inbox, +cfg, note}:
+    case Hub{+st, f, ls, cl, +as, +inbox, +cfg, note}:
       do IO<Hub>:
         Hub.agent_stop(m)
-        +fs : K.Files <- K.Files.read(cwd)
-        cl : List<&2, Client> <- Hub.auto(cl0, thread, fs)
-        +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
-        res : Result<&1, &1, U32 & String, U32 & Socket> <- H.Proc.spawn("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen), cwd, 0)
-        Hub.spawned(res, Hub{st, f, ls, cl, Agents.drop(as, thread), inbox, cfg, note}, thread, Agent.key(model, r, i, effort), gen)
+        +now : Nat <- Now.nat()
+        +input : Chan(String) <- Chan.new(String, 256)
+        IO.spawn(Unit, Claude.job(cfg, st, thread, cwd, model, session, r, i, effort, gen, input, inbox))
+        return Hub{st, f, ls, cl, Agent{thread, input, 0, Agent.key(model, r, i, effort), [ARun.new.h(gen, now)]} <> Agents.drop(as, thread), inbox, cfg, note}
 
 def Hub.start.r(r: Hub & List<&2, String>, m: Maybe<&2, Agent>, +thread: String, +cwd: String, +model: String, +session: String, +rt: M.RuntimeMode, +i: M.InteractionMode, +effort: String, +gen: String) -> IO(Hub):
   IO.bind(Hub, Hub, Hub.announce(r), h => Hub.start.spawn(m, h, thread, cwd, model, session, rt, i, effort, gen))
@@ -5795,6 +5893,34 @@ def Hub.autoview(h: Hub, +thread: String, fs: K.Files) -> IO(Hub):
         cl2 : List<&2, Client> <- Hub.auto(cl, thread, fs)
         return Hub{st, f, ls, cl2, as, inbox, cfg, note}
 
+# A user line naming `$skills` goes to the thread's agent through the same
+# job as one with images (Media.claude, which scans the skills off the hub
+# and answers AgentWrite): the command is taken now (Claude.prep), the ones
+# after it wait behind it
+def Line.skills.u(go: Bool, +o: J.Json, h: Hub, +thread: String, +line: String, +cwd: String) -> IO(Hub):
+  match go h:
+    case True{} Hub{st, f, ls, cl, +as, +inbox, cfg, note}:
+      do IO<Hub>:
+        +u : String = J.Json.get_str(o, "uuid", "")
+        IO.spawn(Unit, Media.claude(inbox, thread, cwd, Mention.user_text(o), u, Agents.gen(as, thread)))
+        return Claude.prep(True{}, Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, u)
+    case False{} _:
+      Claude.put(h, thread, line)
+
+def Line.skills.k(m: Maybe<&2, J.Json>, h: Hub, +thread: String, +line: String, +cwd: String) -> IO(Hub):
+  match m:
+    case Some{+o}:
+      Line.skills.u(Bool.and(String.eq(J.Json.get_str(o, "type", ""), "user"), Bool.not(String.is_empty(J.Json.get_str(o, "uuid", "")))), o, h, thread, line, cwd)
+    case None{}:
+      Claude.put(h, thread, line)
+
+def Line.skills(has: Bool, h: Hub, +thread: String, +line: String, +cwd: String) -> IO(Hub):
+  match has:
+    case True{}:
+      Line.skills.k(J.Json.parse(line), h, thread, line, cwd)
+    case False{}:
+      Claude.put(h, thread, line)
+
 def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
   match h o:
     case Hub{st, f, ls, cl, as, inbox, cfg, note} B.Send{+client, +text}:
@@ -5817,8 +5943,7 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         +now : Nat <- Now.nat()
         +l1 : String = Bot.line(Bool.or(BO.World.is_bot_thread(M.State.bots(st), thread), RF.Refs.maybe(line)), st, now, thread, line)
         +l2 : String <- EmbNote.claude(EmbNote.user(l1), cfg, st, thread, l1)
-        l3 : String <- Agent.line.final(String.contains(l2, "$"), l2, B.Hub.cwd(st, B.Hub.thread(st, thread)))
-        Claude.put(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, l3)
+        Line.skills(String.contains(l2, "$"), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, l2, B.Hub.cwd(st, B.Hub.thread(st, thread)))
     case Hub{st, f, ls, cl, +as, inbox, cfg, note} B.AgentStop{+thread}:
       do IO<Hub>:
         Hub.agent_stop(Agents.get(as, thread))
@@ -5831,10 +5956,8 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
       do IO<Hub>:
         Plot.put(Cfg.pv(cfg), Plot.watch(client, kind, root, path))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{+st, f, ls, cl0, as, +inbox, +cfg, note} B.CodexTurn{+thread, +cwd, +model, +session, r, text}:
+    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.CodexTurn{+thread, +cwd, +model, +session, r, text}:
       do IO<Hub>:
-        +fs : K.Files <- K.Files.read(cwd)
-        cl : List<&2, Client> <- Hub.auto(cl0, thread, fs)
         +now : Nat <- Now.nat()
         +t2 : String = BH.Bots.turn(st, now, thread, text)
         +g : String = Hub.gen(st, now)
@@ -7459,6 +7582,10 @@ def Msg.kind(m: Msg) -> String:
       "heart"
     case AutoView{_, _}:
       "auto_view"
+    case ClaudePid{_, _, _}:
+      "claude_pid"
+    case ClaudeFail{_, _, _}:
+      "claude_fail"
     case Push{_, _}:
       "push"
     case PushBin{_, _}:
@@ -7759,6 +7886,10 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.broadcast(h, DK.Alive.frame())
     case AutoView{thread, fs}:
       Hub.autoview(h, thread, fs)
+    case ClaudePid{thread, pid, gen}:
+      Hub.claude_pid(h, thread, pid, gen)
+    case ClaudeFail{thread, gen, msg}:
+      Hub.claude_fail(h, thread, gen, msg)
     case Push{client, text}:
       Hub.push(h, client, text)
     case PushBin{client, bs}:
