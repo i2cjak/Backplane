@@ -71,7 +71,7 @@ def main() -> IO(Unit):
     +r1 : MC.McpOut = tool(base(), 10n, "work_run", "{\"command\":\"sleep 3; exit 4\",\"note\":\"slow build\",\"timeoutSec\":60}")
     +id : String = H.Watch.id(base(), "t1")
     C.Check.str("work_run answers its id", Bool.show(String.contains(out.text(r1), id)), "True")
-    C.Check.str("the row is written, launching", Bool.show(String.contains(rows(apply(base(), out.step(r1))), id ++ "\tlaunching\t\tslow build\twatch\trun\tsleep 3; exit 4\t-\t70")), "True")
+    C.Check.str("the row is written, launching", Bool.show(String.contains(rows(apply(base(), out.step(r1))), id ++ "\tlaunching\t\tslow build\twatch\trun\t\\esleep 3; exit 4\t-\t70")), "True")
     C.Check.str("and the launch goes with it", awaits(H.Step.outs_of(out.step(r1))), "await " ++ id ++ " run sleep 3; exit 4 - 70;")
     +s1 : M.State = apply(base(), out.step(r1))
     C.Check.str("it is the thread's work", Nat.show(M.Work.busy(s1, "t1")), "1")
