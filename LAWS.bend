@@ -2171,6 +2171,24 @@ law gone_closes_approval:
 law retire_answers_empty:
   {H.Retire.answers(M.Asks.all(H.Rec.demo(M.Running{})), "t1") == [H.AskAnswered{"a1", ""}] : List<&2, H.Out>}
 
+# Claude's process outlives a Stop: its late result leaves the turn
+# stopped and its late text streams nowhere; a running turn's result
+# completes it
+law claude_result_after_stop_quiet:
+  {H.Hub.running(H.Hub.thread(M.State.replay(H.Queue.changes(H.Hub.agent_line(H.Demo.state("claude", M.Interrupted{}), 9n, "t1", "{\"type\":\"result\",\"is_error\":false}")), H.Demo.state("claude", M.Interrupted{})), "t1")) == False{} : Bool}
+
+law claude_result_after_stop_interrupted:
+  {M.Thread.turn(H.Hub.thread(M.State.replay(H.Queue.changes(H.Hub.agent_line(H.Demo.state("claude", M.Interrupted{}), 9n, "t1", "{\"type\":\"result\",\"is_error\":false}")), H.Demo.state("claude", M.Interrupted{})), "t1")) == M.Interrupted{} : M.TurnState}
+
+law claude_result_running_completes:
+  {M.Thread.turn(H.Hub.thread(M.State.replay(H.Queue.changes(H.Hub.agent_line(H.Demo.state("claude", M.Running{}), 9n, "t1", "{\"type\":\"result\",\"is_error\":false}")), H.Demo.state("claude", M.Running{})), "t1")) == M.Completed{} : M.TurnState}
+
+law claude_delta_after_stop_quiet:
+  {H.Step.outs_of(H.Hub.agent_line(H.Demo.state("claude", M.Interrupted{}), 9n, "t1", "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"late\"}}}")) == [] : List<&2, H.Out>}
+
+law claude_delta_running_streams:
+  {List.length(&2, H.Out, H.Step.outs_of(H.Hub.agent_line(H.Demo.state("claude", M.Running{}), 9n, "t1", "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"live\"}}}"))) == 1n : Nat}
+
 # what a stopped turn's process still says changes nothing
 law stopped_turn_quiet:
   for s: M.State

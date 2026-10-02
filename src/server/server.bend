@@ -352,24 +352,26 @@ def Agent.fed(r: U.Lines & List<&2, String>, s: Socket, +thread: String, +inbox:
   (carry, ls) = r
   Agent.fed.k(ls, s, carry, thread, inbox, k)
 
-def Agent.got(r: Socket & Result<&1, &1, U32 & String, List<&2, U32>>, carry: U.Lines, +pid: U32, +thread: String, +inbox: Chan(Msg),
+# (lines go out under the tag, B.Tag.of(thread, pid), so a replaced
+# process is not heard; the exit names the plain thread and pid)
+def Agent.got(r: Socket & Result<&1, &1, U32 & String, List<&2, U32>>, carry: U.Lines, +pid: U32, +thread: String, +tag: String, +inbox: Chan(Msg),
     k: Socket -> U.Lines -> IO(Unit)) -> IO(Unit):
   (s, res) = r
   match res:
     case Done{Nil{}}:
       Agent.end(s, pid, thread, inbox)
     case Done{bs}:
-      Agent.fed(U.Lines.feed(carry, bs), s, thread, inbox, k)
+      Agent.fed(U.Lines.feed(carry, bs), s, tag, inbox, k)
     case Fail{_}:
       Agent.end(s, pid, thread, inbox)
 
-def Agent.reader(fuel: Nat, s: Socket, carry: U.Lines, +pid: U32, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Agent.reader(fuel: Nat, s: Socket, carry: U.Lines, +pid: U32, +thread: String, +tag: String, +inbox: Chan(Msg)) -> IO(Unit):
   match fuel:
     case 0n:
       Agent.end(s, pid, thread, inbox)
     case 1n+f:
       IO.bind(Socket & Result<&1, &1, U32 & String, List<&2, U32>>, Unit, H.Sock.recv_bytes(s, 65536),
-        r => Agent.got(r, carry, pid, thread, inbox, s2 => c2 => Agent.reader(f, s2, c2, pid, thread, inbox)))
+        r => Agent.got(r, carry, pid, thread, tag, inbox, s2 => c2 => Agent.reader(f, s2, c2, pid, thread, tag, inbox)))
 
 def Agent.wrote(r: Socket & Result<&1, &1, U32 & String, Unit>, k: Socket -> IO(Unit)) -> IO(Unit):
   (s, _) = r
@@ -713,7 +715,7 @@ def Hub.spawned.dup(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32,
       do IO<Hub>:
         +input : Chan(String) <- Chan.new(String, 256)
         IO.spawn(Unit, Agent.writer(Fuel.forever(), wr, input))
-        IO.spawn(Unit, Agent.reader(Fuel.forever(), rd, U.Lines.new(), pid, thread, inbox))
+        IO.spawn(Unit, Agent.reader(Fuel.forever(), rd, U.Lines.new(), pid, thread, B.Tag.of(thread, pid), inbox))
         return Hub{st, f, ls, cl, Agent{thread, input, pid, key} <> as, inbox, cfg, note}
     # the process started but its socket could not be shared: it is
     # stopped and goes through the usual exit (Agent.end, AgentGone), so

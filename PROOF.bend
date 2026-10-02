@@ -4217,6 +4217,21 @@ def Laws.gone_closes_approval():
 def Laws.retire_answers_empty():
   {==}
 
+def Laws.claude_result_after_stop_quiet():
+  {==}
+
+def Laws.claude_result_after_stop_interrupted():
+  {==}
+
+def Laws.claude_result_running_completes():
+  {==}
+
+def Laws.claude_delta_after_stop_quiet():
+  {==}
+
+def Laws.claude_delta_running_streams():
+  {==}
+
 def Laws.stopped_turn_quiet(s, now, thread, line):
   {==}
 

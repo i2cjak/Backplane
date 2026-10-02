@@ -912,6 +912,27 @@ def Claude.result.k(err: Bool, +thread: String, +now: Nat, text: String) -> Step
 def Claude.result(+thread: String, +now: Nat, +o: J.Json) -> Step:
   Claude.result.k(J.Json.get_bool(o, "is_error", False{}), thread, now, J.Json.get_str(o, "result", ""))
 
+# Claude keeps its process across a Stop, and what it still says for the
+# stopped turn (its partial text, its result) changes nothing: only a
+# running turn completes or fails, and only a running turn's text streams
+# (laws claude_result_after_stop_quiet, claude_delta_after_stop_quiet). Its
+# whole messages, tool results and background tasks still land. (A result
+# for the old turn that comes after a new one started is still taken: the
+# lines carry no turn of their own.)
+def Claude.stream.if(run: Bool, +thread: String, +ev: J.Json) -> Step:
+  match run:
+    case True{}:
+      Claude.stream(thread, ev)
+    case False{}:
+      Step.none()
+
+def Claude.result.if(run: Bool, +thread: String, +now: Nat, +o: J.Json) -> Step:
+  match run:
+    case True{}:
+      Claude.result(thread, now, o)
+    case False{}:
+      Step.none()
+
 # Claude's todo tools
 # -------------------
 # TodoWrite sets the whole list; TaskCreate adds a step and TaskUpdate
@@ -1196,21 +1217,6 @@ def Steps.after.if(on: Bool, st: Step, +thread: String, +cwd: String) -> Step:
     case False{}:
       st
 
-def Claude.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) -> Step:
-  match i:
-    case 0n:
-      Step.after(Step.after(Claude.init(s, thread, now, o), Usage.compact(s, thread, now, o)), Bg.system(s, thread, now, o))
-    case 1n:
-      Claude.stream(thread, J.Json.get_obj(o, "event"))
-    case 2n:
-      Claude.assistant.t(s, thread, now, J.Json.get_obj(o, "message"))
-    case 3n:
-      Step.after(Claude.result(thread, now, o), Usage.window(s, thread, now, o))
-    case 4n:
-      Step.also(Claude.named(s, thread, now, o), Steps.claude(J.Json.elems(J.Json.get_obj(J.Json.get_obj(o, "message"), "content")), thread, Hub.cwd(s, Hub.thread(s, thread))))
-    case _:
-      Step.none()
-
 # A subagent's own lines (parent_tool_use_id names the Agent call that
 # started it): what it writes and the tools it calls go to its log, not the
 # thread's timeline, and its partial text, tool results and usage are not
@@ -1242,6 +1248,33 @@ def Sub.line(i: Nat, +thread: String, +now: Nat, +call: String, +o: J.Json) -> S
     case _:
       Step.none()
 
+def Hub.provider(t: M.Thread) -> String:
+  match t:
+    case M.Thread{_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, p, _, _, _, _, _}:
+      p
+
+def Hub.running(t: M.Thread) -> Bool:
+  match t:
+    case M.Thread{_, _, _, _, _, M.Running{}, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      True{}
+    case _:
+      False{}
+
+def Claude.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) -> Step:
+  match i:
+    case 0n:
+      Step.after(Step.after(Claude.init(s, thread, now, o), Usage.compact(s, thread, now, o)), Bg.system(s, thread, now, o))
+    case 1n:
+      Claude.stream.if(Hub.running(Hub.thread(s, thread)), thread, J.Json.get_obj(o, "event"))
+    case 2n:
+      Claude.assistant.t(s, thread, now, J.Json.get_obj(o, "message"))
+    case 3n:
+      Step.after(Claude.result.if(Hub.running(Hub.thread(s, thread)), thread, now, o), Usage.window(s, thread, now, o))
+    case 4n:
+      Step.also(Claude.named(s, thread, now, o), Steps.claude(J.Json.elems(J.Json.get_obj(J.Json.get_obj(o, "message"), "content")), thread, Hub.cwd(s, Hub.thread(s, thread))))
+    case _:
+      Step.none()
+
 def Claude.line.who(main: Bool, i: Nat, +s: M.State, +thread: String, +now: Nat, +call: String, +o: J.Json) -> Step:
   match main:
     case True{}:
@@ -1256,18 +1289,6 @@ def Claude.line.parsed(m: Maybe<&2, J.Json>, +s: M.State, +thread: String, +now:
       Claude.line.who(String.is_empty(call), C.Codec.pos(["system", "stream_event", "assistant", "result", "user"], J.Json.get_str(o, "type", "")), s, thread, now, call, o)
     case None{}:
       Step.none()
-
-def Hub.provider(t: M.Thread) -> String:
-  match t:
-    case M.Thread{_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, p, _, _, _, _, _}:
-      p
-
-def Hub.running(t: M.Thread) -> Bool:
-  match t:
-    case M.Thread{_, _, _, _, _, M.Running{}, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
-      True{}
-    case _:
-      False{}
 
 # first: the thread's first worktree (not one made again), whose waiting
 # message names its branch
