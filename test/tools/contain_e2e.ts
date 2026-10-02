@@ -41,8 +41,11 @@ chmodSync(join(fake, "claude"), 0o755);
 const slow = join(root, "slow");
 writeFileSync(join(fake, "systemctl"), `#!/bin/sh\nif [ -e ${slow} ]; then case "$2" in show|stop|reset-failed) sleep 8;; esac; fi\nexec /usr/bin/systemctl "$@"\n`);
 chmodSync(join(fake, "systemctl"), 0o755);
+// codex and grok stand-ins that run away at once (their stream just ends)
+const hog = join(root, "hog.js");
+writeFileSync(hog, "const k=[];for(let i=0;i<30;i++){k.push(Buffer.alloc(20*1024*1024,1));}\nrequire('node:fs').appendFileSync(process.env.FAKE_LOG,'HOG-SURVIVED\\n');\n");
 for (const n of ["codex", "grok"]) {
-  writeFileSync(join(fake, n), "#!/bin/sh\nexit 1\n");
+  writeFileSync(join(fake, n), `#!/bin/sh\nexec ${process.execPath} ${hog}\n`);
   chmodSync(join(fake, n), 0o755);
 }
 const home = join(root, "home");
@@ -144,6 +147,21 @@ try {
   send("turn.start", { thread: ok1, text: "again", msg: "c-3" });
   await until(15000, () => turns(ok1).filter((s) => s === "completed").length >= 3 ? true : undefined);
   check(turns(ok1).filter((s) => s === "completed").length >= 3, `another thread keeps working (${turns(ok1).join(",")})`);
+
+  // codex and grok runaways are told as Claude's is (and their scopes reset)
+  for (const provider of ["codex", "grok"]) {
+    const n = seen.filter((x) => x.$ === "ThreadCreated").length;
+    send("thread.create", { project: pc.id, title: provider + " runaway", env: "local", provider });
+    const th = (await until(10000, () => seen.filter((x) => x.$ === "ThreadCreated")[n]))?.id as string;
+    send("turn.start", { thread: th, text: "go", msg: "c-" + provider });
+    await until(20000, () => turns(th).at(-1) === "failed" ? true : undefined);
+    await sleep(500);
+    const said = seen.some((x) => x.thread === th && /out of memory \(limit 200 MB\)/.test(JSON.stringify(x)));
+    check(turns(th).at(-1) === "failed" && said, `${provider}: the runaway's turn says it ran out of memory (${turns(th).join(",")})`);
+    const left = Bun.spawnSync(["systemctl", "--user", "list-units", "--all", "--plain", "--no-legend", `bp-agent-${th}-*`]).stdout.toString().trim();
+    check(left === "", `${provider}: no scope is left (${left.slice(0, 80)})`);
+  }
+  check(!lines().some((l) => l.startsWith("HOG-SURVIVED")), "no codex or grok allocation completed");
 
   // the scope's account is asked off the hub's inbox: while a runaway's
   // exit waits on a user manager that does not answer, the hub still serves
