@@ -53,7 +53,8 @@ is_eq = re.findall(
     r'function (' + I + r')\(([A-Z])\)\{if\(\2\.\$==="LT"\)return!1;else if\(\2\.\$==="EQ"\)return!0;else return!1\}', src
 )
 names = {n for n, _ in is_eq}
-# String.eq: its result's Cmp through Cmp.is_eq
+# String.eq: its result's Cmp through Cmp.is_eq (the call that forces
+# String.cmp's result is minifier-named too: Q in one build, another later)
 fins = {
     f
     for f, x, y, g in re.findall(
@@ -61,7 +62,7 @@ fins = {
     )
     if g in names
 }
-eq_re = re.compile(r'function (' + I + r')\(([A-Z]),([A-Z])\)\{return ' + T + r'\((' + I + r'),\[Q\(' + re.escape(cmp) + r'\(\2,\3\)\)\]\)\}')
+eq_re = re.compile(r'function (' + I + r')\(([A-Z]),([A-Z])\)\{return ' + T + r'\((' + I + r'),\[' + I + r'\(' + re.escape(cmp) + r'\(\2,\3\)\)\]\)\}')
 eqs = [e for e in eq_re.finditer(src) if e.group(4) in fins]
 if len(eqs) != 1:
     sys.exit(f"bridge-native: String.eq found {len(eqs)} times, not once")

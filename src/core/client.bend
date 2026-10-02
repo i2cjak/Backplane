@@ -527,6 +527,20 @@ def Pair.link(+nf: Map<&2, String>) -> String:
 def Pair.note(+link: String) -> String:
   Bool.pick(String, String.is_empty(link), "Shown once Backplane listens on your tailnet.", link)
 
+def Pair.rows(+s: String) -> List<&2, String>:
+  Bool.pick(List<&2, String>, String.is_empty(s), Nil{}, String.split(s, '\n'))
+
+# the pairing link as a QR code (info "pair.qr": its rows, '1' dark), for
+# a phone's camera; the flag "pairqr" shows it in Settings
+def Pair.qr(+nf: Map<&2, String>) -> List<&2, String>:
+  Pair.rows(Str.get(nf, "pair.qr"))
+
+def Pair.qr.ready(+nf: Map<&2, String>) -> Bool:
+  Bool.not(String.is_empty(Str.get(nf, "pair.qr")))
+
+def Pair.qr.note() -> String:
+  "Scan with the Backplane app, or the phone's camera."
+
 # KiCad itself: the hub's kicad-cli (info "kicad.cli", "" when there is
 # none on the machine), which ERC, DRC, exports and the 3D model need
 def KiCad.found(+nf: Map<&2, String>) -> Bool:
@@ -5460,11 +5474,12 @@ def Voice.act(i: Nat, +u: Ui, +value: String) -> Act:
     case _:
       Voice.act.tail(i, u, value)
 
-# opening Settings asks for the voice settings
+# opening Settings asks for the voice settings; opening or closing it
+# puts the pairing code away
 def Voice.flag.k(ask: Bool, a: Act) -> Act:
   match ask a:
     case True{} Act{u, cs}:
-      Ui.also(Voice.rpc(u, "status", Nil{}), cs)
+      Ui.also(Voice.rpc(Ui.flag_off(u, "pairqr"), "status", Nil{}), cs)
     case False{} _:
       a
 

@@ -20,8 +20,12 @@ runs xcodebuild there. Debug builds read `BACKPLANE_LINK` and
 `BACKPLANE_SELECT` from the environment (`SIMCTL_CHILD_…`) to pair and open
 a thread without taps.
 
-Pairing: paste the hub's tailnet link (`http://host:3787/#token=…`), or open
-`backplane://pair?url=<that link, URL-encoded>`.
+Pairing: scan the code Settings shows (Pairing link, QR code) from the
+pairing screen or Hubs (iOS reads it with the camera, Android with Google
+Play services' code scanner), paste the hub's tailnet link
+(`http://host:3787/#token=…`), or open
+`backplane://pair?url=<that link, URL-encoded>`, which is what the code
+holds, so the phone's own camera app opens Backplane with it too.
 
 Kept state: each app writes the Bend client's whole state down (a file
 named `state-<key>.json`) and loads it at launch, then asks each hub only

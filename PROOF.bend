@@ -6499,3 +6499,23 @@ def Laws.emb_note_none():
   {==}
 def Laws.emb_focus_round():
   {==}
+def Laws.qr_format_m():
+  {==}
+def Laws.qr_format_m1():
+  {==}
+def Laws.qr_version7_bits():
+  {==}
+def Laws.qr_version_fits():
+  {==}
+def Laws.qr_version_grows():
+  {==}
+def Laws.qr_version_none():
+  {==}
+def Laws.qr_gmul_wraps():
+  {==}
+def Laws.qr_link_escapes():
+  {==}
+def Laws.qr_link_none():
+  {==}
+def Laws.pair_qr_none():
+  {==}

@@ -610,3 +610,5 @@ button.mic.starting, button.mic.stopping { border-color: var(--bad); color: var(
 .act.step button.step:hover { text-decoration: underline; }
 .jumped { animation: jumped 2.4s ease-out; box-shadow: inset 2px 0 0 var(--accent); }
 @keyframes jumped { from { background: rgba(95, 179, 255, 0.18); } to { background: transparent; } }
+.pair-qr { display: flex; flex-direction: column; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--panel); padding: 16px 12px; cursor: pointer; }
+.pair-qr svg { width: min(320px, 80vw); height: auto; background: #fff; fill: #000; }
