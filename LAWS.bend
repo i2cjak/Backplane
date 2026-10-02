@@ -11,6 +11,7 @@ import ./src/app/nui.bend as N
 import ./src/app/bots.bend as BV
 import ./src/core/board.bend as B
 import ./src/core/hub.bend as H
+import ./src/core/cmds.bend as CM
 import ./src/core/refs.bend as RF
 import ./src/core/todo.bend as TD
 import ./src/core/apikeys.bend as AK
@@ -4490,3 +4491,89 @@ law emb_note_none:
 
 law emb_focus_round:
   {EMB.Emb.focused(EMB.Emb.focus(EMB.Emb.key("t1", "x5"))) == "x:t1:x5" : String}
+# Claude's command ledger (core/cmds.bend): a turn ends when its own
+# command's lifecycle does, a result while another command is outstanding
+# never ends it (the live repro: a stale notification turn's result while
+# the user's message waited), a stopped command's late error is quiet, and
+# a turn Claude starts by itself shows as running
+law cmds_foreign_result_quiet:
+  {CM.Cmds.verdict(CM.Cmds.one("u1", 1n, False{}), True{}, CM.Cmds.o(CM.Cmds.l.result())) == 1n : Nat}
+
+law cmds_foreign_result_keeps_running:
+  {H.Hub.running(H.Hub.thread(M.State.replay(H.Queue.changes(H.Hub.agent_line.v(1n, H.Demo.state("claude", M.Running{}), 9n, "t1", CM.Cmds.l.result(), "")), H.Demo.state("claude", M.Running{})), "t1")) == True{} : Bool}
+
+law cmds_result_waits_lc:
+  {CM.Cmds.verdict(CM.Cmds.one("u1", 2n, False{}), True{}, CM.Cmds.o(CM.Cmds.l.result())) == 1n : Nat}
+
+law cmds_lc_completed_ends:
+  {CM.Cmds.verdict(CM.Cmds.see(CM.Cmds.one("u1", 2n, False{}), CM.Cmds.o(CM.Cmds.l.result())), True{}, CM.Cmds.o(CM.Cmds.l.lc("u1", "completed"))) == 3n : Nat}
+
+law cmds_lc_end_completes:
+  {M.Thread.turn(H.Hub.thread(M.State.replay(H.Queue.changes(H.Hub.agent_line.v(3n, H.Demo.state("claude", M.Running{}), 9n, "t1", CM.Cmds.l.lc("u1", "completed"), "ok")), H.Demo.state("claude", M.Running{})), "t1")) == M.Completed{} : M.TurnState}
+
+law cmds_pair_stays_running:
+  {CM.Cmds.verdict(CM.Cmds.see(CM.Cmds{[CM.Cmd{"u3", 2n, False{}, ""}, CM.Cmd{"u4", 1n, False{}, ""}], 1n, False{}}, CM.Cmds.o(CM.Cmds.l.result())), True{}, CM.Cmds.o(CM.Cmds.l.lc("u3", "completed"))) == 1n : Nat}
+
+law cmds_tomb_error_quiet:
+  {CM.Cmds.verdict(CM.Cmds.stop(CM.Cmds.one("u1", 2n, False{}), []), False{}, CM.Cmds.o(CM.Cmds.l.failed())) == 1n : Nat}
+
+law cmds_tomb_cancel_quiet:
+  {CM.Cmds.verdict(CM.Cmds.see(CM.Cmds.stop(CM.Cmds.one("u1", 2n, False{}), []), CM.Cmds.o(CM.Cmds.l.failed())), False{}, CM.Cmds.o(CM.Cmds.l.lc("u1", "cancelled"))) == 1n : Nat}
+
+# after a Stop, the next message's own lifecycle ends its turn, and the
+# stopped one's error never fails it
+law cmds_stop_then_new_error_quiet:
+  {CM.Cmds.verdict(CM.Cmds.sent(CM.Cmds.accept(CM.Cmds.stop(CM.Cmds.one("u1", 2n, False{}), []), "u2"), "u2"), True{}, CM.Cmds.o(CM.Cmds.l.failed())) == 1n : Nat}
+
+law cmds_stop_then_new:
+  {CM.Cmds.verdict(CM.Cmds.see(CM.Cmds.see(CM.Cmds.see(CM.Cmds.see(CM.Cmds.sent(CM.Cmds.accept(CM.Cmds.stop(CM.Cmds.one("u1", 2n, False{}), []), "u2"), "u2"),
+      CM.Cmds.o(CM.Cmds.l.failed())), CM.Cmds.o(CM.Cmds.l.lc("u1", "cancelled"))), CM.Cmds.o(CM.Cmds.l.lc("u2", "started"))), CM.Cmds.o(CM.Cmds.l.result())),
+    True{}, CM.Cmds.o(CM.Cmds.l.lc("u2", "completed"))) == 3n : Nat}
+
+law cmds_wake_start:
+  {CM.Cmds.verdict(CM.Cmds{[], 1n, False{}}, False{}, CM.Cmds.o(CM.Cmds.l.note())) == 6n : Nat}
+
+law cmds_wake_runs:
+  {H.Hub.running(H.Hub.thread(M.State.replay(H.Queue.changes(H.Hub.agent_line.v(6n, H.Demo.state("claude", M.Completed{}), 9n, "t1", CM.Cmds.l.note(), "")), H.Demo.state("claude", M.Completed{})), "t1")) == True{} : Bool}
+
+law cmds_wake_result_ends:
+  {CM.Cmds.verdict(CM.Cmds{[], 1n, True{}}, True{}, CM.Cmds.o(CM.Cmds.l.result())) == 3n : Nat}
+
+law cmds_wake_with_queued_user:
+  {CM.Cmds.verdict(CM.Cmds.one("u1", 1n, True{}), True{}, CM.Cmds.o(CM.Cmds.l.result())) == 1n : Nat}
+
+law cmds_tomb_started_resumes:
+  {CM.Cmds.verdict(CM.Cmds.one("u1", 4n, False{}), False{}, CM.Cmds.o(CM.Cmds.l.lc("u1", "started"))) == 6n : Nat}
+
+law cmds_tomb_started_says:
+  {H.Wake.text(True{}, H.Demo.state("claude", M.Interrupted{}), "t1", CM.Cmds.o(CM.Cmds.l.lc("u1", "started"))) == "Resumed after Stop" : String}
+
+# a message still being prepared (its images read) counts as outstanding
+law cmds_prep_counts:
+  {CM.Cmds.verdict(CM.Cmds.one("u1", 0n, True{}), True{}, CM.Cmds.o(CM.Cmds.l.result())) == 1n : Nat}
+
+# lifecycles from the first lifecycle line, or from an init new enough;
+# an older CLI keeps the old rule (verdict 0)
+law cmds_mode_version:
+  {CM.Cmds.mode(CM.Cmds.see(CM.Cmds.new(), CM.Cmds.o(CM.Cmds.l.init("2.1.286")))) == 1n : Nat}
+
+law cmds_mode_old:
+  {CM.Cmds.mode(CM.Cmds.see(CM.Cmds.new(), CM.Cmds.o(CM.Cmds.l.init("2.0.0")))) == 2n : Nat}
+
+law cmds_mode_old_legacy:
+  {CM.Cmds.verdict(CM.Cmds.see(CM.Cmds.new(), CM.Cmds.o(CM.Cmds.l.init("2.0.0"))), True{}, CM.Cmds.o(CM.Cmds.l.result())) == 0n : Nat}
+
+law cmds_mode_lc:
+  {CM.Cmds.mode(CM.Cmds.see(CM.Cmds.new(), CM.Cmds.o(CM.Cmds.l.lc("u1", "queued")))) == 1n : Nat}
+
+law cmds_legacy_same:
+  for s: M.State
+  for now: Nat
+  for thread: String
+  for line: String
+  for text: String
+  {H.Hub.agent_line.v(0n, s, now, thread, line, text) == H.Hub.agent_line(s, now, thread, line) : H.Step}
+
+# a wake is told once: a notification while the wake runs starts nothing
+law wake_act_once:
+  {CM.Cmds.verdict(CM.Cmds{[], 1n, True{}}, True{}, CM.Cmds.o(CM.Cmds.l.note())) == 2n : Nat}

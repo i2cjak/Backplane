@@ -349,7 +349,7 @@ def Mcp.delegate.go(+s: M.State, +now: Nat, +parent: String, +project: String, e
         M.TaskStateSet{task, M.TaskRunning{}, "", now},
         M.MessagePosted{child, Mcp.from.id(Bool.pick(String, Mcp.bot(s, parent), parent, ""), B.Hub.id("m", now, 2n+seq)), M.User{}, prompt, now},
         M.TurnChanged{child, M.Running{}, now}],
-      B.Hub.run(M.Thread{child, project, name, now, now, M.Running{}, 0n, False{}, M.NoOverride{}, 0n, 0n, False{}, M.Local{}, branch, wt, provider, model, rm, M.DefaultMode{}, "", False{}}, cwd, prompt)}}
+      B.Hub.run(M.Thread{child, project, name, now, now, M.Running{}, 0n, False{}, M.NoOverride{}, 0n, 0n, False{}, M.Local{}, branch, wt, provider, model, rm, M.DefaultMode{}, "", False{}}, cwd, prompt, B.Hub.uuid(now, child ++ "/d"))}}
 
 def Mcp.delegate.k(ok: Bool, t: M.Thread, +s: M.State, +now: Nat, +thread: String, +bot: Bool, +proj: String, +p: J.Json) -> Res:
   match ok t:

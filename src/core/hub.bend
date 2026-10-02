@@ -133,6 +133,41 @@ def Claude.user(text: String) -> String:
       J.KV{"role", J.Str{"user"}},
       J.KV{"content", J.Json.arr([J.Json.obj([J.KV{"type", J.Str{"text"}}, J.KV{"text", J.Str{text}}])])}])}]))
 
+# the same with the command's uuid, by which Claude reports its lifecycle
+# (core/cmds.bend): minted when the hub takes the message, kept by every
+# rewrite of the line (Claude.uuid.of)
+def Claude.tag(+line: String, +uuid: String) -> String:
+  Bool.pick(String, String.is_empty(uuid), line, "{\"uuid\":" ++ J.Json.show(J.Str{uuid}) ++ "," ++ String.drop(line, 1n))
+
+def Claude.user.u(text: String, +uuid: String) -> String:
+  Claude.tag(Claude.user(text), uuid)
+
+def Claude.uuid.of(+line: String) -> String:
+  J.Json.get_str(Maybe.default(&2, J.Json, J.Json.parse(line), J.Null{}), "uuid", "")
+
+# hex digits of n, the last w of them
+def Hub.hex(w: Nat, +n: Nat) -> String:
+  match w:
+    case 0n:
+      ""
+    case 1n+k:
+      Hub.hex(k, Nat.div(n, 16n)) ++ SCon{J.Json.hex(U32.from_nat(Nat.mod(n, 16n))), SNil{}}
+
+def Hub.hash(s: String, +m: Nat, +acc: Nat) -> Nat:
+  match s:
+    case SNil{}:
+      acc
+    case SCon{Chr{+c}, t}:
+      Hub.hash(t, m, Nat.mod(Nat.add(Nat.mul(acc, m), U32.to_nat(c)), Nat.mul(65536n, 65536n)))
+
+def Hub.uuid.k(+now: Nat, +a: Nat, +b: Nat) -> String:
+  Hub.hex(8n, now) ++ "-" ++ Hub.hex(4n, a) ++ "-4" ++ Hub.hex(3n, Nat.div(a, 65536n)) ++ "-8" ++ Hub.hex(3n, b) ++ "-" ++ Hub.hex(4n, Nat.div(b, 4096n)) ++ Hub.hex(8n, Nat.add(a, b))
+
+# a command's uuid (v4-shaped, as Claude wants): the time and a hash of
+# what makes it unique (the thread and the message or sequence)
+def Hub.uuid(+now: Nat, +key: String) -> String:
+  Hub.uuid.k(now, Hub.hash(key, 31n, 7n), Hub.hash(key, 131n, 3n))
+
 def Claude.interrupt(+id: String) -> String:
   J.Json.show(J.Json.obj([
     J.KV{"type", J.Str{"control_request"}},
@@ -141,9 +176,9 @@ def Claude.interrupt(+id: String) -> String:
 
 # a user message for Claude: straight in, or, when it attaches images, by
 # the server, which reads them into image content blocks first
-def Claude.send(+thread: String, +cwd: String, +text: String) -> Out:
-  Bool.pick(Out, List.is_empty(&2, String, AT.Att.images(text)), AgentSend{thread, Claude.user(text)},
-    Git{0, "", "attach.claude", thread, cwd, text, ""})
+def Claude.send(+thread: String, +cwd: String, +text: String, +uuid: String) -> Out:
+  Bool.pick(Out, List.is_empty(&2, String, AT.Att.images(text)), AgentSend{thread, Claude.user.u(text, uuid)},
+    Git{0, "", "attach.claude", thread, cwd, text, uuid})
 
 def Hub.title.cut(long: Bool, +line: String) -> String:
   match long:
@@ -171,19 +206,20 @@ def Hub.title.k(fresh: Bool, +thread: String, +text: String, +now: Nat, rest: Li
 # keeps one process per thread fed with stream-json; Codex and Grok run a
 # process per turn, resuming their session (Grok over ACP, reported in
 # Codex's event shapes)
-def Hub.run.k(i: Nat, +thread: String, +cwd: String, +provider: String, +model: String, +session: String, runtime: M.RuntimeMode, interaction: M.InteractionMode, +text: String) -> List<&2, Out>:
+def Hub.run.k(i: Nat, +thread: String, +cwd: String, +provider: String, +model: String, +session: String, runtime: M.RuntimeMode, interaction: M.InteractionMode, +text: String, +uuid: String) -> List<&2, Out>:
   match i:
     case 1n:
       [CodexTurn{thread, cwd, model, session, runtime, text}]
     case 2n:
       [GrokTurn{thread, cwd, model, session, runtime, text}]
     case _:
-      [AgentStart{thread, cwd, provider, model, session, runtime, interaction}, Claude.send(thread, cwd, text)]
+      [AgentStart{thread, cwd, provider, model, session, runtime, interaction}, Claude.send(thread, cwd, text, uuid)]
 
-def Hub.run(t: M.Thread, +cwd: String, +text: String) -> List<&2, Out>:
+# (uuid: the Claude command's, Hub.uuid)
+def Hub.run(t: M.Thread, +cwd: String, +text: String, +uuid: String) -> List<&2, Out>:
   match t:
     case M.Thread{+id, _, _, _, _, _, _, _, _, _, _, _, _, _, _, +provider, model, runtime, interaction, session, _}:
-      Hub.run.k(C.Codec.pos(["claude", "codex", "grok"], provider), id, cwd, provider, model, session, runtime, interaction, text)
+      Hub.run.k(C.Codec.pos(["claude", "codex", "grok"], provider), id, cwd, provider, model, session, runtime, interaction, text, uuid)
 
 def Hub.post.go(wait: Bool, +t: M.Thread, +cwd: String, +queued: String, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
   match wait:
@@ -193,7 +229,7 @@ def Hub.post.go(wait: Bool, +t: M.Thread, +cwd: String, +queued: String, +now: N
       Step{List.concat(&2, M.Change, [[M.MessagePosted{thread, msg, role, text, now}],
           Bool.pick(List<&2, M.Change>, String.is_empty(queued), Nil{}, [M.QueueTaken{thread, now}]),
           [M.TurnChanged{thread, M.Running{}, now}]]),
-        Git{0, "", "checkpoint0", thread, cwd, "", ""} <> Git{0, "", "step", thread, cwd, msg, ""} <> Hub.run(t, cwd, M.Queue.join(queued, text))}
+        Git{0, "", "checkpoint0", thread, cwd, "", ""} <> Git{0, "", "step", thread, cwd, msg, ""} <> Hub.run(t, cwd, M.Queue.join(queued, text), Hub.uuid(now, thread ++ "/" ++ msg))}
 
 def Step.after(st: Step, more: List<&2, M.Change>) -> Step:
   match st:
@@ -693,11 +729,11 @@ def Wt.name(first: Bool, t: M.Thread, +text: String) -> List<&2, Out>:
     case False{}:
       Nil{}
 
-def Wt.start.k(go: Bool, +first: Bool, +t: M.Thread, +cwd: String, +queued: String, +now: Nat, +thread: String) -> Step:
+def Wt.start.k(go: Bool, +first: Bool, +t: M.Thread, +cwd: String, +queued: String, +now: Nat, +seq: Nat, +thread: String) -> Step:
   match go:
     case True{}:
       Step{[M.QueueTaken{thread, now}, M.TurnChanged{thread, M.Running{}, now}],
-        Git{0, "", "checkpoint0", thread, cwd, "", ""} <> Git{0, "", "step", thread, cwd, "", ""} <> List.append(&2, Out, Wt.name(first, t, queued), Hub.run(t, cwd, queued))}
+        Git{0, "", "checkpoint0", thread, cwd, "", ""} <> Git{0, "", "step", thread, cwd, "", ""} <> List.append(&2, Out, Wt.name(first, t, queued), Hub.run(t, cwd, queued, Hub.uuid(now, thread ++ "/w/" ++ Nat.show(seq))))}
     case False{}:
       Step.none()
 
@@ -1309,7 +1345,7 @@ def Claude.line.parsed(m: Maybe<&2, J.Json>, +s: M.State, +thread: String, +now:
 # message names its branch
 def Wt.start(+s: M.State, +now: Nat, +thread: String, +first: Bool) -> Step:
   Wt.start.k(Bool.and(Bool.not(Hub.running(Hub.thread(s, thread))), M.Queue.waiting(s, thread)), first,
-    Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), M.Queue.of(s, thread), now, thread)
+    Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), M.Queue.of(s, thread), now, Hub.seq(s), thread)
 
 def Wt.ready(+s: M.State, +now: Nat, +client: U32, +id: String, +thread: String, +c: M.Change) -> Step:
   Step.before([c], [Reply.ok(client, id)], Wt.start(M.State.replay([c], s), now, thread, String.is_empty(M.Merge.branch(Hub.thread(s, thread)))))
@@ -1530,7 +1566,7 @@ def Steer.note(+provider: String, +thread: String, +now: Nat, +seq: Nat) -> List
 # the running turn takes `text` now (the message itself is already posted)
 def Steer.go(+t: M.Thread, +cwd: String, +now: Nat, +seq: Nat, +thread: String, +text: String) -> Step:
   Step{List.append(&2, M.Change, Steer.note(Hub.provider(t), thread, now, seq), [M.TurnChanged{thread, M.Running{}, now}]),
-    List.append(&2, Out, Steer.stop(Hub.provider(t), thread), Hub.run(t, cwd, text))}
+    List.append(&2, Out, Steer.stop(Hub.provider(t), thread), Hub.run(t, cwd, text, Hub.uuid(now, thread ++ "/s/" ++ Nat.show(seq))))}
 
 def Hub.post.q(run: Bool, +s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
   match run:
@@ -1594,7 +1630,7 @@ def Queue.steer.k(m: Maybe<&2, M.QItem>, +run: Bool, +s: M.State, +now: Nat, +cl
       Step.before([M.QueueTakenOne{thread, msg, now}], [Reply.ok(client, id)], Steer.go(Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), now, Hub.seq(s), thread, text))
     case Some{M.QItem{+msg, +text}} False{}:
       Step{[M.QueueTakenOne{thread, msg, now}, M.TurnChanged{thread, M.Running{}, now}],
-        Reply.ok(client, id) <> Git{0, "", "checkpoint0", thread, Hub.cwd(s, Hub.thread(s, thread)), "", ""} <> Git{0, "", "step", thread, Hub.cwd(s, Hub.thread(s, thread)), "", ""} <> Hub.run(Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), text)}
+        Reply.ok(client, id) <> Git{0, "", "checkpoint0", thread, Hub.cwd(s, Hub.thread(s, thread)), "", ""} <> Git{0, "", "step", thread, Hub.cwd(s, Hub.thread(s, thread)), "", ""} <> Hub.run(Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), text, Hub.uuid(now, thread ++ "/" ++ msg))}
     case None{} _:
       Step.outs([Reply.err(client, id, "no such queued message")])
 
@@ -1994,10 +2030,10 @@ def Queue.ended(cs: List<&2, M.Change>, +thread: String) -> Bool:
     case c <> t:
       Bool.or(Queue.ended.one(c, thread), Queue.ended(t, thread))
 
-def Queue.drain.k(go: Bool, st: Step, +t: M.Thread, cwd: String, +queued: String, +now: Nat, +thread: String) -> Step:
+def Queue.drain.k(go: Bool, st: Step, +t: M.Thread, cwd: String, +queued: String, +now: Nat, +seq: Nat, +thread: String) -> Step:
   match go st:
     case True{} Step{cs, os}:
-      Step{List.append(&2, M.Change, cs, [M.QueueTaken{thread, now}, M.TurnChanged{thread, M.Running{}, now}]), List.append(&2, Out, os, Hub.run(t, cwd, queued))}
+      Step{List.append(&2, M.Change, cs, [M.QueueTaken{thread, now}, M.TurnChanged{thread, M.Running{}, now}]), List.append(&2, Out, os, Hub.run(t, cwd, queued, Hub.uuid(now, thread ++ "/q/" ++ Nat.show(seq))))}
     case False{} _:
       st
 
@@ -2036,7 +2072,7 @@ def Ended.out(+s: M.State, +now: Nat, +thread: String, +st: Step) -> Step:
 
 def Queue.drain(+s: M.State, +now: Nat, +thread: String, +st: Step) -> Step:
   Queue.drain.k(Bool.and(Queue.ended(Queue.changes(st), thread), M.Queue.waiting(s, thread)), st,
-    Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), M.Queue.of(s, thread), now, thread)
+    Hub.thread(s, thread), Hub.cwd(s, Hub.thread(s, thread)), M.Queue.of(s, thread), now, Hub.seq(s), thread)
 
 # Delegated tasks finishing
 # -------------------------
@@ -2346,6 +2382,97 @@ def Hub.request_text(+s: M.State, +now: Nat, +client: U32, text: String) -> Step
 # one line of an agent's stdout
 def Hub.agent_line(+s: M.State, +now: Nat, +thread: String, line: String) -> Step:
   Task.finish(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, now, thread, Hub.agent_line.k(Bool.not(String.eq(Hub.provider(Hub.thread(s, thread)), "claude")), s, now, thread, line))))
+
+# Claude's lines by the command ledger (core/cmds.bend)
+# ------------------------------------------------------
+# The server keeps each Claude process's ledger and judges every line
+# before it comes here (CM.Cmds.verdict): 0 is the old rule above
+# (Hub.agent_line, a CLI without lifecycles); otherwise a result never
+# ends the turn by itself: 1 quiet (a stopped or foreign turn's line: it
+# lands, its text does not stream), 2 the work on hand (it streams), 3/4
+# the turn ends ok/failed (`text` the outcome's), 5 the CLI cancelled the
+# command itself (interrupted), 6 Claude started a turn by itself (a
+# background task ended, a wakeup): the thread runs again, with an Act
+# saying why (laws cmds_*).
+
+# a line as the old rule takes it, except that whether its text streams is
+# the ledger's call and a result changes no turn
+def Claude.line.r(i: Nat, run: Bool, +s: M.State, +thread: String, +now: Nat, +o: J.Json) -> Step:
+  match i:
+    case 1n:
+      Claude.stream.if(run, thread, J.Json.get_obj(o, "event"))
+    case 3n:
+      Step{Usage.window(s, thread, now, o), Nil{}}
+    case _:
+      Claude.line.k(i, s, thread, now, o)
+
+def Claude.line.who.r(main: Bool, i: Nat, run: Bool, +s: M.State, +thread: String, +now: Nat, +call: String, +o: J.Json) -> Step:
+  match main:
+    case True{}:
+      Claude.line.r(i, run, s, thread, now, o)
+    case False{}:
+      Sub.line(i, thread, now, call, o)
+
+def Claude.line.o(run: Bool, +s: M.State, +thread: String, +now: Nat, +o: J.Json) -> Step:
+  Claude.line.who.r(String.is_empty(J.Json.get_str(o, "parent_tool_use_id", "")), C.Codec.pos(["system", "stream_event", "assistant", "result", "user"], J.Json.get_str(o, "type", "")),
+    run, s, thread, now, J.Json.get_str(o, "parent_tool_use_id", ""), o)
+
+def Wake.row(ls: List<&2, String>, +id: String) -> String:
+  match ls:
+    case Nil{}:
+      ""
+    case +l <> t:
+      Bool.pick(String, M.Bg.is(l, id), M.Bg.title(l), Wake.row(t, id))
+
+def Wake.or(+a: String, +b: String) -> String:
+  Bool.pick(String, String.is_empty(a), b, a)
+
+# what woke the agent: the notification's summary, else its task's title,
+# else background work
+def Wake.title(+s: M.State, +thread: String, +o: J.Json) -> String:
+  Wake.or(J.Json.get_str(o, "summary", ""), Wake.or(Wake.row(M.Bg.of(s, thread), J.Json.get_str(o, "task_id", "")), "background work"))
+
+def Wake.text(lc: Bool, +s: M.State, +thread: String, +o: J.Json) -> String:
+  match lc:
+    case True{}:
+      "Resumed after Stop"
+    case False{}:
+      "Woken: " ++ Wake.title(s, thread, o)
+
+# a turn Claude started by itself runs where the person sees it
+def Wake.start(+s: M.State, +thread: String, +now: Nat, +text: String) -> List<&2, M.Change>:
+  [M.TurnChanged{thread, M.Running{}, now}, M.ActivityLogged{thread, Hub.id("k", now, Hub.seq(s)), "info", "wake", text, now}]
+
+def Claude.line.v.k(v: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json, +text: String) -> Step:
+  match v:
+    case 2n:
+      Claude.line.o(True{}, s, thread, now, o)
+    case 3n:
+      Step.after(Claude.result.k(False{}, thread, now, text), Usage.window(s, thread, now, o))
+    case 4n:
+      Step.after(Claude.result.k(True{}, thread, now, text), Usage.window(s, thread, now, o))
+    case 5n:
+      Step{[M.TurnChanged{thread, M.Interrupted{}, now}], Nil{}}
+    case 6n:
+      Step.before(Wake.start(s, thread, now, Wake.text(String.eq(J.Json.get_str(o, "type", ""), "command_lifecycle"), s, thread, o)), Nil{},
+        Claude.line.o(True{}, s, thread, now, o))
+    case _:
+      Claude.line.o(False{}, s, thread, now, o)
+
+def Hub.agent_line.v.k(v: Nat, +s: M.State, +now: Nat, +thread: String, +o: J.Json, +text: String) -> Step:
+  Task.finish(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, now, thread, Claude.line.v.k(v, s, thread, now, o, text))))
+
+# one line of an agent's stdout with its verdict (o: the line parsed;
+# text: an ending's outcome, CM.Cmds.text)
+def Hub.agent_line.vo(v: Nat, +s: M.State, +now: Nat, +thread: String, line: String, +o: J.Json, +text: String) -> Step:
+  match v:
+    case 0n:
+      Hub.agent_line(s, now, thread, line)
+    case 1n+p:
+      Hub.agent_line.v.k(1n+p, s, now, thread, o, text)
+
+def Hub.agent_line.v(v: Nat, +s: M.State, +now: Nat, +thread: String, +line: String, +text: String) -> Step:
+  Hub.agent_line.vo(v, s, now, thread, line, Maybe.default(&2, J.Json, J.Json.parse(line), J.Null{}), text)
 
 # an agent process ended; a turn still running ends with it
 def Hub.agent_gone(+s: M.State, +now: Nat, +thread: String, +code: U32) -> Step:

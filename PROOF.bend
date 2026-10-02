@@ -6498,4 +6498,71 @@ def Laws.emb_idle_ends():
 def Laws.emb_note_none():
   {==}
 def Laws.emb_focus_round():
+def Laws.cmds_foreign_result_quiet():
+  {==}
+
+def Laws.cmds_foreign_result_keeps_running():
+  {==}
+
+def Laws.cmds_result_waits_lc():
+  {==}
+
+def Laws.cmds_lc_completed_ends():
+  {==}
+
+def Laws.cmds_lc_end_completes():
+  {==}
+
+def Laws.cmds_pair_stays_running():
+  {==}
+
+def Laws.cmds_tomb_error_quiet():
+  {==}
+
+def Laws.cmds_tomb_cancel_quiet():
+  {==}
+
+def Laws.cmds_stop_then_new_error_quiet():
+  {==}
+
+def Laws.cmds_stop_then_new():
+  {==}
+
+def Laws.cmds_wake_start():
+  {==}
+
+def Laws.cmds_wake_runs():
+  {==}
+
+def Laws.cmds_wake_result_ends():
+  {==}
+
+def Laws.cmds_wake_with_queued_user():
+  {==}
+
+def Laws.cmds_tomb_started_resumes():
+  {==}
+
+def Laws.cmds_tomb_started_says():
+  {==}
+
+def Laws.cmds_prep_counts():
+  {==}
+
+def Laws.cmds_mode_version():
+  {==}
+
+def Laws.cmds_mode_old():
+  {==}
+
+def Laws.cmds_mode_old_legacy():
+  {==}
+
+def Laws.cmds_mode_lc():
+  {==}
+
+def Laws.cmds_legacy_same(s, now, thread, line, text):
+  {==}
+
+def Laws.wake_act_once():
   {==}
