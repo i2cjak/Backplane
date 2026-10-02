@@ -221,7 +221,7 @@ def Subs.watch.word(+l: String) -> String:
   Bool.pick(String, M.Bg.ended(l), M.Bg.status(l), M.Bg.doing(l))
 
 def Subs.watch.row(+l: String, +info: Map<&2, String>) -> SubRow:
-  SubRow{M.Bg.field(l, 0n), True{}, "watch: " ++ M.Bg.title(l), "watch", Subs.watch.word(l), M.Bg.field(l, 6n), True{}, Subs.open(info, M.Bg.field(l, 0n), True{}), 0n, Nil{}}
+  SubRow{M.Bg.field(l, 0n), True{}, "watch: " ++ M.Bg.title(l), "watch", Subs.watch.word(l), M.Bg.clean(M.Bg.dec(M.Bg.field(l, 6n))), True{}, Subs.open(info, M.Bg.field(l, 0n), True{}), 0n, Nil{}}
 
 def Subs.watch.rows(ls: List<&2, String>, +info: Map<&2, String>) -> List<&2, SubRow>:
   match ls:

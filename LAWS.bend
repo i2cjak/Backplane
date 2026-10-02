@@ -4991,6 +4991,17 @@ law watch_end_retired_silent:
 law watch_retire_unwatches:
   {H.Watch.retire(H.Watch.demo(False{}), 9n, "t1") == H.Step{[H.Watch.put("t1", 9n, [])], [H.WatchStop{"t1", "w-1", "unwatch", "make", "-"}]} : H.Step}
 
+# a watched command or path is stored whole (newlines, tabs, backslashes) and
+# read back as it was run; a row written before keeps reading as written
+law watch_target_roundtrip:
+  {H.Watch.target(H.Watch.line("w-1", "watching", "n", "run", "echo A\necho B\tc\\n\r\\", "-", 0n)) == "echo A\necho B\tc\\n\r\\" : String}
+
+law watch_target_one_line:
+  {Bool.or(String.contains(H.Watch.line("w-1", "watching", "n", "run", "a\nb\tc", "-", 0n), "a\nb"), String.contains(H.Watch.line("w-1", "watching", "n", "run", "a\nb\tc", "-", 0n), "b\tc")) == False{} : Bool}
+
+law watch_target_old_row_as_written:
+  {H.Watch.target("w-1\twatching\t\tn\twatch\trun\tsed s/a\\nb/c/ x\t-\t0") == "sed s/a\\nb/c/ x" : String}
+
 law watch_unwatch_says_may_run:
   {String.contains(H.Watch.unwatch.text(), "may still run") == True{} : Bool}
 

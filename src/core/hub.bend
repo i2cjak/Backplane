@@ -2687,13 +2687,13 @@ def Lost.note(held: Bool, +s: M.State, +now: Nat, +th: String, +text: String) ->
 # M.Bg.ended), "", note, "watch", kind, target, ident, deadline.
 
 def Watch.line(+id: String, +state: String, +note: String, +kind: String, +target: String, +ident: String, +deadline: Nat) -> String:
-  M.Bg.line(id, state) ++ "\t\t" ++ M.Bg.clean(note) ++ "\twatch\t" ++ M.Bg.clean(kind) ++ "\t" ++ M.Bg.clean(target) ++ "\t" ++ M.Bg.clean(ident) ++ "\t" ++ Nat.show(deadline)
+  M.Bg.line(id, state) ++ "\t\t" ++ M.Bg.clean(note) ++ "\twatch\t" ++ M.Bg.clean(kind) ++ "\t" ++ M.Bg.enc(target) ++ "\t" ++ M.Bg.clean(ident) ++ "\t" ++ Nat.show(deadline)
 
 def Watch.kind(+l: String) -> String:
   M.Bg.field(l, 5n)
 
 def Watch.target(+l: String) -> String:
-  M.Bg.field(l, 6n)
+  M.Bg.dec(M.Bg.field(l, 6n))
 
 def Watch.ident(+l: String) -> String:
   M.Bg.field(l, 7n)

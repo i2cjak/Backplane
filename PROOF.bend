@@ -6870,6 +6870,15 @@ def Laws.watch_end_retired_silent():
 def Laws.watch_retire_unwatches():
   {==}
 
+def Laws.watch_target_roundtrip():
+  {==}
+
+def Laws.watch_target_one_line():
+  {==}
+
+def Laws.watch_target_old_row_as_written():
+  {==}
+
 def Laws.watch_unwatch_says_may_run():
   {==}
 

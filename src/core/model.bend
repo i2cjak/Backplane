@@ -2222,6 +2222,35 @@ def Bg.log(+th: String) -> String:
 def Bg.clean(+t: String) -> String:
   String.join(String.split(String.join(String.split(t, '\t'), " "), '\n'), " ")
 
+# a command or path kept whole on one tab-free line: "\e" then the text with
+# backslash, tab, newline and return written \b \t \n \r (a row written
+# before this reads as it was, cleaned; laws watch_target_*)
+def Bg.enc(+t: String) -> String:
+  "\\e" ++ String.join(String.split(String.join(String.split(String.join(String.split(String.join(String.split(t, '\\'), "\\b"), '\t'), "\\t"), '\n'), "\\n"), '\r'), "\\r")
+
+def Bg.dec.piece(+p: String) -> String:
+  Bool.pick(String, String.starts_with(p, "b"), "\\" ++ String.drop(p, 1n),
+    Bool.pick(String, String.starts_with(p, "t"), "\t" ++ String.drop(p, 1n),
+      Bool.pick(String, String.starts_with(p, "n"), "\n" ++ String.drop(p, 1n),
+        Bool.pick(String, String.starts_with(p, "r"), "\r" ++ String.drop(p, 1n), "\\" ++ p))))
+
+def Bg.dec.go(ps: List<&2, String>) -> String:
+  match ps:
+    case Nil{}:
+      ""
+    case +p <> t:
+      Bg.dec.piece(p) ++ Bg.dec.go(t)
+
+def Bg.dec.k(ps: List<&2, String>) -> String:
+  match ps:
+    case Nil{}:
+      ""
+    case +p <> t:
+      p ++ Bg.dec.go(t)
+
+def Bg.dec(+t: String) -> String:
+  Bool.pick(String, String.starts_with(t, "\\e"), Bg.dec.k(String.split(String.drop(t, 2n), '\\')), t)
+
 def Bg.line(+id: String, +doing: String) -> String:
   Bg.clean(id) ++ "\t" ++ Bg.clean(doing)
 
