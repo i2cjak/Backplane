@@ -7028,3 +7028,12 @@ def Laws.hb_ignored_by_fold():
 
 def Laws.alive_due():
   {==}
+
+def Laws.bots_say_once(live, s, now, client, id, bot, text, msg):
+  {==}
+
+def Laws.bots_post_once(mid, m, s, now, client, id, text):
+  {==}
+
+def Laws.bots_tell_once(mid, remote, s, now, client, id, to, text):
+  {==}

@@ -5211,3 +5211,37 @@ law hb_ignored_by_fold:
 
 law alive_due:
   {[DK.Alive.due(1000n, 41000n), DK.Alive.due(1000n, 41001n), DK.Alive.due(5n, 5n), DK.Alive.due(9n, 3n)] == [False{}, True{}, False{}, False{}] : List<&2, Bool>}
+
+# a bot request sent again (the client's outbox after a dropped link, the
+# same `msg`) is answered ok and does nothing a second time
+law bots_say_once:
+  for live: Bool
+  for +s: M.State
+  for +now: Nat
+  for +client: U32
+  for +id: String
+  for +bot: String
+  for +text: String
+  for +msg: String
+  {BHS.Bots.say.once(True{}, msg, live, s, now, client, id, bot, text) == H.Step.outs([H.Reply.ok(client, id)]) : H.Step}
+
+law bots_post_once:
+  for +mid: String
+  for m: Maybe<&2, BOT.Room>
+  for +s: M.State
+  for +now: Nat
+  for +client: U32
+  for +id: String
+  for +text: String
+  {BHS.Bots.post.once(True{}, mid, m, s, now, client, id, text) == H.Step.outs([H.Reply.ok(client, id)]) : H.Step}
+
+law bots_tell_once:
+  for +mid: String
+  for remote: Bool
+  for +s: M.State
+  for +now: Nat
+  for +client: U32
+  for +id: String
+  for +to: String
+  for +text: String
+  {BHS.Bots.tell.once(True{}, mid, remote, s, now, client, id, to, text) == H.Step.outs([H.Reply.ok(client, id)]) : H.Step}

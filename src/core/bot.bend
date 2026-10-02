@@ -152,6 +152,22 @@ def World.posted(w: World, p: Post) -> World:
     case World{bs, rs, ps, hs, ro, ms, pe, sp, ho, ta, pg} Post{i, r, +f, t, h, +at}:
       World{bs, rs, Post{i, r, f, t, h, at} <> ps, hs, ro, ms, pe, sp, ho, World.talked(ta, f, at), pg}
 
+# whether a post with this id is already in: a walk from the newest that
+# stops at the first hit (a message sent again after a dropped link)
+def Post.has.go(ps: List<&2, Post>, +id: String, found: Bool) -> Bool:
+  match ps found:
+    case _ True{}:
+      True{}
+    case Nil{} False{}:
+      False{}
+    case Post{+i, _, _, _, _, _} <> t False{}:
+      Post.has.go(t, id, String.eq(i, id))
+
+def World.has_post(w: World, +id: String) -> Bool:
+  match w:
+    case World{_, _, ps, _, _, _, _, _, _, _, _}:
+      Post.has.go(ps, id, False{})
+
 def World.hook(+w: World, +id: String) -> Hook:
   match w:
     case World{_, _, _, hs, _, _, _, _, _, _, _}:
