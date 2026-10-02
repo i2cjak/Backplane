@@ -2140,6 +2140,37 @@ law interrupt_grok_stops:
   for r: String
   {H.Stop.outs("grok", th, r) == [H.AgentStop{th}] : List<&2, H.Out>}
 
+# a retired process leaves nothing waiting: archive ends a running turn
+# (an idle thread gets no turn change), Stop, archive and an exit close
+# the asks that wait on it, a plan card stays, a delegated child's task
+# ends, and the parked requests get the empty answer
+law archive_running_stops:
+  {H.Hub.running(H.Hub.thread(H.Retire.after(H.Rec.demo(M.Running{}), H.Retire.request(7n, H.Rec.demo(M.Running{}))), "t1")) == False{} : Bool}
+
+law archive_idle_no_turn:
+  {H.Task.ended(H.Queue.changes(H.Retire.request(7n, H.Rec.demo(M.Completed{})))) == H.NotEnded{} : H.Ended}
+
+law archive_closes_approval:
+  {H.Pend.open(M.Asks.all(H.Retire.after(H.Rec.demo(M.Running{}), H.Retire.request(7n, H.Rec.demo(M.Running{})))), "t1") == 0n : Nat}
+
+law delete_running_stops:
+  {H.Hub.running(H.Hub.thread(H.Retire.after(H.Rec.demo(M.Running{}), H.Retire.request(12n, H.Rec.demo(M.Running{}))), "t1")) == False{} : Bool}
+
+law interrupt_closes_approval:
+  {H.Pend.open(M.Asks.all(H.Retire.after(H.Rec.demo(M.Running{}), H.Hub.interrupt(H.Rec.demo(M.Running{}), 9n, 0, "r", "t1"))), "t1") == 0n : Nat}
+
+law interrupt_keeps_plan:
+  {H.Pend.open(M.Asks.all(H.Retire.after(H.Retire.demo(), H.Hub.interrupt(H.Retire.demo(), 9n, 0, "r", "t1"))), "t1") == 1n : Nat}
+
+law interrupt_ends_child_task:
+  {H.Retire.task(H.Retire.after(H.Retire.demo(), H.Hub.interrupt(H.Retire.demo(), 9n, 0, "r", "t1"))) == True{} : Bool}
+
+law gone_closes_approval:
+  {H.Pend.open(M.Asks.all(H.Retire.after(H.Rec.demo(M.Running{}), H.Hub.agent_gone(H.Rec.demo(M.Running{}), 9n, "t1", 1))), "t1") == 0n : Nat}
+
+law retire_answers_empty:
+  {H.Retire.answers(M.Asks.all(H.Rec.demo(M.Running{})), "t1") == [H.AskAnswered{"a1", ""}] : List<&2, H.Out>}
+
 # what a stopped turn's process still says changes nothing
 law stopped_turn_quiet:
   for s: M.State

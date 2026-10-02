@@ -715,10 +715,16 @@ def Hub.spawned.dup(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32,
         IO.spawn(Unit, Agent.writer(Fuel.forever(), wr, input))
         IO.spawn(Unit, Agent.reader(Fuel.forever(), rd, U.Lines.new(), pid, thread, inbox))
         return Hub{st, f, ls, cl, Agent{thread, input, pid, key} <> as, inbox, cfg, note}
-    case Fail{_} _:
+    # the process started but its socket could not be shared: it is
+    # stopped and goes through the usual exit (Agent.end, AgentGone), so
+    # its turn fails, its asks close and its task ends
+    case Fail{_} Hub{st, f, ls, cl, as, +inbox, cfg, note}:
       do IO<Hub>:
-        Socket.close(rd)
-        return h
+        +input : Chan(String) <- Chan.new(String, 1)
+        Chan.close(String, input)
+        H.Proc.kill(pid, 15)
+        IO.spawn(Unit, Agent.end(rd, pid, thread, inbox))
+        return Hub{st, f, ls, cl, Agent{thread, input, pid, key} <> as, inbox, cfg, note}
 
 def Hub.spawned.ok(started: U32 & Socket, h: Hub, +thread: String, +key: String) -> IO(Hub):
   (pid, s) = started
@@ -1774,6 +1780,15 @@ def Grok.reader(fuel: Nat, s: Socket, carry: U.Lines, a: AC.Acp, +t: AC.AcpTurn,
       IO.bind(Socket & Result<&1, &1, U32 & String, List<&2, U32>>, Unit, H.Sock.recv_bytes(s, 65536),
         r => Grok.got(r, carry, a, t, pid, thread, input, inbox, s2 => c2 => a2 => Grok.reader(f, s2, c2, a2, t, pid, thread, input, inbox)))
 
+# a Grok process whose socket could not be shared is stopped and its turn
+# fails as one that could not start
+def Grok.dup.failed(e: U32 & String, rd: Socket, +pid: U32, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
+  (_, msg) = e
+  do IO<Unit>:
+    Socket.close(rd)
+    H.Proc.kill(pid, 15)
+    Grok.report([AC.Acp.failed("could not start grok: " ++ msg)], thread, inbox)
+
 def Grok.duped(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, +t: AC.AcpTurn, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
   (rd, res) = r
   match res:
@@ -1784,8 +1799,8 @@ def Grok.duped(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, +t: 
         ok : Bool <- Chan.send(Msg, inbox, TurnPid{thread, pid, input})
         ok2 : Bool <- Chan.send(String, input, AC.Acp.init())
         Grok.reader(Fuel.forever(), rd, U.Lines.new(), AC.Acp.new(), t, pid, B.Tag.of(thread, pid), input, inbox)
-    case Fail{_}:
-      Socket.close(rd)
+    case Fail{e}:
+      Grok.dup.failed(e, rd, pid, thread, inbox)
 
 def Grok.started.ok(started: U32 & Socket, +t: AC.AcpTurn, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
   (+pid, s) = started

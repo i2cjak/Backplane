@@ -463,7 +463,7 @@ def Mcp.interrupt.k(ok: Bool, run: Bool, +s: M.State, +now: Nat, +target: String
       Res.ok(J.Json.obj([J.KV{"threadId", J.Str{target}}, J.KV{"state", J.Str{"not running"}}]))
     case True{} True{}:
       Res{True{}, J.Json.obj([J.KV{"threadId", J.Str{target}}, J.KV{"state", J.Str{"interrupted"}}]),
-        B.Step{[M.TurnChanged{target, M.Interrupted{}, now}], B.Stop.outs(B.Hub.provider(B.Hub.thread(s, target)), target, B.Hub.id("i", now, B.Hub.seq(s)))}}
+        B.Retire.stop(s, now, target, Nil{})}
 
 # a message to another thread with a follow-up mode; auto is the inbox
 # (it never interrupts, law inbox_never_interrupts)

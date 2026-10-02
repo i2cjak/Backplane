@@ -4190,6 +4190,33 @@ def Laws.interrupt_codex_stops(th, r):
 def Laws.interrupt_grok_stops(th, r):
   {==}
 
+def Laws.archive_running_stops():
+  {==}
+
+def Laws.archive_idle_no_turn():
+  {==}
+
+def Laws.archive_closes_approval():
+  {==}
+
+def Laws.delete_running_stops():
+  {==}
+
+def Laws.interrupt_closes_approval():
+  {==}
+
+def Laws.interrupt_keeps_plan():
+  {==}
+
+def Laws.interrupt_ends_child_task():
+  {==}
+
+def Laws.gone_closes_approval():
+  {==}
+
+def Laws.retire_answers_empty():
+  {==}
+
 def Laws.stopped_turn_quiet(s, now, thread, line):
   {==}
 
