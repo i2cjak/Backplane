@@ -534,6 +534,23 @@ def Conn.frame.out(t: String) -> List<&2, U32>:
 def Conn.deadline() -> U32:
   10000
 
+# what was queued for a client whose send failed is taken out, so the
+# closed channel's row is freed (a closed channel is freed only once it is
+# empty) and its frames are not held for good
+def Conn.drain.got(m: Maybe<&1, Wire>, k: Unit -> IO(Unit)) -> IO(Unit):
+  match m:
+    case Some{_}:
+      k(Unit{})
+    case None{}:
+      IO.pure(Unit, Unit{})
+
+def Conn.drain(fuel: Nat, +out: Chan(Wire)) -> IO(Unit):
+  match fuel:
+    case 0n:
+      IO.pure(Unit, Unit{})
+    case 1n+f:
+      IO.bind(Maybe<&1, Wire>, Unit, Chan.recv(Wire, out), m => Conn.drain.got(m, u => Conn.drain(f, out)))
+
 def Conn.sent.k(r: Socket & Result<&1, &1, U32 & String, Unit>, +out: Chan(Wire), k: Socket -> IO(Unit)) -> IO(Unit):
   (s, res) = r
   match res:
@@ -542,6 +559,7 @@ def Conn.sent.k(r: Socket & Result<&1, &1, U32 & String, Unit>, +out: Chan(Wire)
     case Fail{_}:
       do IO<Unit>:
         Chan.close(Wire, out)
+        Conn.drain(Fuel.forever(), out)
         Socket.close(s)
 
 def Conn.out(s: Socket, bs: List<&2, U32>, +out: Chan(Wire), k: Socket -> IO(Unit)) -> IO(Unit):
