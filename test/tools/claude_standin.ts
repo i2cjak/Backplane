@@ -138,6 +138,12 @@ async function run(c: Cmd, firstOne: boolean) {
   }
   lc(c.uuid, "started");
   init();
+  if (firstOne && mode === "hold-child") {
+    // a shell or build the agent started, in the agent's scope, holding nothing open
+    const ch = spawn("sleep", ["60"], { stdio: "ignore", detached: true });
+    ch.unref();
+    log(`CHILD ${ch.pid}`);
+  }
   if (firstOne && mode === "exit-now") {
     log(`EXIT ${process.pid}`);
     process.exit(3);

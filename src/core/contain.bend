@@ -172,3 +172,48 @@ def Contain.why.b(+text: String, +code: U32, +b: Nat) -> String:
 
 def Contain.why(text: String, code: U32) -> String:
   Contain.why.b(text, code, 1048576n)
+# ending a scope (a process of it ended or was retired): what is left in
+# it is stopped, SIGTERM then SIGKILL after TimeoutStopSec; and scopes a
+# previous hub run left
+def Contain.stop.args(unit: String) -> List<&2, String>:
+  ["10", "systemctl", "--user", "stop", unit ++ ".scope"]
+
+def Contain.stale.args() -> List<&2, String>:
+  ["5", "systemctl", "--user", "list-units", "--plain", "--no-legend", "--all", "bp-agent-*.scope"]
+
+def Contain.first(ps: List<&2, String>) -> String:
+  match ps:
+    case +t <> _:
+      t
+    case Nil{}:
+      ""
+
+# the unit a `list-units` line names ("bp-agent-<thread>-<n>-<n>"), "" for
+# any other line
+def Contain.unit.line.k(+c: String) -> String:
+  Bool.pick(String, Bool.and(String.starts_with(c, "bp-agent-"), String.ends_with(c, ".scope")), String.take(c, Nat.sub(String.length(c), 6n)), "")
+
+def Contain.unit.line(l: String) -> String:
+  Contain.unit.line.k(Contain.first(String.split(String.trim(l), ' ')))
+
+def Contain.units.keep(+u: String, +rest: List<&2, String>) -> List<&2, String>:
+  Bool.pick(List<&2, String>, String.is_empty(u), rest, u <> rest)
+
+def Contain.units.of(ls: List<&2, String>) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Contain.units.keep(Contain.unit.line(l), Contain.units.of(t))
+
+# the units in `list-units` output
+def Contain.stale(out: String) -> List<&2, String>:
+  Contain.units.of(String.split(out, '\n'))
+
+# the thread a unit was made for: its name without "bp-agent-" and the
+# generation's two last parts
+def Contain.thread.of.k(+ps: List<&2, String>) -> String:
+  String.join(List.take(&2, String, ps, Nat.sub(List.length(&2, String, ps), 2n)), "-")
+
+def Contain.thread.of(unit: String) -> String:
+  Contain.thread.of.k(String.split(String.drop(unit, 9n), '-'))

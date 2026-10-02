@@ -117,6 +117,17 @@ def Hub.thread(s: M.State, +id: String) -> M.Thread:
     case M.State{_, ts, _, _, _, _, _, _, _, _, _}:
       Hub.thread.k(Map.get(M.Thread, M.Thread.blank(id), ts, id))
 
+# whether the log knows a thread (a scope left by an earlier run is this
+# hub's to stop only if its thread is)
+def Hub.owns.k(r: Map<&2, M.Thread> & Bool) -> Bool:
+  (_, b) = r
+  b
+
+def Hub.owns(s: M.State, +id: String) -> Bool:
+  match s:
+    case M.State{_, ts, _, _, _, _, _, _, _, _, _}:
+      Hub.owns.k(Map.has(&2, M.Thread, ts, id))
+
 def Hub.project.k(r: Map<&2, M.Project> & M.Project) -> M.Project:
   (_, p) = r
   p

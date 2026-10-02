@@ -31,5 +31,8 @@ def main() -> IO(Unit):
     C.Check.str("why: gigabytes", CT.Contain.why("MemoryMax=8589934592\nResult=oom-kill\n", 137), "agent ran out of memory (limit 8 GB)")
     C.Check.str("why: not oom", CT.Contain.why("Result=success\nMemoryMax=209715200\n", 137), "")
     C.Check.str("why: no answer", CT.Contain.why("", 137), "")
+    C.Check.str("stop args", String.join(CT.Contain.stop.args("u"), " "), "10 systemctl --user stop u.scope")
+    C.Check.str("stale units", String.join(CT.Contain.stale("bp-agent-t1-5-100-7.scope loaded active running [systemd-run] sleep\nother.scope loaded active running x\n"), ","), "bp-agent-t1-5-100-7")
+    C.Check.str("thread of a unit", CT.Contain.thread.of("bp-agent-t17-5-100-7"), "t17-5")
     C.Check.str("ask only after a signal", Bool.show(CT.Contain.ask(137)), "True")
     C.Check.str("a plain exit is not asked", Bool.show(CT.Contain.ask(1)), "False")

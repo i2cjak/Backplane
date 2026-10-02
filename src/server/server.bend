@@ -310,6 +310,50 @@ def Ctn.why.k(ask: Bool, +thread: String, +gen: String, +code: U32) -> IO(String
 def Ctn.why(+thread: String, +gen: String, +code: U32) -> IO(String):
   Ctn.why.k(CN.Contain.ask(code), thread, gen, code)
 
+# Ending a scope: what its agent left in it (a shell, a build) is stopped,
+# SIGTERM then SIGKILL after the scope's TimeoutStopSec. A scope that is
+# gone answers at once. Always off the hub's loop (a reader's fiber, or one
+# spawned).
+def Ctn.stop.unit(+unit: String) -> IO(Unit):
+  do IO<Unit>:
+    r : P.Ran <- P.Proc.run("timeout", CN.Contain.stop.args(unit), "/")
+    return Unit{}
+
+def Ctn.stop.k(none: Bool, +thread: String, +gen: String) -> IO(Unit):
+  match none:
+    case True{}:
+      IO.pure(Unit, Unit{})
+    case False{}:
+      Ctn.stop.unit(CN.Contain.unit(thread, gen))
+
+# the scope of a thread's generation ("" for none: nothing to stop)
+def Ctn.stop(+thread: String, +gen: String) -> IO(Unit):
+  Ctn.stop.k(String.is_empty(gen), thread, gen)
+
+def Ctn.stale.one(owned: Bool, +unit: String) -> IO(Unit):
+  match owned:
+    case True{}:
+      Ctn.stop.unit(unit)
+    case False{}:
+      IO.pure(Unit, Unit{})
+
+def Ctn.stale.go(us: List<&2, String>, +st: M.State) -> IO(Unit):
+  match us:
+    case Nil{}:
+      IO.pure(Unit, Unit{})
+    case +u <> t:
+      do IO<Unit>:
+        Ctn.stale.one(B.Hub.owns(st, CN.Contain.thread.of(u)), u)
+        Ctn.stale.go(t, st)
+
+# at start nothing of this hub's runs: every agent scope of a thread in
+# its log is one a previous run left (a service restart does not end a
+# scope), and is stopped before the thread resumes
+def Ctn.stale(+st: M.State) -> IO(Unit):
+  do IO<Unit>:
+    r : P.Ran <- P.Proc.run("timeout", CN.Contain.stale.args(), "/")
+    Ctn.stale.go(CN.Contain.stale(Ctn.mem.of(r)), st)
+
 def Ctn.spawn.k(found: Bool, limit: String, thread: String, gen: String, cmd: String, args: List<&2, String>, cwd: String) -> IO(Result<&1, &1, U32 & String, U32 & Socket>):
   match found:
     case True{}:
@@ -760,6 +804,7 @@ def Agent.end(s: Socket, +pid: U32, +thread: String, +gen: String, +inbox: Chan(
     Socket.close(s)
     +code : U32 <- H.Proc.wait(pid)
     +why : String <- Ctn.why(thread, gen, code)
+    Ctn.stop(thread, gen)
     ok : Bool <- Chan.send(Msg, inbox, AgentGone{thread, code, pid, why})
     return Unit{}
 
@@ -1373,14 +1418,21 @@ def Hub.agent_send(m: Maybe<&2, Agent>, line: String) -> IO(Unit):
     case None{}:
       IO.pure(Unit, Unit{})
 
-def Hub.agent_stop(m: Maybe<&2, Agent>) -> IO(Unit):
+# retiring an agent: its input closes, the process is signalled, and its
+# whole scope is stopped (a shell or build it started dies with it), by a
+# fiber of its own
+def Hub.agent_stop.k(m: Maybe<&2, Agent>, +gen: String) -> IO(Unit):
   match m:
-    case Some{Agent{_, input, pid, _, _}}:
+    case Some{Agent{+thread, input, pid, _, _}}:
       do IO<Unit>:
         Chan.close(String, input)
         Proc.kill(pid, 15)
+        IO.spawn(Unit, Ctn.stop(thread, gen))
     case None{}:
       IO.pure(Unit, Unit{})
+
+def Hub.agent_stop(+m: Maybe<&2, Agent>) -> IO(Unit):
+  Hub.agent_stop.k(m, Agents.gen.k(m))
 
 def Hub.state(h: Hub) -> M.State & Hub:
   match h:
@@ -2356,10 +2408,11 @@ def Grok.lines(ls: List<&2, String>, a: AC.Acp, +t: AC.AcpTurn, +thread: String,
 
 # a per-turn process is done: its turn already ended through its own
 # events, so its exit tells the hub nothing (a queued turn may be running)
-def Turn.end(s: Socket, +pid: U32, +tag: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Turn.end(s: Socket, +pid: U32, +tag: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     Socket.close(s)
     code : U32 <- H.Proc.wait(pid)
+    Ctn.stop(B.Tag.thread(tag), gen)
     ok : Bool <- Chan.send(Msg, inbox, TurnDone{tag})
     return Unit{}
 
@@ -2372,6 +2425,7 @@ def Turn.close(s: Socket, +pid: U32, +tag: String, +gen: String, +dflt: String) 
     Socket.close(s)
     +code : U32 <- H.Proc.wait(pid)
     +why : String <- Ctn.why(B.Tag.thread(tag), gen, code)
+    Ctn.stop(B.Tag.thread(tag), gen)
     return Bool.pick(String, String.is_empty(why), dflt, why)
 
 def Turn.failed(s: Socket, +pid: U32, +tag: String, +gen: String, +dflt: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -2386,7 +2440,7 @@ def Turn.failed(s: Socket, +pid: U32, +tag: String, +gen: String, +dflt: String,
 def Codex.end(s: Socket, +pid: U32, ended: Bool, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   match ended:
     case True{}:
-      Turn.end(s, pid, thread, inbox)
+      Turn.end(s, pid, thread, gen, inbox)
     case False{}:
       Turn.failed(s, pid, thread, gen, "codex exited before the turn ended", inbox)
 
@@ -2435,25 +2489,25 @@ def Codex.started(r: Result<&1, &1, U32 & String, U32 & Socket>, +thread: String
 def Codex.run(+limit: String, +args: List<&2, String>, +cwd: String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, Ctn.spawn(limit, thread, gen, "codex", args, cwd), r => Codex.started(r, thread, gen, inbox))
 
-def Grok.stop(s: Socket, +pid: U32, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Grok.stop(s: Socket, +pid: U32, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     Proc.kill(pid, 15)
-    Turn.end(s, pid, thread, inbox)
+    Turn.end(s, pid, thread, gen, inbox)
 
-def Grok.next(done: Bool, s: Socket, carry: U.Lines, a: AC.Acp, +pid: U32, +thread: String, +inbox: Chan(Msg), k: Socket -> U.Lines -> AC.Acp -> IO(Unit)) -> IO(Unit):
+def Grok.next(done: Bool, s: Socket, carry: U.Lines, a: AC.Acp, +pid: U32, +thread: String, +gen: String, +inbox: Chan(Msg), k: Socket -> U.Lines -> AC.Acp -> IO(Unit)) -> IO(Unit):
   match done:
     case True{}:
-      Grok.stop(s, pid, thread, inbox)
+      Grok.stop(s, pid, thread, gen, inbox)
     case False{}:
       k(s, carry, a)
 
-def Grok.after(+a: AC.Acp, s: Socket, carry: U.Lines, +pid: U32, +thread: String, +inbox: Chan(Msg), k: Socket -> U.Lines -> AC.Acp -> IO(Unit)) -> IO(Unit):
-  Grok.next(Grok.done(a), s, carry, a, pid, thread, inbox, k)
+def Grok.after(+a: AC.Acp, s: Socket, carry: U.Lines, +pid: U32, +thread: String, +gen: String, +inbox: Chan(Msg), k: Socket -> U.Lines -> AC.Acp -> IO(Unit)) -> IO(Unit):
+  Grok.next(Grok.done(a), s, carry, a, pid, thread, gen, inbox, k)
 
-def Grok.fed(r: U.Lines & List<&2, String>, s: Socket, a: AC.Acp, +t: AC.AcpTurn, +pid: U32, +thread: String, +input: Chan(String), +inbox: Chan(Msg),
+def Grok.fed(r: U.Lines & List<&2, String>, s: Socket, a: AC.Acp, +t: AC.AcpTurn, +pid: U32, +thread: String, +gen: String, +input: Chan(String), +inbox: Chan(Msg),
     k: Socket -> U.Lines -> AC.Acp -> IO(Unit)) -> IO(Unit):
   (carry, ls) = r
-  IO.bind(AC.Acp, Unit, Grok.lines(ls, a, t, thread, input, inbox), a2 => Grok.after(a2, s, carry, pid, thread, inbox, k))
+  IO.bind(AC.Acp, Unit, Grok.lines(ls, a, t, thread, input, inbox), a2 => Grok.after(a2, s, carry, pid, thread, gen, inbox, k))
 
 # the agent closed its output before the turn ended
 def Grok.gone(s: Socket, +pid: U32, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -2462,7 +2516,7 @@ def Grok.gone(s: Socket, +pid: U32, +thread: String, +gen: String, +inbox: Chan(
 def Grok.last.k(done: Bool, s: Socket, +pid: U32, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   match done:
     case True{}:
-      Turn.end(s, pid, thread, inbox)
+      Turn.end(s, pid, thread, gen, inbox)
     case False{}:
       Grok.gone(s, pid, thread, gen, inbox)
 
@@ -2485,7 +2539,7 @@ def Grok.got(r: Socket & Result<&1, &1, U32 & String, List<&2, U32>>, carry: U.L
     case Done{Nil{}}:
       Grok.last(carry, s, a, t, pid, thread, gen, input, inbox)
     case Done{bs}:
-      Grok.fed(U.Lines.feed(carry, bs), s, a, t, pid, thread, input, inbox, k)
+      Grok.fed(U.Lines.feed(carry, bs), s, a, t, pid, thread, gen, input, inbox, k)
     case Fail{_}:
       Grok.last(carry, s, a, t, pid, thread, gen, input, inbox)
 
@@ -6628,8 +6682,15 @@ def Hub.recover.k(h: Hub, +now: Nat) -> IO(Hub):
       Hub.recover.go(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step.before(M.Scratch.ensure(st, Cfg.home(cfg) ++ "/scratch", now), Nil{}, B.Hub.recover(st, now)), st, now)
 
 # (and threads elsewhere start: Far.start)
+def Hub.recover.stale(h: Hub, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      do IO<Hub>:
+        Ctn.stale(st)
+        Hub.recover.k(Hub{st, f, ls, cl, as, inbox, cfg, note}, now)
+
 def Hub.recover(h: Hub, +now: Nat) -> IO(Hub):
-  IO.bind(Hub, Hub, Far.start(h), h2 => Hub.recover.k(h2, now))
+  IO.bind(Hub, Hub, Far.start(h), h2 => Hub.recover.stale(h2, now))
 
 # The minute
 # ----------

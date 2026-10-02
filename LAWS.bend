@@ -5363,6 +5363,19 @@ law contain_why_plain:
 law contain_why_missing:
   {CTN.Contain.why.b("", 137, 4n) == "" : String}
 
+# Retiring an agent stops its whole scope (what it started dies with it),
+# and a start stops the scopes a previous run left: the units `list-units`
+# names, whose thread (the name without "bp-agent-" and the generation's two
+# parts) is one of the log's.
+law contain_stop_scope:
+  {String.join(CTN.Contain.stop.args("bp-agent-t1-2-3-4"), " ") == "10 systemctl --user stop bp-agent-t1-2-3-4.scope" : String}
+
+law contain_stale_units:
+  {String.join(CTN.Contain.stale("bp-agent-t1-5-100-7.scope loaded active running [systemd-run] sleep\nother.scope loaded active running x\nbp-agent-t3-1-9-3.scope loaded failed failed z\n"), ",") == "bp-agent-t1-5-100-7,bp-agent-t3-1-9-3" : String}
+
+law contain_thread_of:
+  {CTN.Contain.thread.of("bp-agent-t17-5-100-7") == "t17-5" : String}
+
 # systemd-run expands ${VAR} in the arguments it is given, so the scope's
 # script turns that off (and, for a systemd without the flag, writes each
 # $ as $$): a prompt's dollar text reaches the agent as it is.
