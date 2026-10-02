@@ -6782,6 +6782,12 @@ def Laws.rec_burst_bounded():
 def Laws.rec_release_bounded():
   {==}
 
+def Laws.rec_release_carry_marker_on():
+  {==}
+
+def Laws.rec_release_carry_marker_off():
+  {==}
+
 def Laws.rec_release_never_drains_queue():
   {==}
 

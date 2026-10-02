@@ -4870,6 +4870,12 @@ law rec_burst_bounded:
 law rec_release_bounded:
   {H.Lost.running(M.State.replay(H.Queue.changes(H.Rec.release(H.Carry.after(H.Lost.many(), 10n), 11n)), H.Carry.after(H.Lost.many(), 10n))) == 6n : Nat}
 
+law rec_release_carry_marker_on:
+  {Nat.show(H.Lost.running(H.Lost.released(True{}))) ++ "/" ++ Nat.show(List.length(&2, String, H.Resume.ids(H.Lost.released(True{})))) == "1/0" : String}
+
+law rec_release_carry_marker_off:
+  {Nat.show(H.Lost.running(H.Lost.released(False{}))) ++ "/" ++ Nat.show(List.length(&2, String, H.Resume.ids(H.Lost.released(False{})))) == "0/0" : String}
+
 law rec_release_never_drains_queue:
   {H.Lost.taken(H.Queue.changes(H.Rec.release(H.Lost.marked(), 9n))) == False{} : Bool}
 
