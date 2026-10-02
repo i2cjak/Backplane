@@ -896,6 +896,11 @@ fun SettingsSheet(m: AppModel, st: Settings) {
                             else OutlinedButton(onClick = { m.act(b.action, b.value) }, shape = corner) { Text(b.label) }
                         }
                     }
+                    if (r.qr.isNotEmpty()) Column(Modifier.fillMaxWidth().clickable { m.act("flag", "pairqr") },
+                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        QrCode(r.qr, Modifier.fillMaxWidth())
+                        if (r.qrnote.isNotEmpty()) Text(r.qrnote, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    }
                 }
                 HorizontalDivider()
             }

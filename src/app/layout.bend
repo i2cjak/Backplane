@@ -2876,6 +2876,64 @@ def Set.update.btn(i: Nat, +ty: Ty, +x: U32, +w: U32, +y: U32) -> Out:
     case _:
       Out.none()
 
+# The pairing code
+# ----------------
+
+# a row's dark runs as boxes of m pixels a module
+def Pq.run(+on: Bool, +start: U32, +i: U32, +x: U32, +y: U32, +m: U32, +acc: List<&2, R.Op>) -> List<&2, R.Op>:
+  Bool.pick(List<&2, R.Op>, Bool.and(on, U32.is_gt(i, start)), D.Draw.rect(D.Clip.all(), (x + (start * m : U32) : U32), y, ((i - start : U32) * m : U32), m, 0, 255) <> acc, acc)
+
+def Pq.line(s: String, +i: U32, +start: U32, +on: Bool, +x: U32, +y: U32, +m: U32, +acc: List<&2, R.Op>) -> List<&2, R.Op>:
+  match s:
+    case SNil{}:
+      Pq.run(on, start, i, x, y, m, acc)
+    case SCon{Chr{+c}, t}:
+      +d = {U32.is_eq(c, 49) : Bool}
+      +same = {Bool.not(Bool.xor(d, on)) : Bool}
+      Pq.line(t, (i + 1 : U32), Bool.pick(U32, same, start, i), d, x, y, m, Bool.pick(List<&2, R.Op>, same, acc, Pq.run(on, start, i, x, y, m, acc)))
+
+def Pq.rows(rs: List<&2, String>, +x: U32, +y: U32, +m: U32, +acc: List<&2, R.Op>) -> List<&2, R.Op>:
+  match rs:
+    case Nil{}:
+      acc
+    case r <> t:
+      Pq.rows(t, x, (y + m : U32), m, Pq.line(r, 0, 0, False{}, x, y, m, acc))
+
+# the code on white, four modules of quiet zone around, over the settings;
+# a click anywhere puts it away
+def Pq.card(+ty: Ty, +rows: List<&2, String>, +x0: U32, +x1: U32, +h: U32) -> Out:
+  +n = {U32.from_nat(List.length(&2, String, rows)) : U32}
+  +room = {U32.dim(U32.min((x1 - x0 : U32), h), 140) : U32}
+  +m = {U32.max(2, U32.min(10, (room / (n + 8 : U32) : U32))) : U32}
+  +side = {((n + 8 : U32) * m : U32) : U32}
+  +cx = {(x0 + U32.shr(U32.dim((x1 - x0 : U32), side)) : U32) : U32}
+  +cy = {U32.shr(U32.dim(h, (side + 40 : U32))) : U32}
+  +note = U.Pair.qr.note()
+  Out{List.concat(&2, R.Op, [
+      [D.Draw.rect(D.Clip.all(), x0, 0, (x1 - x0 : U32), h, T.Th.bg(), 235), D.Draw.rect(D.Clip.all(), cx, cy, side, side, 16777215, 255)],
+      List.reverse(&2, R.Op, Pq.rows(rows, (cx + (m * 4 : U32) : U32), (cy + (m * 4 : U32) : U32), m, Nil{})),
+      Ty.text(ty, 2n, note, D.Clip.all(), (x0 + U32.shr(U32.dim((x1 - x0 : U32), Ty.width(ty, 2n, note))) : U32), (cy + side + 12 : U32), 24, T.Th.dim())]),
+    [Lay.hit(x0, 0, (x1 - x0 : U32), h, "flag", "pairqr")]}
+
+def Pq.over(on: Bool, +ty: Ty, +info: Map<&2, String>, +x0: U32, +x1: U32, +h: U32) -> Out:
+  match on:
+    case True{}:
+      Pq.card(ty, U.Pair.qr(info), x0, x1, h)
+    case False{}:
+      Out.none()
+
+def Pq.on(+n: S.Nui) -> Bool:
+  U.Ui.flag(S.Nui.ui(n), "pairqr")
+
+# the pairing link's row: Copy, and QR code once the hub sends the code
+def Set.pair(+ty: Ty, +info: Map<&2, String>, +on: Bool, +x: U32, +w: U32, +y: U32) -> Out:
+  +pair = U.Pair.link(info)
+  +cw = {Lay.button.w(ty, "Copy") : U32}
+  Out.all([
+    Set.row.r(ty, "Pairing link", U.Pair.note(pair), x, y, w, 180),
+    Bool.pick(Out, String.is_empty(pair), Out.none(), Lay.button(ty, D.Clip.all(), (x + w - 16 - cw : U32), (y + 10 : U32), "Copy", T.Th.soft(), "copy", pair)),
+    Bool.pick(Out, U.Pair.qr.ready(info), Lay.chip(ty, (x + w - 16 - cw - 6 - Lay.button.w(ty, "QR code") : U32), (y + 10 : U32), "QR code", on, "flag", "pairqr"), Out.none())])
+
 def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x0: U32, +x1: U32, +h: U32, +raw: U32) -> Out:
   +w = {U32.min((x1 - x0 - 64 : U32), 720) : U32}
   +x = {(x0 + U32.shr((x1 - x0 - w : U32)) : U32) : U32}
@@ -2890,7 +2948,6 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
   +ey = {(202 + er : U32) : U32}
   +fy = {(ey + 46 : U32) : U32}
   +total = {(1156 + dy + fy + Set.voice.h(ty, n, x, w) + Set.keys.h(n) + 20 : U32) : U32}
-  +pair = U.Pair.link(info)
   +off = {U32.min(raw, U32.dim(total, h)) : U32}
   +b = {(0 - off : U32) : U32}
   +b2 = {(b + 128 : U32) : U32}
@@ -2942,8 +2999,7 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
     Set.card(x, (b2 + 774 + dy + fy : U32), w, 216),
     Set.row(ty, "Tailscale: " ++ U.Str.get(info, "tailnet"), Bool.pick(String, String.eq(U.Str.get(info, "tailnet"), "off"), "Listening on " ++ U.Str.get(info, "listen") ++ " only (started with --no-tailscale, or Tailscale is not up).",
       "Also on your tailnet: your own devices get in, others need the pairing token."), x, (b2 + 776 + dy + fy : U32), w),
-    Set.row.r(ty, "Pairing link", U.Pair.note(pair), x, (b2 + 828 + dy + fy : U32), w, 80),
-    Bool.pick(Out, String.is_empty(pair), Out.none(), Lay.button(ty, D.Clip.all(), (x + w - 16 - Lay.button.w(ty, "Copy") : U32), (b2 + 838 + dy + fy : U32), "Copy", T.Th.soft(), "copy", pair)),
+    Set.pair(ty, info, Pq.on(n), x, w, (b2 + 828 + dy + fy : U32)),
     Set.row.r(ty, "Backplane " ++ v, U.Update.line.w(st, info, note), x, (b2 + 880 + dy + fy : U32), w, 150),
     Set.update.btn(U.Update.btn(st, info, note), ty, x, w, (b2 + 890 + dy + fy : U32)),
     Set.row.r(ty, "Update channel", "Stable takes releases; nightly also takes the daily builds.", x, (b2 + 932 + dy + fy : U32), w, 190),
@@ -2953,7 +3009,8 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
     Set.keys(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) : U32))])),
     Out{List.append(&2, R.Op, [D.Draw.rect(D.Clip.all(), x0, 0, (x1 - x0 : U32), 51, T.Th.bg(), 255), D.Draw.rect(D.Clip.all(), x0, 51, (x1 - x0 : U32), 1, T.Th.line(), 255)],
       Ty.text(ty, 0n, "Settings", D.Clip.all(), (x0 + 24 : U32), 0, 52, T.Th.text())), Nil{}},
-    Lay.button(ty, D.Clip.all(), (x1 - 16 - Lay.button.w(ty, "Close") : U32), 12, "Close", T.Th.soft(), "flag", "settings")])
+    Lay.button(ty, D.Clip.all(), (x1 - 16 - Lay.button.w(ty, "Close") : U32), 12, "Close", T.Th.soft(), "flag", "settings"),
+    Pq.over(Pq.on(n), ty, info, x0, x1, h)])
 
 # Terminal
 # --------

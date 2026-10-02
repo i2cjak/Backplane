@@ -7207,3 +7207,23 @@ def live_cat_exact(hs, ty, px, text, ts):
         case +t <> +tr:
           Equal.sym(List<&2, L.TLine>, L.TL.blocks(ty, List.append(&2, DM.Node, h <> hr, t <> tr), px),
             List.append(&2, L.TLine, L.TL.blocks(ty, h <> hr, px), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, t <> tr, px)), tl_blocks_append(hr, ty, px, h, t, tr))
+def Laws.qr_format_m():
+  {==}
+def Laws.qr_format_m1():
+  {==}
+def Laws.qr_version7_bits():
+  {==}
+def Laws.qr_version_fits():
+  {==}
+def Laws.qr_version_grows():
+  {==}
+def Laws.qr_version_none():
+  {==}
+def Laws.qr_gmul_wraps():
+  {==}
+def Laws.qr_link_escapes():
+  {==}
+def Laws.qr_link_none():
+  {==}
+def Laws.pair_qr_none():
+  {==}

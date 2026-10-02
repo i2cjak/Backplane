@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.ExpandLess
@@ -88,6 +89,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -258,7 +260,12 @@ private fun Pair(link: String, cancel: (() -> Unit)?, done: (String) -> Unit) {
         })
     }) { pad ->
         Column(Modifier.padding(pad).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Paste the tailnet link Backplane shows in Settings (Pairing link).",
+            val ctx = LocalContext.current
+            Button(onClick = { scanPairing(ctx, done) }) {
+                Icon(Icons.Filled.QrCodeScanner, null)
+                Text("Scan QR code", Modifier.padding(start = 8.dp))
+            }
+            Text("On your computer: Backplane, Settings, Pairing link, QR code. Or paste the link:",
                 style = MaterialTheme.typography.bodyMedium)
             OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth(), singleLine = true,
                 label = { Text("Pairing link") }, placeholder = { Text("http://host:3787/#token=…") })
@@ -302,11 +309,18 @@ private fun Hubs(m: AppModel, s: Screen, back: () -> Unit) {
             }
             item(key = "add") {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Paste the tailnet link Backplane shows in Settings (Pairing link).",
+                    Text("Scan the code, or paste the tailnet link Backplane shows in Settings (Pairing link).",
                         style = MaterialTheme.typography.bodyMedium)
                     OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth(), singleLine = true,
                         label = { Text("Pairing link") }, placeholder = { Text("http://host:3787/#token=…") })
-                    Button(onClick = { m.pair(text); text = "" }, enabled = text.isNotBlank()) { Text("Add hub") }
+                    val ctx = LocalContext.current
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { m.pair(text); text = "" }, enabled = text.isNotBlank()) { Text("Add hub") }
+                        OutlinedButton(onClick = { scanPairing(ctx) { m.pair(it) } }) {
+                            Icon(Icons.Filled.QrCodeScanner, null)
+                            Text("Scan QR code", Modifier.padding(start = 8.dp))
+                        }
+                    }
                 }
             }
         }

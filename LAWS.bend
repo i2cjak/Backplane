@@ -81,6 +81,7 @@ import ./src/core/emb.bend as EMB
 import ./src/core/outbox.bend as OB
 import ./src/core/live.bend as LV
 import ./src/core/contain.bend as CTN
+import ./src/core/qr.bend as QR
 
 # Backplane's rules, stated over the real code. `bend PROOF.bend` proves each
 # one. Humans own this file: an agent may add laws, never weaken or delete
@@ -5370,3 +5371,39 @@ law live_prefix_exact:
 
 law live_prefix_exact_open_fence:
   {List.append(&2, DM.Node, DM.Md.render(U.Live.head("para\n\n```\nopen\n\nstill open")), DM.Md.render(U.Live.rest("para\n\n```\nopen\n\nstill open"))) == DM.Md.render("para\n\n```\nopen\n\nstill open") : List<&2, DM.Node>}
+
+# QR codes for pairing (core/qr.bend): level M's format bits for masks 0
+# and 1, version 7's information bits, as the standard tabulates them
+law qr_format_m:
+  {QR.Qr.format(0) == 21522 : U32}
+
+law qr_format_m1:
+  {QR.Qr.format(1) == 20773 : U32}
+
+law qr_version7_bits:
+  {QR.Qr.vbits(7) == 31892 : U32}
+
+# the smallest version that holds the text; none past version 40
+law qr_version_fits:
+  {QR.Qr.version(84) == 5 : U32}
+
+law qr_version_grows:
+  {QR.Qr.version(85) == 6 : U32}
+
+law qr_version_none:
+  {QR.Qr.version(2332) == 0 : U32}
+
+# GF(256) under QR's polynomial: 2^8 wraps to 29
+law qr_gmul_wraps:
+  {QR.Qr.gmul(128, 2) == 29 : U32}
+
+# the code a phone's camera opens the app with; "#" never ends the link
+law qr_link_escapes:
+  {QR.Qr.link("http://h:3787/#token=ab") == "backplane://pair?url=http://h:3787/%23token=ab" : String}
+
+law qr_link_none:
+  {QR.Qr.link("") == "" : String}
+
+# no pairing link, no code
+law pair_qr_none:
+  {U.Pair.qr.ready(Map.new(&2, String)) == False{} : Bool}

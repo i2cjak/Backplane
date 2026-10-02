@@ -83,9 +83,15 @@ struct RootView: View {
 struct PairView: View {
     @State var link: String
     let done: (String) -> Void
+    @State private var scanning = false
 
     var body: some View {
         Form {
+            Section {
+                Button { scanning = true } label: { Label("Scan QR code", systemImage: "qrcode.viewfinder") }
+            } footer: {
+                Text("On your computer: Backplane, Settings, Pairing link, QR code.")
+            }
             Section {
                 TextField("Pairing link", text: $link, prompt: Text(verbatim: "http://host:3787/#token=…"))
                     .textInputAutocapitalization(.never)
@@ -94,11 +100,12 @@ struct PairView: View {
             } header: {
                 Text("Pairing link")
             } footer: {
-                Text("Paste the tailnet link Backplane shows in Settings (Pairing link).")
+                Text("Scan the code, or paste the tailnet link Backplane shows in Settings (Pairing link).")
             }
             Button("Connect") { done(link) }.disabled(link.trimmingCharacters(in: .whitespaces).isEmpty)
         }
         .navigationTitle("Pair with a hub")
+        .fullScreenCover(isPresented: $scanning) { ScanView { done($0) } }
     }
 }
 
@@ -108,6 +115,7 @@ struct HubsView: View {
     let model: AppModel
     let screen: Screen
     @State private var link = ""
+    @State private var scanning = false
 
     var body: some View {
         Form {
@@ -147,13 +155,15 @@ struct HubsView: View {
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
                 Button("Add hub") { model.pair(link); link = "" }.disabled(link.trimmingCharacters(in: .whitespaces).isEmpty)
+                Button { scanning = true } label: { Label("Scan QR code", systemImage: "qrcode.viewfinder") }
             } header: {
                 Text("Pair another")
             } footer: {
-                Text("Paste the tailnet link Backplane shows in Settings (Pairing link).")
+                Text("Scan the code, or paste the tailnet link Backplane shows in Settings (Pairing link).")
             }
         }
         .navigationTitle("Hubs")
+        .fullScreenCover(isPresented: $scanning) { ScanView { model.pair($0) } }
     }
 
     // host:port · version · changes held · when it last said anything

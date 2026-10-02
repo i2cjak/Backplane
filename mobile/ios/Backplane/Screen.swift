@@ -457,6 +457,9 @@ struct SetRow: Decodable, Hashable {
     let label, note: String
     let buttons: [SetButton]
     let fields: [SetField]?
+    // the pairing code's rows ("1" dark) while it is shown, and what to do with it
+    let qr: [String]?
+    let qrnote: String?
 }
 
 struct Settings: Decodable {
