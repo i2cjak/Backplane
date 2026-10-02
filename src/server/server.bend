@@ -94,8 +94,11 @@ type Msg is Data:
   AgentLine{thread: String, line: String}
   AgentGone{thread: String, code: U32, pid: U32}
   Tick{}
+  # a Codex or Grok turn's KiCad files, read off the hub: the panel opens
+  # (Hub.auto) when they arrive
+  AutoView{thread: String, fs: K.Files}
   # every 15 s: a heartbeat for every client (Alive.due)
-  Beat{}
+  Heart{}
   Push{client: U32, text: String}
   # a message for one client, already CBOR
   PushBin{client: U32, cbor: List<&2, U32>}
@@ -147,13 +150,13 @@ type Msg is Data:
   # that answered the minute's directory (one id a line)
   FarFeed{lines: List<&2, FR.Line>, epoch: String}
   FarPushed{link: String, ok: Bool, to: Nat}
+  # a failed push's backoff ended
+  FarResend{link: String}
   FarPulled{link: String, since: Nat, code: Nat, body: String}
   FarReplied{client: U32, id: String, link: String, code: Nat, body: String}
   FarLoaded{link: String, name: String, text: String}
   FarHere{answered: String}
   # a pull to try again (the other hub was still making its feed)
-  # a failed push's backoff ended
-  FarResend{link: String}
   FarRetry{link: String}
   # a bot's answer to a person elsewhere, captured at its turn's end
   # (hub.bend's BotReply): sent and logged now
@@ -1994,6 +1997,18 @@ def Ticker.loop(fuel: Nat, +inbox: Chan(Msg)) -> IO(Unit):
         IO.sleep(60000)
         Ticker.loop(f, inbox)
 
+# a heartbeat every Alive.every() ms: the clients that hear nothing for
+# longer than Alive.limit() take the link for dead and reconnect
+def Heart.loop(fuel: Nat, +inbox: Chan(Msg)) -> IO(Unit):
+  match fuel:
+    case 0n:
+      IO.pure(Unit, Unit{})
+    case 1n+f:
+      do IO<Unit>:
+        IO.sleep(U32.from_nat(DK.Alive.every()))
+        ok : Bool <- Chan.send(Msg, inbox, Heart{})
+        Heart.loop(f, inbox)
+
 # every five seconds the hub beats: held progress lines land (Hub.beat)
 def Beat.loop(fuel: Nat, +inbox: Chan(Msg)) -> IO(Unit):
   match fuel:
@@ -2008,18 +2023,6 @@ def Beat.loop(fuel: Nat, +inbox: Chan(Msg)) -> IO(Unit):
 # snooze until 9:00 tomorrow here: the hub hears the time as thread.snooze
 def Snooze.tomorrow(+inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +now: String) -> IO(Unit):
   do IO<Unit>:
-# a heartbeat every Alive.every() ms: the clients that hear nothing for
-# longer than Alive.limit() take the link for dead and reconnect
-def Beat.loop(fuel: Nat, +inbox: Chan(Msg)) -> IO(Unit):
-  match fuel:
-    case 0n:
-      IO.pure(Unit, Unit{})
-    case 1n+f:
-      do IO<Unit>:
-        IO.sleep(U32.from_nat(DK.Alive.every()))
-        ok : Bool <- Chan.send(Msg, inbox, Beat{})
-        Beat.loop(f, inbox)
-
     r : P.Ran <- P.Proc.run("date", ["+%z"], "/")
     GitJob.say(inbox, "thread.snooze", [J.KV{"thread", J.Str{thread}}, J.KV{"until", J.Num{Nat.show(M.Snooze.tomorrow(Maybe.default(&2, Nat, Nat.read(now), 0n), Snooze.tz(r)))}}])
     GitJob.reply(inbox, client, id, True{}, J.Json.obj([J.KV{"thread", J.Str{thread}}]))
@@ -3165,16 +3168,26 @@ def Claude.prep(on: Bool, h: Hub, +thread: String, +u: String) -> Hub:
     case False{} _:
       h
 
+# a Codex or Grok turn's KiCad files, read in its own job (the hub's loop
+# never waits on the walk); the hub is told to open the panel
+def Files.prepared(+thread: String, +cwd: String, +inbox: Chan(Msg)) -> IO(K.Files):
+  do IO<K.Files>:
+    +fs : K.Files <- K.Files.read(cwd)
+    ok : Bool <- Chan.send(Msg, inbox, AutoView{thread, fs})
+    return fs
+
 # one Codex turn: the thread's skills join its instructions and its
 # `$skill` mentions become instructions to read them
-def Codex.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, r: M.RuntimeMode, +text: String, fs: K.Files, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Codex.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, r: M.RuntimeMode, +text: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
+    +fs : K.Files <- Files.prepared(thread, cwd, inbox)
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
     +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
     Codex.run(Codex.args(cfg, thread, model, session, r, AG.Mention.expand("codex", text, ss), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), Hub.effort_of(st, thread), gen), cwd, thread, gen, inbox)
 
-def Grok.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +text: String, fs: K.Files, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Grok.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +text: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
+    +fs : K.Files <- Files.prepared(thread, cwd, inbox)
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
     +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
     Grok.run(Grok.args(r, model, Hub.effort_of(st, thread)),
@@ -5204,6 +5217,11 @@ def Far.body(r: BN.Resp) -> String:
 def Far.history(+ls: List<&2, String>) -> String:
   Bool.pick(String, List.is_empty(&2, String, ls), "", SG.Sign.header("00", 0n, Maybe.default(&2, String, List.last(&2, String, ls), "")))
 
+# at start: lines the log holds that this build cannot decode give the
+# history a new identity (Fr.history.body)
+def Far.history.at(+ls: List<&2, String>, +seq: Nat) -> String:
+  Bool.pick(String, List.is_empty(&2, String, ls), "", SG.Sign.header("00", 0n, FR.Fr.history.body(Maybe.default(&2, String, List.last(&2, String, ls), ""), List.length(&2, String, ls), seq)))
+
 def Far.push.body(+s: FR.Send, +name: String) -> String:
   Bool.pick(String, Nat.is_gt(String.length(FR.Send.body(s, name)), 200000n), FR.Send.body(FR.Send.gap(s), name), FR.Send.body(s, name))
 
@@ -5231,11 +5249,6 @@ def Far.rpc.job(+client: U32, +id: String, +link: String, +body: String, +home: 
 # this hub's shared lines, made from its log (newest first)
 def Far.feed.job(+ls: List<&2, String>, +st: M.State, +inbox: Chan(Msg)) -> IO(Unit):
   Far.send(inbox, FarFeed{FR.Fr.feed(ls, st), ""})
-# at start: lines the log holds that this build cannot decode give the
-# history a new identity (Fr.history.body)
-def Far.history.at(+ls: List<&2, String>, +seq: Nat) -> String:
-  Bool.pick(String, List.is_empty(&2, String, ls), "", SG.Sign.header("00", 0n, FR.Fr.history.body(Maybe.default(&2, String, List.last(&2, String, ls), ""), List.length(&2, String, ls), seq)))
-
 
 # a mirror kept on disk, read back
 def Far.load.job(+link: String, +name: String, +home: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -5374,6 +5387,19 @@ def Far.pushed.k(r: FR.Out & Hub, ok: Bool, +to: Nat) -> IO(Hub):
 def Hub.far.pushed(h: Hub, +link: String, ok: Bool, +to: Nat) -> IO(Hub):
   Far.pushed.k(Far.out.of(Far.fh(h), link), ok, to)
 
+def Far.retry.go(+o: FR.Out, h: Hub) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Far.push.next(FR.Out.next(FR.Out.release(o)), Hub{st, f, ls, cl, as, inbox, cfg, note}, Bot.peer.url(st, FR.Out.link(o)))
+
+def Far.retry.k(r: FR.Out & Hub) -> IO(Hub):
+  (o, h) = r
+  Far.retry.go(o, h)
+
+# the backoff ended: the retained batch goes again
+def Hub.far.resend(h: Hub, +link: String) -> IO(Hub):
+  Far.retry.k(Far.out.of(Far.fh(h), link))
+
 # Mirrors
 # -------
 
@@ -5401,19 +5427,6 @@ def Far.pull.go(busy: Bool, +fh: FR.Fh, h: Hub, +link: String, +since: Nat) -> I
       IO.pure(Hub, Far.with(h, fh))
     case False{} Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
       do IO<Hub>:
-def Far.retry.go(+o: FR.Out, h: Hub) -> IO(Hub):
-  match h:
-    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
-      Far.push.next(FR.Out.next(FR.Out.release(o)), Hub{st, f, ls, cl, as, inbox, cfg, note}, Bot.peer.url(st, FR.Out.link(o)))
-
-def Far.retry.k(r: FR.Out & Hub) -> IO(Hub):
-  (o, h) = r
-  Far.retry.go(o, h)
-
-# the backoff ended: the retained batch goes again
-def Hub.far.resend(h: Hub, +link: String) -> IO(Hub):
-  Far.retry.k(Far.out.of(Far.fh(h), link))
-
         IO.spawn(Unit, Far.pull.job(link, since, FR.In.epoch(FR.Fh.in(fh, link, link)), Cfg.home(cfg), Bot.peer.url(st, link), inbox))
         return Far.with(Hub{st, f, ls, cl, as, inbox, cfg, note}, FR.Fh.pull.on(fh, link))
 
@@ -5736,6 +5749,13 @@ def Hub.start.go(same: Bool, +m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd
 def Hub.start.k(+m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, +effort: String) -> IO(Hub):
   Hub.start.go(Agent.same(m, Agent.key(model, r, i, effort)), m, h, thread, cwd, model, session, r, i, effort)
 
+def Hub.autoview(h: Hub, +thread: String, fs: K.Files) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, +cl, as, inbox, cfg, note}:
+      do IO<Hub>:
+        cl2 : List<&2, Client> <- Hub.auto(cl, thread, fs)
+        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
+
 def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
   match h o:
     case Hub{st, f, ls, cl, as, inbox, cfg, note} B.Send{+client, +text}:
@@ -5779,20 +5799,18 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         +now : Nat <- Now.nat()
         +t2 : String = BH.Bots.turn(st, now, thread, text)
         +g : String = Hub.gen(st, now)
-        IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Codex.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, fs, g, inbox)))
+        IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Codex.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, g, inbox)))
         Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
     case Hub{st, f, ls, cl, as, +inbox, +cfg, note} B.KiCadInstall{}:
       do IO<Hub>:
         IO.spawn(Unit, Install.go(Cfg.home(cfg), inbox))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{+st, f, ls, cl0, as, +inbox, +cfg, note} B.GrokTurn{+thread, +cwd, +model, +session, r, +text}:
+    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.GrokTurn{+thread, +cwd, +model, +session, r, +text}:
       do IO<Hub>:
-        +fs : K.Files <- K.Files.read(cwd)
-        cl : List<&2, Client> <- Hub.auto(cl0, thread, fs)
         +now : Nat <- Now.nat()
         +t2 : String = BH.Bots.turn(st, now, thread, text)
         +g : String = Hub.gen(st, now)
-        IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Grok.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, fs, g, inbox)))
+        IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Grok.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, g, inbox)))
         Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
     case Hub{st, f, ls, cl, as, +inbox, +cfg, note} B.Await{+thread, +id, +kind, +target, +ident, +deadline, +cwd}:
       do IO<Hub>:
@@ -7398,6 +7416,10 @@ def Msg.kind(m: Msg) -> String:
       "agent_gone"
     case Tick{}:
       "tick"
+    case Heart{}:
+      "heart"
+    case AutoView{_, _}:
+      "auto_view"
     case Push{_, _}:
       "push"
     case PushBin{_, _}:
@@ -7416,8 +7438,6 @@ def Msg.kind(m: Msg) -> String:
       "turn_pid"
     case TurnDone{_}:
       "turn_done"
-    case Beat{}:
-      "beat"
     case Recover{}:
       "recover"
     case Commit{_}:
@@ -7442,6 +7462,8 @@ def Msg.kind(m: Msg) -> String:
       "far_feed"
     case FarPushed{_, _, _}:
       "far_pushed"
+    case FarResend{_}:
+      "far_resend"
     case FarPulled{_, _, _, _}:
       "far_pulled"
     case FarReplied{_, _, _, _, _}:
@@ -7480,8 +7502,6 @@ def Hub.spawn_failed.k(ok: Bool, h: Hub, +thread: String, +line: String, +now: N
     case False{} _:
       IO.pure(Hub, h)
 
-    case FarResend{_}:
-      "far_resend"
 # a turn process that could not start: heard from the current generation
 # only (law stale_spawn_fail_quiet)
 def Hub.spawn_failed(h: Hub, +thread: String, +gen: String, +line: String, +now: Nat) -> IO(Hub):
@@ -7696,6 +7716,10 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.gone(h, thread, code, pid, now)
     case Tick{}:
       Hub.tick(h, now)
+    case Heart{}:
+      Hub.broadcast(h, DK.Alive.frame())
+    case AutoView{thread, fs}:
+      Hub.autoview(h, thread, fs)
     case Push{client, text}:
       Hub.push(h, client, text)
     case PushBin{client, bs}:
@@ -7716,8 +7740,6 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.bot_tick(h, tz, now)
     case BotsFound{peer, url, result}:
       Hub.bots_found(h, peer, url, result)
-    case Beat{}:
-      Hub.broadcast(h, DK.Alive.frame())
     case BotsRefresh{peer}:
       Hub.dir.refresh(h, peer)
     case BotHttp{kind, arg, peer, ts, sig, gh, dl, body, ct, raw, reply}:
@@ -7734,6 +7756,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.far.fed(h, ls2, epoch)
     case FarPushed{link, ok, to}:
       Hub.far.pushed(h, link, ok, to)
+    case FarResend{link}:
+      Hub.far.resend(h, link)
     case FarPulled{link, since, code, body}:
       Hub.far.pulled(h, link, since, code, body)
     case FarReplied{client, id, link, code, body}:
@@ -7776,8 +7800,6 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
 # waits behind at most that many of its lines.
 
 def Bulk.room() -> Nat:
-    case FarResend{link}:
-      Hub.far.resend(h, link)
   16n
 
 def Bulk.fill(n: Nat, +tok: Chan(Unit)) -> IO(Unit):
@@ -7875,6 +7897,7 @@ def Main.headless(h: Hub, +inbox: Chan(Msg), +cfg: Cfg, +tok: Chan(Unit), front:
   do IO<Unit>:
     IO.spawn(Unit, Ticker.loop(Fuel.forever(), inbox))
     IO.spawn(Unit, Beat.loop(Fuel.forever(), inbox))
+    IO.spawn(Unit, Heart.loop(Fuel.forever(), inbox))
     Refresh.start(inbox, cfg)
     IO.spawn(Unit, Hub.loop(Fuel.forever(), h, inbox, tok))
     Upgrade.start(cfg, inbox)
@@ -7886,6 +7909,7 @@ def Main.serve(l: Listener, h: Hub, +web: String, +inbox: Chan(Msg), +cfg: Cfg, 
     Tailnet.start(Cfg.net(cfg), Cfg.port(cfg), web, inbox)
     IO.spawn(Unit, Ticker.loop(Fuel.forever(), inbox))
     IO.spawn(Unit, Beat.loop(Fuel.forever(), inbox))
+    IO.spawn(Unit, Heart.loop(Fuel.forever(), inbox))
     Refresh.start(inbox, cfg)
     Machines.start(inbox, Cfg.port(cfg))
     IO.spawn(Unit, Hub.loop(Fuel.forever(), h, inbox, tok))
@@ -7898,7 +7922,6 @@ def Main.listened(r: Result<&1, &1, U32 & String, Listener>, h: Hub, +web: Strin
       do IO<Unit>:
         IO.print("Backplane listening on http://" ++ addr)
         Main.serve(l, h, web, inbox, cfg, tok, front)
-    IO.spawn(Unit, Beat.loop(Fuel.forever(), inbox))
     case Fail{e} True{}:
       Main.failed(e, h, addr)
     case Fail{_} False{}:
@@ -7909,7 +7932,6 @@ def Main.listened(r: Result<&1, &1, U32 & String, Listener>, h: Hub, +web: Strin
 
 # One hub per home
 # ----------------
-    IO.spawn(Unit, Beat.loop(Fuel.forever(), inbox))
 # Two hubs on one home (a window opened while `--headless` ran for the same
 # folder) each kept a state of their own over the same log: a message sent
 # in the window never reached the web or the phones, and theirs never the
