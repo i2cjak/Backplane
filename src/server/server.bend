@@ -4581,9 +4581,11 @@ def Hub.far.replied(h: Hub, +client: U32, +id: String, +link: String, +code: Nat
     J.Json.show(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{id}}, J.KV{"ok", J.Flag{False{}}},
       J.KV{"error", J.Str{Bool.pick(String, Nat.is_eq(code, 0n), "that machine is away", "that machine did not take it: " ++ String.take(body, 120n))}}]))))
 
-def Far.fed.k(p: FR.Fh & Hub, ls: List<&2, FR.Line>, +epoch: String) -> Hub:
+# (the feed leaves the history epoch alone: Far.start installed it, and
+# the startup feed's "" would reset it)
+def Far.fed.k(p: FR.Fh & Hub, ls: List<&2, FR.Line>, epoch: String) -> Hub:
   (fh, h) = p
-  Far.with(h, FR.Fh.epoch.set(FR.Fh.feed.ready(fh, ls), epoch))
+  Far.with(h, FR.Fh.feed.ready(fh, ls))
 
 def Hub.far.fed(h: Hub, ls: List<&2, FR.Line>, +epoch: String) -> IO(Hub):
   IO.pure(Hub, Far.fed.k(Far.fh(h), ls, epoch))
@@ -4602,12 +4604,14 @@ def Far.loaded.choose(r: FR.In & Hub, disk: FR.In) -> IO(Hub):
 def Hub.far.loaded(h: Hub, +link: String, +name: String, +text: String) -> IO(Hub):
   Far.loaded.choose(Far.in.of(Far.fh(h), link, name), FR.Fr.file.read(text, link, name))
 
+# (one already online is pulled too, through the same coalesced pull: a
+# lost last push is so repaired within the minute)
 def Far.here.was.k(away: Bool, h: Hub, +link: String) -> IO(Hub):
   match away:
     case True{}:
       Far.pull.here(h, link)
     case False{}:
-      IO.pure(Hub, h)
+      Far.pull.here(h, link)
 
 def Far.here.was(r: FR.In & Hub, +link: String) -> IO(Hub):
   (i, h) = r

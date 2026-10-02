@@ -4193,6 +4193,9 @@ def Laws.reset_new_origin_drops_viewer():
 def Laws.reset_drops_results():
   {==}
 
+def Laws.far_feed_after_stops():
+  {==}
+
 def Laws.draft_restore_fills(saved):
   {==}
 

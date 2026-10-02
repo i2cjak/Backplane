@@ -2168,6 +2168,11 @@ law reset_new_origin_drops_viewer:
 law reset_drops_results:
   {U.Ui.info(U.Ui.reset(U.Ui.info_set(U.Ui.reset(U.Ui.init(0n), U.Reset.demo("O")), "fm.list:t1", "x"), U.Reset.demo("O")), "fm.list:t1") == "" : String}
 
+# a page's lines are those after since, oldest first; the walk stops at
+# the first line at or below it
+law far_feed_after_stops:
+  {FR.Fr.feed.after([FR.Line{5n, "e"}, FR.Line{4n, "d"}, FR.Line{3n, "c"}, FR.Line{2n, "b"}, FR.Line{9n, "x"}], 3n, True{}, []) == [FR.Line{4n, "d"}, FR.Line{5n, "e"}] : List<&2, FR.Line>}
+
 # a draft read back after a restart fills an empty composer and never
 # replaces what is typed there
 law draft_restore_fills:
