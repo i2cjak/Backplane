@@ -2553,12 +2553,36 @@ def Hub.recover(+s: M.State, +now: Nat) -> Step:
 # never loops (laws carry_*). Runs after Hub.recover, over the state from
 # before it.
 
-def Carry.fresh(es: List<&2, M.Entry>) -> Bool:
+# whether the newest entry is the "restart" note Carry.k adds after its
+# message (it is no progress)
+def Carry.restart(es: List<&2, M.Entry>) -> Bool:
   match es:
-    case M.Msg{_, _, _, +text, _} <> _:
-      Bool.not(String.eq(text, M.Carry.text()))
+    case M.Act{_, _, _, +kind, _, _} <> _:
+      String.eq(kind, "restart")
     case _:
+      False{}
+
+# progress since the last carry: the newest entry, past restart notes, is
+# anything but the continue message
+def Carry.fresh.go(es: List<&2, M.Entry>, skip: Bool) -> Bool:
+  match es skip:
+    case Nil{} _:
       True{}
+    case _ <> +t True{}:
+      Carry.fresh.go(t, Carry.restart(t))
+    case M.Msg{_, _, _, +text, _} <> _ False{}:
+      Bool.not(String.eq(text, M.Carry.text()))
+    case _ False{}:
+      True{}
+
+def Carry.fresh(+es: List<&2, M.Entry>) -> Bool:
+  Carry.fresh.go(es, Carry.restart(es))
+
+# an archived or deleted thread never carries on
+def Carry.live(t: M.Thread) -> Bool:
+  match t:
+    case M.Thread{_, _, _, _, _, _, _, ar, _, _, _, _, _, _, _, _, _, _, _, _, de}:
+      Bool.not(Bool.or(ar, de))
 
 def Carry.k(go: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
   match go:
@@ -2571,7 +2595,7 @@ def Carry.k(go: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
 def Carry.one(r: Rec, +before: M.State, +now: Nat, +th: String) -> Rec:
   match r:
     case Rec{+s, cs, os}:
-      Rec.add(Rec{s, cs, os}, Carry.k(Bool.and(Hub.running(Hub.thread(before, th)), Carry.fresh(M.State.mine(before, th))), s, now, th))
+      Rec.add(Rec{s, cs, os}, Carry.k(Bool.and(Bool.and(Hub.running(Hub.thread(before, th)), Carry.live(Hub.thread(before, th))), Carry.fresh(M.State.mine(before, th))), s, now, th))
 
 def Carry.all(ts: List<&2, String>, r: Rec, +before: M.State, +now: Nat) -> Rec:
   match ts:

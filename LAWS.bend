@@ -2229,6 +2229,15 @@ law carry_off_nothing:
 law carry_once:
   {H.Hub.running(H.Hub.thread(H.Carry.after(H.Carry.demo([M.MessagePosted{"t1", "c1", M.User{}, M.Carry.text(), 4n}]), 10n), "t1")) == False{} : Bool}
 
+# the restart note after the continue message is no progress either, so a
+# second restart before the agent wrote anything leaves it stopped; an
+# archived thread never carries on
+law carry_twice_once:
+  {H.Hub.running(H.Hub.thread(H.Carry.after(H.Carry.after(H.Rec.demo(M.Running{}), 10n), 20n), "t1")) == False{} : Bool}
+
+law carry_skips_archived:
+  {H.Hub.running(H.Hub.thread(H.Carry.after(H.Carry.demo([M.ThreadArchived{"t1", True{}, 4n}]), 10n), "t1")) == False{} : Bool}
+
 # an open ask makes its thread pending (so it never auto-settles); the
 # answer clears it
 law ask_makes_pending:

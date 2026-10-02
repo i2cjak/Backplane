@@ -4259,6 +4259,12 @@ def Laws.carry_off_nothing():
 def Laws.carry_once():
   {==}
 
+def Laws.carry_twice_once():
+  {==}
+
+def Laws.carry_skips_archived():
+  {==}
+
 def Laws.ask_makes_pending():
   {==}
 
