@@ -4172,6 +4172,15 @@ def Laws.draft_keep_no_scratch(text):
 def Laws.draft_keep_no_path(text):
   {==}
 
+def Laws.ui_seq_counts_unknown():
+  {==}
+
+def Laws.ui_seq_known_unchanged():
+  {==}
+
+def Laws.ui_seq_log_counts_unknown():
+  {==}
+
 def Laws.draft_restore_fills(saved):
   {==}
 

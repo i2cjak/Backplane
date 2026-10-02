@@ -2099,6 +2099,17 @@ law draft_keep_no_path:
   for +text: String
   {U.Draft.keep("../x", text) == Nil{} : List<&2, U.Cmd>}
 
+# a change the client cannot read still counts toward what it holds, so a
+# reconnect asks only for what came after it; known ones count once each
+law ui_seq_counts_unknown:
+  {U.Ui.seq(U.Ui.recv.k(1n, U.Ui.init(0n), U.Seq.demo("changes", [C.Change.encode(M.SettingSet{"a", "1", 1n}), J.Json.obj([J.KV{"$", J.Str{"NoSuch"}}]), C.Change.encode(M.SettingSet{"b", "2", 2n})]))) == 3n : Nat}
+
+law ui_seq_known_unchanged:
+  {U.Ui.seq(U.Ui.recv.k(1n, U.Ui.init(0n), U.Seq.demo("changes", [C.Change.encode(M.SettingSet{"a", "1", 1n}), C.Change.encode(M.SettingSet{"b", "2", 2n})]))) == 2n : Nat}
+
+law ui_seq_log_counts_unknown:
+  {U.Ui.seq(U.Ui.recv.k(0n, U.Ui.init(0n), U.Seq.demo("log", [J.Json.obj([J.KV{"$", J.Str{"NoSuch"}}]), C.Change.encode(M.SettingSet{"b", "2", 2n})]))) == 2n : Nat}
+
 # a draft read back after a restart fills an empty composer and never
 # replaces what is typed there
 law draft_restore_fills:

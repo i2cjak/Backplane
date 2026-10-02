@@ -183,6 +183,54 @@ def Ui.fold(cs: List<&2, M.Change>, u: Ui) -> Ui:
     case +c <> t Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
       Ui.fold(t, Ui.see(Ui{M.State.apply(st, c), sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}, c))
 
+# Changes this client cannot read (a hub newer than it: a TestFlight build
+# behind, a cached web page) still count: the hub resumes a reconnect by
+# how many it sent, so each is a tick of the read model's sequence (and
+# nothing else), or every reconnect would ask for the tail again and post
+# its messages twice (laws ui_seq_counts_unknown, ui_seq_known_unchanged)
+type Decoded is Data:
+  Decoded{cs: List<&2, M.Change>, missed: Nat}
+
+def Ui.decode.d(m: Maybe<&2, M.Change>, d: Decoded) -> Decoded:
+  match m d:
+    case Some{c} Decoded{cs, n}:
+      Decoded{c <> cs, n}
+    case None{} Decoded{cs, n}:
+      Decoded{cs, 1n+n}
+
+# (tail-recursive, reversed once, as Ui.decode)
+def Ui.decode.all(xs: List<&2, J.Json>, d: Decoded) -> Decoded:
+  match xs:
+    case Nil{}:
+      d
+    case +x <> t:
+      Ui.decode.all(t, Ui.decode.d(C.Change.decode(x), d))
+
+def Ui.skip.st(n: Nat, st: M.State) -> M.State:
+  match n:
+    case 0n:
+      st
+    case 1n+k:
+      Ui.skip.st(k, M.State.tick(st))
+
+def Ui.skip(u: Ui, n: Nat) -> Ui:
+  match u:
+    case Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      Ui{Ui.skip.st(n, st), sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
+
+def Ui.fold.d(d: Decoded, u: Ui) -> Ui:
+  match d:
+    case Decoded{cs, n}:
+      Ui.skip(Ui.fold(List.reverse(&2, M.Change, cs), u), n)
+
+# a message's items folded in, the unreadable ones counted
+def Ui.fold.items(xs: List<&2, J.Json>, u: Ui) -> Ui:
+  Ui.fold.d(Ui.decode.all(xs, Decoded{Nil{}, 0n}), u)
+
+# a "changes" message (or "log") holding these items (for laws)
+def Seq.demo(+t: String, xs: List<&2, J.Json>) -> J.Json:
+  J.Json.obj([J.KV{"t", J.Str{t}}, J.KV{"items", J.Json.arr(xs)}])
+
 def Info.fields(fs: J.Json, m: Map<&2, String>) -> Map<&2, String>:
   match fs:
     case J.Field{k, J.Str{v}, t}:
@@ -302,7 +350,7 @@ def Ui.base(resume: Bool, st: M.State) -> M.State:
 def Ui.reset(u: Ui, +o: J.Json) -> Ui:
   match u:
     case Ui{st, sel, dr, live, op, _, now, ad, pa, _, rid, w, er, note, +nf, ob, tr}:
-      Ui.fold(Ui.decode(J.Json.elems(J.Json.get_obj(o, "items"))),
+      Ui.fold.items(J.Json.elems(J.Json.get_obj(o, "items")),
         Ui{Ui.base(Nat.is_gt(J.Json.get_nat(o, "since", 0n), 0n), st), sel, dr, live, op, True{}, now, ad, pa, J.Json.get_str(o, "version", ""), rid, w, er, note,
           Machines.home(Local.keep(nf, Map.set(&2, String, Map.set(&2, String, Info.of(J.Json.get_obj(o, "info")), "cid", Str.get(nf, "cid")), "origin", J.Json.get_str(o, "origin", "")))), ob, tr})
 
@@ -5469,7 +5517,7 @@ def Ui.recv.k(i: Nat, u: Ui, +o: J.Json) -> Ui:
     case 0n:
       Ui.reset(u, o)
     case 1n:
-      Ui.fold(Ui.decode(J.Json.elems(J.Json.get_obj(o, "items"))), u)
+      Ui.fold.items(J.Json.elems(J.Json.get_obj(o, "items")), u)
     case 2n:
       Ui.delta(u, J.Json.get_str(o, "thread", ""), J.Json.get_str(o, "text", ""))
     case 3n:
