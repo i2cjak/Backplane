@@ -4982,6 +4982,15 @@ law watch_cancel_confirmed:
   {H.Watch.told(M.State.mine(H.Watch.again(H.Watch.again(H.Watch.demo(False{}), H.Watch.cancel(H.Watch.demo(False{}), 9n, "t1", "w-1")),
       H.Watch.end(H.Watch.again(H.Watch.demo(False{}), H.Watch.cancel(H.Watch.demo(False{}), 9n, "t1", "w-1")), 10n, "t1", "w-1", "gone", "")), "t1"), "ended: cancelled") == True{} : Bool}
 
+# an archived or deleted thread is not woken by its watched work's end, and
+# retiring it stops its watchers
+law watch_end_retired_silent:
+  {Bool.or(H.Watch.told(M.State.mine(H.Watch.again(H.Watch.demo.archived(), H.Watch.end(H.Watch.demo.archived(), 9n, "t1", "w-1", "exit 4", "")), "t1"), "ended"),
+    H.Hub.running(H.Hub.thread(H.Watch.again(H.Watch.demo.archived(), H.Watch.end(H.Watch.demo.archived(), 9n, "t1", "w-1", "exit 4", "")), "t1"))) == False{} : Bool}
+
+law watch_retire_unwatches:
+  {H.Watch.retire(H.Watch.demo(False{}), 9n, "t1") == H.Step{[H.Watch.put("t1", 9n, [])], [H.WatchStop{"t1", "w-1", "unwatch", "make", "-"}]} : H.Step}
+
 law watch_unwatch_says_may_run:
   {String.contains(H.Watch.unwatch.text(), "may still run") == True{} : Bool}
 

@@ -2656,6 +2656,12 @@ def Step.cat(a: Step, b: Step) -> Step:
     case Step{cs, os} Step{c2, o2}:
       Step{List.append(&2, M.Change, cs, c2), List.append(&2, Out, os, o2)}
 
+# an archived or deleted thread is told nothing
+def Lost.live(t: M.Thread) -> Bool:
+  match t:
+    case M.Thread{_, _, _, _, _, _, _, ar, _, _, _, _, _, _, _, _, _, _, _, _, de}:
+      Bool.not(Bool.or(ar, de))
+
 # the note itself: to an idle thread it starts a turn; behind a running
 # turn or a held queue it waits
 def Lost.note(held: Bool, +s: M.State, +now: Nat, +th: String, +text: String) -> Step:
@@ -2775,8 +2781,16 @@ def Watch.word(+status: String, cancelling: Bool) -> String:
 def Watch.text(+note: String, +word: String, +detail: String) -> String:
   "[Backplane] Watched work \"" ++ note ++ "\" ended: " ++ word ++ Bool.pick(String, String.is_empty(detail), "", "\n" ++ detail)
 
+def Watch.tell.k(live: Bool, +s: M.State, +now: Nat, +th: String, +text: String) -> Step:
+  match live:
+    case True{}:
+      Lost.note(Bool.or(Hub.running(Hub.thread(s, th)), M.Queue.waiting(s, th)), s, now, th, text)
+    case False{}:
+      Step.none()
+
+# an archived or deleted thread is told nothing (law watch_end_retired_silent)
 def Watch.tell(+s: M.State, +now: Nat, +th: String, +text: String) -> Step:
-  Lost.note(Bool.or(Hub.running(Hub.thread(s, th)), M.Queue.waiting(s, th)), s, now, th, text)
+  Watch.tell.k(Lost.live(Hub.thread(s, th)), s, now, th, text)
 
 def Watch.end.k(found: Bool, timeout: Bool, +l: String, +s: M.State, +now: Nat, +th: String, +id: String, +status: String, +detail: String) -> Step:
   match found timeout:
@@ -2817,6 +2831,18 @@ def Watch.unwatch.k(+l: String, +s: M.State, +now: Nat, +th: String, +id: String
 
 def Watch.unwatch(+s: M.State, +now: Nat, +th: String, +id: String) -> Step:
   Watch.unwatch.k(Watch.find(M.Work.watch(s, th), id), s, now, th, id)
+
+def Watch.retire.outs(ls: List<&2, String>, +th: String) -> List<&2, Out>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      WatchStop{th, M.Bg.field(l, 0n), "unwatch", Watch.target(l), Watch.ident(l)} <> Watch.retire.outs(t, th)
+
+# an archived or deleted thread's watched work is no longer watched (it may
+# still run): its rows go and every watcher stops (law watch_retire_unwatches)
+def Watch.retire(+s: M.State, +now: Nat, +th: String) -> Step:
+  Step{[Watch.put(th, now, Nil{})], Watch.retire.outs(M.Work.watch(s, th), th)}
 
 def Watch.unwatch.text() -> String:
   "no longer watched; it may still run"
@@ -2861,6 +2887,9 @@ def Watch.demo(+run: Bool) -> M.State:
 
 def Watch.again(+s: M.State, st: Step) -> M.State:
   M.State.replay(Queue.changes(st), s)
+
+def Watch.demo.archived() -> M.State:
+  Watch.again(Watch.demo(False{}), Step{[M.ThreadArchived{"t1", True{}, 4n}], Nil{}})
 
 def Watch.awaits(os: List<&2, Out>) -> Nat:
   match os:
@@ -2932,7 +2961,7 @@ def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p:
     case 6n:
       Step.reply(client, id, [M.ThreadUnsettled{J.Json.get_str(p, "thread", ""), now}])
     case 7n:
-      Retire.archive(s, now, J.Json.get_str(p, "thread", ""), Step{[M.ThreadArchived{J.Json.get_str(p, "thread", ""), True{}, now}], [Reply.ok(client, id), AgentStop{J.Json.get_str(p, "thread", "")}]})
+      Step.cat(Retire.archive(s, now, J.Json.get_str(p, "thread", ""), Step{[M.ThreadArchived{J.Json.get_str(p, "thread", ""), True{}, now}], [Reply.ok(client, id), AgentStop{J.Json.get_str(p, "thread", "")}]}), Watch.retire(s, now, J.Json.get_str(p, "thread", "")))
     case 8n:
       Step.reply(client, id, [M.ThreadArchived{J.Json.get_str(p, "thread", ""), False{}, now}])
     case 9n:
@@ -2943,7 +2972,7 @@ def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p:
     case 11n:
       Step.reply(client, id, Rename.changes(J.Json.get_str(p, "thread", ""), String.trim(J.Json.get_str(p, "title", "")), now))
     case 12n:
-      Retire.archive(s, now, J.Json.get_str(p, "thread", ""), Step{[M.ThreadDeleted{J.Json.get_str(p, "thread", ""), now}], [Reply.ok(client, id), AgentStop{J.Json.get_str(p, "thread", "")}, BotFx{"gone", J.Json.get_str(p, "thread", ""), "", ""}]})
+      Step.cat(Retire.archive(s, now, J.Json.get_str(p, "thread", ""), Step{[M.ThreadDeleted{J.Json.get_str(p, "thread", ""), now}], [Reply.ok(client, id), AgentStop{J.Json.get_str(p, "thread", "")}, BotFx{"gone", J.Json.get_str(p, "thread", ""), "", ""}]}), Watch.retire(s, now, J.Json.get_str(p, "thread", "")))
     case 13n:
       Step.outs([Reply.ok(client, id), Watch{client, J.Json.get_str(p, "kind", ""), J.Json.get_str(p, "root", ""), J.Json.get_str(p, "path", "")}])
     case 14n:
@@ -3145,12 +3174,6 @@ def Lost.unknown(ls: List<&2, String>) -> List<&2, String>:
       Nil{}
     case +l <> t:
       (M.Bg.line(M.Bg.field(l, 0n), M.Bg.ended.mark() ++ "unknown") ++ M.Bg.rest(l)) <> Lost.unknown(t)
-
-# an archived or deleted thread is told nothing
-def Lost.live(t: M.Thread) -> Bool:
-  match t:
-    case M.Thread{_, _, _, _, _, _, _, ar, _, _, _, _, _, _, _, _, _, _, _, _, de}:
-      Bool.not(Bool.or(ar, de))
 
 def Bg.lost.k(has: Bool, on: Bool, +s: M.State, +now: Nat, +th: String, +why: String, +ls: List<&2, String>) -> Step:
   match has on:

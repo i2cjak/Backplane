@@ -6864,6 +6864,12 @@ def Laws.watch_cancel_keeps_until_confirmed():
 def Laws.watch_cancel_confirmed():
   {==}
 
+def Laws.watch_end_retired_silent():
+  {==}
+
+def Laws.watch_retire_unwatches():
+  {==}
+
 def Laws.watch_unwatch_says_may_run():
   {==}
 
