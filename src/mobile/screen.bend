@@ -960,7 +960,29 @@ def Mob.set.days.label(+d: String) -> String:
   +n = {Maybe.default(&2, Nat, Nat.read(d), 3n) : Nat}
   "Settle after " ++ Nat.show(n) ++ Bool.pick(String, Nat.is_eq(n, 1n), " day", " days")
 
-def Mob.settings.of(+st: M.State, +nf: Map<&2, String>, +v: String, +note: String, more: List<&2, J.Json>) -> J.Json:
+def Mob.set.strs(xs: List<&2, String>) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case x <> t:
+      J.Json.str(x) <> Mob.set.strs(t)
+
+def Mob.set.pair.k(on: Bool, +btns: List<&2, J.Json>, +nf: Map<&2, String>) -> J.Json:
+  match on:
+    case True{}:
+      J.Json.obj([J.KV{"label", J.Json.str("Pairing link")}, J.KV{"note", J.Json.str(U.Pair.note(U.Pair.link(nf)))}, J.KV{"buttons", J.Json.arr(btns)},
+        J.KV{"qr", J.Json.arr(Mob.set.strs(U.Pair.qr(nf)))}, J.KV{"qrnote", J.Json.str(U.Pair.qr.note())}])
+    case False{}:
+      Mob.set.row("Pairing link", U.Pair.note(U.Pair.link(nf)), btns)
+
+# the pairing link with Copy and QR code; while "pairqr" is on the row
+# carries the code's rows ("qr": '1' dark), drawn under it
+def Mob.set.pair(+on: Bool, +nf: Map<&2, String>) -> J.Json:
+  +btns = {List.append(&2, J.Json, Bool.pick(List<&2, J.Json>, U.Pair.qr.ready(nf), [Mob.set.btn("QR code", "flag", "pairqr", on)], Nil{}),
+    Bool.pick(List<&2, J.Json>, String.is_empty(U.Pair.link(nf)), Nil{}, [Mob.set.btn("Copy", "copy", U.Pair.link(nf), False{})])) : List<&2, J.Json>}
+  Mob.set.pair.k(on, btns, nf)
+
+def Mob.settings.of(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String, more: List<&2, J.Json>) -> J.Json:
   +prov = M.Setting.get(st, "agent.provider", "claude")
   +models = U.Str.get(nf, "models")
   +model = M.Setting.get(st, "agent.model", "")
@@ -975,15 +997,15 @@ def Mob.settings.of(+st: M.State, +nf: Map<&2, String>, +v: String, +note: Strin
     Mob.set.row("Theme", "Unset, the phone follows its own system.", Mob.set.chips(["dark", "light"], M.Setting.get(st, "ui.theme", ""), "ui.theme")),
     Mob.set.row("Thread list", "Projects groups threads by project; active lists what is going on, what needs you first.", Mob.set.chips(["projects", "active"], U.Side.view(st), "sidebar.view")),
     Mob.set.row("Tailscale: " ++ U.Str.get(nf, "tailnet"), "Listening on " ++ U.Str.get(nf, "listen"), Nil{}),
-    Mob.set.row("Pairing link", U.Pair.note(U.Pair.link(nf)), Bool.pick(List<&2, J.Json>, String.is_empty(U.Pair.link(nf)), Nil{}, [Mob.set.btn("Copy", "copy", U.Pair.link(nf), False{})])),
+    Mob.set.pair(U.Ui.flag(u, "pairqr"), nf),
     Mob.set.row("Update channel", "Stable takes releases; nightly also takes the daily builds.", Mob.set.chips(["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel")),
     Mob.set.row("Backplane " ++ v, U.Update.line(nf, note),
       Bool.pick(List<&2, J.Json>, U.Update.packaged(nf), Nil{}, Bool.pick(List<&2, J.Json>, String.starts_with(note, "update "), [Mob.set.btn("Install update", "update", "", False{})], [Mob.set.btn("Check now", "update-check", "", False{})])))], more))}])
 
-def Mob.settings.k(u: U.Ui, more: List<&2, J.Json>) -> J.Json:
+def Mob.settings.k(+u: U.Ui, more: List<&2, J.Json>) -> J.Json:
   match u:
     case U.Ui{+st, _, _, _, _, _, _, _, _, +v, _, _, _, +note, +nf, _, _}:
-      Mob.settings.of(st, nf, v, note, more)
+      Mob.settings.of(u, st, nf, v, note, more)
 
 # shown while "flag settings" has it open (the API keys' rows last)
 def Mob.settings(open: Bool, +u: U.Ui) -> J.Json:

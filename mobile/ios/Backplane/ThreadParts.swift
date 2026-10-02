@@ -834,6 +834,14 @@ struct SettingsSheet: View {
                             Text(r.label)
                             if !r.note.isEmpty { Text(r.note).font(.footnote).foregroundStyle(.secondary) }
                             ForEach(r.fields ?? [], id: \.self) { f in SetFieldView(model: model, field: f) }
+                            if let q = r.qr, !q.isEmpty {
+                                VStack(spacing: 6) {
+                                    QRCodeView(rows: q)
+                                    if let n = r.qrnote { Text(n).font(.footnote).foregroundStyle(.secondary) }
+                                }
+                                .frame(maxWidth: .infinity)
+                                .onTapGesture { model.act("flag", "pairqr") }
+                            }
                             if !r.buttons.isEmpty {
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 6) {

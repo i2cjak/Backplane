@@ -51,6 +51,7 @@ import ../core/desk.bend as DK
 import ../core/notice.bend as NO
 import ../core/hist.bend as HI
 import ../core/emb.bend as EM
+import ../core/qr.bend as QR
 
 # The server. One hub computation owns the read model and the event log;
 # every connection and agent process is its own computation and talks to
@@ -679,11 +680,15 @@ def Info.kicad(rt: K.Rt) -> List<&2, J.KV>:
     case K.Rt{cli, fork, v, c}:
       [J.KV{"kicad.cli", J.Str{cli}}, J.KV{"kicad.fork", J.Str{Bool.pick(String, fork, v, "")}}, J.KV{"kicad.commit", J.Str{c}}]
 
+# the pairing link as a QR code's rows (core/qr.bend), for Settings
+def Info.qr(+lk: String) -> String:
+  QR.Qr.text(QR.Qr.link(lk))
+
 def Info.net(n: Net) -> List<&2, J.KV>:
   match n:
-    case Net{tn, hs, _, ms, _, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}:
+    case Net{tn, hs, _, ms, _, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, +lk, fc}:
       List.append(&2, J.KV, [J.KV{"models", J.Str{ms}}, J.KV{"machines", J.Str{mc}}, J.KV{"bots.remote", J.Str{BN.Bn.dir(bnx)}}, J.KV{"tailnet", J.Str{Bool.pick(String, tn, Bool.pick(String, hs, "https", "on"), "off")}},
-        J.KV{"update", J.Str{Bool.pick(String, mgd, "package", "releases")}}, J.KV{"pair", J.Str{lk}}, J.KV{"freecad", J.Str{fc}}], Info.kicad(rt))
+        J.KV{"update", J.Str{Bool.pick(String, mgd, "package", "releases")}}, J.KV{"pair", J.Str{lk}}, J.KV{"pair.qr", J.Str{Info.qr(lk)}}, J.KV{"freecad", J.Str{fc}}], Info.kicad(rt))
 
 # what this machine runs, for the settings screen and the model picker
 def Hub.info(c: Cfg) -> J.Json:

@@ -23,6 +23,7 @@ import ./bots.bend as WB
 import ../core/voice.bend as VC
 import ../core/hist.bend as HS
 import ../core/emb.bend as EM
+import ../core/qr.bend as QR
 
 # Ui -> Node. Every decision (order, shelf, status) comes from core defs
 # with laws behind them; this file only lays them out.
@@ -708,13 +709,29 @@ def View.keys.set(+u: U.Ui) -> List<&2, D.Node>:
        D.Dom.button(Bool.pick(String, U.Ui.flag(u, "keys"), "on", ""), "flag", "keys", "The names kept", "View API keys")])],
     View.keys.form(U.Ui.flag(u, "keyform"), u), View.keys.list(U.Ui.flag(u, "keys"), u)])
 
+# the pairing code under its row while "pairqr" is on: the code on white
+# with its quiet zone, a click puts it away
+def View.pair.qr.svg(+rows: List<&2, String>) -> D.Node:
+  +side = {U32.show((U32.from_nat(List.length(&2, String, rows)) + 8 : U32)) : String}
+  D.El{"div", "", [D.At{"class", "pair-qr"}, D.At{"data-value", "pairqr"}, D.On{"click", "flag"}], [
+    D.El{"svg", "", [D.At{"viewBox", "0 0 " ++ side ++ " " ++ side}, D.At{"shape-rendering", "crispEdges"}],
+      [D.El{"path", "", [D.At{"d", QR.Qr.path(rows)}], Nil{}}]},
+    D.Dom.span("set-note", U.Pair.qr.note())]}
+
+def View.pair.qr(on: Bool, +nf: Map<&2, String>) -> List<&2, D.Node>:
+  match on:
+    case True{}:
+      [View.pair.qr.svg(U.Pair.qr(nf))]
+    case False{}:
+      Nil{}
+
 # the same settings as the native window
 def View.settings(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String) -> D.Node:
   +prov = M.Setting.get(st, "agent.provider", "claude")
   +ipc = M.Setting.get(st, "kicad.ipc", "on")
   D.El{"main", "settings", [D.At{"class", "settings-view"}], [
     D.El{"header", "", [D.At{"class", "thread-head"}], [D.Dom.span("title", "Settings"), D.Dom.span("meta", ""), D.Dom.button("", "flag", "settings", "Close settings", "Close")]},
-    D.El{"div", "", [D.At{"class", "settings"}], List.append(&2, D.Node, [
+    D.El{"div", "", [D.At{"class", "settings"}], List.concat(&2, D.Node, [[
       View.setrow("Settle after", "Threads idle this long move to Settled. They stay saved.", View.days(M.Setting.get(st, "settle.days", "3"))),
       View.setrow("Follow-ups while a turn runs", "Queue waits for the turn to end; steer sends into it. Ctrl+Enter does the other. Default: Claude steers, Codex and Grok queue.",
         View.chips(["", "queue", "steer"], M.Setting.get(st, "followup", ""), "followup")),
@@ -730,11 +747,13 @@ def View.settings(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +not
       View.setrow("Theme", "The window and the web page (phones unset follow their own system).", View.chips(["dark", "light"], Bool.pick(String, String.eq(M.Setting.get(st, "ui.theme", ""), "light"), "light", "dark"), "ui.theme")),
       View.setrow("Thread list", "Projects groups threads by project; active lists what is going on, what needs you first.", View.chips(["projects", "active"], U.Side.view(st), "sidebar.view")),
       View.setrow("Tailscale: " ++ U.Str.get(nf, "tailnet"), "Listening on " ++ U.Str.get(nf, "listen"), Nil{}),
-      View.setrow("Pairing link", U.Pair.note(U.Pair.link(nf)), D.Dom.when(Bool.not(String.is_empty(U.Pair.link(nf))), D.Dom.copy(U.Pair.link(nf)))),
-      View.setrow("Update channel", "Stable takes releases; nightly also takes the daily builds.", View.chips(["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel")),
+      View.setrow("Pairing link", U.Pair.note(U.Pair.link(nf)), D.Dom.cat(D.Dom.when(U.Pair.qr.ready(nf), D.Dom.button(Bool.pick(String, U.Ui.flag(u, "pairqr"), "on", ""), "flag", "pairqr", "Show the link as a code to scan", "QR code")),
+        D.Dom.when(Bool.not(String.is_empty(U.Pair.link(nf))), D.Dom.copy(U.Pair.link(nf)))))],
+      View.pair.qr(U.Ui.flag(u, "pairqr"), nf),
+      [View.setrow("Update channel", "Stable takes releases; nightly also takes the daily builds.", View.chips(["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel")),
       View.setrow("Backplane " ++ v, U.Update.line(nf, note),
         Bool.pick(List<&2, D.Node>, U.Update.packaged(nf), Nil{}, Bool.pick(List<&2, D.Node>, String.starts_with(note, "update "), [D.Dom.button("primary", "update", "", "Install the update", "Install update")],
-          [D.Dom.button("", "update-check", "", "Look for an update now", "Check now")])))], List.append(&2, D.Node, View.voice.set(u, st), View.keys.set(u)))}]}
+          [D.Dom.button("", "update-check", "", "Look for an update now", "Check now")])))], View.voice.set(u, st), View.keys.set(u)])}]}
 
 def View.empty(n: Nat) -> D.Node:
   D.El{"main", "empty", [D.At{"class", "empty"}], [D.Txt{Bool.pick(String, Nat.is_eq(n, 0n), "Add a project with + to start.", "Pick a thread, or start one with + next to a project.")}]}

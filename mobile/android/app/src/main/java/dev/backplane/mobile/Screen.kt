@@ -130,7 +130,9 @@ data class SetButton(val label: String, val action: String, val value: String, v
 // a field to type in: each change goes out as "bfield" (name, text); a
 // secret one shows dots
 data class SetField(val name: String, val hint: String, val secret: Boolean, val value: String)
-data class SetRow(val label: String, val note: String, val buttons: List<SetButton>, val fields: List<SetField> = emptyList())
+// qr: the pairing code's rows ('1' dark) while it is shown
+data class SetRow(val label: String, val note: String, val buttons: List<SetButton>, val fields: List<SetField> = emptyList(),
+                  val qr: List<String> = emptyList(), val qrnote: String = "")
 data class Settings(val rows: List<SetRow>)
 
 // thread search ("search") or the file picker ("files"): its query and rows
@@ -583,7 +585,8 @@ fun parseScreen(o: JSONObject) = Screen(
         Settings(st.optJSONArray("rows").map { r ->
             SetRow(r.optString("label"), r.optString("note"),
                 r.optJSONArray("buttons").map { SetButton(it.optString("label"), it.optString("action"), it.optString("value"), it.optBoolean("on")) },
-                r.optJSONArray("fields").map { SetField(it.optString("name"), it.optString("hint"), it.optBoolean("secret"), it.optString("value")) })
+                r.optJSONArray("fields").map { SetField(it.optString("name"), it.optString("hint"), it.optBoolean("secret"), it.optString("value")) },
+                r.optJSONArray("qr")?.let { q -> List(q.length()) { q.optString(it) } } ?: emptyList(), r.optString("qrnote"))
         })
     },
     o.optJSONObject("find")?.let { Find(it.optString("mode"), it.optString("query"), folderRows(it.optJSONArray("rows"))) },
