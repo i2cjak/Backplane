@@ -6915,6 +6915,9 @@ def Laws.boot_no_alerts():
 def Laws.boot_done_alerts():
   {==}
 
+def Laws.boot_catchup_no_alerts():
+  {==}
+
 def Laws.pong_rate_bounded():
   {==}
 

@@ -5060,7 +5060,13 @@ law boot_no_alerts:
 
 law boot_done_alerts:
   {List.length(&2, J.Json, Hb.Did.alerts(Hb.One.got(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", False{}, False{}, [C.Change.encode(M.ThreadCreated{"t1", "p1", "hi", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.TurnChanged{"t1", M.Running{}, 2n})])),
-      U.Boot.demo("changes", False{}, True{}, [C.Change.encode(M.TurnChanged{"t1", M.Completed{}, 3n})])))) == 1n : Nat}
+      U.Seq.demo("changes", [C.Change.encode(M.TurnChanged{"t1", M.Completed{}, 3n})])))) == 1n : Nat}
+
+# a live client's catch-up (changes with "boot": true, no log before it)
+# is history too: no alert from it
+law boot_catchup_no_alerts:
+  {List.length(&2, J.Json, Hb.Did.alerts(Hb.One.got(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", False{}, False{}, [C.Change.encode(M.ThreadCreated{"t1", "p1", "hi", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.TurnChanged{"t1", M.Running{}, 2n})])), U.Boot.demo("changes", False{}, True{}, [])),
+      U.Boot.demo("changes", False{}, True{}, [C.Change.encode(M.TurnChanged{"t1", M.Completed{}, 3n})])))) == 0n : Nat}
 
 law pong_rate_bounded:
   {Bool.show(OB.Pong.due(1000n, 1999n)) ++ Bool.show(OB.Pong.due(1000n, 2000n)) ++ Bool.show(OB.Pong.due(0n, 999n)) == "FalseTrueFalse" : String}
