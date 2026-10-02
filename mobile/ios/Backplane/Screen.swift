@@ -140,6 +140,8 @@ struct SubRow: Decodable, Identifiable {
     let agent, live, open: Bool
     let n: Int
     let steps: [SubStep]
+    // the action a Stop sends with the row's id ("" or absent: no Stop)
+    let cancel: String?
 }
 
 struct Subs: Decodable {

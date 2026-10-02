@@ -526,13 +526,20 @@ def View.sub.act(agent: Bool, +open: Bool, +key: String) -> List<&2, D.Attr>:
     case False{}:
       [D.At{"data-value", key}, D.On{"click", "select"}]
 
-def View.sub(r: SB.SubRow) -> D.Node:
+# a row's Stop (SB.Subs.cancel): beside the row, not inside its click
+def View.sub.stop(+act: String, +key: String) -> List<&2, D.Node>:
+  D.Dom.when(Bool.not(String.is_empty(act)), D.Dom.button("sub-stop", act, key, "Stop this work", "Stop"))
+
+def View.sub.k(r: SB.SubRow, +act: String) -> D.Node:
   match r:
     case SB.SubRow{+key, +agent, +title, +who, +word, +doing, +live, +open, _, ss}:
       D.El{"div", key, [D.At{"class", "sub " ++ word ++ Bool.pick(String, live, " live", "")}],
         D.Dom.cat([D.El{"div", "", List.append(&2, D.Attr, [D.At{"class", "sub-row"}], View.sub.act(agent, open, key)),
           [D.Dom.span("state-dot", ""), D.Dom.span("who", Bool.pick(String, agent, Bool.pick(String, open, "▾", "▸"), who)), D.Dom.span("title", title), D.Dom.span("state", word)]}],
-          D.Dom.cat(D.Dom.when(Bool.not(String.is_empty(doing)), D.Dom.span("doing", doing)), View.sub.steps(ss)))}
+          D.Dom.cat(View.sub.stop(act, key), D.Dom.cat(D.Dom.when(Bool.not(String.is_empty(doing)), D.Dom.span("doing", doing)), View.sub.steps(ss))))}
+
+def View.sub(+r: SB.SubRow) -> D.Node:
+  View.sub.k(r, SB.Subs.cancel(r))
 
 def View.subs.go(rs: List<&2, SB.SubRow>) -> List<&2, D.Node>:
   match rs:

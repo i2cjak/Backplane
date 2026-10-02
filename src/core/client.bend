@@ -987,7 +987,7 @@ def Ui.actions() -> List<&2, String>:
    "mech", "mech-part", "mech-3d", "mech-refresh", "mech-renders", "mech-render", "view-kind", "view-sheet", "view-layer",
    "attach-up", "attach-end",
    "hist-go", "hist-prev", "hist-next", "hist-first", "hist-last", "hist-play", "hist-tick", "hist-diff", "hist-live", "hist-jump",
-   "hist-show", "cmp", "cmp-pick", "cmp-close", "cmp-side", "cmp-shut", "key-add", "key-del", "fm", "fm-cd", "fm-up", "fm-open", "pdf-page", "fm-page", "update-now"]
+   "hist-show", "cmp", "cmp-pick", "cmp-close", "cmp-side", "cmp-shut", "key-add", "key-del", "fm", "fm-cd", "fm-up", "fm-open", "pdf-page", "fm-page", "update-now", "work-cancel", "task-cancel"]
 
 # Reading the client state
 # ------------------------
@@ -3670,6 +3670,11 @@ def Fm.act(i: Nat, +u: Ui, +value: String) -> Act:
     # (an update held back while threads work goes now)
     case 6n:
       Ui.rpc(u, "update.now", Nil{})
+    # (a Subagents row's Stop: SB.Subs.cancel)
+    case 7n:
+      Ui.rpc(u, "work.cancel", [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"id", J.Str{value}}])
+    case 8n:
+      Ui.rpc(u, "task.cancel", [J.KV{"child", J.Str{value}}])
     case _:
       Act{u, Nil{}}
 

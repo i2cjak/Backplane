@@ -4919,3 +4919,47 @@ law exit_stale_gen_quiet:
 
 law final_partial_line_flushed:
   {UT.Lines.rest(UT.Lines.after(UT.Lines.feed(UT.Lines.new(), UT.Utf8.encode("{\"a\":1}\n{\"type\":\"result\"}")))) == "{\"type\":\"result\"}" : String}
+
+# Watched work (hub.bend's Watch.*, mcp.bend's work_* tools): the row is
+# written before anything is launched; its end is told once, waking an
+# idle thread or waiting behind a running turn; an outcome that cannot be
+# known is never success; a cancel shows until confirmed; unwatching says
+# the work may still run; a restart watches open work again, a mirror
+# never does
+law watch_intent_before_launch:
+  {Bool.and(String.contains(M.Setting.get(H.Watch.again(H.Answer.demo(False{}), H.Watch.start(H.Answer.demo(False{}), 9n, "t1", "run", "make", "build", 0n)), "watch.t1", ""), "\tlaunching"),
+    Nat.is_eq(H.Watch.awaits(H.Step.outs_of(H.Watch.start(H.Answer.demo(False{}), 9n, "t1", "run", "make", "build", 0n))), 1n)) == True{} : Bool}
+
+law watch_end_once:
+  {H.Watch.end(H.Watch.again(H.Watch.demo(False{}), H.Watch.end(H.Watch.demo(False{}), 9n, "t1", "w-1", "exit 0", "")), 10n, "t1", "w-1", "exit 0", "") == H.Step{[], []} : H.Step}
+
+law watch_end_wakes_idle:
+  {H.Hub.running(H.Hub.thread(H.Watch.again(H.Watch.demo(False{}), H.Watch.end(H.Watch.demo(False{}), 9n, "t1", "w-1", "exit 4", "")), "t1")) == True{} : Bool}
+
+law watch_end_queues_running:
+  {M.Queue.waiting(H.Watch.again(H.Watch.demo(True{}), H.Watch.end(H.Watch.demo(True{}), 9n, "t1", "w-1", "exit 4", "")), "t1") == True{} : Bool}
+
+law watch_timeout_unknown_not_success:
+  {M.Bg.status(M.Setting.get(H.Watch.again(H.Watch.demo(False{}), H.Watch.end(H.Watch.demo(False{}), 9n, "t1", "w-1", "timeout", "")), "watch.t1", "")) == "unknown" : String}
+
+law watch_pid_identity_unknown:
+  {String.contains(H.Watch.word("gone", False{}), "outcome unknown") == True{} : Bool}
+
+law watch_cancel_keeps_until_confirmed:
+  {M.Bg.doing(M.Setting.get(H.Watch.again(H.Watch.demo(False{}), H.Watch.cancel(H.Watch.demo(False{}), 9n, "t1", "w-1")), "watch.t1", "")) == "cancelling" : String}
+
+law watch_cancel_confirmed:
+  {H.Watch.told(M.State.mine(H.Watch.again(H.Watch.again(H.Watch.demo(False{}), H.Watch.cancel(H.Watch.demo(False{}), 9n, "t1", "w-1")),
+      H.Watch.end(H.Watch.again(H.Watch.demo(False{}), H.Watch.cancel(H.Watch.demo(False{}), 9n, "t1", "w-1")), 10n, "t1", "w-1", "gone", "")), "t1"), "ended: cancelled") == True{} : Bool}
+
+law watch_unwatch_says_may_run:
+  {String.contains(H.Watch.unwatch.text(), "may still run") == True{} : Bool}
+
+law recover_rearms_watches:
+  {H.Watch.awaits(H.Step.outs_of(H.Hub.recover(H.Watch.demo(False{}), 9n))) == 1n : Nat}
+
+law mirror_never_awaits:
+  {H.Watch.rearm(H.Watch.demo.at(False{}, "p1~t1")) == [] : List<&2, H.Out>}
+
+law prompt_background_work_b:
+  {Bool.and(String.contains(PM.Prompt.background(), "work_run"), Bool.and(String.contains(PM.Prompt.background(), "work_watch"), String.contains(PM.Prompt.background(), "Never poll"))) == True{} : Bool}

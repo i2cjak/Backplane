@@ -368,8 +368,9 @@ fun EntryRow(m: AppModel, e: Entry, show: (String) -> Unit) {
 private fun subColor(state: String) = when (state) {
     "running" -> PhaseColor.accent
     "done", "reporting" -> PhaseColor.ok
+    "watching", "launching" -> PhaseColor.accent
     "queued" -> Color.Gray
-    "cancelled" -> PhaseColor.warn
+    "cancelled", "cancelling" -> PhaseColor.warn
     else -> PhaseColor.bad
 }
 
@@ -398,6 +399,8 @@ fun SubsView(m: AppModel, subs: Subs) {
                     Text(if (r.agent) (if (r.open) "▾" else "▸") else r.who, style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.outline, maxLines = 1)
                     Text(r.title, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (r.cancel.isNotEmpty()) Text("Stop", Modifier.clickable { m.act(r.cancel, r.id) }.padding(horizontal = 4.dp),
+                        style = MaterialTheme.typography.labelSmall, color = PhaseColor.warn)
                     Text(r.state, style = MaterialTheme.typography.labelSmall, color = subColor(r.state))
                 }
                 if (r.doing.isNotEmpty()) Text(r.doing, Modifier.padding(start = 16.dp), style = MaterialTheme.typography.labelSmall,

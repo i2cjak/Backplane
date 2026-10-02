@@ -2285,8 +2285,9 @@ def Pins.height(vs: List<&2, EM.EV>) -> U32:
 def Sa.color(+word: String) -> U32:
   Bool.pick(U32, String.eq(word, "running"), T.Th.accent(),
     Bool.pick(U32, Bool.or(String.eq(word, "done"), String.eq(word, "reporting")), T.Th.ok(),
+    Bool.pick(U32, Bool.or(String.eq(word, "watching"), String.eq(word, "launching")), T.Th.accent(),
       Bool.pick(U32, String.eq(word, "queued"), T.Th.faint(),
-        Bool.pick(U32, String.eq(word, "cancelled"), T.Th.warn(), T.Th.bad()))))
+        Bool.pick(U32, Bool.or(String.eq(word, "cancelled"), String.eq(word, "cancelling")), T.Th.warn(), T.Th.bad())))))
 
 def Sa.steps.n(+ss: List<&2, SB.SubStep>) -> U32:
   U32.from_nat(List.length(&2, SB.SubStep, ss))
@@ -2327,10 +2328,24 @@ def Sa.hit(agent: Bool, +open: Bool, +key: String, +x0: U32, +x1: U32, +y: U32, 
     case False{}:
       Lay.hit(x0, y, (x1 - x0 : U32), h, "select", key)
 
-def Sa.row(+ty: Ty, r: SB.SubRow, +x0: U32, +x1: U32, +y: U32) -> Out:
+# a row's Stop (SB.Subs.cancel: watched work, a delegated task), left of
+# its state word; its region comes before the row's
+def Sa.stop(none: Bool, +ty: Ty, +act: String, +key: String, +x: U32, +y: U32) -> Out:
+  match none:
+    case True{}:
+      Out.none()
+    case False{}:
+      Out{Ty.text(ty, 2n, "Stop", D.Clip.all(), x, y, 28, T.Th.warn()), [Lay.hit((x - 4 : U32), y, (Ty.width(ty, 2n, "Stop") + 8 : U32), 28, act, key)]}
+
+def Sa.stop.x(+ty: Ty, +word: String, +x1: U32) -> U32:
+  +a = Ty.width(ty, 2n, word)
+  +b = Ty.width(ty, 2n, "Stop")
+  ((x1 - a : U32) - (b + 24 : U32) : U32)
+
+def Sa.row.k(+ty: Ty, r: SB.SubRow, +x0: U32, +x1: U32, +y: U32) -> Out:
   match r:
     case SB.SubRow{+key, +agent, +title, +who, +word, +doing, +live, +open, _, ss}:
-      +ww = Ty.width(ty, 2n, word)
+      +ww = {(Ty.width(ty, 2n, word) + Bool.pick(U32, String.is_empty(SB.Subs.cancel(SB.SubRow{key, agent, title, who, word, doing, live, open, 0n, Nil{}})), 0, (Ty.width(ty, 2n, "Stop") + 12 : U32)) : U32) : U32}
       +lw = {Bool.pick(U32, agent, 20, (Ty.width(ty, 2n, who) + 12 : U32)) : U32}
       +tx = {(x0 + 26 + lw : U32) : U32}
       +dh = {Bool.pick(U32, String.is_empty(doing), 0, 20) : U32}
@@ -2338,10 +2353,13 @@ def Sa.row(+ty: Ty, r: SB.SubRow, +x0: U32, +x1: U32, +y: U32) -> Out:
           [D.Draw.disc(D.Clip.all(), U32.to_f32((x0 + 14 : U32)), U32.to_f32((y + 14 : U32)), Bool.pick(F32, live, 4.0, 3.0), Sa.color(word), 255)],
           Sa.lead(agent, ty, open, who, x0, y),
           Ty.text(ty, 0n, Ty.fit(ty, 0n, title, (x1 - tx - ww - 24 : U32)), D.Clip.all(), tx, y, 28, Bool.pick(U32, live, T.Th.text(), T.Th.soft())),
-          Ty.text(ty, 2n, word, D.Clip.all(), (x1 - ww - 12 : U32), y, 28, Sa.color(word)),
+          Ty.text(ty, 2n, word, D.Clip.all(), (x1 - Ty.width(ty, 2n, word) - 12 : U32), y, 28, Sa.color(word)),
           Ty.text(ty, 2n, Ty.fit(ty, 2n, doing, (x1 - tx - 12 : U32)), D.Clip.all(), tx, (y + 26 : U32), 18, T.Th.accent()),
           Sa.steps(ty, ss, tx, (x1 - 12 : U32), (y + 28 + dh : U32))]),
         [Sa.hit(agent, open, key, x0, x1, y, (28 + dh : U32))]}
+
+def Sa.row(+ty: Ty, +r: SB.SubRow, +x0: U32, +x1: U32, +y: U32) -> Out:
+  Out.cat(Sa.stop(String.is_empty(SB.Subs.cancel(r)), ty, SB.Subs.cancel(r), SB.Subs.key(r), Sa.stop.x(ty, SB.Subs.word(r), x1), y), Sa.row.k(ty, r, x0, x1, y))
 
 def Sa.rows(+ty: Ty, rs: List<&2, SB.SubRow>, +x0: U32, +x1: U32, +y: U32) -> Out:
   match rs:

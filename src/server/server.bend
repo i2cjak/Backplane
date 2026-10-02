@@ -150,6 +150,11 @@ type Msg is Data:
   AgentExited{thread: String, gen: String, code: U32}
   # time to note running turns that went quiet (each minute)
   Silence{}
+  # watched work (core's Watch.*): a work_run launched; what proves the
+  # work is the same; its end
+  WatchLaunched{thread: String, id: String}
+  WatchIdent{thread: String, id: String, ident: String}
+  WatchEnded{thread: String, id: String, status: String, detail: String}
 
 # remote access: also listen on the tailnet, serve HTTPS through
 # `tailscale serve`, and the token remote clients must present
@@ -4578,6 +4583,153 @@ def Hub.term_read(h: Hub, +thread: String, +o: J.Json, +reply: Chan(String)) -> 
         IO.spawn(Unit, TermRead.run(Cfg.tm(cfg), EM.Emb.key(thread, J.Json.get_str(a, "id", "")), U32.to_nat(J.Json.get_u32(a, "waitMs", 0)), J.Json.as_raw(J.Json.get(o, "id"), "null"), reply))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
 
+# Watched work (core's Watch.*)
+# -----------------------------
+# Each piece of watched work has a folder, <home>/work/<id>. A work_run's
+# command runs from there through a small script that writes its output
+# to out and, when it ends, its exit code to code (written to code.tmp and
+# renamed, so code appears whole); started marks that it was launched, so
+# a launch asked again (after a restart) never starts it twice; it runs as
+# the transient unit bp-<id> (systemd-run --user, so it outlives a restart
+# of Backplane's own service) or, without user systemd, set apart with
+# setsid. The code file is the outcome: a run gone without one, a pid
+# reused or gone, a unit restarted as another invocation, all read as
+# "gone", outcome unknown, never success. A watcher checks every 2 s.
+
+def Watch.dir(+home: String, +id: String) -> String:
+  home ++ "/work/" ++ id
+
+def Watch.unit(+id: String) -> String:
+  "bp-" ++ id
+
+def Watch.launch.sh() -> String:
+  "d=$1; c=$2; cmd=$3; u=$4\nmkdir -p \"$d\" || { echo gone; exit 0; }\n[ -e \"$d/code\" ] && { echo running; exit 0; }\n[ -e \"$d/started\" ] && { echo running; exit 0; }\nprintf '%s\\n' \"$cmd\" > \"$d/cmd\"\n{ printf 'cd \"%s\" || exit 127\\n' \"$c\"; printf 'sh \"%s/cmd\" > \"%s/out\" 2>&1\\n' \"$d\" \"$d\"; printf 'echo $? > \"%s/code.tmp\" && mv \"%s/code.tmp\" \"%s/code\"\\n' \"$d\" \"$d\" \"$d\"; } > \"$d/run.sh\"\n: > \"$d/started\"\nif command -v systemd-run >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then\n  if systemd-run --user --quiet --collect --unit=\"$u\" sh \"$d/run.sh\" >/dev/null 2>&1; then echo unit > \"$d/how\"; echo running; exit 0; fi\nfi\nsetsid nohup sh \"$d/run.sh\" >/dev/null 2>&1 < /dev/null &\necho $! > \"$d/pid\"\necho pid > \"$d/how\"\necho running\n"
+
+def Watch.check.sh() -> String:
+  "k=$1; t=$2; id=$3; d=$4; u=$5\ncase $k in\nrun)\n  [ -e \"$d/stop\" ] && { echo stop; exit 0; }\n  [ -e \"$d/code\" ] && { echo \"done $(cat \"$d/code\")\"; exit 0; }\n  how=$(cat \"$d/how\" 2>/dev/null)\n  if [ \"$how\" = unit ]; then systemctl --user is-active --quiet \"$u\" && { echo running; exit 0; }\n  else p=$(cat \"$d/pid\" 2>/dev/null); [ -n \"$p\" ] && kill -0 \"$p\" 2>/dev/null && { echo running; exit 0; }; fi\n  [ -e \"$d/code\" ] && { echo \"done $(cat \"$d/code\")\"; exit 0; }\n  echo gone ;;\nunit)\n  [ -e \"$d/stop\" ] && { echo stop; exit 0; }\n  s=$(systemctl --user show -p ActiveState --value \"$t\" 2>/dev/null); r=$(systemctl --user show -p ExecMainStatus --value \"$t\" 2>/dev/null); n=$(systemctl --user show -p InvocationID --value \"$t\" 2>/dev/null)\n  [ \"$id\" = - ] && [ -n \"$n\" ] && echo \"ident $n\"\n  [ \"$id\" != - ] && [ -n \"$n\" ] && [ \"$n\" != \"$id\" ] && { echo gone; exit 0; }\n  case $s in active|activating|deactivating|reloading) echo running ;; inactive|failed) [ -n \"$n\" ] && echo \"done ${r:-0}\" || echo gone ;; *) echo gone ;; esac ;;\npid)\n  [ -e \"$d/stop\" ] && { echo stop; exit 0; }\n  if [ -r \"/proc/$t/stat\" ]; then b=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); st=$(sed 's/^.*) //' \"/proc/$t/stat\" | cut -d' ' -f20); n=\"$b:$st\"\n  elif ps -p \"$t\" >/dev/null 2>&1; then n=$(ps -o lstart= -p \"$t\" | tr -s ' ' '_')\n  else echo gone; exit 0; fi\n  [ \"$id\" = - ] && { echo \"ident $n\"; echo running; exit 0; }\n  [ \"$n\" = \"$id\" ] && echo running || echo gone ;;\nfile)\n  [ -e \"$d/stop\" ] && { echo stop; exit 0; }\n  [ -f \"$t\" ] && grep -qF \"$id\" \"$t\" 2>/dev/null && { echo found; exit 0; }\n  echo running ;;\n*) echo gone ;;\nesac\n"
+
+def Watch.stop.sh() -> String:
+  "k=$1; t=$2; id=$3; d=$4; u=$5\nmkdir -p \"$d\"\ncase $k in\nunwatch) : > \"$d/stop\" ;;\nrun) if [ \"$(cat \"$d/how\" 2>/dev/null)\" = unit ]; then systemctl --user stop \"$u\" >/dev/null 2>&1; else p=$(cat \"$d/pid\" 2>/dev/null); [ -n \"$p\" ] && [ \"$p\" -gt 1 ] && kill -TERM \"-$p\" 2>/dev/null; [ -n \"$p\" ] && [ \"$p\" -gt 1 ] && kill -TERM \"$p\" 2>/dev/null; fi ;;\nunit) systemctl --user stop \"$t\" >/dev/null 2>&1 ;;\npid) [ \"$t\" -gt 1 ] 2>/dev/null && kill -TERM \"$t\" 2>/dev/null ;;\nesac\ntrue\n"
+
+def Watch.tail.sh() -> String:
+  "d=$1; [ -e \"$d/out\" ] && tail -c 2048 \"$d/out\"; true\n"
+
+def Watch.lines(+out: String) -> List<&2, String>:
+  M.Bg.lines(out)
+
+def Watch.last(ls: List<&2, String>, +acc: String) -> String:
+  match ls:
+    case Nil{}:
+      acc
+    case +l <> t:
+      Watch.last(t, Bool.pick(String, String.starts_with(l, "ident "), acc, String.trim(l)))
+
+def Watch.ident.of(ls: List<&2, String>, +acc: String) -> String:
+  match ls:
+    case Nil{}:
+      acc
+    case +l <> t:
+      Watch.ident.of(t, Bool.pick(String, String.starts_with(l, "ident "), String.trim(String.drop(l, 6n)), acc))
+
+def Watch.ran(r: P.Ran) -> String:
+  match r:
+    case P.Ran{_, out}:
+      out
+
+def Watch.tail.text(r: P.Ran) -> String:
+  match r:
+    case P.Ran{_, out}:
+      out
+
+# the outcome's words for the thread: the code, where the output is, its end
+def Watch.detail(+kind: String, +status: String, +dir: String, +tail: String) -> String:
+  Bool.pick(String, String.eq(kind, "run"),
+    Bool.pick(String, String.starts_with(status, "exit "), "exit code " ++ String.drop(status, 5n) ++ "\noutput: " ++ dir ++ "/out" ++ Bool.pick(String, String.is_empty(tail), "", "\nits end:\n" ++ tail), "output so far: " ++ dir ++ "/out"),
+    "")
+
+def Watch.report(+inbox: Chan(Msg), +thread: String, +id: String, +kind: String, +status: String, +dir: String) -> IO(Unit):
+  do IO<Unit>:
+    tr : P.Ran <- P.Proc.run("sh", ["-c", Watch.tail.sh(), "sh", dir], "/")
+    ok : Bool <- Chan.send(Msg, inbox, WatchEnded{thread, id, status, Watch.detail(kind, status, dir, Watch.tail.text(tr))})
+    return Unit{}
+
+# a check's verdict: "running" carries on, "stop" (unwatched) ends quietly,
+# anything else is reported
+def Watch.verdict(+last: String) -> String:
+  Bool.pick(String, String.starts_with(last, "done "), "exit " ++ String.drop(last, 5n), Bool.pick(String, String.eq(last, "found"), "done", last))
+
+def Watch.step(i: Nat, +status: String, +ident: String, +thread: String, +id: String, +kind: String, +dir: String, +inbox: Chan(Msg), k: String -> IO(Unit)) -> IO(Unit):
+  match i:
+    case 0n:
+      do IO<Unit>:
+        IO.sleep(2000)
+        k(ident)
+    case 1n:
+      IO.pure(Unit, Unit{})
+    case _:
+      Watch.report(inbox, thread, id, kind, Watch.verdict(status), dir)
+
+def Watch.ident.post(same: Bool, +inbox: Chan(Msg), +thread: String, +id: String, +ident: String) -> IO(Unit):
+  match same:
+    case True{}:
+      IO.pure(Unit, Unit{})
+    case False{}:
+      do IO<Unit>:
+        ok : Bool <- Chan.send(Msg, inbox, WatchIdent{thread, id, ident})
+        return Unit{}
+
+def Watch.got.k(+ls: List<&2, String>, +ident: String, +thread: String, +id: String, +kind: String, +dir: String, +inbox: Chan(Msg), k: String -> IO(Unit)) -> IO(Unit):
+  do IO<Unit>:
+    Watch.ident.post(String.eq(Watch.ident.of(ls, ident), ident), inbox, thread, id, Watch.ident.of(ls, ident))
+    Watch.step(C.Codec.pos(["running", "stop"], Watch.last(ls, "gone")), Watch.last(ls, "gone"), Watch.ident.of(ls, ident), thread, id, kind, dir, inbox, k)
+
+def Watch.got(r: P.Ran, +ident: String, +thread: String, +id: String, +kind: String, +dir: String, +inbox: Chan(Msg), k: String -> IO(Unit)) -> IO(Unit):
+  Watch.got.k(Watch.lines(Watch.ran(r)), ident, thread, id, kind, dir, inbox, k)
+
+def Watch.tick(late: Bool, +ident: String, +home: String, +thread: String, +id: String, +kind: String, +target: String, +inbox: Chan(Msg), k: String -> IO(Unit)) -> IO(Unit):
+  match late:
+    case True{}:
+      Watch.report(inbox, thread, id, kind, "timeout", Watch.dir(home, id))
+    case False{}:
+      IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", Watch.check.sh(), "sh", kind, target, ident, Watch.dir(home, id), Watch.unit(id)], "/"),
+        r => Watch.got(r, ident, thread, id, kind, Watch.dir(home, id), inbox, k))
+
+# the watcher: a check every 2 s until the work ends, its deadline passes,
+# or it is no longer watched
+def Watch.loop(fuel: Nat, +ident: String, +home: String, +thread: String, +id: String, +kind: String, +target: String, +deadline: Nat, +inbox: Chan(Msg)) -> IO(Unit):
+  match fuel:
+    case 0n:
+      IO.pure(Unit, Unit{})
+    case 1n+f:
+      IO.bind(Nat, Unit, Now.nat(), now => Watch.tick(Bool.and(Nat.is_gt(deadline, 0n), Nat.is_ge(now, deadline)), ident, home, thread, id, kind, target, inbox,
+        i2 => Watch.loop(f, i2, home, thread, id, kind, target, deadline, inbox)))
+
+def Watch.launched(r: P.Ran, +thread: String, +id: String, +inbox: Chan(Msg)) -> IO(Unit):
+  match r:
+    case P.Ran{_, out}:
+      do IO<Unit>:
+        ok : Bool <- Chan.send(Msg, inbox, WatchLaunched{thread, id})
+        return Unit{}
+
+def Watch.start(run: Bool, +home: String, +thread: String, +id: String, +target: String, +cwd: String, +inbox: Chan(Msg)) -> IO(Unit):
+  match run:
+    case True{}:
+      IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", Watch.launch.sh(), "sh", Watch.dir(home, id), cwd, target, Watch.unit(id)], "/"), r => Watch.launched(r, thread, id, inbox))
+    case False{}:
+      IO.pure(Unit, Unit{})
+
+# an Await: a work_run's command launched (unless it ran already), then
+# watched
+def Watch.job(+home: String, +thread: String, +id: String, +kind: String, +target: String, +ident: String, +deadline: Nat, +cwd: String, +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    Watch.start(String.eq(kind, "run"), home, thread, id, target, cwd, inbox)
+    Watch.loop(Fuel.forever(), ident, home, thread, id, kind, target, deadline, inbox)
+
+def Watch.stop.job(+home: String, +id: String, +kind: String, +target: String, +ident: String) -> IO(Unit):
+  do IO<Unit>:
+    r : P.Ran <- P.Proc.run("sh", ["-c", Watch.stop.sh(), "sh", kind, target, ident, Watch.dir(home, id), Watch.unit(id)], "/")
+    return Unit{}
+
 def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
   match h o:
     case Hub{st, f, ls, +cl, as, inbox, cfg, note} B.Send{+client, text}:
@@ -4631,6 +4783,14 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         +g : String = Hub.gen(st, now)
         IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Grok.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, fs, g, inbox)))
         Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
+    case Hub{st, f, ls, cl, as, +inbox, +cfg, note} B.Await{+thread, +id, +kind, +target, +ident, +deadline, +cwd}:
+      do IO<Hub>:
+        IO.spawn(Unit, Watch.job(Cfg.home(cfg), thread, id, kind, target, ident, deadline, cwd, inbox))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.WatchStop{_, +id, +kind, +target, +ident}:
+      do IO<Hub>:
+        IO.spawn(Unit, Watch.stop.job(Cfg.home(cfg), id, kind, target, ident))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{st, f, ls, cl, as, inbox, cfg, note} B.DeskLook{+client, +thread, +focused}:
       Hub.desk(Hub{st, f, ls, cl, as, inbox, cfg, note}, client, thread, focused)
     case Hub{+st, f, ls, +cl, as, +inbox, +cfg, note} B.TurnEnded{+thread, +state}:
@@ -6587,6 +6747,12 @@ def Msg.kind(m: Msg) -> String:
       "agent_exited"
     case Silence{}:
       "silence"
+    case WatchLaunched{_, _}:
+      "watch_launched"
+    case WatchIdent{_, _, _}:
+      "watch_ident"
+    case WatchEnded{_, _, _, _}:
+      "watch_ended"
 
 def Hub.spawn_failed.k(ok: Bool, h: Hub, +thread: String, +line: String, +now: Nat) -> IO(Hub):
   match ok h:
@@ -6702,6 +6868,20 @@ def Hub.quiet(h: Hub, +now: Nat) -> IO(Hub):
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       Hub.quiet.k(Quiet.all(as, st, now, Quieted{Nil{}, Nil{}}), Hub{st, f, ls, cl, Nil{}, inbox, cfg, note})
 
+def Hub.watched.k(i: Nat, +st: M.State, +thread: String, +id: String, +a: String, +b: String, +now: Nat) -> B.Step:
+  match i:
+    case 0n:
+      B.Watch.launched(st, now, thread, id)
+    case 1n:
+      B.Watch.identified(st, now, thread, id, a)
+    case _:
+      B.Watch.end(st, now, thread, id, a, b)
+
+# what a watcher reported, folded in (core's Watch.*)
+def Hub.watched(p: M.State & Hub, +i: Nat, +thread: String, +id: String, +a: String, +b: String, +now: Nat) -> IO(Hub):
+  (+st, h) = p
+  Hub.step(h, Hub.watched.k(i, st, thread, id, a, b, now))
+
 def Hub.release(p: M.State & Hub, +now: Nat) -> IO(Hub):
   (+st, h) = p
   do IO<Hub>:
@@ -6798,6 +6978,12 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.exited(h, thread, gen, code)
     case Silence{}:
       Hub.quiet(h, now)
+    case WatchLaunched{thread, id}:
+      Hub.watched(Hub.state(h), 0n, thread, id, "", "", now)
+    case WatchIdent{thread, id, ident}:
+      Hub.watched(Hub.state(h), 1n, thread, id, ident, "", now)
+    case WatchEnded{thread, id, status, detail}:
+      Hub.watched(Hub.state(h), 2n, thread, id, status, detail, now)
 
 # each message's handling is timed as hub.<kind> (docs/perf.md)
 def Hub.got(m: Maybe<&1, Msg>, h: Hub, k: Hub -> IO(Unit)) -> IO(Unit):

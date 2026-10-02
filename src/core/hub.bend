@@ -56,6 +56,13 @@ type Out is Data:
   # the turn that finished the thread's work ended (Answer.out); done names
   # that completion, so the server sends it once
   BotReply{thread: String, to: String, text: String, done: String}
+  # watch work for a thread (Watch.*): kind run (launch target, a shell
+  # command, in cwd, unless it already ran), unit, pid or file; ident
+  # what proves it is the same work ("-" not known yet); deadline 0 for
+  # none
+  Await{thread: String, id: String, kind: String, target: String, ident: String, deadline: Nat, cwd: String}
+  # stop owned work (work_cancel): its watcher reports the end
+  WatchStop{thread: String, id: String, kind: String, target: String, ident: String}
 
 type Step is Data:
   Step{changes: List<&2, M.Change>, outs: List<&2, Out>}
@@ -799,7 +806,7 @@ def Hub.methods() -> List<&2, String>:
    "thread.settle", "thread.unsettle", "thread.archive", "thread.unarchive",
    "thread.pin", "thread.unpin", "thread.rename", "thread.delete", "kicad.watch", "thread.modes", "app.update", "setting.set", "kicad.install",
    "ask.answer", "device.register", "device.drop", "kicad.info", "queue.resume",
-   "queue.edit", "queue.remove", "queue.move", "queue.steer", "thread.fork", "thread.back", "thread.provider", "update.now"]
+   "queue.edit", "queue.remove", "queue.move", "queue.steer", "thread.fork", "thread.back", "thread.provider", "update.now", "work.cancel", "task.cancel"]
 
 # Agent output (Claude stream-json)
 # ---------------------------------
@@ -2422,6 +2429,24 @@ def Task.finish.w(+s: M.State, +now: Nat, +thread: String, st: Step) -> Step:
     case Step{+cs, os}:
       Task.finish.w.e(Task.ended.last(cs, thread), s, now, thread, cs, os)
 
+def Task.by.id.k(r: Map<&2, M.Task> & M.Task) -> M.Task:
+  (_, t) = r
+  t
+
+def Task.by.id(+s: M.State, +id: String) -> M.Task:
+  match s:
+    case M.State{_, _, _, _, tk, _, _, _, _, _, _}:
+      Task.by.id.k(Map.get(M.Task, M.Task.blank(id), tk, id))
+
+# the person cancels a delegated task from its row: its child stops, and
+# the parent is told (once: TaskDelivered last); a finished task is left
+def Task.cancel.user(t: M.Task, +s: M.State, +now: Nat) -> Step:
+  match t:
+    case M.Task{+id, +parent, +child, _, +st, _, _, +provider, +model}:
+      Bool.pick(Step, M.TaskState.terminal(st), Step.none(),
+        Step.after(Step.before([M.TaskStateSet{id, M.TaskCancelled{}, "cancelled by the user", now}, M.TurnChanged{child, M.Interrupted{}, now}], [AgentStop{child}],
+          Hub.inbox.id(s, now, child, parent, M.System{}, Task.note(id, provider, model, "cancelled by the user", ""), Task.msg(child, id))), [M.TaskDelivered{id, now}]))
+
 # Retiring a run
 # --------------
 # Whenever a thread's process is retired (Stop, archive, delete, a crash,
@@ -2501,6 +2526,235 @@ def Hub.interrupt(+s: M.State, +now: Nat, +client: U32, +id: String, +thread: St
 def Retire.archive(+s: M.State, +now: Nat, +th: String, base: Step) -> Step:
   Retire.turn(Hub.running(Hub.thread(s, th)), s, now, th,
     Step.also(Step.after(base, List.append(&2, M.Change, Retire.asks(M.Asks.all(s), th, now), Bg.clear(s, th, now))), Retire.answers(M.Asks.all(s), th)))
+
+def Step.cat(a: Step, b: Step) -> Step:
+  match a b:
+    case Step{cs, os} Step{c2, o2}:
+      Step{List.append(&2, M.Change, cs, c2), List.append(&2, Out, os, o2)}
+
+# the note itself: to an idle thread it starts a turn; behind a running
+# turn or a held queue it waits
+def Lost.note(held: Bool, +s: M.State, +now: Nat, +th: String, +text: String) -> Step:
+  match held:
+    case True{}:
+      Hub.post.go(True{}, Hub.thread(s, th), Hub.cwd(s, Hub.thread(s, th)), M.Queue.of(s, th), now, th, M.Link.id("backplane", Hub.id("l", now, Hub.seq(s))), M.System{}, text)
+    case False{}:
+      Hub.inbox.id(s, now, "backplane", th, M.System{}, text, M.Link.id("backplane", Hub.id("l", now, Hub.seq(s))))
+
+# Watched work
+# ------------
+# Work outside an agent's own task list (a long build, a job on another
+# machine, a process already running) is the hub's to watch: work_run
+# launches a command so it survives the hub, work_watch follows a systemd
+# unit, a pid or a file, and when it ends the thread is told the outcome
+# (it wakes, or the note waits behind its turn). Rows are WorkSet kind
+# "watch" (setting watch.<thread>), written before anything is launched;
+# the row's removal makes the telling happen once. An outcome that cannot
+# be known (a pid gone or reused, a deadline passed) is never success
+# (laws watch_*).
+#
+# A row: id, state ("launching", "watching", "cancelling", or ended:
+# M.Bg.ended), "", note, "watch", kind, target, ident, deadline.
+
+def Watch.line(+id: String, +state: String, +note: String, +kind: String, +target: String, +ident: String, +deadline: Nat) -> String:
+  M.Bg.line(id, state) ++ "\t\t" ++ M.Bg.clean(note) ++ "\twatch\t" ++ M.Bg.clean(kind) ++ "\t" ++ M.Bg.clean(target) ++ "\t" ++ M.Bg.clean(ident) ++ "\t" ++ Nat.show(deadline)
+
+def Watch.kind(+l: String) -> String:
+  M.Bg.field(l, 5n)
+
+def Watch.target(+l: String) -> String:
+  M.Bg.field(l, 6n)
+
+def Watch.ident(+l: String) -> String:
+  M.Bg.field(l, 7n)
+
+def Watch.deadline(+l: String) -> Nat:
+  M.Switch.num(M.Bg.field(l, 8n), 0n)
+
+def Watch.state(+l: String) -> String:
+  M.Bg.doing(l)
+
+def Watch.put(+th: String, +now: Nat, ls: List<&2, String>) -> M.Change:
+  M.WorkSet{th, "watch", M.Bg.show(ls), now}
+
+def Watch.find(ls: List<&2, String>, +id: String) -> String:
+  match ls:
+    case Nil{}:
+      ""
+    case +l <> t:
+      Bool.pick(String, M.Bg.is(l, id), l, Watch.find(t, id))
+
+def Watch.set.k(hit: Bool, +l: String, +state: String) -> String:
+  match hit:
+    case True{}:
+      M.Bg.line(M.Bg.field(l, 0n), state) ++ M.Bg.rest(l)
+    case False{}:
+      l
+
+# row id's state set
+def Watch.set(ls: List<&2, String>, +id: String, +state: String) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Watch.set.k(M.Bg.is(l, id), l, state) <> Watch.set(t, id, state)
+
+def Watch.ident.k(hit: Bool, +l: String, +ident: String) -> String:
+  match hit:
+    case True{}:
+      Watch.line(M.Bg.field(l, 0n), Watch.state(l), M.Bg.title(l), Watch.kind(l), Watch.target(l), ident, Watch.deadline(l))
+    case False{}:
+      l
+
+def Watch.ident.set(ls: List<&2, String>, +id: String, +ident: String) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Watch.ident.k(M.Bg.is(l, id), l, ident) <> Watch.ident.set(t, id, ident)
+
+def Watch.deadline.of(+now: Nat, +secs: Nat) -> Nat:
+  Bool.pick(Nat, Nat.is_eq(secs, 0n), 0n, Nat.add(now, secs))
+
+# a new row's id: the thread's and the log's length
+def Watch.id(+s: M.State, +th: String) -> String:
+  "w-" ++ th ++ "-" ++ Nat.show(Hub.seq(s))
+
+# work to watch, recorded before its watcher (and for kind run, its
+# launch) starts: the Await goes out with the step that writes the row
+# (law watch_intent_before_launch)
+def Watch.start(+s: M.State, +now: Nat, +th: String, +kind: String, +target: String, +note: String, +secs: Nat) -> Step:
+  Step{[Watch.put(th, now, List.append(&2, String, M.Work.watch(s, th), [Watch.line(Watch.id(s, th), Bool.pick(String, String.eq(kind, "run"), "launching", "watching"), note, kind, target, Bool.pick(String, String.eq(kind, "file"), Watch.id(s, th), "-"), Watch.deadline.of(now, secs))]))],
+    [Await{th, Watch.id(s, th), kind, target, Bool.pick(String, String.eq(kind, "file"), Watch.id(s, th), "-"), Watch.deadline.of(now, secs), Hub.cwd(s, Hub.thread(s, th))}]}
+
+# the watcher found what proves the work is the same (a unit's
+# invocation, a pid's boot and start time)
+def Watch.identified(+s: M.State, +now: Nat, +th: String, +id: String, +ident: String) -> Step:
+  Step{[Watch.put(th, now, Watch.ident.set(M.Work.watch(s, th), id, ident))], Nil{}}
+
+def Watch.launched.k(launching: Bool, +s: M.State, +now: Nat, +th: String, +id: String) -> Step:
+  match launching:
+    case True{}:
+      Step{[Watch.put(th, now, Watch.set(M.Work.watch(s, th), id, "watching"))], Nil{}}
+    case False{}:
+      Step.none()
+
+# the launched command is running (a row cancelling or ended meanwhile is
+# left as it is)
+def Watch.launched(+s: M.State, +now: Nat, +th: String, +id: String) -> Step:
+  Watch.launched.k(String.eq(Watch.state(Watch.find(M.Work.watch(s, th), id)), "launching"), s, now, th, id)
+
+def Watch.word(+status: String, cancelling: Bool) -> String:
+  Bool.pick(String, Bool.and(String.eq(status, "gone"), cancelling), "cancelled",
+    Bool.pick(String, String.eq(status, "gone"), "it ended, outcome unknown (not known to have succeeded)", status))
+
+def Watch.text(+note: String, +word: String, +detail: String) -> String:
+  "[Backplane] Watched work \"" ++ note ++ "\" ended: " ++ word ++ Bool.pick(String, String.is_empty(detail), "", "\n" ++ detail)
+
+def Watch.tell(+s: M.State, +now: Nat, +th: String, +text: String) -> Step:
+  Lost.note(Bool.or(Hub.running(Hub.thread(s, th)), M.Queue.waiting(s, th)), s, now, th, text)
+
+def Watch.end.k(found: Bool, timeout: Bool, +l: String, +s: M.State, +now: Nat, +th: String, +id: String, +status: String, +detail: String) -> Step:
+  match found timeout:
+    case False{} _:
+      Step.none()
+    case True{} True{}:
+      Step.cat(Step{[Watch.put(th, now, Watch.set(M.Work.watch(s, th), id, M.Bg.ended.mark() ++ "unknown"))], Nil{}},
+        Watch.tell(s, now, th, Watch.text(M.Bg.title(l), "timed out, still running, outcome unknown", detail)))
+    case True{} False{}:
+      Step.cat(Step{[Watch.put(th, now, M.Bg.drop(M.Work.watch(s, th), id))], Nil{}},
+        Watch.tell(s, now, th, Watch.text(M.Bg.title(l), Watch.word(status, String.eq(Watch.state(l), "cancelling")), detail)))
+
+# watched work ended (status: "exit <code>", "gone", "timeout", or the
+# file's "found"): told once, from the row that is still there; a timeout
+# keeps it, ended with outcome unknown (laws watch_end_*, watch_timeout_*)
+def Watch.end(+s: M.State, +now: Nat, +th: String, +id: String, +status: String, +detail: String) -> Step:
+  Watch.end.k(Bool.and(Bool.not(String.is_empty(Watch.find(M.Work.watch(s, th), id))), Bool.not(M.Bg.ended(Watch.find(M.Work.watch(s, th), id)))),
+    String.eq(status, "timeout"), Watch.find(M.Work.watch(s, th), id), s, now, th, id, status, detail)
+
+def Watch.cancel.k(live: Bool, +l: String, +s: M.State, +now: Nat, +th: String, +id: String) -> Step:
+  match live:
+    case True{}:
+      Step{[Watch.put(th, now, Watch.set(M.Work.watch(s, th), id, "cancelling"))], [WatchStop{th, id, Watch.kind(l), Watch.target(l), Watch.ident(l)}]}
+    case False{}:
+      Step.none()
+
+# owned work stopped: the row says "cancelling" until its watcher
+# confirms the end (then "cancelled") or that it cannot know (law
+# watch_cancel_keeps_until_confirmed)
+def Watch.cancel(+s: M.State, +now: Nat, +th: String, +id: String) -> Step:
+  Watch.cancel.k(Bool.and(Bool.not(String.is_empty(Watch.find(M.Work.watch(s, th), id))), Bool.not(M.Bg.ended(Watch.find(M.Work.watch(s, th), id)))),
+    Watch.find(M.Work.watch(s, th), id), s, now, th, id)
+
+# no longer watched: it may still run, and its watcher stops (law
+# watch_unwatch_says_may_run)
+def Watch.unwatch.k(+l: String, +s: M.State, +now: Nat, +th: String, +id: String) -> Step:
+  Step{[Watch.put(th, now, M.Bg.drop(M.Work.watch(s, th), id))], [WatchStop{th, id, "unwatch", Watch.target(l), Watch.ident(l)}]}
+
+def Watch.unwatch(+s: M.State, +now: Nat, +th: String, +id: String) -> Step:
+  Watch.unwatch.k(Watch.find(M.Work.watch(s, th), id), s, now, th, id)
+
+def Watch.unwatch.text() -> String:
+  "no longer watched; it may still run"
+
+def Watch.rearm.one(ended: Bool, +l: String, +th: String, +cwd: String, rest: List<&2, Out>) -> List<&2, Out>:
+  match ended:
+    case True{}:
+      rest
+    case False{}:
+      Await{th, M.Bg.field(l, 0n), Watch.kind(l), Watch.target(l), Watch.ident(l), Watch.deadline(l), cwd} <> rest
+
+def Watch.rearm.rows(ls: List<&2, String>, +th: String, +cwd: String) -> List<&2, Out>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Watch.rearm.one(M.Bg.ended(l), l, th, cwd, Watch.rearm.rows(t, th, cwd))
+
+def Watch.rearm.go(ts: List<&2, M.Thread>, +s: M.State) -> List<&2, Out>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case +t <> rest:
+      List.append(&2, Out, Bool.pick(List<&2, Out>, String.contains(M.Thread.id(t), "~"), Nil{}, Watch.rearm.rows(M.Work.watch(s, M.Thread.id(t)), M.Thread.id(t), Hub.cwd(s, t))), Watch.rearm.go(rest, s))
+
+# after a restart every watched work still open is watched again (a run
+# still launching is launched only if it never ran); a mirror never
+# watches (laws recover_rearms_watches, mirror_never_awaits)
+def Watch.rearm(+s: M.State) -> List<&2, Out>:
+  match s:
+    case M.State{_, +ts, _, _, _, _, _, _, _, _, _}:
+      Watch.rearm.go(Map.values(&2, M.Thread, ts), s)
+
+# a thread t1 watching a build (run: its turn running; far: the thread a
+# mirror's, "p1~t1"); the laws' example
+def Watch.demo.at(+run: Bool, +th: String) -> M.State:
+  M.State.replay(List.append(&2, M.Change, [M.ProjectCreated{"p1", "p", "/p", 1n}, M.ThreadCreated{th, "p1", "x", M.Local{}, "", "", "claude", "", 1n},
+    M.WorkSet{th, "watch", Watch.line("w-1", "watching", "build", "run", "make", "-", 0n), 2n}], Bool.pick(List<&2, M.Change>, run, [M.TurnChanged{th, M.Running{}, 3n}], Nil{})), M.State.empty())
+
+def Watch.demo(+run: Bool) -> M.State:
+  Watch.demo.at(run, "t1")
+
+def Watch.again(+s: M.State, st: Step) -> M.State:
+  M.State.replay(Queue.changes(st), s)
+
+def Watch.awaits(os: List<&2, Out>) -> Nat:
+  match os:
+    case Nil{}:
+      0n
+    case Await{_, _, _, _, _, _, _} <> t:
+      1n+Watch.awaits(t)
+    case _ <> t:
+      Watch.awaits(t)
+
+def Watch.told(es: List<&2, M.Entry>, +word: String) -> Bool:
+  match es:
+    case Nil{}:
+      False{}
+    case M.Msg{_, _, _, +text, _} <> t:
+      Bool.or(String.contains(text, word), Watch.told(t, word))
+    case _ <> t:
+      Watch.told(t, word)
 
 # Updating waits for work
 # -----------------------
@@ -2603,6 +2857,11 @@ def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p:
       Hub.switch(s, now, client, id, J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "provider", ""))
     case 30n:
       Step{[M.SettingSet{"update.wait", "", now}], [Reply.ok(client, id), Upgrade{}]}
+    # the person stops watched work or a delegated task from its row
+    case 31n:
+      Step.before(Nil{}, [Reply.ok(client, id)], Watch.cancel(s, now, J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "id", "")))
+    case 32n:
+      Step.before(Nil{}, [Reply.ok(client, id)], Task.cancel.user(Maybe.default(&2, M.Task, Task.of_child(s, J.Json.get_str(p, "child", "")), M.Task.blank("")), s, now))
     case _:
       Hub.more(C.Codec.pos(Hub.methods.git(), m), s, now, client, id, p, m)
 
@@ -2727,11 +2986,6 @@ def Hub.agent_line.v(v: Nat, +s: M.State, +now: Nat, +thread: String, +line: Str
 # turn ends them. A thread with a queue held (after a Stop) gets the note
 # queued behind it, never drained.
 
-def Step.cat(a: Step, b: Step) -> Step:
-  match a b:
-    case Step{cs, os} Step{c2, o2}:
-      Step{List.append(&2, M.Change, cs, c2), List.append(&2, Out, os, o2)}
-
 def Lost.why(+why: String) -> String:
   Bool.pick(String, String.eq(why, "restart"), "A restart of Backplane",
     Bool.pick(String, String.eq(why, "exit"), "The agent process exiting",
@@ -2773,15 +3027,6 @@ def Lost.live(t: M.Thread) -> Bool:
   match t:
     case M.Thread{_, _, _, _, _, _, _, ar, _, _, _, _, _, _, _, _, _, _, _, _, de}:
       Bool.not(Bool.or(ar, de))
-
-# the note itself: to an idle thread it starts a turn; behind a running
-# turn or a held queue it waits
-def Lost.note(held: Bool, +s: M.State, +now: Nat, +th: String, +text: String) -> Step:
-  match held:
-    case True{}:
-      Hub.post.go(True{}, Hub.thread(s, th), Hub.cwd(s, Hub.thread(s, th)), M.Queue.of(s, th), now, th, M.Link.id("backplane", Hub.id("l", now, Hub.seq(s))), M.System{}, text)
-    case False{}:
-      Hub.inbox.id(s, now, "backplane", th, M.System{}, text, M.Link.id("backplane", Hub.id("l", now, Hub.seq(s))))
 
 def Bg.lost.k(has: Bool, on: Bool, +s: M.State, +now: Nat, +th: String, +why: String, +ls: List<&2, String>) -> Step:
   match has on:
@@ -3296,8 +3541,12 @@ def Rec.lost(ts: List<&2, String>, r: Rec, +now: Nat) -> Rec:
 # running end (a carried child's task stays open), asks close, torn task
 # deliveries are finished, and lost background work is logged or marked
 # to be told (Hub.carry and Rec.release tell it)
-def Hub.recover(+s: M.State, +now: Nat) -> Step:
+def Hub.recover.k(+s: M.State, +now: Nat) -> Step:
   Rec.step(Rec.lost(Rec.ids(Rec.threads(s)), Rec.repair(Rec.turns(Rec.ids(Rec.threads(s)), Rec.asks(M.Asks.all(s), Rec{s, Nil{}, Nil{}}, now), s, now), s, now), now))
+
+# (and every watched work still open is watched again: Watch.rearm)
+def Hub.recover(+s: M.State, +now: Nat) -> Step:
+  Step.cat(Step{Nil{}, Watch.rearm(s)}, Hub.recover.k(s, now))
 
 # Carrying on
 # -----------

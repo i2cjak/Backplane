@@ -214,12 +214,47 @@ def Subs.done(as: List<&2, SubAgg>, +busy: List<&2, String>, +info: Map<&2, Stri
     case +a <> t:
       Subs.done.k(Subs.has(busy, Agg.call(a)), a, info, Subs.done(t, busy, info))
 
+# watched work (hub.bend's Watch.*: work_run, work_watch): a row a
+# piece, kind "watch", its state the word ("launching", "watching",
+# "cancelling", or "unknown" once its outcome cannot be known)
+def Subs.watch.word(+l: String) -> String:
+  Bool.pick(String, M.Bg.ended(l), M.Bg.status(l), M.Bg.doing(l))
+
+def Subs.watch.row(+l: String, +info: Map<&2, String>) -> SubRow:
+  SubRow{M.Bg.field(l, 0n), True{}, "watch: " ++ M.Bg.title(l), "watch", Subs.watch.word(l), M.Bg.field(l, 6n), True{}, Subs.open(info, M.Bg.field(l, 0n), True{}), 0n, Nil{}}
+
+def Subs.watch.rows(ls: List<&2, String>, +info: Map<&2, String>) -> List<&2, SubRow>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Subs.watch.row(l, info) <> Subs.watch.rows(t, info)
+
+def Subs.key(r: SubRow) -> String:
+  match r:
+    case SubRow{k, _, _, _, _, _, _, _, _, _}:
+      k
+
+def Subs.word(r: SubRow) -> String:
+  match r:
+    case SubRow{_, _, _, _, w, _, _, _, _, _}:
+      w
+
+# the action a row's Stop sends (with the row's key): watched work still
+# at work "work-cancel", a delegated task at work "task-cancel"; "" for
+# none (the agent's own subagents stop with its turn)
+def Subs.cancel(r: SubRow) -> String:
+  match r:
+    case SubRow{_, +agent, _, +who, +word, _, +live, _, _, _}:
+      Bool.pick(String, Bool.and(agent, Bool.and(String.eq(who, "watch"), Bool.and(live, Bool.not(Bool.or(String.eq(word, "cancelling"), String.eq(word, "unknown")))))), "work-cancel",
+        Bool.pick(String, Bool.and(Bool.not(agent), live), "task-cancel", ""))
+
 # the agent's own subagents: those at work in the order they started, then
-# the newest finished ones
+# the work Backplane watches for it, then the newest finished ones
 def Subs.agents(+st: M.State, +info: Map<&2, String>, +th: String) -> List<&2, SubRow>:
   +as = Subs.aggs(st, th)
   +ls = M.Bg.of(st, th)
-  List.append(&2, SubRow, Subs.bg.rows(ls, as, info), List.take(&2, SubRow, Subs.done(as, Subs.calls(ls), info), Subs.done_kept()))
+  List.concat(&2, SubRow, [Subs.bg.rows(ls, as, info), Subs.watch.rows(M.Work.watch(st, th), info), List.take(&2, SubRow, Subs.done(as, Subs.calls(ls), info), Subs.done_kept())])
 
 # what a thread did last: its newest entry's first line
 def Subs.latest.of(es: List<&2, M.Entry>) -> String:

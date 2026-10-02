@@ -629,7 +629,8 @@ def Mob.sub(r: SB.SubRow) -> J.Json:
       J.Json.obj([J.KV{"id", J.Json.str(key)}, J.KV{"agent", J.Json.bool(agent)}, J.KV{"title", J.Json.str(title)}, J.KV{"who", J.Json.str(who)},
         J.KV{"state", J.Json.str(word)}, J.KV{"doing", J.Json.str(doing)}, J.KV{"live", J.Json.bool(live)}, J.KV{"open", J.Json.bool(open)},
         J.KV{"n", J.Json.nat(n)}, J.KV{"steps", J.Json.arr(Mob.sub.steps(ss))},
-        J.KV{"act", J.Json.str(Bool.pick(String, agent, "fold", "select"))}, J.KV{"value", J.Json.str(Bool.pick(String, agent, SB.Subs.ask(open, key), key))}])
+        J.KV{"act", J.Json.str(Bool.pick(String, agent, "fold", "select"))}, J.KV{"value", J.Json.str(Bool.pick(String, agent, SB.Subs.ask(open, key), key))},
+        J.KV{"cancel", J.Json.str(SB.Subs.cancel(SB.SubRow{key, agent, title, who, word, doing, live, open, 0n, Nil{}}))}])
 
 def Mob.subs.go(rs: List<&2, SB.SubRow>) -> List<&2, J.Json>:
   match rs:

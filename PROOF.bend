@@ -6817,3 +6817,39 @@ def Laws.exit_stale_gen_quiet():
 
 def Laws.final_partial_line_flushed():
   {==}
+
+def Laws.watch_intent_before_launch():
+  {==}
+
+def Laws.watch_end_once():
+  {==}
+
+def Laws.watch_end_wakes_idle():
+  {==}
+
+def Laws.watch_end_queues_running():
+  {==}
+
+def Laws.watch_timeout_unknown_not_success():
+  {==}
+
+def Laws.watch_pid_identity_unknown():
+  {==}
+
+def Laws.watch_cancel_keeps_until_confirmed():
+  {==}
+
+def Laws.watch_cancel_confirmed():
+  {==}
+
+def Laws.watch_unwatch_says_may_run():
+  {==}
+
+def Laws.recover_rearms_watches():
+  {==}
+
+def Laws.mirror_never_awaits():
+  {==}
+
+def Laws.prompt_background_work_b():
+  {==}
