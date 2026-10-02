@@ -1251,6 +1251,7 @@ def Hubs.screen.k(+ss: List<&2, Shown>, +cur: String, +list: List<&2, Hub>) -> J
     J.KV{"search", Hubs.first_obj(ss, "search")},
     J.KV{"folders", J.Json.get_obj(Hubs.of(ss, cur), "folders")},
     J.KV{"settings", J.Json.get_obj(Hubs.of(ss, cur), "settings")},
+    J.KV{"tour", J.Json.get_obj(Hubs.of(ss, cur), "tour")},
     J.KV{"find", J.Json.get_obj(Hubs.of(ss, cur), "find")},
     J.KV{"island", N.Note.island.k(Hubs.lines(ss))},
     J.KV{"thread", Hubs.origin.focus(ss, cur, "thread")},

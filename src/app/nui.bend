@@ -2984,13 +2984,53 @@ def Nui.event.lb(open: Bool, +n: Nui, e: W.WinEv) -> Step:
     case False{}:
       Lbx.pressed(n, e)
 
+# The first-run tour (core/onboard.bend) is modal: Enter and the right
+# arrow go on, the left arrow goes back, Esc ends it, a press on one of its
+# buttons ("ob-" hits in layout.bend's Lay.tour) acts, and nothing else
+# gets through.
+def Tour.name(+code: U32) -> String:
+  Bool.pick(String, Bool.or(Bool.or(U32.is_eq(code, Key.enter()), U32.is_eq(code, Key.kp_enter())), U32.is_eq(code, Key.right())), "ob-next",
+    Bool.pick(String, U32.is_eq(code, Key.left()), "ob-back", Bool.pick(String, U32.is_eq(code, Key.escape()), "ob-skip", "")))
+
+def Tour.key(+name: String, +n: Nui) -> Step:
+  Bool.pick(Step, String.is_empty(name), Step{n, Nil{}, False{}}, Nui.act(n, name, ""))
+
+def Tour.press(m: Maybe<&2, Hit>, +n: Nui) -> Step:
+  match m:
+    case Some{Hit{_, _, _, _, +a, _}}:
+      Bool.pick(Step, String.starts_with(a, "ob-"), Nui.act(n, a, ""), Step{n, Nil{}, False{}})
+    case None{}:
+      Step{n, Nil{}, False{}}
+
+def Tour.event(+n: Nui, e: W.WinEv) -> Step:
+  match e:
+    case W.WKey{+code, _, _, True{}}:
+      Tour.key(Tour.name(code), n)
+    case W.WButton{+x, +y, 1, True{}}:
+      Tour.press(Hit.find(Nui.hits(n), x, y), n)
+    case W.WSize{w, h}:
+      Nui.resize(n, w, h)
+    case W.WExpose{}:
+      Step{n, Nil{}, True{}}
+    case W.WQuit{}:
+      Step{n, [NQuit{}], False{}}
+    case _:
+      Step{n, Nil{}, False{}}
+
+def Nui.event.t(tour: Bool, +n: Nui, e: W.WinEv) -> Step:
+  match tour:
+    case True{}:
+      Tour.event(n, e)
+    case False{}:
+      Nui.event.lb(Lbx.on(n), n, e)
+
 # every event of a batch, in order
 def Nui.events(es: List<&2, W.WinEv>, s: Step) -> Step:
   match es s:
     case Nil{} _:
       s
     case e <> t Step{+n, cs, d}:
-      Nui.events(t, Step.merge(Step{n, cs, d}, Nui.event.lb(Lbx.on(n), n, e)))
+      Nui.events(t, Step.merge(Step{n, cs, d}, Nui.event.t(U.Tour.on(Nui.ui(n)), n, e)))
 
 # The performance overlay
 # -----------------------

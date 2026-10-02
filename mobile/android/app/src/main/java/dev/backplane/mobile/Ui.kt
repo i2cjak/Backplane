@@ -220,6 +220,26 @@ fun App(m: AppModel) {
         },
         dismissButton = { TextButton(onClick = { removed = true; m.act("proj-keep") }) { Text(r.no) } },
     )
+    // the first-run tour (core/onboard.bend): Skip and Done end it for every client of the hub
+    s.tour?.let { t ->
+        AlertDialog(
+            onDismissRequest = {},
+            title = {
+                Column {
+                    Text(t.counter, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(t.title)
+                }
+            },
+            text = { Text(t.body) },
+            confirmButton = { TextButton(onClick = { m.act("ob-next") }) { Text(t.next) } },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { m.act("ob-skip") }) { Text(t.skip) }
+                    if (!t.first) TextButton(onClick = { m.act("ob-back") }) { Text(t.back) }
+                }
+            },
+        )
+    }
     s.settings?.let { SettingsSheet(m, it) }
     s.find?.let { FindSheet(m, it) }
     // a row's, a project's or (in a thread) a file link's menu

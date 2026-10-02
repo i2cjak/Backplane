@@ -576,6 +576,19 @@ document.addEventListener("keydown", (e) => {
   dispatch(alt || el.getAttribute("data-enter"), valueOf(el));
 });
 
+// The first-run tour (view.bend's View.tour) while its card is on the page:
+// Enter and the right arrow go on, the left arrow back, Esc ends it; no
+// other key reaches the page under it
+document.addEventListener("keydown", (e) => {
+  if (e.isComposing || !document.querySelector(".tour")) return;
+  const act = e.key === "Enter" || e.key === "ArrowRight" ? "ob-next" : e.key === "ArrowLeft" ? "ob-back" : e.key === "Escape" ? "ob-skip" : "";
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  e.stopImmediatePropagation();
+  if (!act) return;
+  e.preventDefault();
+  dispatch(act, "");
+}, true);
+
 // Lightbox
 // --------
 // A click on an image in a thread ([data-lightbox]) shows it over the page.

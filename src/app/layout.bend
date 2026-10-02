@@ -35,6 +35,7 @@ import ../core/hist.bend as HS
 import ../core/look.bend as LO
 import ../core/tools.bend as TO
 import ../core/emb.bend as EM
+import ../core/onboard.bend as OB
 
 # Nui -> draw ops and hit regions. Ops are gathered bottom-up (paint
 # order) and reversed once into the topmost-first order the rasterizer
@@ -2833,6 +2834,15 @@ def Set.pair(+ty: Ty, +info: Map<&2, String>, +on: Bool, +x: U32, +w: U32, +y: U
     Bool.pick(Out, String.is_empty(pair), Out.none(), Lay.button(ty, D.Clip.all(), (x + w - 16 - cw : U32), (y + 10 : U32), "Copy", T.Th.soft(), "copy", pair)),
     Bool.pick(Out, U.Pair.qr.ready(info), Lay.chip(ty, (x + w - 16 - cw - 6 - Lay.button.w(ty, "QR code") : U32), (y + 10 : U32), "QR code", on, "flag", "pairqr"), Out.none())])
 
+# the first-run tour again (core/onboard.bend: action "ob-open")
+def Set.tour(+ty: Ty, +x: U32, +w: U32, +y: U32) -> Out:
+  +bw = Lay.button.w(ty, "Show the tour")
+  Out.all([
+    Set.head(ty, "Tour", x, y),
+    Set.card(x, (y + 32 : U32), w, 66),
+    Set.row.r(ty, "Welcome tour", "The short walk through projects, threads, bots, your agents and your machines.", x, (y + 34 : U32), w, (bw + 22 : U32)),
+    Lay.button(ty, D.Clip.all(), (x + w - 16 - bw : U32), (y + 44 : U32), "Show the tour", T.Th.soft(), "ob-open", "")])
+
 def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x0: U32, +x1: U32, +h: U32, +raw: U32) -> Out:
   +w = {U32.min((x1 - x0 - 64 : U32), 720) : U32}
   +x = {(x0 + U32.shr((x1 - x0 - w : U32)) : U32) : U32}
@@ -2846,7 +2856,7 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
   +er = {(Set.rows(ty, tms, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32) : U32}
   +ey = {(202 + er : U32) : U32}
   +fy = {(ey + 46 : U32) : U32}
-  +total = {(1156 + dy + fy + Set.voice.h(ty, n, x, w) + Set.keys.h(n) + 20 : U32) : U32}
+  +total = {(1156 + dy + fy + Set.voice.h(ty, n, x, w) + Set.keys.h(n) + 132 : U32) : U32}
   +off = {U32.min(raw, U32.dim(total, h)) : U32}
   +b = {(0 - off : U32) : U32}
   +b2 = {(b + 128 : U32) : U32}
@@ -2906,7 +2916,8 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Nightly") - 6 - Lay.button.w(ty, "Stable") : U32), (b2 + 946 + dy + fy : U32), "Stable", Bool.not(String.eq(M.Setting.get(st, "update.channel", "stable"), "nightly")), "setting", "update.channel=stable"),
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Nightly") : U32), (b2 + 946 + dy + fy : U32), "Nightly", String.eq(M.Setting.get(st, "update.channel", "stable"), "nightly"), "setting", "update.channel=nightly"),
     Set.voice(ty, st, n, x, w, (b2 + 1010 + dy + fy : U32)),
-    Set.keys(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) : U32))])),
+    Set.keys(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) : U32)),
+    Set.tour(ty, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.keys.h(n) + 16 : U32))])),
     Out{List.append(&2, R.Op, [D.Draw.rect(D.Clip.all(), x0, 0, (x1 - x0 : U32), 51, T.Th.bg(), 255), D.Draw.rect(D.Clip.all(), x0, 51, (x1 - x0 : U32), 1, T.Th.line(), 255)],
       Ty.text(ty, 0n, "Settings", D.Clip.all(), (x0 + 24 : U32), 0, 52, T.Th.text())), Nil{}},
     Lay.button(ty, D.Clip.all(), (x1 - 16 - Lay.button.w(ty, "Close") : U32), 12, "Close", T.Th.soft(), "flag", "settings"),
@@ -4960,6 +4971,72 @@ def Lay.main.m(m: Maybe<&2, Out>, +ty: Ty, +memo: TLMemo, +n: S.Nui, +x0: U32, +
     case None{}:
       Lay.main(ty, memo, n, x0, x1)
 
+# The first-run tour (core/onboard.bend, client.bend's Tour.*): the window
+# dims except the part the step points at (outlined in the accent), and a
+# card holds the step, Skip, Back and Next. Its hits are all "ob-" actions;
+# nui.bend's Tour.event takes the keys.
+def Tour.rect(+g: String, +h: U32, +x1: U32) -> D.Clip:
+  Bool.pick(D.Clip, String.eq(g, "sidebar"), D.Clip{0, 0, 264, h},
+    Bool.pick(D.Clip, String.eq(g, "add"), D.Clip{224, 8, 260, 44},
+      Bool.pick(D.Clip, String.eq(g, "settings"), D.Clip{0, U32.dim(h, 48), 264, h},
+        Bool.pick(D.Clip, String.eq(g, "head"), D.Clip{264, 0, U32.max(x1, 265), 52}, D.Clip{0, 0, 0, 0}))))
+
+def Tour.dim(c: D.Clip, +ww: U32, +hh: U32) -> List<&2, R.Op>:
+  match c:
+    case D.Clip{+x0, +y0, +x1, +y1}:
+      Bool.pick(List<&2, R.Op>, U32.is_eq(x1, 0), [D.Draw.rect(D.Clip.all(), 0, 0, ww, hh, 0, 140)],
+        List.concat(&2, R.Op, [[D.Draw.rect(D.Clip.all(), 0, 0, ww, y0, 0, 140), D.Draw.rect(D.Clip.all(), 0, y1, ww, U32.dim(hh, y1), 0, 140),
+          D.Draw.rect(D.Clip.all(), 0, y0, x0, (y1 - y0 : U32), 0, 140), D.Draw.rect(D.Clip.all(), x1, y0, U32.dim(ww, x1), (y1 - y0 : U32), 0, 140)],
+          D.Draw.frame(D.Clip.all(), x0, y0, (x1 - x0 : U32), (y1 - y0 : U32), T.Th.accent()),
+          D.Draw.frame(D.Clip.all(), (x0 + 1 : U32), (y0 + 1 : U32), (x1 - x0 - 2 : U32), (y1 - y0 - 2 : U32), T.Th.accent())]))
+
+# beside the sidebar's parts, else in the middle
+def Tour.x(+g: String, +ww: U32, +cw: U32) -> U32:
+  Bool.pick(U32, Bool.or(Bool.or(String.eq(g, "sidebar"), String.eq(g, "add")), String.eq(g, "settings")),
+    U32.min(288, U32.dim(ww, (cw + 12 : U32))), U32.shr(U32.dim(ww, cw)))
+
+def Tour.lines(ls: List<&2, String>, +ty: Ty, +x: U32, +y: U32) -> List<&2, R.Op>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case l <> t:
+      List.append(&2, R.Op, Ty.text(ty, 0n, l, D.Clip.all(), x, y, 22, T.Th.dim()), Tour.lines(t, ty, x, (y + 22 : U32)))
+
+def Tour.back(on: Bool, +ty: Ty, +x: U32, +y: U32) -> Out:
+  match on:
+    case True{}:
+      Lay.button(ty, D.Clip.all(), x, y, "Back", T.Th.soft(), "ob-back", "")
+    case False{}:
+      Out.none()
+
+def Lay.tour(+ty: Ty, +n: S.Nui, +ww: U32, +hh: U32) -> Out:
+  +i = U.Tour.at(S.Nui.ui(n))
+  +g = OB.Ob.target(i)
+  +cw = {U32.min(440, U32.dim(ww, 24)) : U32}
+  +cx = Tour.x(g, ww, cw)
+  +ls = Ty.wrap(ty, 0n, OB.Ob.body(i), U32.dim(cw, 32))
+  +ch = {(122 + U32.from_nat(List.length(&2, String, ls)) * 22 : U32) : U32}
+  +cy = {U32.min(96, U32.dim(hh, (ch + 12 : U32))) : U32}
+  +by = {(cy + ch - 44 : U32) : U32}
+  +nb = OB.Ob.forward(i)
+  +nx = {(cx + cw - 16 - Lay.button.w(ty, nb) : U32) : U32}
+  Out.all([
+    Out{Tour.dim(Tour.rect(g, hh, Lay.x1(n)), ww, hh), [Lay.hit(0, 0, ww, hh, "", "")]},
+    Out{Lay.box(D.Clip.all(), cx, cy, cw, ch, 0, T.Th.panel(), T.Th.line()), [Lay.hit(cx, cy, cw, ch, "", "")]},
+    Out.ops(List.concat(&2, R.Op, [Ty.text(ty, 2n, OB.Ob.counter(i), D.Clip.all(), (cx + 16 : U32), (cy + 8 : U32), 20, T.Th.faint()),
+      Ty.text(ty, 1n, OB.Ob.title(i), D.Clip.all(), (cx + 16 : U32), (cy + 30 : U32), 32, T.Th.text()),
+      Tour.lines(ls, ty, (cx + 16 : U32), (cy + 68 : U32))])),
+    Lay.button(ty, D.Clip.all(), (cx + 16 : U32), by, "Skip", T.Th.soft(), "ob-skip", ""),
+    Tour.back(Nat.is_gt(i, 0n), ty, (nx - 6 - Lay.button.w(ty, "Back") : U32), by),
+    Lay.button(ty, D.Clip.all(), nx, by, nb, T.Th.accent(), "ob-next", "")])
+
+def Lay.tour.if(open: Bool, +ty: Ty, +n: S.Nui, +w: U32, +h: U32) -> Out:
+  match open:
+    case True{}:
+      Lay.tour(ty, n, w, h)
+    case False{}:
+      Out.none()
+
 # the whole window, topmost first; `more` lays out what the sidebar shows
 # under the projects, `main` a main area in place of the usual one
 def Lay.frame.x(+ty: Ty, +memo: TLMemo, +n: S.Nui, more: D.Clip -> U32 -> Col, main: Maybe<&2, Out>) -> Out:
@@ -4976,7 +5053,8 @@ def Lay.frame.x(+ty: Ty, +memo: TLMemo, +n: S.Nui, more: D.Clip -> U32 -> Col, m
         Lay.palette.if(U.Ui.flag(S.Nui.ui(n), "palette"), ty, n, w, h),
         Lay.proj.if(U.Ui.flag(S.Nui.ui(n), "proj"), ty, n, w, h),
         Lay.hover(U.Ui.info(S.Nui.ui(n), "hover"), S.Hover.alpha(n, S.Nui.ms_of(n))),
-        Lay.perf.if(U.Ui.flag(S.Nui.ui(n), "perf"), ty, U.Ui.info(S.Nui.ui(n), "perf.hud"), w)]))
+        Lay.perf.if(U.Ui.flag(S.Nui.ui(n), "perf"), ty, U.Ui.info(S.Nui.ui(n), "perf.hud"), w),
+        Lay.tour.if(U.Tour.on(S.Nui.ui(n)), ty, n, w, h)]))
 
 def Lay.frame(+ty: Ty, +memo: TLMemo, +n: S.Nui) -> Out:
   Lay.frame.x(ty, memo, n, c => y => Col{Out.none(), y}, None{})

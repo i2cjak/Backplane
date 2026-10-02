@@ -919,7 +919,7 @@ def Shell.event(a: Shell, e: W.WinEv) -> IO(Shell):
     case Shell{n, w, d, qd, q, i, wa} W.WDrop{_}:
       IO.bind(Window & String, Shell, W.Win.dropped(w), r => Shell.dropped(r, n, d, qd, q, i, wa))
     case Shell{+n, w, d, qd, q, i, +wa} _:
-      Shell.step(Shell{n, w, d, qd, q, i, wa}, L.Comp.pend(Aux.ty(wa), N.Nui.event.lb(N.Lbx.on(n), n, e)))
+      Shell.step(Shell{n, w, d, qd, q, i, wa}, L.Comp.pend(Aux.ty(wa), N.Nui.event.t(U.Tour.on(N.Nui.ui(n)), n, e)))
 
 def Shell.events.go(es: List<&2, W.WinEv>, a: Shell) -> IO(Shell):
   match es:

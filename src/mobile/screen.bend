@@ -16,6 +16,7 @@ import ../core/subs.bend as SB
 import ../core/diff.bend as DF
 import ../core/vt.bend as VT
 import ../core/codec.bend as C
+import ../core/onboard.bend as OB
 import ../core/botui.bend as B
 import ./bots.bend as MB
 import ../core/hist.bend as HS
@@ -878,6 +879,24 @@ def Mob.renaming.k(none: Bool, +id: String, +value: String) -> J.Json:
 def Mob.renaming(+u: U.Ui) -> J.Json:
   Mob.renaming.k(String.is_empty(U.Ren.on(u)), U.Ren.on(u), U.Ui.scratch(u, "@f.title"))
 
+# the first-run tour (core/onboard.bend), while a step is on screen: its
+# number, count and counter, its title and text, and the buttons (actions
+# "ob-back", "ob-next", "ob-skip", sent with no value to the hub in focus)
+def Mob.tour.k(+i: Nat) -> J.Json:
+  J.Json.obj([J.KV{"step", J.Json.nat(i)}, J.KV{"count", J.Json.nat(OB.Ob.count())}, J.KV{"counter", J.Json.str(OB.Ob.counter(i))},
+    J.KV{"title", J.Json.str(OB.Ob.title(i))}, J.KV{"body", J.Json.str(OB.Ob.body(i))}, J.KV{"first", J.Json.bool(Nat.is_eq(i, 0n))},
+    J.KV{"next", J.Json.str(OB.Ob.forward(i))}, J.KV{"back", J.Json.str("Back")}, J.KV{"skip", J.Json.str("Skip")}])
+
+def Mob.tour.at(live: Bool, +i: Nat) -> J.Json:
+  match live:
+    case True{}:
+      Mob.tour.k(i)
+    case False{}:
+      J.Null{}
+
+def Mob.tour(+u: U.Ui) -> J.Json:
+  Mob.tour.at(U.Tour.on(u), U.Tour.at(u))
+
 def Mob.deleting(+u: U.Ui) -> J.Json:
   Mob.deleting.k(String.is_empty(U.Ui.row_deleting(u)), Mob.st(u), U.Ui.row_deleting(u))
 
@@ -1011,7 +1030,7 @@ def Mob.settings.k(+u: U.Ui, more: List<&2, J.Json>) -> J.Json:
 def Mob.settings(open: Bool, +u: U.Ui) -> J.Json:
   match open:
     case True{}:
-      Mob.settings.k(u, Mob.keys(u))
+      Mob.settings.k(u, List.append(&2, J.Json, Mob.keys(u), [Mob.set.row("Tour", "The short walk through projects, threads, bots, your agents and your machines.", [Mob.set.btn("Show the tour", "ob-open", "", False{})])]))
     case False{}:
       J.Null{}
 
@@ -1081,6 +1100,7 @@ def Mob.screen.go(+focus: Bool, +u: U.Ui, +g: U.SGroups) -> J.Json:
         J.KV{"deleting", Mob.deleting(u)},
         J.KV{"renaming", Mob.renaming(u)},
         J.KV{"removing", Mob.removing(u)},
+        J.KV{"tour", Mob.tour(u)},
         J.KV{"settings", Mob.settings(U.Ui.flag(u, "settings"), u)},
         J.KV{"find", Mob.find(U.Ui.flag(u, "palette"), u)},
         J.KV{"folders", PK.MPick.json(u)},

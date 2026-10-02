@@ -17,6 +17,9 @@ struct RootView: View {
                 .sheet(isPresented: settingsShown) {
                     if let st = model.screen?.settings { SettingsSheet(model: model, settings: st, version: model.screen?.version ?? "") }
                 }
+                .sheet(isPresented: tourShown) {
+                    if let t = model.screen?.tour { TourSheet(model: model, tour: t) }
+                }
                 .sheet(isPresented: findShown) {
                     if let f = model.screen?.find { FindSheet(model: model, find: f) }
                 }
@@ -34,6 +37,11 @@ struct RootView: View {
     // split up so Swift type-checks each part in reasonable time
     private var settingsShown: Binding<Bool> {
         Binding(get: { model.screen?.settings != nil }, set: { if !$0, model.screen?.settings != nil { model.act("flag", "settings") } })
+    }
+
+    // the first-run tour (core/onboard.bend): up while the screen carries a step
+    private var tourShown: Binding<Bool> {
+        Binding(get: { model.screen?.tour != nil }, set: { _ in })
     }
 
     private var findShown: Binding<Bool> {
@@ -973,5 +981,31 @@ struct ThreadScreen: View {
         case "x": "xmark"
         default: "circle"
         }
+    }
+}
+
+// the first-run tour: one step (its text comes from core/onboard.bend),
+// Skip, Back and Next; Skip and the last step's Done end it for every
+// client of the hub
+struct TourSheet: View {
+    let model: AppModel
+    let tour: Tour
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(tour.counter).font(.caption).foregroundStyle(.secondary)
+            Text(tour.title).font(.title3.weight(.semibold))
+            Text(tour.body).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            HStack {
+                Button(tour.skip) { model.act("ob-skip") }
+                Spacer()
+                if !tour.first { Button(tour.back) { model.act("ob-back") } }
+                Button(tour.next) { model.act("ob-next") }.buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(20)
+        .presentationDetents([.medium])
+        .interactiveDismissDisabled()
     }
 }

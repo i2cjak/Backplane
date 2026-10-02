@@ -14,6 +14,7 @@ import ./src/core/hub.bend as H
 import ./src/core/refs.bend as RF
 import ./src/core/todo.bend as TD
 import ./src/core/apikeys.bend as AK
+import ./src/core/onboard.bend as OBD
 import ./src/core/fm.bend as FMG
 import ./src/core/acp.bend as AC
 import ./src/core/mcp.bend as MC
@@ -4527,3 +4528,55 @@ law qr_link_none:
 # no pairing link, no code
 law pair_qr_none:
   {U.Pair.qr.ready(Map.new(&2, String)) == False{} : Bool}
+# The first-run tour (core/onboard.bend). Every step has a title and a
+# body, and the list is as long as the count the moves use.
+law onboard_steps_sound:
+  {OBD.Ob.sound(OBD.Ob.steps()) == True{} : Bool}
+
+law onboard_count:
+  {List.length(&2, OBD.Step, OBD.Ob.steps()) == OBD.Ob.count() : Nat}
+
+# next and back stay in range: back stops at the first step, next from the
+# last ends the tour, and the end stays the end
+law onboard_back_floor:
+  {OBD.Ob.back(0n) == 0n : Nat}
+
+law onboard_next_step:
+  {OBD.Ob.next(2n) == 3n : Nat}
+
+law onboard_back_step:
+  {OBD.Ob.back(3n) == 2n : Nat}
+
+law onboard_next_ends:
+  {OBD.Ob.live(OBD.Ob.next(7n)) == False{} : Bool}
+
+law onboard_end_stays:
+  {OBD.Ob.next(OBD.Ob.count()) == OBD.Ob.count() : Nat}
+
+# skip ends it from anywhere
+law onboard_skip_ends:
+  {OBD.Ob.live(OBD.Ob.skip()) == False{} : Bool}
+
+# nothing shows before the hub's state has arrived
+law onboard_waits:
+  for done: Bool
+  for raw: String
+  {OBD.Ob.at(False{}, done, raw) == OBD.Ob.count() : Nat}
+
+# a first run shows the first step; once done it never shows by itself,
+# only when asked for again; a step the client holds is read back, and a
+# wild one ends the tour
+law onboard_fresh_first:
+  {OBD.Ob.at(True{}, False{}, "") == 0n : Nat}
+
+law onboard_done_quiet:
+  {OBD.Ob.at(True{}, True{}, "") == OBD.Ob.count() : Nat}
+
+law onboard_reopen:
+  {OBD.Ob.at(True{}, True{}, OBD.Ob.raw(0n)) == 0n : Nat}
+
+law onboard_raw_round:
+  {OBD.Ob.at(True{}, True{}, OBD.Ob.raw(5n)) == 5n : Nat}
+
+law onboard_wild_ends:
+  {OBD.Ob.at(True{}, False{}, "99") == OBD.Ob.count() : Nat}

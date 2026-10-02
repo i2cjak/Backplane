@@ -21,6 +21,7 @@ import ./links.bend as LK
 import ./apikeys.bend as AK
 import ./diff.bend as DF
 import ./fm.bend as FM
+import ./onboard.bend as OB
 
 # The client state, Elm-style, shared by the native window and the web
 # page: a host feeds server messages to Ui.recv and user actions to Ui.act,
@@ -6328,6 +6329,60 @@ def Emb.act.k(i: Nat, +u: Ui, +value: String) -> Act:
 def Emb.act(+u: Ui, +action: String, +value: String) -> Act:
   Emb.act.k(C.Codec.pos(["emb-key", "emb-paste", "emb-restart", "emb-pin"], action), u, value)
 
+# The first-run tour (core/onboard.bend): the step on screen is the
+# scratch "@tour" ("" until the person moves); the hub keeps only that it
+# was finished or skipped, the setting "onboard.done", so every client of
+# a hub agrees. It waits until the hub's state has arrived (a sequence
+# above 0), so it never flashes for a hub that has finished it. Actions
+# "ob-next", "ob-back", "ob-skip" and "ob-open" (Settings' "Show the
+# tour", which shuts Settings: the tour is shown over the usual screen).
+def Tour.done(+st: M.State) -> Bool:
+  String.eq(M.Setting.get(st, "onboard.done", ""), "1")
+
+def Tour.at(+u: Ui) -> Nat:
+  OB.Ob.at(Nat.is_gt(Ui.seq(u), 0n), Tour.done(Ui.state(u)), Ui.scratch(u, "@tour"))
+
+def Tour.on(+u: Ui) -> Bool:
+  OB.Ob.live(Tour.at(u))
+
+def Tour.finish(u: Ui) -> Act:
+  Ui.setting(Ui.scratch_set(u, "@tour", ""), "onboard.done=1")
+
+# to step i, or (past the last) the end
+def Tour.go.k(live: Bool, +i: Nat, u: Ui) -> Act:
+  match live:
+    case True{}:
+      Act{Ui.scratch_set(u, "@tour", OB.Ob.raw(i)), Nil{}}
+    case False{}:
+      Tour.finish(u)
+
+def Tour.go(+i: Nat, u: Ui) -> Act:
+  Tour.go.k(OB.Ob.live(i), i, u)
+
+def Tour.act.k(i: Nat, +u: Ui) -> Act:
+  match i:
+    case 0n:
+      Tour.go(OB.Ob.next(Tour.at(u)), u)
+    case 1n:
+      Tour.go(OB.Ob.back(Tour.at(u)), u)
+    case 2n:
+      Tour.finish(u)
+    case 3n:
+      Act{Ui.scratch_set(Ui.flag_off(u, "settings"), "@tour", OB.Ob.raw(0n)), Nil{}}
+    case _:
+      Act{u, Nil{}}
+
+# a move needs a step on screen (a stray one never ends the tour)
+def Tour.act.on(on: Bool, +u: Ui, +action: String) -> Act:
+  match on:
+    case True{}:
+      Tour.act.k(C.Codec.pos(["ob-next", "ob-back", "ob-skip", "ob-open"], action), u)
+    case False{}:
+      Tour.act.k(Bool.pick(Nat, String.eq(action, "ob-open"), 3n, 9n), u)
+
+def Tour.act(+u: Ui, +action: String) -> Act:
+  Tour.act.on(Tour.on(u), u, action)
+
 # a user action with its value
 def Ui.act.m(menu: Bool, +i: Nat, +u: Ui, +action: String, +value: String) -> Act:
   match menu:
@@ -6343,8 +6398,15 @@ def Ui.act.e(emb: Bool, +u: Ui, +action: String, +value: String) -> Act:
     case False{}:
       Emb.sync.sel(Ui.sel(u), Mpage.sync(Ui.act.m(Nat.is_lt(C.Codec.pos(Menu.actions(), action), 16n), C.Codec.pos(Menu.actions(), action), u, action, value)))
 
+def Ui.act.t(tour: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match tour:
+    case True{}:
+      Tour.act(u, action)
+    case False{}:
+      Ui.act.e(String.starts_with(action, "emb-"), u, action, value)
+
 def Ui.act(+u: Ui, +action: String, +value: String) -> Act:
-  Ui.act.e(String.starts_with(action, "emb-"), u, action, value)
+  Ui.act.t(String.starts_with(action, "ob-"), u, action, value)
 
 # the newest n of a list (oldest first), and how many are left out
 type Win is Data:

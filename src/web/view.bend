@@ -24,6 +24,7 @@ import ../core/voice.bend as VC
 import ../core/hist.bend as HS
 import ../core/emb.bend as EM
 import ../core/qr.bend as QR
+import ../core/onboard.bend as OB
 
 # Ui -> Node. Every decision (order, shelf, status) comes from core defs
 # with laws behind them; this file only lays them out.
@@ -753,7 +754,7 @@ def View.settings(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +not
       [View.setrow("Update channel", "Stable takes releases; nightly also takes the daily builds.", View.chips(["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel")),
       View.setrow("Backplane " ++ v, U.Update.line(nf, note),
         Bool.pick(List<&2, D.Node>, U.Update.packaged(nf), Nil{}, Bool.pick(List<&2, D.Node>, String.starts_with(note, "update "), [D.Dom.button("primary", "update", "", "Install the update", "Install update")],
-          [D.Dom.button("", "update-check", "", "Look for an update now", "Check now")])))], View.voice.set(u, st), View.keys.set(u)])}]}
+          [D.Dom.button("", "update-check", "", "Look for an update now", "Check now")])))], View.voice.set(u, st), View.keys.set(u), [View.setrow("Tour", "The short walk through projects, threads, bots, your agents and your machines.", [D.Dom.button("", "ob-open", "", "Show the tour again", "Show the tour")])]])}]}
 
 def View.empty(n: Nat) -> D.Node:
   D.El{"main", "empty", [D.At{"class", "empty"}], [D.Txt{Bool.pick(String, Nat.is_eq(n, 0n), "Add a project with + to start.", "Pick a thread, or start one with + next to a project.")}]}
@@ -1623,16 +1624,53 @@ def View.aside.if(open: Bool, +kind: String, +u: U.Ui) -> List<&2, D.Node>:
     case False{}:
       Nil{}
 
+# The first-run tour (core/onboard.bend): a dimmed page and a card with the
+# step, Skip, Back and Next. The page's class names what the step points at
+# ("tour-sidebar", "tour-add", "tour-head", "tour-settings"), and style.css
+# lifts that part of the page over the dimming. host.js sends Enter and the
+# right arrow as ob-next, the left arrow as ob-back, Esc as ob-skip.
+def View.tour.card(+i: Nat) -> List<&2, D.Node>:
+  [D.El{"div", "", [D.At{"class", "tour-back"}], Nil{}},
+    D.El{"div", "tour", [D.At{"class", "tour"}, D.At{"role", "dialog"}], [
+      D.Dom.span("count", OB.Ob.counter(i)),
+      D.El{"div", "", [D.At{"class", "tour-title"}], [D.Txt{OB.Ob.title(i)}]},
+      D.El{"p", "", [D.At{"class", "tour-body"}], [D.Txt{OB.Ob.body(i)}]},
+      D.El{"div", "", [D.At{"class", "tour-btns"}], [
+        D.Dom.button("", "ob-skip", "", "End the tour (Esc)", "Skip"),
+        D.Dom.span("gap", ""),
+        D.Dom.button("", "ob-back", "", "The step before (left arrow)", "Back"),
+        D.Dom.button("primary", "ob-next", "", "Next step (Enter or right arrow)", OB.Ob.forward(i))]}]}]
+
+def View.tour.k(on: Bool, +i: Nat) -> List<&2, D.Node>:
+  match on:
+    case True{}:
+      View.tour.card(i)
+    case False{}:
+      Nil{}
+
+def View.tour(+u: U.Ui) -> List<&2, D.Node>:
+  View.tour.k(U.Tour.on(u), U.Tour.at(u))
+
+def View.tour.cls.k(on: Bool, +i: Nat) -> String:
+  match on:
+    case True{}:
+      Bool.pick(String, String.is_empty(OB.Ob.target(i)), " tour-on", " tour-on tour-" ++ OB.Ob.target(i))
+    case False{}:
+      ""
+
+def View.tour.cls(+u: U.Ui) -> String:
+  View.tour.cls.k(U.Tour.on(u), U.Tour.at(u))
+
 # the whole page
 def View.page.b(+bv: BI.View, u: U.Ui) -> D.Node:
   match u:
     case U.Ui{+st, +sel, +d, +l, +o, +on, +now, +ad, +pa, +v, +r, +w, +e, +note, +nf, +ob, +tr}:
       D.El{"div", "app", [D.At{"class", Bool.pick(String, pa, "app panel", "app") ++ Bool.pick(String, Bool.or(Bool.or(Bool.not(String.is_empty(sel)), U.Flag.get(o, "settings")), WB.WB.shown(bv)), " picked", "")
-        ++ Bool.pick(String, String.eq(M.Setting.get(st, "ui.theme", ""), "light"), " light", "")}],
+        ++ Bool.pick(String, String.eq(M.Setting.get(st, "ui.theme", ""), "light"), " light", "") ++ View.tour.cls(U.Ui{st, sel, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr})}],
         D.Dom.cat([View.sidebar(U.Ui{st, sel, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr}),
           View.main.b(U.Flag.get(o, "settings"), bv, U.Ui{st, sel, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr}, sel, List.length(&2, M.Project, U.Ui.projects(st)))],
           D.Dom.cat(View.aside.if(pa, U.Str.get(nf, "view.kind:" ++ sel), U.Ui{st, sel, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr}),
-            D.Dom.cat(View.picker(U.Flag.get(o, "proj"), U.Ui{st, sel, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr}), View.error(e))))}
+            D.Dom.cat(View.picker(U.Flag.get(o, "proj"), U.Ui{st, sel, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr}), D.Dom.cat(View.error(e), View.tour(U.Ui{st, sel, d, l, o, on, now, ad, pa, v, r, w, e, note, nf, ob, tr})))))}
 
 def View.page(+u: U.Ui) -> D.Node:
   View.page.b(BI.BU.view(u), u)
