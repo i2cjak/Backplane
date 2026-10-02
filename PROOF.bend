@@ -6928,3 +6928,21 @@ def Laws.live_old_gen_quiet():
 
 def Laws.live_trunc_marked():
   {==}
+
+def Laws.want_new_ignores_other_threads():
+  {==}
+
+def Laws.made_selects_own():
+  {==}
+
+def Laws.made_selects_own_later():
+  {==}
+
+def Laws.replay_cannot_select():
+  {==}
+
+def Laws.made_stale_quiet():
+  {==}
+
+def Laws.made_fork_selects_own():
+  {==}

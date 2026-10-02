@@ -82,6 +82,11 @@ def Step.outs(os: List<&2, Out>) -> Step:
 def Reply.ok(+client: U32, +id: String) -> Out:
   Send{client, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{id}}, J.KV{"ok", J.Flag{True{}}}]))}
 
+# the answer to a request that made a thread: the thread, so the client
+# that asked (and only it) selects it (client.bend's Made.reply)
+def Reply.made(+client: U32, +id: String, +thread: String) -> Out:
+  Send{client, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{id}}, J.KV{"ok", J.Flag{True{}}}, J.KV{"thread", J.Str{thread}}]))}
+
 def Reply.err(+client: U32, +id: String, msg: String) -> Out:
   Send{client, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{id}}, J.KV{"ok", J.Flag{False{}}}, J.KV{"error", J.Str{msg}}]))}
 
@@ -332,7 +337,7 @@ def Hub.thread_create(+s: M.State, +now: Nat, +client: U32, +id: String, +p: J.J
   Step{[M.ThreadCreated{th, project, title,
     Hub.new.env(M.Scratch.is(project), env), "", Hub.new.wt(M.Scratch.is(project), Hub.project.root(Hub.project(s, project)), th), J.Json.get_str(p, "provider", M.Setting.get(s, "agent.provider", "claude")),
     J.Json.get_str(p, "model", M.Setting.get(s, "agent.model", "")), now}],
-    Reply.ok(client, id) <> Hub.new.outs(M.Scratch.is(project), th, Hub.project.root(Hub.project(s, project)), env)}
+    Reply.made(client, id, th) <> Hub.new.outs(M.Scratch.is(project), th, Hub.project.root(Hub.project(s, project)), env)}
 
 # the project's first thread, made as thread.create would, after it
 def Hub.project_add.thread(+s: M.State, +now: Nat, +client: U32, +id: String, +pid: String, +made: M.Change) -> Step:
@@ -1739,7 +1744,7 @@ def Hub.fork.k(t: M.Thread, +s: M.State, +now: Nat, +client: U32, +id: String, +
       Step{[M.ThreadCreated{th, p, "Fork: " ++ ti, Fork.env.s(M.Scratch.is(p), wt), "", Hub.new.wt(M.Scratch.is(p), Hub.project.root(Hub.project(s, p)), th), pr, mo, now}, M.ModesSet{th, rt, im, mo, now}, M.ThreadForked{th, src, now},
           M.TurnQueued{th, HD.Hand.prefix() ++ src, HD.Hand.fork(Hub.entries(s), src, ti), now},
           M.ActivityLogged{src, Hub.id("k", now, Hub.seq(s)), "info", "fork", "Forked into \"Fork: " ++ ti ++ "\"", now}],
-        Reply.ok(client, id) <> Fork.outs.s(M.Scratch.is(p), wt, th, Hub.project.root(Hub.project(s, p)), src)}
+        Reply.made(client, id, th) <> Fork.outs.s(M.Scratch.is(p), wt, th, Hub.project.root(Hub.project(s, p)), src)}
 
 # a new thread that goes on from this one
 def Hub.fork(+s: M.State, +now: Nat, +client: U32, +id: String, +src: String) -> Step:

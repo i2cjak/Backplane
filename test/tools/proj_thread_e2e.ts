@@ -90,6 +90,7 @@ try {
   check("made: answered ok", r1?.ok === true, r1);
   check("made: folder", existsSync(join(user, "fan")));
   check("made: one thread there", !!fan && threads(fan.id).length === 1, order);
+  check("made: the answer names its thread", !!fan && r1?.thread === threads(fan.id)[0]?.id, r1);
   check("made: the thread comes before the answer", !!fan && at((c) => c.$ === "ThreadCreated" && c.project === fan.id) < at((c) => c.$ === "reply" && c.id === id1), order);
 
   // added: an existing folder the same
@@ -108,6 +109,34 @@ try {
   const [, r4] = await rpc("project.add", { path: join(user, "kart") });
   check("back: answered ok", r4?.ok === true, r4);
   check("back: no new thread", !!kart && threads(kart.id).length === 1, order);
+  check("back: the answer names none", r4?.thread === undefined, r4);
+
+  // two clients create at once: each answer names that client's thread
+  // (client.bend's Made.reply selects only it; laws made_*)
+  const other: any = { replies: new Map<number, any>() };
+  const ws2 = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+  ws2.binaryType = "arraybuffer";
+  ws2.onmessage = (e) => {
+    const o = JSON.parse(W.decode(new Uint8Array(e.data as ArrayBuffer)));
+    if (o.t === "reply") other.replies.set(Number(o.id), o);
+  };
+  await new Promise((r, j) => { ws2.onopen = r; ws2.onerror = j; });
+  await sleep(300);
+  const before = threads(fan!.id).length;
+  const mine = ++n;
+  ws.send(W.encode(JSON.stringify({ id: mine, m: "thread.create", p: { project: fan!.id, title: "mine" } })));
+  ws2.send(W.encode(JSON.stringify({ id: 1, m: "thread.create", p: { project: fan!.id, title: "theirs" } })));
+  const ra = await until(10000, () => replies.get(mine));
+  const rb = await until(10000, () => other.replies.get(1));
+  await until(5000, () => threads(fan!.id).length >= before + 2);
+  const tMine = threads(fan!.id).find((c) => c.title === "mine")?.id;
+  const tTheirs = threads(fan!.id).find((c) => c.title === "theirs")?.id;
+  check("at once: each answer names its own thread", !!tMine && !!tTheirs && ra?.thread === tMine && rb?.thread === tTheirs, [ra, rb, tMine, tTheirs]);
+  // a fork's answer names the fork
+  const [, rf] = await rpc("thread.fork", { thread: tMine });
+  const fork = order.filter((c) => c.$ === "ThreadCreated" && c.title === "Fork: mine").pop();
+  check("fork: the answer names the fork", !!fork && rf?.thread === fork.id, [rf, fork]);
+  ws2.close();
   ws.close();
 } finally {
   proc.kill();

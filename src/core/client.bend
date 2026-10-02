@@ -160,12 +160,11 @@ def Ui.decode.go(xs: List<&2, J.Json>, acc: List<&2, M.Change>) -> List<&2, M.Ch
 def Ui.decode(xs: List<&2, J.Json>) -> List<&2, M.Change>:
   List.reverse(&2, M.Change, Ui.decode.go(xs, Nil{}))
 
-# what a change means for the page beyond the read model: a new thread we
-# asked for gets selected; a finished reply ends its live text
+# what a change means for the page beyond the read model: a finished
+# reply ends its live text (a new thread is selected by the hub's answer
+# to the request that made it, Made.reply, never by its arrival)
 def Ui.see(u: Ui, c: M.Change) -> Ui:
   match u c:
-    case Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, True{}, er, note, nf, ob, tr} M.ThreadCreated{+id, _, _, _, _, _, _, _, _}:
-      Ui{st, id, dr, live, op, on, now, ad, pa, v, rid, False{}, er, note, nf, ob, tr}
     case Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr} M.MessagePosted{+thread, _, M.Assistant{}, _, _}:
       Ui{st, sel, dr, Map.set(&2, String, live, thread, ""), op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
     case Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr} M.TurnChanged{+thread, M.Completed{}, _}:
@@ -882,17 +881,6 @@ def Ui.send.t(u: Ui, text: String, +mode: String) -> Act:
     case Ui{st, +sel, dr, live, op, on, +now, ad, pa, v, +rid, w, er, note, +nf, ob, tr}:
       Ui.also(Ui.rpc.keep(Ui{st, sel, Map.set(&2, String, Map.set(&2, String, dr, sel, ""), "@att:" ++ sel, ""), live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr},
         "turn.start", [J.KV{"thread", J.Str{sel}}, J.KV{"text", J.Str{text}}, J.KV{"msg", J.Str{Ui.msg_id(Str.get(nf, "cid"), now, rid)}}, J.KV{"mode", J.Str{mode}}]), List.append(&2, Cmd, Draft.keep(sel, ""), [Scroll{}]))
-
-def Ui.new_thread(u: Ui, +pid: String) -> Act:
-  match u:
-    case Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, _, er, note, nf, ob, tr}:
-      Ui.rpc(Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, True{}, er, note, nf, ob, tr}, "thread.create", [J.KV{"project", J.Str{pid}}, J.KV{"title", J.Str{"New thread"}}])
-
-# a fork of the selected thread; the new thread is selected when it comes
-def Ui.fork(u: Ui) -> Act:
-  match u:
-    case Ui{st, +sel, dr, live, op, on, now, ad, pa, v, rid, _, er, note, nf, ob, tr}:
-      Ui.rpc(Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, True{}, er, note, nf, ob, tr}, "thread.fork", [J.KV{"thread", J.Str{sel}}])
 
 # the add form shut (the folder goes to Proj.adding)
 def Ui.add_project(u: Ui) -> Ui:
@@ -2367,6 +2355,35 @@ def Ui.scratch_set(u: Ui, +k: String, v: String) -> Ui:
     case Ui{st, sel, dr, live, op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}:
       Ui{st, sel, Map.set(&2, String, dr, k, v), live, op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}
 
+# Creating a thread
+# -----------------
+# New Thread, Fork and adding a project ask the hub for a thread; the hub
+# answers with the thread it made ({"t":"reply", "thread"}: Reply.made).
+# Only that answer selects it, and only on the hub and connection that
+# asked ("@want.new" holds the request's id, "@want.new.at" where it went):
+# another client's new thread, a replayed log or an older request's
+# answer selects nothing (laws want_new_*, made_*, replay_cannot_select).
+
+def Made.at(+u: Ui) -> String:
+  Ui.info(u, "local.machine") ++ "|" ++ Ui.info(u, "local.generation")
+
+def Made.rid(u: Ui) -> Nat:
+  match u:
+    case Ui{_, _, _, _, _, _, _, _, _, _, rid, _, _, _, _, _, _}:
+      rid
+
+# the next request is one that makes a thread
+def Made.want(+u: Ui) -> Ui:
+  Ui.scratch_set(Ui.scratch_set(u, "@want.new", Nat.show(Made.rid(u))), "@want.new.at", Made.at(u))
+
+def Ui.new_thread(u: Ui, +pid: String) -> Act:
+  Ui.rpc(Made.want(u), "thread.create", [J.KV{"project", J.Str{pid}}, J.KV{"title", J.Str{"New thread"}}])
+
+# a fork of the selected thread; the new thread is selected when the
+# hub's answer names it
+def Ui.fork(+u: Ui) -> Act:
+  Ui.rpc(Made.want(u), "thread.fork", [J.KV{"thread", J.Str{Ui.sel(u)}}])
+
 # The active view
 # ---------------
 # The "sidebar.view" setting: "projects" (the default) or "active". The
@@ -3001,7 +3018,7 @@ def Ui.want_new(u: Ui, b: Bool) -> Ui:
 # a folder added or made as a project: the hub starts a thread there with
 # it (Hub.project_add), and this client goes to it
 def Proj.adding(+u: Ui, m: String, +path: String) -> Act:
-  Proj.rpc(Ui.want_new(Ui.info_set(u, "proj.err", ""), True{}), m, [J.KV{"path", J.Str{path}}])
+  Proj.rpc(Made.want(Ui.info_set(u, "proj.err", "")), m, [J.KV{"path", J.Str{path}}])
 
 def Proj.mine(+u: Ui, +o: J.Json) -> Bool:
   Bool.and(Bool.not(String.is_empty(Ui.scratch(u, "@proj.rid"))), String.eq(J.Json.as_raw(J.Json.get(o, "id"), ""), Ui.scratch(u, "@proj.rid")))
@@ -5599,9 +5616,43 @@ def Bots.reply(+o: J.Json, +u: Ui) -> Ui:
     Bots.reply.put(o, "secret", "@hook.secret", Bots.reply.put(o, "hook", "@hook.id",
       Bots.reply.put(o, "token", "@hook.token", Bots.reply.put(o, "tokenHook", "@hook.tokfor", Bots.reply.put(o, "tokenUrl", "@hook.tokurl", Bots.reply.bot(o, u))))))))))))
 
+# A thread request uses the same binding as a bot request.
+def Want.thread(+u: Ui, id: String) -> Ui:
+  Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, "@bot.want", ""), "@thread.want", id), "@want.hub", Ui.info(u, "local.machine")), "@want.gen", Ui.info(u, "local.generation"))
+
+def Made.got(go: Bool, u: Ui, +th: String) -> Ui:
+  match go:
+    case True{}:
+      Want.thread(u, th)
+    case False{}:
+      u
+
+def Made.take(mine: Bool, +o: J.Json, +u: Ui) -> Ui:
+  match mine:
+    case True{}:
+      Made.got(Bool.and(Bool.and(J.Json.get_bool(o, "ok", False{}), Bool.not(String.is_empty(J.Json.get_str(o, "thread", "")))), String.eq(Ui.scratch(u, "@want.new.at"), Made.at(u))),
+        Ui.scratch_set(Ui.scratch_set(u, "@want.new", ""), "@want.new.at", ""), J.Json.get_str(o, "thread", ""))
+    case False{}:
+      u
+
+# the answer to this client's newest request for a thread: the thread it
+# names is wanted (selected now if here, else when it arrives); a failure
+# or a hub too old to name it selects nothing; any other answer leaves
+# the want alone
+def Made.reply(+o: J.Json, +u: Ui) -> Ui:
+  Made.take(Bool.and(Bool.not(String.is_empty(Ui.scratch(u, "@want.new"))), String.eq(J.Json.as_raw(J.Json.get(o, "id"), ""), Ui.scratch(u, "@want.new"))), o, u)
+
+# a hub's answer naming the thread a request made (for laws)
+def Made.demo(+id: String, +thread: String) -> J.Json:
+  J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{id}}, J.KV{"ok", J.Flag{True{}}}, J.KV{"thread", J.Str{thread}}])
+
+# a thread made by someone, as a frame of log changes (for laws)
+def Made.made(+t: String, +th: String) -> J.Json:
+  Seq.demo(t, [C.Change.encode(M.ThreadCreated{th, "p1", "New thread", M.Local{}, "", "", "claude", "", 1n})])
+
 # an answer: its request leaves the outbox; a diff opens the diff view
 def Ui.reply(u: Ui, +o: J.Json) -> Ui:
-  Bots.reply(o, Proj.reply(o, Btw.reply(Ui.reply.skills(u, o), o)))
+  Made.reply(o, Bots.reply(o, Proj.reply(o, Btw.reply(Ui.reply.skills(u, o), o))))
 
 # A link's threads and bots (far.bend): its batch folded into the read
 # model under this hub's ids, and whether it answered ("far.away.<link>")
@@ -5678,10 +5729,6 @@ def Ui.recv.k(i: Nat, u: Ui, +o: J.Json) -> Ui:
       Ui.live.set(u, o)
     case _:
       u
-
-# A thread request uses the same binding as a bot request.
-def Want.thread(+u: Ui, id: String) -> Ui:
-  Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, "@bot.want", ""), "@thread.want", id), "@want.hub", Ui.info(u, "local.machine")), "@want.gen", Ui.info(u, "local.generation"))
 
 def Want.rebind(bound: Bool, u: Ui, +generation: String) -> Ui:
   match bound:

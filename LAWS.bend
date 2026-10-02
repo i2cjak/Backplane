@@ -5069,3 +5069,24 @@ law live_old_gen_quiet:
 
 law live_trunc_marked:
   {U.Ui.live.of(U.Ui.recv(U.Ui.init(0n), LV.Live.demo("t1", "tail", True{}, 0n)), "t1") == "…tail" : String}
+
+# Creating a thread (client.bend's Made.*): only the hub's answer to this
+# client's own request selects the thread it made; another client's new
+# thread, a replayed log or an older request's answer selects nothing
+law want_new_ignores_other_threads:
+  {U.Ui.sel(U.Ui.recv(U.Act.ui(U.Ui.new_thread(U.Ui.init(0n), "p1")), U.Made.made("changes", "t9"))) == "" : String}
+
+law made_selects_own:
+  {U.Ui.sel(U.Ui.recv(U.Ui.recv(U.Act.ui(U.Ui.new_thread(U.Ui.init(0n), "p1")), U.Made.made("changes", "t9")), U.Made.demo("0", "t9"))) == "t9" : String}
+
+law made_selects_own_later:
+  {U.Ui.sel(U.Ui.recv(U.Ui.recv(U.Act.ui(U.Ui.new_thread(U.Ui.init(0n), "p1")), U.Made.demo("0", "t9")), U.Made.made("changes", "t9"))) == "t9" : String}
+
+law replay_cannot_select:
+  {U.Ui.sel(U.Ui.recv(U.Act.ui(U.Ui.new_thread(U.Ui.init(0n), "p1")), U.Made.made("log", "t9"))) == "" : String}
+
+law made_stale_quiet:
+  {U.Ui.sel(U.Ui.recv(U.Ui.recv(U.Act.ui(U.Ui.new_thread(U.Act.ui(U.Ui.new_thread(U.Ui.init(0n), "p1")), "p1")), U.Made.made("changes", "t9")), U.Made.demo("0", "t9"))) == "" : String}
+
+law made_fork_selects_own:
+  {U.Ui.sel(U.Ui.recv(U.Ui.recv(U.Act.ui(U.Ui.fork(U.Ui.init(0n))), U.Made.made("changes", "t9")), U.Made.demo("0", "t9"))) == "t9" : String}
