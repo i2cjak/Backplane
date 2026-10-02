@@ -4640,6 +4640,34 @@ law far_forget_drops_work:
   {M.Setting.get(FR.Fr.forget(M.State.replay([M.WorkSet{"p1~t1", "bg", "a\tx", 1n}, M.WorkSet{"t2", "bg", "b\ty", 1n}], M.State.empty()), "p1"), "bg.p1~t1", "")
     ++ "|" ++ M.Setting.get(FR.Fr.forget(M.State.replay([M.WorkSet{"p1~t1", "bg", "a\tx", 1n}, M.WorkSet{"t2", "bg", "b\ty", 1n}], M.State.empty()), "p1"), "bg.t2", "") == "|b\ty" : String}
 
+# a task's progress lines pass at most once in Prog.gap() seconds; the rest
+# are held (the newest of each task) and land on the server's beat once the
+# gap is over, so the newest value always lands
+law bg_progress_coalesced:
+  {Nat.show(List.length(&2, String, H.PStep.flush(H.Prog.line(100n, [], 102n, H.Prog.l1(), H.Prog.o(H.Prog.l1()))))) ++ "/" ++ Nat.show(List.length(&2, String, H.PStep.pend(H.Prog.line(100n, [], 102n, H.Prog.l1(), H.Prog.o(H.Prog.l1())))))
+    ++ "/" ++ Nat.show(List.length(&2, String, H.PStep.flush(H.Prog.line(100n, [], 105n, H.Prog.l1(), H.Prog.o(H.Prog.l1()))))) == "0/1/1" : String}
+
+law bg_progress_one_held_per_task:
+  {List.length(&2, String, H.PStep.pend(H.Prog.line(100n, H.PStep.pend(H.Prog.line(100n, [], 101n, H.Prog.l1(), H.Prog.o(H.Prog.l1()))), 102n, H.Prog.l2(), H.Prog.o(H.Prog.l2())))) == 1n : Nat}
+
+law bg_progress_beat_waits:
+  {List.length(&2, String, H.PStep.flush(H.Prog.beat(100n, [H.Prog.l1()], 103n))) == 0n : Nat}
+
+law bg_progress_latest_lands:
+  {M.Bg.show(M.Bg.of(M.State.replay(H.Queue.changes(H.Prog.flush(H.Bg.demo(), "t1", 3n, H.PStep.flush(H.Prog.beat(100n, H.PStep.pend(H.Prog.line(100n, H.PStep.pend(H.Prog.line(100n, [], 101n, H.Prog.l1(), H.Prog.o(H.Prog.l1()))), 102n, H.Prog.l2(), H.Prog.o(H.Prog.l2()))), 105n)))), H.Bg.demo()), "t1"))
+    == M.Bg.show(M.Bg.of(M.State.replay(H.Bg.system(H.Bg.demo(), "t1", 3n, H.Prog.o(H.Prog.l2())), H.Bg.demo()), "t1")) : String}
+
+law bg_progress_is_own_line:
+  {H.Prog.is(H.Prog.o(H.Prog.l1())) == True{} : Bool}
+
+# the link's projection removed by cutting the index gives what rebuilding
+# it from the kept entries gives (Fr.forget.spec)
+law far_forget_equiv:
+  {FR.Fr.forget(FR.Fr.demo.idx(), "p1") == FR.Fr.forget.spec(FR.Fr.demo.idx(), "p1") : M.State}
+
+law far_forget_equiv_none:
+  {FR.Fr.forget(FR.Fr.demo.idx(), "p9") == FR.Fr.forget.spec(FR.Fr.demo.idx(), "p9") : M.State}
+
 law prompt_background_work:
   {Bool.and(String.contains(PM.Prompt.background(), "wakes you"), Bool.and(String.contains(PM.Prompt.background(), "poll"), String.contains(PM.Prompt.background(), "restart"))) == True{} : Bool}
 

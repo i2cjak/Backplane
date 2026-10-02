@@ -6606,6 +6606,27 @@ def Laws.far_workset_mapped(l, th, kind, rows, at):
 def Laws.far_forget_drops_work():
   {==}
 
+def Laws.bg_progress_coalesced():
+  {==}
+
+def Laws.bg_progress_one_held_per_task():
+  {==}
+
+def Laws.bg_progress_beat_waits():
+  {==}
+
+def Laws.bg_progress_latest_lands():
+  {==}
+
+def Laws.bg_progress_is_own_line():
+  {==}
+
+def Laws.far_forget_equiv():
+  {==}
+
+def Laws.far_forget_equiv_none():
+  {==}
+
 def Laws.prompt_background_work():
   {==}
 

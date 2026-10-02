@@ -475,22 +475,130 @@ def Fr.world(w: BT.World, +prefix: String) -> BT.World:
       BT.World{Fr.map(BT.Bot, bs, prefix), rs, ps, hs, Fr.map(BT.Routine, ro, prefix), Fr.map(BT.Mem, ms, prefix), pe,
         Fr.map(String, sp, prefix), Fr.map(BT.Hops, ho, prefix), Fr.map(Nat, ta, prefix), Fr.map(BT.Page, pg, prefix)}
 
-def Fr.ext(bw: List<&2, M.Ext>, +prefix: String, es: List<&2, M.Entry>) -> List<&2, M.Ext>:
+def Fr.ext.spec(bw: List<&2, M.Ext>, +prefix: String, es: List<&2, M.Entry>) -> List<&2, M.Ext>:
   [M.Ext{Fr.world(M.Ext.world(M.Ext.of(bw)), prefix), Fr.index(List.reverse(&2, M.Entry, es), Map.new(&2, List<&2, M.Entry>))}]
+
+# The index without the link's entries, without walking the rest. An entry
+# is filed (M.Idx.post) under its thread, under its sender's key when
+# another thread sent it, under the links when a message, and under
+# "@steps:<thread>" when a step; only those lists can hold a removed entry,
+# so only they are cut (each at most once), and a list left empty goes
+# (law far_forget_equiv, against Fr.forget.spec's rebuild).
+def Fr.keys.step(step: Bool, +th: String, +m: Map<&2, Bool>) -> Map<&2, Bool>:
+  match step:
+    case True{}:
+      Map.set(&2, Bool, m, M.Idx.steps.key(th), True{})
+    case False{}:
+      m
+
+def Fr.keys.link(msg: Bool, +m: Map<&2, Bool>) -> Map<&2, Bool>:
+  match msg:
+    case True{}:
+      Map.set(&2, Bool, m, M.Idx.links(), True{})
+    case False{}:
+      m
+
+def Fr.keys.sent(sent: Bool, msg: Bool, +from: String, +m: Map<&2, Bool>) -> Map<&2, Bool>:
+  match sent:
+    case True{}:
+      Fr.keys.link(msg, Map.set(&2, Bool, m, from, True{}))
+    case False{}:
+      m
+
+# the keys an entry is filed under, added to m
+def Fr.keys.of(+e: M.Entry, +m: Map<&2, Bool>) -> Map<&2, Bool>:
+  +th = M.Idx.thread(e)
+  +from = M.Link.from(M.Idx.id(e))
+  Fr.keys.step(M.Idx.is_step(e), th,
+    Fr.keys.sent(Bool.and(Bool.not(String.is_empty(from)), Bool.not(String.eq(from, th))), M.Idx.is_msg(e), from, Map.set(&2, Bool, m, th, True{})))
+
+def Fr.keys.one(hit: Bool, +e: M.Entry, +m: Map<&2, Bool>) -> Map<&2, Bool>:
+  match hit:
+    case True{}:
+      Fr.keys.of(e, m)
+    case False{}:
+      m
+
+# the keys the link's entries in a list are filed under
+def Fr.keys.list(es: List<&2, M.Entry>, +prefix: String, m: Map<&2, Bool>) -> Map<&2, Bool>:
+  match es:
+    case Nil{}:
+      m
+    case +e <> t:
+      Fr.keys.list(t, prefix, Fr.keys.one(String.starts_with(M.Idx.thread(e), prefix), e, m))
+
+def Fr.keys.at(hit: Bool, es: List<&2, M.Entry>, +prefix: String, m: Map<&2, Bool>) -> Map<&2, Bool>:
+  match hit:
+    case True{}:
+      Fr.keys.list(es, prefix, m)
+    case False{}:
+      m
+
+# every list filed under one of the link's threads
+def Fr.keys.go(ks: List<&2, String>, +by: Map<&2, List<&2, M.Entry>>, +prefix: String, m: Map<&2, Bool>) -> Map<&2, Bool>:
+  match ks:
+    case Nil{}:
+      m
+    case +k <> t:
+      Fr.keys.go(t, by, prefix, Fr.keys.at(String.starts_with(k, prefix), M.Idx.get(by, k), prefix, m))
+
+def Fr.by.put(empty: Bool, by: Map<&2, List<&2, M.Entry>>, +k: String, xs: List<&2, M.Entry>) -> Map<&2, List<&2, M.Entry>>:
+  match empty:
+    case True{}:
+      Map.del(&2, List<&2, M.Entry>, by, k)
+    case False{}:
+      Map.set(&2, List<&2, M.Entry>, by, k, xs)
+
+def Fr.by.cut.k(+by: Map<&2, List<&2, M.Entry>>, +k: String, +xs: List<&2, M.Entry>) -> Map<&2, List<&2, M.Entry>>:
+  Fr.by.put(List.is_empty(&2, M.Entry, xs), by, k, xs)
+
+def Fr.by.cut(ks: List<&2, String>, +by: Map<&2, List<&2, M.Entry>>, +prefix: String) -> Map<&2, List<&2, M.Entry>>:
+  match ks:
+    case Nil{}:
+      by
+    case +k <> t:
+      Fr.by.cut(t, Fr.by.cut.k(by, k, Fr.entries.go(M.Idx.get(by, k), prefix, Nil{})), prefix)
+
+def Fr.by(+by: Map<&2, List<&2, M.Entry>>, +prefix: String) -> Map<&2, List<&2, M.Entry>>:
+  Fr.by.cut(Map.keys(&2, Bool, Fr.keys.go(Map.keys(&2, List<&2, M.Entry>, by), by, prefix, Map.new(&2, Bool))), by, prefix)
+
+def Fr.ext(bw: List<&2, M.Ext>, +prefix: String) -> List<&2, M.Ext>:
+  +x = M.Ext.of(bw)
+  [M.Ext{Fr.world(M.Ext.world(x), prefix), Fr.by(M.Ext.by(x), prefix)}]
 
 # the settings a link's things leave behind: the work their threads had
 # (WorkSet's bg.<link>~... and watch.<link>~...); the rest stay
 def Fr.settings(+sg: Map<&2, String>, +prefix: String) -> Map<&2, String>:
   Fr.map(String, Fr.map(String, sg, "bg." ++ prefix), "watch." ++ prefix)
 
-def Fr.forget(s: M.State, +link: String) -> M.State:
+def Fr.forget.spec(s: M.State, +link: String) -> M.State:
   match s:
     case M.State{ps, ts, +es, n, tk, sg, qu, ak, dv, +nv, bw}:
       +prefix = link ++ "~"
       +kept = Fr.entries.go(es, prefix, Nil{})
       M.State{Fr.map(M.Project, ps, prefix), Fr.map(M.Thread, ts, prefix), kept, n, Fr.map(M.Task, tk, prefix), Fr.settings(sg, prefix),
         Fr.map(List<&2, M.QItem>, qu, prefix), Fr.map(M.Ask, ak, prefix), dv,
-        Map.del(&2, M.Nav, Fr.map(M.Nav, nv, prefix), Fr.nav(link)), Fr.ext(bw, prefix, kept)}
+        Map.del(&2, M.Nav, Fr.map(M.Nav, nv, prefix), Fr.nav(link)), Fr.ext.spec(bw, prefix, kept)}
+
+
+# the link's projection removed in one pass over its threads (the index
+# is cut, not rebuilt; Fr.forget.spec is the rebuild, law far_forget_equiv)
+def Fr.forget(s: M.State, +link: String) -> M.State:
+  match s:
+    case M.State{ps, ts, +es, n, tk, sg, qu, ak, dv, +nv, bw}:
+      +prefix = link ++ "~"
+      M.State{Fr.map(M.Project, ps, prefix), Fr.map(M.Thread, ts, prefix), Fr.entries.go(es, prefix, Nil{}), n, Fr.map(M.Task, tk, prefix), Fr.settings(sg, prefix),
+        Fr.map(List<&2, M.QItem>, qu, prefix), Fr.map(M.Ask, ak, prefix), dv,
+        Map.del(&2, M.Nav, Fr.map(M.Nav, nv, prefix), Fr.nav(link)), Fr.ext(bw, prefix)}
+
+# a state with a link's threads, steps and messages in both directions
+def Fr.demo.idx() -> M.State:
+  M.State.replay([M.ThreadCreated{"t1", "p1", "A", M.Local{}, "", "", "claude", "", 1n}, M.ThreadCreated{"p1~t1", "p1~p", "B", M.Local{}, "", "", "claude", "", 1n},
+    M.ThreadCreated{"p1~t2", "p1~p", "C", M.Local{}, "", "", "claude", "", 1n}, M.ThreadCreated{"p2~t1", "p2~p", "D", M.Local{}, "", "", "claude", "", 1n},
+    M.MessagePosted{"t1", "m1", M.User{}, "a", 2n}, M.MessagePosted{"p1~t1", "m2", M.User{}, "b", 3n}, M.ActivityLogged{"p1~t1", "s1", "step", "kicad", "x", 4n},
+    M.ActivityLogged{"t1", "s2", "step", "kicad", "y", 5n}, M.MessagePosted{"t1", M.Link.id("p1~t1", "7"), M.User{}, "hi", 6n},
+    M.MessagePosted{"p1~t2", M.Link.id("t1", "8"), M.User{}, "yo", 7n}, M.MessagePosted{"p2~t1", M.Link.id("p1~t2", "9"), M.User{}, "x", 8n},
+    M.MessagePosted{"p1~t2", "m3", M.Assistant{}, "c", 9n}, M.MessagePosted{"p2~t1", "m4", M.Assistant{}, "d", 10n}], M.State.empty())
 
 def Fr.epoch.nav(+link: String) -> String:
   "epoch~" ++ link

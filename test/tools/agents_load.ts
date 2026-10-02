@@ -10,13 +10,17 @@
 // then prints the hub's heaviest /debug/perf rows.
 //
 //   bun test/tools/agents_load.ts [BINARY] [WIREDIR] [--agents 1,10,50]
-//     [--secs 20] [--hz 20] [--cycle 20] [--perf 12] [--keep]
+//     [--secs 20] [--hz 20] [--cycle 20] [--perf 12] [--progress] [--keep]
 //
 // The stand-in (Claude's stream-json with --include-partial-messages): on
 // each user line it writes the init line, then every 100 ms hz/10 text
 // deltas (stream_event content_block_delta), and every `cycle` ticks the
 // finished text (an assistant line), a tool call (assistant tool_use) and
 // its result (a user line); after `secs` the result line.
+// --progress: each agent also starts a background shell and sends a
+// task_progress line every tick (a new description each time); the report
+// counts the WorkSet writes that reached the client, which the hub holds to
+// one per thread per 5 s (Prog.line), the newest landing on its beat.
 // BINARY defaults to build/backplane, WIREDIR to build/wire (bend
 // test/wire/index.html -o build/wire). --keep leaves the homes in /tmp.
 // LOAD_DISPLAY=:77 opens the window too (Xvfb), so /debug/perf has ui.* rows.
@@ -37,6 +41,7 @@ const hz = Number(opt("hz", "20"));
 const cycle = Number(opt("cycle", "20"));
 const perfRows = Number(opt("perf", "12"));
 const keep = argv.includes("--keep");
+const progress = argv.includes("--progress");
 for (const f of readdirSync(wire).filter((f) => f.endsWith(".js"))) (0, eval)(readFileSync(`${wire}/${f}`, "utf8"));
 const W = (globalThis as any).Wire;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -61,11 +66,17 @@ while IFS= read -r line; do
       n=$((n + 1))
       printf '%s\\n' '{"type":"system","subtype":"init","session_id":"'"$sid"'","cwd":"/tmp","tools":["Bash","Read"],"model":"fake","permissionMode":"default"}'
       ticks=$((secs * 10)); t=0; k=0
+      if [ -n "$FAKE_PROG" ]; then
+        printf '%s\\n' '{"type":"system","subtype":"task_started","task_id":"b'"$$"'","tool_use_id":"tb'"$$-$n"'","description":"watch","task_type":"local_bash","is_backgrounded":true,"session_id":"'"$sid"'"}'
+      fi
       while [ $t -lt $ticks ]; do
         t=$((t + 1)); k=$((k + 1))
         if [ $k -eq 1 ]; then
           printf '%s\\n' '{"type":"stream_event","event":{"type":"message_start","message":{"id":"m'"$$-$n-$t"'","role":"assistant","content":[],"usage":{"input_tokens":10}}},"session_id":"'"$sid"'"}'
           printf '%s\\n' '{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}},"session_id":"'"$sid"'"}'
+        fi
+        if [ -n "$FAKE_PROG" ]; then
+          printf '%s\\n' '{"type":"system","subtype":"task_progress","task_id":"b'"$$"'","description":"step '"$t"'","session_id":"'"$sid"'"}'
         fi
         now=$(date +%s%3N); i=0
         while [ $i -lt $per ]; do
@@ -114,7 +125,7 @@ const rssKb = (pid: number) => {
   }
 };
 
-type Result = { n: number; rtt: number[]; lag: number[]; emitted: number; got: number; msgs: number; bytes: number; cpu: number; rss: number; drain: number; perf: string };
+type Result = { n: number; rtt: number[]; lag: number[]; emitted: number; got: number; msgs: number; bytes: number; cpu: number; rss: number; drain: number; perf: string; ws: number };
 
 async function run(n: number): Promise<Result> {
   const home = join(root, `home-${n}`);
@@ -124,7 +135,7 @@ async function run(n: number): Promise<Result> {
   const proc = Bun.spawn([resolve(bin), "--home", home, "--port", String(port), "--no-tailscale"], {
     env: {
       ...process.env, DISPLAY: process.env.LOAD_DISPLAY ?? "", WAYLAND_DISPLAY: "", BACKPLANE_NO_UPDATE: "1", BACKPLANE_PEERS: "",
-      FAKE_SECS: String(secs), FAKE_PER: String(Math.max(1, Math.round(hz / 10))), FAKE_CYCLE: String(cycle),
+      FAKE_SECS: String(secs), ...(progress ? { FAKE_PROG: "1" } : {}), FAKE_PER: String(Math.max(1, Math.round(hz / 10))), FAKE_CYCLE: String(cycle),
       PATH: `${fake}:${process.env.PATH}`,
     },
     stdout: "ignore",
@@ -219,7 +230,8 @@ async function run(n: number): Promise<Result> {
   proc.kill();
   await proc.exited;
   const emitted = n * secs * 10 * Math.max(1, Math.round(hz / 10));
-  return { n, rtt, lag, emitted, got, msgs, bytes, cpu: ((c1 - c0) * 10) / busyMs * 100, rss, drain, perf };
+  const ws = seen.filter((c) => c.$ === "WorkSet").length;
+  return { n, rtt, lag, emitted, got, msgs, bytes, cpu: ((c1 - c0) * 10) / busyMs * 100, rss, drain, perf, ws };
 }
 
 const results: Result[] = [];
@@ -232,6 +244,7 @@ try {
     console.log(`delta lag   p50 ${f1(pct(r.lag, 50))}  p90 ${f1(pct(r.lag, 90))}  p99 ${f1(pct(r.lag, 99))}  max ${f1(Math.max(...r.lag))}`);
     console.log(`deltas      emitted ${r.emitted} (${f1(r.emitted / secs)}/s)  received ${r.got}  drain after end ${r.drain} ms`);
     console.log(`client      ${r.msgs} msgs (${f1(r.msgs / secs)}/s), ${f1(r.bytes / 1024 / secs)} KB/s`);
+    if (progress) console.log(`progress    ${r.ws} WorkSet writes for ${r.n * secs * 10} lines sent (${f1(r.ws / r.n / secs)} per thread per s; at most 0.2 plus the starts and ends)`);
     console.log(`hub         cpu ${f1(r.cpu)}%  rss ${Math.round(r.rss / 1024)} MB`);
     const lines = r.perf.split("\n");
     console.log(lines.slice(0, perfRows + 2).join("\n"));

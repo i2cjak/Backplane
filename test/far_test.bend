@@ -150,6 +150,8 @@ def main() -> IO(Unit):
     +w3 : U.Ui = recv(w2, far(18n, 19n, False{}, work.done()))
     C.Check.str("mirror: the owner's work as its phase", phase(w1, "p1~bt1") ++ "|" ++ phase(w2, "p1~bt1") ++ "|" ++ phase(w3, "p1~bt1"), "Monitoring 1 task|Working…|Complete")
     C.Check.str("mirror: an epoch reset drops the work", Nat.show(M.Bg.live(M.Bg.of(U.Ui.state(w1), "p1~bt1"))) ++ "/" ++ Nat.show(M.Bg.live(M.Bg.of(FR.Fr.forget(U.Ui.state(w1), "p1"), "p1~bt1"))), "1/0")
+    C.Check.str("forget: the index cut like the one rebuilt", Nat.show(List.length(&2, M.Entry, M.State.links(FR.Fr.forget(FR.Fr.demo.idx(), "p1"))))
+      ++ "/" ++ Nat.show(List.length(&2, M.Entry, M.State.mine(FR.Fr.forget(FR.Fr.demo.idx(), "p1"), "p1~t1"))) ++ "/" ++ Nat.show(List.length(&2, M.Entry, M.State.mine(FR.Fr.forget(FR.Fr.demo.idx(), "p1"), "t1"))), "2/1/3")
     C.Check.str("ids", FR.Fr.id("p1", "t~x") ++ " " ++ FR.Fr.link("p1~t~x") ++ " " ++ FR.Fr.local("p1~t~x") ++ " [" ++ FR.Fr.link("t1") ++ "] " ++ FR.Fr.local("t1"),
       "p1~t~x p1 t~x [] t1")
     C.Check.str("thread folded in under its link", count(u, "p1~bt1") ++ " " ++ title(U.Ui.thread(U.Ui.state(u), "p1~bt1")), "1 Kit")

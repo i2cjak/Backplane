@@ -1248,6 +1248,111 @@ def Bg.system.k(i: Nat, +s: M.State, +th: String, +now: Nat, +o: J.Json) -> List
 def Bg.system(+s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M.Change>:
   Bg.system.k(C.Codec.pos(["task_started", "task_progress", "task_notification", "task_updated", "background_tasks_changed"], J.Json.get_str(o, "subtype", "")), s, th, now, o)
 
+# Progress, coalesced
+# -------------------
+# A task's task_progress line is only what its row says it is doing now,
+# yet each distinct one was a persisted WorkSet and a broadcast. The server
+# keeps a thread's progress lines (the newest of each task) and lets them
+# through at most once every Prog.gap() seconds (Prog.line); a line held
+# lands on the server's next beat once the gap is over (Prog.beat), so the
+# newest always lands. Starts, ends and everything else are written at
+# once (laws bg_progress_coalesced, bg_progress_latest_lands).
+type PStep is Data:
+  PStep{at: Nat, pend: List<&2, String>, flush: List<&2, String>}
+
+def PStep.at(p: PStep) -> Nat:
+  match p:
+    case PStep{a, _, _}:
+      a
+
+def PStep.pend(p: PStep) -> List<&2, String>:
+  match p:
+    case PStep{_, d, _}:
+      d
+
+def PStep.flush(p: PStep) -> List<&2, String>:
+  match p:
+    case PStep{_, _, f}:
+      f
+
+def Prog.gap() -> Nat:
+  5n
+
+# a progress line of the thread's own agent (a subagent's goes to its log)
+def Prog.is.k(sys: Bool, +o: J.Json) -> Bool:
+  Bool.and(sys, Bool.and(String.eq(J.Json.get_str(o, "subtype", ""), "task_progress"), String.is_empty(J.Json.get_str(o, "parent_tool_use_id", ""))))
+
+def Prog.is(+o: J.Json) -> Bool:
+  Prog.is.k(String.eq(J.Json.get_str(o, "type", ""), "system"), o)
+
+def Prog.due(+at: Nat, +now: Nat) -> Bool:
+  Nat.is_ge(now, Nat.add(at, Prog.gap()))
+
+def Prog.task(+line: String) -> String:
+  J.Json.get_str(Maybe.default(&2, J.Json, J.Json.parse(line), J.Null{}), "task_id", "")
+
+def Prog.put.k(same: Bool, +l: String, +line: String, t: List<&2, String>, rest: List<&2, String>) -> List<&2, String>:
+  match same:
+    case True{}:
+      line <> t
+    case False{}:
+      l <> rest
+
+# the held lines with a task's replaced by its newer one
+def Prog.put(ls: List<&2, String>, +id: String, +line: String) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      [line]
+    case +l <> +t:
+      Prog.put.k(String.eq(Prog.task(l), id), l, line, t, Prog.put(t, id, line))
+
+def Prog.line.k(due: Bool, +at: Nat, +now: Nat, pend: List<&2, String>) -> PStep:
+  match due:
+    case True{}:
+      PStep{now, Nil{}, pend}
+    case False{}:
+      PStep{at, pend, Nil{}}
+
+# a progress line heard at now: let through with every held one when the
+# gap since the last write is over, else held
+def Prog.line(+at: Nat, pend: List<&2, String>, +now: Nat, +line: String, +o: J.Json) -> PStep:
+  Prog.line.k(Prog.due(at, now), at, now, Prog.put(pend, J.Json.get_str(o, "task_id", ""), line))
+
+def Prog.beat.k(go: Bool, +at: Nat, +now: Nat, pend: List<&2, String>) -> PStep:
+  match go:
+    case True{}:
+      PStep{now, Nil{}, pend}
+    case False{}:
+      PStep{at, pend, Nil{}}
+
+# the server's beat: held lines land once the gap is over
+def Prog.beat(+at: Nat, +pend: List<&2, String>, +now: Nat) -> PStep:
+  Prog.beat.k(Bool.and(Prog.due(at, now), Bool.not(List.is_empty(&2, String, pend))), at, now, pend)
+
+def Prog.one(rows: List<&2, String>, +o: J.Json) -> List<&2, String>:
+  M.Bg.progress(rows, J.Json.get_str(o, "task_id", ""), J.Json.get_str(o, "description", ""))
+
+def Prog.fold(ls: List<&2, String>, rows: List<&2, String>) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      rows
+    case +l <> t:
+      Prog.fold(t, Prog.one(rows, Maybe.default(&2, J.Json, J.Json.parse(l), J.Null{})))
+
+# the rows after the lines, written once
+def Prog.flush(+s: M.State, +th: String, +now: Nat, ls: List<&2, String>) -> Step:
+  Step{Bg.put(s, th, now, Prog.fold(ls, M.Bg.of(s, th))), Nil{}}
+
+# two progress lines of the laws' task "a"
+def Prog.l1() -> String:
+  "{\"type\":\"system\",\"subtype\":\"task_progress\",\"task_id\":\"a\",\"description\":\"one\"}"
+
+def Prog.l2() -> String:
+  "{\"type\":\"system\",\"subtype\":\"task_progress\",\"task_id\":\"a\",\"description\":\"two\"}"
+
+def Prog.o(+l: String) -> J.Json:
+  Maybe.default(&2, J.Json, J.Json.parse(l), J.Null{})
+
 # a thread with one background shell at work (the laws' example)
 def Bg.demo() -> M.State:
   M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.ThreadCreated{"t1", "p1", "x", M.Local{}, "", "", "claude", "", 1n},

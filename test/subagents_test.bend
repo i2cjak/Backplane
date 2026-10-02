@@ -111,6 +111,12 @@ def doings(ls: List<&2, String>) -> List<&2, String>:
 def doing(+es: List<&2, M.Change>) -> String:
   String.join(doings(M.Bg.of(state(es), "t100-1")), "|")
 
+def prog1() -> String:
+  "{\"type\":\"system\",\"subtype\":\"task_progress\",\"task_id\":\"a847\",\"description\":\"Sleep 1\"}"
+
+def prog2() -> String:
+  "{\"type\":\"system\",\"subtype\":\"task_progress\",\"task_id\":\"a847\",\"description\":\"Sleep 2\"}"
+
 def updated() -> List<&2, M.Change>:
   after(progressed(), 105n, "{\"type\":\"system\",\"subtype\":\"task_updated\",\"task_id\":\"a847\",\"patch\":{\"status\":\"completed\"}}")
 
@@ -206,5 +212,9 @@ def main() -> IO(Unit):
     C.Check.str("gone from the open list: ended", M.Bg.status(head(M.Bg.of(state(after(progressed(), 105n, "{\"type\":\"system\",\"subtype\":\"background_tasks_changed\",\"tasks\":[{\"task_id\":\"zz\"}]}")), "t100-1"))), "done")
     C.Check.str("still on the open list: at work", doing(after(progressed(), 105n, "{\"type\":\"system\",\"subtype\":\"background_tasks_changed\",\"tasks\":[{\"task_id\":\"a847\"}]}")), "Running Sleep for 20 seconds")
     C.Check.str("the open list adds nothing", doing(after(made(), 105n, "{\"type\":\"system\",\"subtype\":\"background_tasks_changed\",\"tasks\":[{\"task_id\":\"a847\"}]}")), "")
+    C.Check.str("progress within the gap is held", Nat.show(List.length(&2, String, H.PStep.flush(H.Prog.line(100n, [], 102n, prog1(), H.Prog.o(prog1()))))), "0")
+    C.Check.str("progress after the gap goes through", Nat.show(List.length(&2, String, H.PStep.flush(H.Prog.line(100n, [], 105n, prog1(), H.Prog.o(prog1()))))), "1")
+    C.Check.str("the held newest lands on the beat", doing(List.append(&2, M.Change, done(), H.Queue.changes(H.Prog.flush(state(done()), "t100-1", 106n, H.PStep.flush(H.Prog.beat(100n, H.PStep.pend(H.Prog.line(100n, H.PStep.pend(H.Prog.line(100n, [], 101n, prog1(), H.Prog.o(prog1()))), 102n, prog2(), H.Prog.o(prog2()))), 106n)))))), "Sleep 2")
+    C.Check.str("a beat inside the gap lands nothing", Nat.show(List.length(&2, String, H.PStep.flush(H.Prog.beat(100n, [prog1()], 103n)))), "0")
     C.Check.str("exit clears", doing(List.append(&2, M.Change, progressed(), H.Queue.changes(H.Hub.agent_gone(state(progressed()), 107n, "t100-1", 0)))), "")
     C.Check.str("restart tells the agent and clears", M.Bg.show(M.Bg.of(H.Carry.after(state(progressed()), 107n), "t100-1")), "")

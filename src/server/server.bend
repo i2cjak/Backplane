@@ -164,6 +164,8 @@ type Msg is Data:
   AgentExited{thread: String, gen: String, code: U32}
   # time to note running turns that went quiet (each minute)
   Silence{}
+  # every few seconds: progress lines held back land (Hub.beat)
+  Beat{}
   # watched work (core's Watch.*): a work_run launched; what proves the
   # work is the same; its end
   WatchLaunched{thread: String, id: String}
@@ -193,21 +195,21 @@ type Client is Data:
 # being read; live, heard, gen and quiet are for streamed text, silence
 # and spawn generations
 type ARun is Data:
-  ARun{cmds: CM.Cmds, held: List<&2, CM.Held>, live: List<&2, String>, heard: Nat, gen: String, quiet: Bool}
+  ARun{cmds: CM.Cmds, held: List<&2, CM.Held>, live: List<&2, String>, heard: Nat, gen: String, quiet: Bool, prog_at: Nat, prog_last: List<&2, String>}
 
 type Agent is Data:
   Agent{thread: String, input: Chan(String), pid: U32, key: String, run: List<&2, ARun>}
 
 def ARun.new() -> ARun:
-  ARun{CM.Cmds.new(), Nil{}, Nil{}, 0n, "", False{}}
+  ARun{CM.Cmds.new(), Nil{}, Nil{}, 0n, "", False{}, 0n, Nil{}}
 
 # a Claude process of generation gen (B.Gen.*)
 def ARun.new.g(+gen: String) -> ARun:
-  ARun{CM.Cmds.new(), Nil{}, Nil{}, 0n, gen, False{}}
+  ARun{CM.Cmds.new(), Nil{}, Nil{}, 0n, gen, False{}, 0n, Nil{}}
 
 # the same, started (heard last) at now
 def ARun.new.h(+gen: String, +now: Nat) -> ARun:
-  ARun{CM.Cmds.new(), Nil{}, Nil{}, now, gen, False{}}
+  ARun{CM.Cmds.new(), Nil{}, Nil{}, now, gen, False{}, 0n, Nil{}}
 
 def Proc.kill.k(ok: Bool, +pid: U32, +sig: U32) -> IO(Unit):
   match ok:
@@ -415,7 +417,7 @@ def Agents.run(+as: List<&2, Agent>, +th: String) -> Maybe<&2, ARun>:
 
 def Agents.gen.k(m: Maybe<&2, Agent>) -> String:
   match m:
-    case Some{Agent{_, _, _, _, ARun{_, _, _, _, g, _} <> _}}:
+    case Some{Agent{_, _, _, _, ARun{_, _, _, _, g, _, _, _} <> _}}:
       g
     case Some{Agent{_, _, _, +k, Nil{}}}:
       B.Gen.of(k)
@@ -1988,6 +1990,17 @@ def Ticker.loop(fuel: Nat, +inbox: Chan(Msg)) -> IO(Unit):
         IO.sleep(60000)
         Ticker.loop(f, inbox)
 
+# every five seconds the hub beats: held progress lines land (Hub.beat)
+def Beat.loop(fuel: Nat, +inbox: Chan(Msg)) -> IO(Unit):
+  match fuel:
+    case 0n:
+      IO.pure(Unit, Unit{})
+    case 1n+f:
+      do IO<Unit>:
+        IO.sleep(5000)
+        ok : Bool <- Chan.send(Msg, inbox, Beat{})
+        Beat.loop(f, inbox)
+
 # snooze until 9:00 tomorrow here: the hub hears the time as thread.snooze
 def Snooze.tomorrow(+inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +now: String) -> IO(Unit):
   do IO<Unit>:
@@ -2998,18 +3011,18 @@ def Agent.line.final(has: Bool, +line: String, +cwd: String) -> IO(String):
 
 def ARun.cmds(r: ARun) -> CM.Cmds:
   match r:
-    case ARun{c, _, _, _, _, _}:
+    case ARun{c, _, _, _, _, _, _, _}:
       c
 
 def ARun.held(r: ARun) -> List<&2, CM.Held>:
   match r:
-    case ARun{_, h, _, _, _, _}:
+    case ARun{_, h, _, _, _, _, _, _}:
       h
 
 def ARun.put(r: ARun, c: CM.Cmds, h: List<&2, CM.Held>) -> ARun:
   match r:
-    case ARun{_, _, l, n, g, q}:
-      ARun{c, h, l, n, g, q}
+    case ARun{_, _, l, n, g, q, pa, pl}:
+      ARun{c, h, l, n, g, q, pa, pl}
 
 def Hub.agent_send.all(+m: Maybe<&2, Agent>, ls: List<&2, String>) -> IO(Unit):
   match ls:
@@ -3068,12 +3081,29 @@ def Claude.put(h: Hub, +thread: String, +line: String) -> IO(Hub):
 # a line heard now: the silence note may come again after a new silence
 def ARun.heard.set(r: ARun, +now: Nat) -> ARun:
   match r:
-    case ARun{c, h, l, _, g, _}:
-      ARun{c, h, l, now, g, False{}}
+    case ARun{c, h, l, _, g, _, pa, pl}:
+      ARun{c, h, l, now, g, False{}, pa, pl}
+
+def ARun.prog_at(r: ARun) -> Nat:
+  match r:
+    case ARun{_, _, _, _, _, _, pa, _}:
+      pa
+
+def ARun.prog_last(r: ARun) -> List<&2, String>:
+  match r:
+    case ARun{_, _, _, _, _, _, _, pl}:
+      pl
+
+# the progress lines held back and when the last went through
+# (B.Prog.line)
+def ARun.prog.set(r: ARun, +at: Nat, pend: List<&2, String>) -> ARun:
+  match r:
+    case ARun{c, h, l, n, g, q, _, _}:
+      ARun{c, h, l, n, g, q, at, pend}
 
 def ARun.gen(r: ARun) -> String:
   match r:
-    case ARun{_, _, _, _, g, _}:
+    case ARun{_, _, _, _, g, _, _, _}:
       g
 
 # (a message prepared for an earlier process, or stopped while its images
@@ -6130,13 +6160,30 @@ def Hub.line.k(p: M.State & Hub, +thread: String, +line: String, +now: Nat) -> I
   (st, h) = p
   Hub.step(h, B.Hub.agent_line(st, now, thread, line))
 
+# a progress line: the ledger sees it, and it is written only once in
+# B.Prog.gap() seconds with the held ones (B.Prog.line); a line held lands
+# on the beat (Hub.beat)
+def Hub.line.prog.k(p: B.PStep, +r: ARun, h: Hub, +thread: String, +o: J.Json, +now: Nat) -> IO(Hub):
+  match p h:
+    case B.PStep{+at, +pend, +flush} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.step(Hub{st, f, ls, cl, Agents.with(as, thread, ARun.prog.set(ARun.heard.set(ARun.put(r, CM.Cmds.see(ARun.cmds(r), o), ARun.held(r)), now), at, pend)), inbox, cfg, note},
+        B.Prog.flush(st, thread, now, flush))
+
+def Hub.line.prog(+r: ARun, h: Hub, +thread: String, +line: String, +o: J.Json, +now: Nat) -> IO(Hub):
+  Hub.line.prog.k(B.Prog.line(ARun.prog_at(r), ARun.prog_last(r), now, line, o), r, h, thread, o, now)
+
 # a Claude line judged by its process's ledger, which sees it before the
 # step runs (the step may send the next command)
-def Hub.line.run(+r: ARun, h: Hub, +thread: String, +line: String, +o: J.Json, +now: Nat) -> IO(Hub):
-  match h:
-    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+def Hub.line.run.k(prog: Bool, +r: ARun, h: Hub, +thread: String, +line: String, +o: J.Json, +now: Nat) -> IO(Hub):
+  match prog h:
+    case True{} _:
+      Hub.line.prog(r, h, thread, line, o, now)
+    case False{} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       Hub.step(Hub{st, f, ls, cl, Agents.with(as, thread, ARun.heard.set(ARun.put(r, CM.Cmds.see(ARun.cmds(r), o), ARun.held(r)), now)), inbox, cfg, note},
         B.Hub.agent_line.vo(CM.Cmds.verdict(ARun.cmds(r), B.Hub.running(B.Hub.thread(st, thread)), o), st, now, thread, line, o, CM.Cmds.text(ARun.cmds(r), o)))
+
+def Hub.line.run(+r: ARun, h: Hub, +thread: String, +line: String, +o: J.Json, +now: Nat) -> IO(Hub):
+  Hub.line.run.k(B.Prog.is(o), r, h, thread, line, o, now)
 
 def Hub.line.m(m: Maybe<&2, ARun>, h: Hub, +thread: String, +line: String, +now: Nat) -> IO(Hub):
   match m:
@@ -7368,6 +7415,8 @@ def Msg.kind(m: Msg) -> String:
       "agent_exited"
     case Silence{}:
       "silence"
+    case Beat{}:
+      "beat"
     case WatchLaunched{_, _}:
       "watch_launched"
     case WatchIdent{_, _, _}:
@@ -7438,8 +7487,8 @@ type Quieted is Data:
 
 def Quiet.mark.r(rs: List<&2, ARun>) -> List<&2, ARun>:
   match rs:
-    case ARun{c, hd, l, n, g, _} <> t:
-      ARun{c, hd, l, n, g, True{}} <> t
+    case ARun{c, hd, l, n, g, _, pa, pl} <> t:
+      ARun{c, hd, l, n, g, True{}, pa, pl} <> t
     case Nil{}:
       Nil{}
 
@@ -7457,14 +7506,14 @@ def Quiet.one.k(due: Bool, a: Agent, +t: String, +st: M.State, +now: Nat, q: Qui
 
 def Quiet.heard(rs: List<&2, ARun>) -> Nat:
   match rs:
-    case ARun{_, _, _, n, _, _} <> _:
+    case ARun{_, _, _, n, _, _, _, _} <> _:
       n
     case Nil{}:
       0n
 
 def Quiet.said(rs: List<&2, ARun>) -> Bool:
   match rs:
-    case ARun{_, _, _, _, _, q} <> _:
+    case ARun{_, _, _, _, _, q, _, _} <> _:
       q
     case Nil{}:
       True{}
@@ -7490,6 +7539,53 @@ def Hub.quiet(h: Hub, +now: Nat) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       Hub.quiet.k(Quiet.all(as, st, now, Quieted{Nil{}, Nil{}}), Hub{st, f, ls, cl, Nil{}, inbox, cfg, note})
+
+# Beat: a thread's held progress lines land once B.Prog.gap() seconds have
+# passed since its last write (B.Prog.beat), so the newest always shows
+type Beated is Data:
+  Beated{as: List<&2, Agent>, cs: List<&2, M.Change>}
+
+def Beat.run.k(+p: B.PStep, +st: M.State, a: Agent, +t: String, +r: ARun, +now: Nat, q: Beated) -> Beated:
+  match a q:
+    case Agent{t0, i, pid, k, _} Beated{as, cs}:
+      Beated{Agent{t0, i, pid, k, [ARun.prog.set(r, B.PStep.at(p), B.PStep.pend(p))]} <> as, List.append(&2, M.Change, B.Queue.changes(B.Prog.flush(st, t, now, B.PStep.flush(p))), cs)}
+
+def Beat.none(a: Agent, q: Beated) -> Beated:
+  match q:
+    case Beated{as, cs}:
+      Beated{a <> as, cs}
+
+def Beat.one.k(m: Maybe<&2, ARun>, a: Agent, +st: M.State, +t: String, +now: Nat, q: Beated) -> Beated:
+  match m:
+    case Some{+r}:
+      Beat.run.k(B.Prog.beat(ARun.prog_at(r), ARun.prog_last(r), now), st, a, t, r, now, q)
+    case None{}:
+      Beat.none(a, q)
+
+def Beat.head(+rs: List<&2, ARun>) -> Maybe<&2, ARun>:
+  List.head(&2, ARun, rs)
+
+def Beat.one(a: Agent, +st: M.State, +now: Nat, q: Beated) -> Beated:
+  match a:
+    case Agent{+t, i, p, k, +rs}:
+      Beat.one.k(Beat.head(rs), Agent{t, i, p, k, rs}, st, t, now, q)
+
+def Beat.all(as: List<&2, Agent>, +st: M.State, +now: Nat, q: Beated) -> Beated:
+  match as:
+    case Nil{}:
+      q
+    case a <> t:
+      Beat.all(t, st, now, Beat.one(a, st, now, q))
+
+def Hub.beat.k(q: Beated, h: Hub) -> IO(Hub):
+  match q h:
+    case Beated{as, cs} Hub{st, f, ls, cl, _, inbox, cfg, note}:
+      Hub.step(Hub{st, f, ls, cl, List.reverse(&2, Agent, as), inbox, cfg, note}, B.Step{cs, Nil{}})
+
+def Hub.beat(h: Hub, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.beat.k(Beat.all(as, st, now, Beated{Nil{}, Nil{}}), Hub{st, f, ls, cl, Nil{}, inbox, cfg, note})
 
 def Hub.watched.k(i: Nat, +st: M.State, +thread: String, +id: String, +a: String, +b: String, +now: Nat) -> B.Step:
   match i:
@@ -7607,6 +7703,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.exited(h, thread, gen, code)
     case Silence{}:
       Hub.quiet(h, now)
+    case Beat{}:
+      Hub.beat(h, now)
     case WatchLaunched{thread, id}:
       Hub.watched(Hub.state(h), 0n, thread, id, "", "", now)
     case WatchIdent{thread, id, ident}:
@@ -7723,6 +7821,7 @@ def Listen.retry(fuel: Nat, +web: String, +inbox: Chan(Msg), +cfg: Cfg, +addr: S
 def Main.headless(h: Hub, +inbox: Chan(Msg), +cfg: Cfg, +tok: Chan(Unit), front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
   do IO<Unit>:
     IO.spawn(Unit, Ticker.loop(Fuel.forever(), inbox))
+    IO.spawn(Unit, Beat.loop(Fuel.forever(), inbox))
     Refresh.start(inbox, cfg)
     IO.spawn(Unit, Hub.loop(Fuel.forever(), h, inbox, tok))
     Upgrade.start(cfg, inbox)
@@ -7733,6 +7832,7 @@ def Main.serve(l: Listener, h: Hub, +web: String, +inbox: Chan(Msg), +cfg: Cfg, 
     IO.spawn(Unit, Accept.loop(Fuel.forever(), l, 1, web, inbox, True{}, Net.token(Cfg.net(cfg)), ""))
     Tailnet.start(Cfg.net(cfg), Cfg.port(cfg), web, inbox)
     IO.spawn(Unit, Ticker.loop(Fuel.forever(), inbox))
+    IO.spawn(Unit, Beat.loop(Fuel.forever(), inbox))
     Refresh.start(inbox, cfg)
     Machines.start(inbox, Cfg.port(cfg))
     IO.spawn(Unit, Hub.loop(Fuel.forever(), h, inbox, tok))
