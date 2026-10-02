@@ -5212,6 +5212,14 @@ law hb_ignored_by_fold:
 law alive_due:
   {[DK.Alive.due(1000n, 41000n), DK.Alive.due(1000n, 41001n), DK.Alive.due(5n, 5n), DK.Alive.due(9n, 3n)] == [False{}, True{}, False{}, False{}] : List<&2, Bool>}
 
+# the CLI numbers each line's blocks from 0, so two text lines of one
+# message get ids of their own from the line's uuid; a line with none, and
+# every id already stored, keep "msg:n"
+law claude_text_ids_distinct:
+  for b: J.Json
+  {[H.Claude.block.k(0n, "t", "m", 0n, 1n, 0n, "aaaaaaaa-1111", b), H.Claude.block.k(0n, "t", "m", 0n, 1n, 0n, "bbbbbbbb-2222", b), H.Claude.block.k(0n, "t", "m", 0n, 1n, 0n, "", b)]
+    == [[M.MessagePosted{"t", "m:0:aaaaaaaa", M.Assistant{}, J.Json.get_str(b, "text", ""), 1n}], [M.MessagePosted{"t", "m:0:bbbbbbbb", M.Assistant{}, J.Json.get_str(b, "text", ""), 1n}], [M.MessagePosted{"t", "m:0", M.Assistant{}, J.Json.get_str(b, "text", ""), 1n}]] : List<&2, List<&2, M.Change>>}
+
 # a bot request sent again (the client's outbox after a dropped link, the
 # same `msg`) is answered ok and does nothing a second time
 law bots_say_once:

@@ -316,6 +316,19 @@ def store.back(m: Maybe<&2, M.Change>) -> Bool:
     case _:
       False{}
 
+# the id of the first message in a step's changes
+def mid(cs: List<&2, M.Change>) -> String:
+  match cs:
+    case M.MessagePosted{_, +i, _, _, _} <> _:
+      i
+    case _ <> t:
+      mid(t)
+    case Nil{}:
+      ""
+
+def tb() -> J.Json:
+  J.Json.obj([J.KV{"type", J.Str{"text"}}, J.KV{"text", J.Str{"x"}}])
+
 def held() -> IO(Unit):
   do IO<Unit>:
     +c : CM.Cmds = CM.Cmds.accept(CM.Cmds.accept(CM.Cmds.new(), "a"), "b")
@@ -331,6 +344,8 @@ def held() -> IO(Unit):
     C.Check.str("version: 2.1.286 has lifecycles", Bool.show(CM.Cmds.lifecycle("2.1.286")), "True")
     C.Check.str("version: 2.2.0 has", Bool.show(CM.Cmds.lifecycle("2.2.0")), "True")
     C.Check.str("version: 2.1.200 has not", Bool.show(CM.Cmds.lifecycle("2.1.200")), "False")
+    C.Check.str("ids: two text lines of one message differ", mid(B.Claude.block.k(0n, "t1", "m", 0n, 1n, 0n, "aaaaaaaa-1111", tb())) ++ "|" ++ mid(B.Claude.block.k(0n, "t1", "m", 0n, 1n, 0n, "bbbbbbbb-2222", tb())), "m:0:aaaaaaaa|m:0:bbbbbbbb")
+    C.Check.str("ids: a line with no uuid keeps the old id", mid(B.Claude.block.k(0n, "t1", "m", 0n, 1n, 0n, "", tb())), "m:0")
     C.Check.str("WorkSet stored and read back", Bool.show(store.back(C2.Change.decode(C2.Change.encode(M.WorkSet{"t1", "bg", "a\tx", 7n})))), "True")
 
 def main() -> IO(Unit):

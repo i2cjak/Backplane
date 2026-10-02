@@ -7029,6 +7029,9 @@ def Laws.hb_ignored_by_fold():
 def Laws.alive_due():
   {==}
 
+def Laws.claude_text_ids_distinct(b):
+  {==}
+
 def Laws.bots_say_once(live, s, now, client, id, bot, text, msg):
   {==}
 

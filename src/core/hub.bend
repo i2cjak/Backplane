@@ -953,27 +953,34 @@ def Claude.tool_summary(+name: String, +input: J.Json) -> String:
     Bool.pick(String, Bool.not(String.is_empty(path)), path,
       Bool.pick(String, Bool.not(String.is_empty(pat)), pat, J.Json.get_str(input, "description", name))))
 
-def Claude.block.k(i: Nat, +thread: String, +msg: String, +n: Nat, +now: Nat, +seq: Nat, +b: J.Json) -> List<&2, M.Change>:
+# The CLI writes one block per line, each numbered from 0, so two text
+# blocks of one message (text, thinking, text) share "msg:0". A line that
+# has a uuid adds its first 8 characters to the id; one without keeps the
+# old id (and the persisted ids are untouched: law claude_text_ids_distinct).
+def Claude.uid(+uuid: String) -> String:
+  Bool.pick(String, String.is_empty(uuid), "", ":" ++ String.take(uuid, 8n))
+
+def Claude.block.k(i: Nat, +thread: String, +msg: String, +n: Nat, +now: Nat, +seq: Nat, +uuid: String, +b: J.Json) -> List<&2, M.Change>:
   match i:
     case 0n:
-      [M.MessagePosted{thread, msg ++ ":" ++ Nat.show(n), M.Assistant{}, J.Json.get_str(b, "text", ""), now}]
+      [M.MessagePosted{thread, msg ++ ":" ++ Nat.show(n) ++ Claude.uid(uuid), M.Assistant{}, J.Json.get_str(b, "text", ""), now}]
     case 1n:
       [M.ActivityLogged{thread, J.Json.get_str(b, "id", Hub.id("a", now, seq)), "tool", J.Json.get_str(b, "name", "tool"),
         Claude.tool_summary(J.Json.get_str(b, "name", "tool"), J.Json.get_obj(b, "input")), now}]
     case _:
       Nil{}
 
-def Claude.blocks(bs: List<&2, J.Json>, +thread: String, +msg: String, +n: Nat, +now: Nat, +seq: Nat) -> List<&2, M.Change>:
+def Claude.blocks(bs: List<&2, J.Json>, +thread: String, +msg: String, +n: Nat, +now: Nat, +seq: Nat, +uuid: String) -> List<&2, M.Change>:
   match bs:
     case Nil{}:
       Nil{}
     case +b <> t:
       List.append(&2, M.Change,
-        Claude.block.k(C.Codec.pos(["text", "tool_use"], J.Json.get_str(b, "type", "")), thread, msg, n, now, seq, b),
-        Claude.blocks(t, thread, msg, 1n+n, now, seq))
+        Claude.block.k(C.Codec.pos(["text", "tool_use"], J.Json.get_str(b, "type", "")), thread, msg, n, now, seq, uuid, b),
+        Claude.blocks(t, thread, msg, 1n+n, now, seq, uuid))
 
-def Claude.assistant(+thread: String, +now: Nat, +seq: Nat, +m: J.Json) -> Step:
-  Step{Claude.blocks(J.Json.elems(J.Json.get_obj(m, "content")), thread, J.Json.get_str(m, "id", "msg"), 0n, now, seq),
+def Claude.assistant(+thread: String, +now: Nat, +seq: Nat, +m: J.Json, +uuid: String) -> Step:
+  Step{Claude.blocks(J.Json.elems(J.Json.get_obj(m, "content")), thread, J.Json.get_str(m, "id", "msg"), 0n, now, seq, uuid),
     [Broadcast{J.Json.show(J.Json.obj([J.KV{"t", J.Str{"delta_end"}}, J.KV{"thread", J.Str{thread}}]))}]}
 
 def Claude.result.k(err: Bool, +thread: String, +now: Nat, text: String) -> Step:
@@ -1111,8 +1118,8 @@ def Usage.compact(+s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M
     Usage.used.k(s, th, now, J.Json.get_nat(J.Json.get_obj(o, "compact_metadata"), "post_tokens", 0n)), Nil{})
 
 # an assistant message and what its todo tools do to the thread's list
-def Claude.assistant.t(+s: M.State, +thread: String, +now: Nat, +m: J.Json) -> Step:
-  Step.after(Step.after(Claude.assistant(thread, now, Hub.seq(s), m), Claude.todos(s, thread, now, J.Json.elems(J.Json.get_obj(m, "content")))), Usage.claude(s, thread, now, m))
+def Claude.assistant.t(+s: M.State, +thread: String, +now: Nat, +m: J.Json, +uuid: String) -> Step:
+  Step.after(Step.after(Claude.assistant(thread, now, Hub.seq(s), m, uuid), Claude.todos(s, thread, now, J.Json.elems(J.Json.get_obj(m, "content")))), Usage.claude(s, thread, now, m))
 
 def Claude.result.text(+c: J.Json) -> String:
   J.Json.get_str(Maybe.default(&2, J.Json, List.head(&2, J.Json, J.Json.elems(c)), J.Null{}), "text", J.Json.as_str(Some{c}, ""))
@@ -1474,7 +1481,7 @@ def Claude.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) -
     case 1n:
       Claude.stream.if(Hub.running(Hub.thread(s, thread)), thread, J.Json.get_obj(o, "event"))
     case 2n:
-      Claude.assistant.t(s, thread, now, J.Json.get_obj(o, "message"))
+      Claude.assistant.t(s, thread, now, J.Json.get_obj(o, "message"), J.Json.get_str(o, "uuid", ""))
     case 3n:
       Step.after(Claude.result.if(Hub.running(Hub.thread(s, thread)), thread, now, o), Usage.window(s, thread, now, o))
     case 4n:
