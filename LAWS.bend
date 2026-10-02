@@ -4786,3 +4786,77 @@ law task_repair_finishes_ended_child:
 # a child still at work keeps its task
 law task_repair_leaves_working_child:
   {H.Task.repair(H.Task.demo(False{}), 9n) == H.Step{[], []} : H.Step}
+
+# Lost work is told, once (hub.bend's Bg.lost, Rec.lost, Hub.carry,
+# Rec.release): a restart, the agent's exit or its replacement tells the
+# agent what it lost and clears the rows in the same step; with
+# restart.continue off it is logged and the rows stay, outcome unknown; a
+# restart starts Rec.burst() threads at most, the rest are released later;
+# a carried child's task stays open for the child to finish
+law recover_lost_told:
+  {H.Hub.running(H.Hub.thread(H.Carry.after(H.Lost.demo(True{}, False{}), 10n), "t1")) == True{} : Bool}
+
+law recover_lost_clears:
+  {M.Bg.live(M.Bg.of(H.Carry.after(H.Lost.demo(True{}, False{}), 10n), "t1")) == 0n : Nat}
+
+law recover_no_work_quiet:
+  {H.Hub.recover(H.Answer.demo(False{}), 9n) == H.Step{[], []} : H.Step}
+
+law recover_lost_once:
+  {H.Lost.told(M.State.mine(H.Carry.after(H.Carry.after(H.Lost.demo(True{}, False{}), 10n), 20n), "t1")) == 1n : Nat}
+
+law lost_off_logs_and_keeps:
+  {Nat.show(M.Bg.live(M.Bg.of(H.Rec.after(H.Lost.demo(False{}, False{}), 10n), "t1"))) ++ "/" ++ M.Bg.status(Maybe.default(&2, String, List.head(&2, String, M.Bg.of(H.Rec.after(H.Lost.demo(False{}, False{}), 10n), "t1")), ""))
+    ++ "/" ++ Bool.show(H.Hub.running(H.Hub.thread(H.Carry.after(H.Lost.demo(False{}, False{}), 10n), "t1"))) == "1/unknown/False" : String}
+
+law gone_idle_told:
+  {H.Hub.running(H.Hub.thread(M.State.replay(H.Queue.changes(H.Hub.agent_gone(H.Lost.demo(True{}, False{}), 9n, "t1", 0)), H.Lost.demo(True{}, False{})), "t1")) == True{} : Bool}
+
+law gone_running_queues:
+  {M.Queue.waiting(M.State.replay(H.Queue.changes(H.Hub.agent_gone(H.Lost.demo(True{}, True{}), 9n, "t1", 0)), H.Lost.demo(True{}, True{})), "t1") == True{} : Bool}
+
+law replaced_told_once:
+  {H.Bg.lost(M.State.replay(H.Queue.changes(H.Bg.lost(H.Lost.demo(True{}, True{}), 9n, "t1", "replaced")), H.Lost.demo(True{}, True{})), 10n, "t1", "replaced") == H.Step{[], []} : H.Step}
+
+law replaced_keeps_new_rows:
+  {M.Bg.live(M.Bg.of(M.State.replay([M.WorkSet{"t1", "bg", "b2\tnew\tc2\tnew\tshell", 11n}], M.State.replay(H.Queue.changes(H.Bg.lost(H.Lost.demo(True{}, True{}), 9n, "t1", "replaced")), H.Lost.demo(True{}, True{}))), "t1")) == 1n : Nat}
+
+law carry_keeps_child_task:
+  {H.Task.marked(H.Queue.changes(H.Hub.recover(H.Task.demo(False{}), 9n)), "k1") == False{} : Bool}
+
+law carry_off_fails_child_task:
+  {H.Task.marked(H.Queue.changes(H.Hub.recover(M.State.replay([M.SettingSet{"restart.continue", "off", 2n}], H.Task.demo(False{})), 9n)), "k1") == True{} : Bool}
+
+law carry_child_result_once:
+  {H.Task.marked(H.Queue.changes(H.Task.finish.w(H.Carry.after(H.Task.demo(False{}), 9n), 30n, "t1", H.Step{[M.TurnChanged{"t1", M.Completed{}, 30n}], []})), "k1") == True{} : Bool}
+
+law rec_burst_bounded:
+  {H.Lost.running(H.Carry.after(H.Lost.many(), 10n)) == 4n : Nat}
+
+law rec_release_bounded:
+  {H.Lost.running(M.State.replay(H.Queue.changes(H.Rec.release(H.Carry.after(H.Lost.many(), 10n), 11n)), H.Carry.after(H.Lost.many(), 10n))) == 6n : Nat}
+
+law rec_release_never_drains_queue:
+  {H.Lost.taken(H.Queue.changes(H.Rec.release(H.Lost.marked(), 9n))) == False{} : Bool}
+
+law lost_text_not_carry_text:
+  for +ls: List<&2, String>
+  {String.eq(H.Lost.text(ls, "restart"), M.Carry.text()) == False{} : Bool}
+
+law update_wait_busy:
+  for +now: Nat
+  for +c: U32
+  for +id: String
+  {H.Lost.upgrades(H.Step.outs_of(H.Update.ask(True{}, now, c, id))) == 0n : Nat}
+
+law update_wait_idle:
+  for +now: Nat
+  for +c: U32
+  for +id: String
+  {H.Lost.upgrades(H.Step.outs_of(H.Update.ask(False{}, now, c, id))) == 1n : Nat}
+
+law update_wait_goes_when_done:
+  {H.Lost.upgrades(H.Step.outs_of(H.Update.due(M.State.replay([M.SettingSet{"update.wait", "5", 5n}], H.Answer.demo(False{})), 9n))) == 1n : Nat}
+
+law update_wait_holds_while_busy:
+  {H.Lost.upgrades(H.Step.outs_of(H.Update.due(M.State.replay([M.SettingSet{"update.wait", "5", 5n}], H.Answer.demo(True{})), 9n))) == 0n : Nat}

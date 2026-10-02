@@ -207,4 +207,4 @@ def main() -> IO(Unit):
     C.Check.str("still on the open list: at work", doing(after(progressed(), 105n, "{\"type\":\"system\",\"subtype\":\"background_tasks_changed\",\"tasks\":[{\"task_id\":\"a847\"}]}")), "Running Sleep for 20 seconds")
     C.Check.str("the open list adds nothing", doing(after(made(), 105n, "{\"type\":\"system\",\"subtype\":\"background_tasks_changed\",\"tasks\":[{\"task_id\":\"a847\"}]}")), "")
     C.Check.str("exit clears", doing(List.append(&2, M.Change, progressed(), H.Queue.changes(H.Hub.agent_gone(state(progressed()), 107n, "t100-1", 0)))), "")
-    C.Check.str("restart clears", doing(List.append(&2, M.Change, progressed(), H.Queue.changes(H.Hub.recover(state(progressed()), 107n)))), "")
+    C.Check.str("restart tells the agent and clears", M.Bg.show(M.Bg.of(H.Carry.after(state(progressed()), 107n), "t100-1")), "")

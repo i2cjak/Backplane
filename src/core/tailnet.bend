@@ -101,6 +101,11 @@ def Tailnet.self(+status: String) -> Machine:
 def Hello.answer(v: String) -> List<&2, U32>:
   CB.Cbor.encode(J.Json.obj([J.KV{"backplane", J.Str{v}}]))
 
+# the same with how many threads run or wait on work ("busy"; an install
+# waits for them: scripts/dev.sh install)
+def Hello.answer.b(v: String, +busy: Nat) -> List<&2, U32>:
+  CB.Cbor.encode(J.Json.obj([J.KV{"backplane", J.Str{v}}, J.KV{"busy", J.Json.nat(busy)}]))
+
 def Hello.byte(+w: String, +rest: List<&2, U32>) -> List<&2, U32>:
   Bool.pick(List<&2, U32>, String.is_empty(w), rest, U32.from_nat(Maybe.default(&2, Nat, Nat.read(w), 0n)) <> rest)
 

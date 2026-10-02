@@ -2775,6 +2775,18 @@ def Set.keys(+ty: Ty, +n: S.Nui, +x: U32, +w: U32, +y: U32) -> Out:
     Set.keys.form(U.Ui.flag(u, "keyform"), ty, n, x, w, (y + 88 : U32)),
     Set.keys.list(U.Ui.flag(u, "keys"), u, ty, x, w, (y + 88 + fh : U32))])
 
+# the version row's button (U.Update.btn)
+def Set.update.btn(i: Nat, +ty: Ty, +x: U32, +w: U32, +y: U32) -> Out:
+  match i:
+    case 1n:
+      Lay.button(ty, D.Clip.all(), (x + w - 16 - Lay.button.w(ty, "Install update") : U32), y, "Install update", T.Th.accent(), "update", "")
+    case 2n:
+      Lay.button(ty, D.Clip.all(), (x + w - 16 - Lay.button.w(ty, "Check now") : U32), y, "Check now", T.Th.soft(), "update-check", "")
+    case 3n:
+      Lay.button(ty, D.Clip.all(), (x + w - 16 - Lay.button.w(ty, "Update now") : U32), y, "Update now", T.Th.accent(), "update-now", "")
+    case _:
+      Out.none()
+
 def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: String, +note: String, +x0: U32, +x1: U32, +h: U32, +raw: U32) -> Out:
   +w = {U32.min((x1 - x0 - 64 : U32), 720) : U32}
   +x = {(x0 + U32.shr((x1 - x0 - w : U32)) : U32) : U32}
@@ -2843,9 +2855,8 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
       "Also on your tailnet: your own devices get in, others need the pairing token."), x, (b2 + 776 + dy + fy : U32), w),
     Set.row.r(ty, "Pairing link", U.Pair.note(pair), x, (b2 + 828 + dy + fy : U32), w, 80),
     Bool.pick(Out, String.is_empty(pair), Out.none(), Lay.button(ty, D.Clip.all(), (x + w - 16 - Lay.button.w(ty, "Copy") : U32), (b2 + 838 + dy + fy : U32), "Copy", T.Th.soft(), "copy", pair)),
-    Set.row.r(ty, "Backplane " ++ v, U.Update.line(info, note), x, (b2 + 880 + dy + fy : U32), w, 150),
-    Bool.pick(Out, U.Update.packaged(info), Out.none(), Bool.pick(Out, String.starts_with(note, "update "), Lay.button(ty, D.Clip.all(), (x + w - 16 - Lay.button.w(ty, "Install update") : U32), (b2 + 890 + dy + fy : U32), "Install update", T.Th.accent(), "update", ""),
-      Lay.button(ty, D.Clip.all(), (x + w - 16 - Lay.button.w(ty, "Check now") : U32), (b2 + 890 + dy + fy : U32), "Check now", T.Th.soft(), "update-check", ""))),
+    Set.row.r(ty, "Backplane " ++ v, U.Update.line.w(st, info, note), x, (b2 + 880 + dy + fy : U32), w, 150),
+    Set.update.btn(U.Update.btn(st, info, note), ty, x, w, (b2 + 890 + dy + fy : U32)),
     Set.row.r(ty, "Update channel", "Stable takes releases; nightly also takes the daily builds.", x, (b2 + 932 + dy + fy : U32), w, 190),
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Nightly") - 6 - Lay.button.w(ty, "Stable") : U32), (b2 + 946 + dy + fy : U32), "Stable", Bool.not(String.eq(M.Setting.get(st, "update.channel", "stable"), "nightly")), "setting", "update.channel=stable"),
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Nightly") : U32), (b2 + 946 + dy + fy : U32), "Nightly", String.eq(M.Setting.get(st, "update.channel", "stable"), "nightly"), "setting", "update.channel=nightly"),

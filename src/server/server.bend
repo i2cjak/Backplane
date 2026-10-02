@@ -140,6 +140,9 @@ type Msg is Data:
   # a bot's answer to a person elsewhere, captured at its turn's end
   # (hub.bend's BotReply): sent and logged now
   Replied{thread: String, to: String, text: String}
+  # time to start the threads a restart left marked (B.Rec.release): after
+  # each turn's end and each minute
+  Release{}
 
 # remote access: also listen on the tailnet, serve HTTPS through
 # `tailscale serve`, and the token remote clients must present
@@ -2096,11 +2099,26 @@ def Hub.auto(+cl: List<&2, Client>, +thread: String, fs: K.Files) -> IO(Unit):
     case K.Files{_, +pcb, +sch, _}:
       Bool.pick(IO(Unit), String.is_empty(B.Auto.view(thread, pcb, sch)), IO.pure(Unit, Unit{}), Wire.all(cl, B.Auto.view(thread, pcb, sch)))
 
-def Hub.start.go(same: Bool, m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, +effort: String) -> IO(Hub):
-  match same h:
-    case True{} _:
-      IO.pure(Hub, h)
-    case False{} Hub{+st, f, ls, +cl, +as, inbox, +cfg, note}:
+# the process a thread's agent replaces: its background work is told lost
+# first, synchronously, so the new process's rows are never touched (law
+# replaced_keeps_new_rows); a note to a running turn waits behind it
+def Hub.replaced(has: Bool, +st: M.State, +now: Nat, +thread: String) -> List<&2, M.Change>:
+  match has:
+    case True{}:
+      B.Queue.changes(B.Bg.lost(st, now, thread, "replaced"))
+    case False{}:
+      Nil{}
+
+def Agent.is(m: Maybe<&2, Agent>) -> Bool:
+  match m:
+    case Some{_}:
+      True{}
+    case None{}:
+      False{}
+
+def Hub.start.spawn(m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, +effort: String) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, +cl, +as, inbox, +cfg, note}:
       do IO<Hub>:
         Hub.agent_stop(m)
         +fs : K.Files <- K.Files.read(cwd)
@@ -2108,6 +2126,19 @@ def Hub.start.go(same: Bool, m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd:
         +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
         res : Result<&1, &1, U32 & String, U32 & Socket> <- H.Proc.spawn("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort), cwd, 0)
         Hub.spawned(res, Hub{st, f, ls, cl, Agents.drop(as, thread), inbox, cfg, note}, thread, Agent.key(model, r, i, effort))
+
+def Hub.start.r(r: Hub & List<&2, String>, m: Maybe<&2, Agent>, +thread: String, +cwd: String, +model: String, +session: String, +rt: M.RuntimeMode, +i: M.InteractionMode, +effort: String) -> IO(Hub):
+  IO.bind(Hub, Hub, Hub.announce(r), h => Hub.start.spawn(m, h, thread, cwd, model, session, rt, i, effort))
+
+def Hub.start.go(same: Bool, +m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, +effort: String) -> IO(Hub):
+  match same h:
+    case True{} _:
+      IO.pure(Hub, h)
+    case False{} Hub{+st, f, ls, +cl, +as, inbox, +cfg, note}:
+      do IO<Hub>:
+        +now : Nat <- Now.nat()
+        cr : Hub & List<&2, String> <- Hub.commit(Hub.replaced(Agent.is(m), st, now, thread), Hub{st, f, ls, cl, as, inbox, cfg, note}, Nil{})
+        Hub.start.r(cr, m, thread, cwd, model, session, r, i, effort)
 
 def Hub.start.k(+m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, +effort: String) -> IO(Hub):
   Hub.start.go(Agent.same(m, Agent.key(model, r, i, effort)), m, h, thread, cwd, model, session, r, i, effort)
@@ -3258,10 +3289,19 @@ def Img.serve(allowed: Bool, s: Socket, +path: String) -> IO(Unit):
 
 # GET /hello says a Backplane hub runs here (and which version), so other
 # machines of the owner can find it; it needs no token and tells nothing more
+# the hub's last count of threads running or waiting on work (its gauge
+# hub.busy, set each minute)
+def Hello.busy(ss: List<&2, PF.Stat>) -> Nat:
+  match ss:
+    case Nil{}:
+      0n
+    case +x <> t:
+      Bool.pick(Nat, String.eq(PF.Stat.name(x), "hub.busy"), PF.Stat.last(x), Hello.busy(t))
+
 def Conn.get(hello: Bool, s: Socket, +web: String, +path: String, gz: Bool) -> IO(Unit):
   match hello:
     case True{}:
-      Conn.finish(s, W.Http.response("200 OK", "application/cbor", TN.Hello.answer(Main.version()), ""))
+      IO.bind(String, Unit, PS.Perf.take(), t => Conn.finish(s, W.Http.response("200 OK", "application/cbor", TN.Hello.answer.b(Main.version(), Hello.busy(PF.Stats.parse(t))), "")))
     case False{}:
       Conn.static(s, web, path, gz)
 
@@ -4461,6 +4501,7 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         +seen : Bool = DK.Desk.seen(Clients.looks(cl), thread, now)
         Desk.tell(DK.Desk.to(Clients.looks(cl), thread, now), cl, st, thread, state)
         IO.spawn(Unit, Hub.phone(Cfg.home(cfg), st, thread, state, seen, inbox))
+        Self.post(inbox, Release{})
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     # a bot's answer to a person elsewhere, captured by the step that left
     # its thread ready (hub.bend's Answer.out)
@@ -5213,12 +5254,14 @@ def Hub.gone(h: Hub, +thread: String, +code: U32, +pid: U32, +now: Nat) -> IO(Hu
 # each minute the hub's size goes into the gauges
 def Hub.tick(h: Hub, +now: Nat) -> IO(Hub):
   match h:
-    case Hub{+st, f, +ls, +cl, +as, inbox, cfg, note}:
+    case Hub{+st, f, +ls, +cl, +as, +inbox, cfg, note}:
       do IO<Hub>:
         Desk.say(DK.Desk.text(Clients.looks(cl), Nat.sub(now, 60n)), cl, now)
         PS.Perf.set("hub.clients", U32.from_nat(List.length(&2, Client, cl)))
         PS.Perf.set("hub.agents", U32.from_nat(List.length(&2, Agent, as)))
         PS.Perf.set("hub.changes", U32.from_nat(List.length(&2, String, ls)))
+        PS.Perf.set("hub.busy", U32.from_nat(M.Work.threads(st)))
+        Self.post(inbox, Release{})
         Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Hub.tick(st, now))
 
 # a tool call's answer goes once its step is stored: a call whose changes
@@ -6397,6 +6440,14 @@ def Msg.kind(m: Msg) -> String:
       "far_retry"
     case Replied{_, _, _}:
       "replied"
+    case Release{}:
+      "release"
+
+def Hub.release(p: M.State & Hub, +now: Nat) -> IO(Hub):
+  (+st, h) = p
+  do IO<Hub>:
+    PS.Perf.set("hub.busy", U32.from_nat(M.Work.threads(st)))
+    Hub.step(h, B.Rec.release(st, now))
 
 def Hub.replied(p: M.State & Hub, +thread: String, +to: String, +text: String, +now: Nat) -> IO(Hub):
   (st, h) = p
@@ -6480,6 +6531,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Far.pull.here(h, link)
     case Replied{+thread, +to, +text}:
       Hub.replied(Hub.state(h), thread, to, text, now)
+    case Release{}:
+      Hub.release(Hub.state(h), now)
 
 # each message's handling is timed as hub.<kind> (docs/perf.md)
 def Hub.got(m: Maybe<&1, Msg>, h: Hub, k: Hub -> IO(Unit)) -> IO(Unit):

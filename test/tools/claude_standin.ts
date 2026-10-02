@@ -143,7 +143,7 @@ async function run(c: Cmd, firstOne: boolean) {
     let task = "";
     try {
       const r = await fetch(mcpUrl, { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "delegate_task", arguments: { prompt: "mode:plain child work", provider: "claude" } } }) });
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "delegate_task", arguments: { prompt: process.env.BP_CHILD_PROMPT ?? "mode:plain child work", provider: "claude" } } }) });
       task = await r.text();
     } catch (e) { task = String(e); }
     log(`DELEGATED ${task.slice(0, 300)}`);

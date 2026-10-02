@@ -2536,3 +2536,17 @@ def Scratch.expired.w(+now: Nat, +w: Nat, t: Thread, +busy: Nat) -> Bool:
 # (law worktree_busy_kept)
 def Worktree.drop.w(+s: State, +t: Thread, +now: Nat, +window: Nat, +busy: Nat) -> Bool:
   Bool.and(Worktree.drop(s, t, now, window), Nat.is_eq(busy, 0n))
+
+def Work.threads.go(ts: List<&2, Thread>, +kids: Map<&2, Nat>, +s: State) -> Nat:
+  match ts:
+    case Nil{}:
+      0n
+    case Thread{+id, _, _, _, _, turn, _, ar, _, _, _, _, _, _, _, _, _, _, _, _, de} <> t:
+      Nat.add(Bool.pick(Nat, Bool.and(Bool.not(Bool.or(ar, de)), Bool.or(State.running.k(State.thread.get(s, id)), Nat.is_gt(Work.busy.at(kids, s, id), 0n))), 1n, 0n),
+        Work.threads.go(t, kids, s))
+
+# how many threads run a turn or wait on work (an update waits for them)
+def Work.threads(+s: State) -> Nat:
+  match s:
+    case State{_, +ts, _, _, _, _, _, _, _, _, _}:
+      Work.threads.go(Map.values(&2, Thread, ts), Work.kids.map(s), s)

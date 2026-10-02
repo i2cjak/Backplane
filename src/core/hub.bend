@@ -799,7 +799,7 @@ def Hub.methods() -> List<&2, String>:
    "thread.settle", "thread.unsettle", "thread.archive", "thread.unarchive",
    "thread.pin", "thread.unpin", "thread.rename", "thread.delete", "kicad.watch", "thread.modes", "app.update", "setting.set", "kicad.install",
    "ask.answer", "device.register", "device.drop", "kicad.info", "queue.resume",
-   "queue.edit", "queue.remove", "queue.move", "queue.steer", "thread.fork", "thread.back", "thread.provider"]
+   "queue.edit", "queue.remove", "queue.move", "queue.steer", "thread.fork", "thread.back", "thread.provider", "update.now"]
 
 # Agent output (Claude stream-json)
 # ---------------------------------
@@ -2502,6 +2502,40 @@ def Retire.archive(+s: M.State, +now: Nat, +th: String, base: Step) -> Step:
   Retire.turn(Hub.running(Hub.thread(s, th)), s, now, th,
     Step.also(Step.after(base, List.append(&2, M.Change, Retire.asks(M.Asks.all(s), th, now), Bg.clear(s, th, now))), Retire.answers(M.Asks.all(s), th)))
 
+# Updating waits for work
+# -----------------------
+# An update restarts the hub, which ends every agent: asked while threads
+# run turns or wait on work (M.Work.threads), it waits (the private
+# setting update.wait, the time it was asked) and goes when they are done,
+# after 30 minutes, or on update.now (laws update_wait_*).
+def Update.limit() -> Nat:
+  1800n
+
+def Update.ask(busy: Bool, +now: Nat, +client: U32, +id: String) -> Step:
+  match busy:
+    case True{}:
+      Step{[M.SettingSet{"update.wait", Nat.show(now), now}], [Reply.ok(client, id)]}
+    case False{}:
+      Step.outs([Reply.ok(client, id), Upgrade{}])
+
+def Update.due.k(go: Bool, +now: Nat) -> Step:
+  match go:
+    case True{}:
+      Step{[M.SettingSet{"update.wait", "", now}], [Upgrade{}]}
+    case False{}:
+      Step.none()
+
+def Update.due.w(waiting: Bool, +s: M.State, +now: Nat) -> Step:
+  match waiting:
+    case True{}:
+      Update.due.k(Bool.or(Nat.is_eq(M.Work.threads(s), 0n), Nat.is_ge(now, Nat.add(M.Switch.num(M.Setting.get(s, "update.wait", "0"), 0n), Update.limit()))), now)
+    case False{}:
+      Step.none()
+
+# the tick's check of a waiting update
+def Update.due(+s: M.State, +now: Nat) -> Step:
+  Update.due.w(Bool.not(String.is_empty(M.Setting.get(s, "update.wait", ""))), s, now)
+
 def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json, +m: String) -> Step:
   match i:
     case 0n:
@@ -2537,7 +2571,7 @@ def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p:
     case 14n:
       Hub.modes(s, now, client, id, p, Hub.thread(s, J.Json.get_str(p, "thread", "")))
     case 15n:
-      Step.outs([Reply.ok(client, id), Upgrade{}])
+      Update.ask(Nat.is_gt(M.Work.threads(s), 0n), now, client, id)
     case 16n:
       Step.reply(client, id, [M.SettingSet{J.Json.get_str(p, "key", ""), J.Json.get_str(p, "value", ""), now}])
     case 17n:
@@ -2567,6 +2601,8 @@ def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p:
       Hub.back(s, now, client, id, J.Json.get_str(p, "thread", ""))
     case 29n:
       Hub.switch(s, now, client, id, J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "provider", ""))
+    case 30n:
+      Step{[M.SettingSet{"update.wait", "", now}], [Reply.ok(client, id), Upgrade{}]}
     case _:
       Hub.more(C.Codec.pos(Hub.methods.git(), m), s, now, client, id, p, m)
 
@@ -2680,11 +2716,101 @@ def Hub.agent_line.vo(v: Nat, +s: M.State, +now: Nat, +thread: String, line: Str
 def Hub.agent_line.v(v: Nat, +s: M.State, +now: Nat, +thread: String, +line: String, +text: String) -> Step:
   Hub.agent_line.vo(v, s, now, thread, line, Maybe.default(&2, J.Json, J.Json.parse(line), J.Null{}), text)
 
-# an agent process ended; a turn still running ends with it
+# Lost work
+# ---------
+# When the process that owned a thread's background work goes (a restart,
+# the agent's exit, its replacement for a new model or mode), the work is
+# no longer anyone's: the agent is told once, by a message naming each
+# task, and its rows go in the same step (laws recover_lost_*, gone_*,
+# replaced_*). With "restart.continue" off nothing is started: an Act
+# says the same, and the rows stay, ended with status "unknown", until a
+# turn ends them. A thread with a queue held (after a Stop) gets the note
+# queued behind it, never drained.
+
+def Step.cat(a: Step, b: Step) -> Step:
+  match a b:
+    case Step{cs, os} Step{c2, o2}:
+      Step{List.append(&2, M.Change, cs, c2), List.append(&2, Out, os, o2)}
+
+def Lost.why(+why: String) -> String:
+  Bool.pick(String, String.eq(why, "restart"), "A restart of Backplane",
+    Bool.pick(String, String.eq(why, "exit"), "The agent process exiting",
+      Bool.pick(String, String.eq(why, "replaced"), "Restarting the agent for a new model or mode", why)))
+
+def Lost.row(+l: String) -> String:
+  "- " ++ Bool.pick(String, String.is_empty(M.Bg.kind.of(l)), "task", M.Bg.kind.of(l)) ++ " " ++ M.Bg.field(l, 0n) ++ ": " ++ M.Work.row.title(l)
+    ++ Bool.pick(String, M.Bg.ended(l), " (it had ended: " ++ M.Bg.status(l) ++ ", its outcome not yet handed to you)", "")
+
+def Lost.rows(ls: List<&2, String>) -> String:
+  match ls:
+    case Nil{}:
+      ""
+    case +l <> t:
+      "\n" ++ Lost.row(l) ++ Lost.rows(t)
+
+# what the agent (or, with restart.continue off, the timeline) is told
+def Lost.text(ls: List<&2, String>, +why: String) -> String:
+  "[Backplane] " ++ Lost.why(why) ++ " ended your background work. Ownership was lost; the outcome is unknown." ++ Lost.rows(ls)
+    ++ "\nCheck what finished before rerunning."
+
+def Lost.new(ls: List<&2, String>) -> Bool:
+  match ls:
+    case Nil{}:
+      False{}
+    case +l <> t:
+      Bool.or(Bool.not(String.eq(M.Bg.status(l), "unknown")), Lost.new(t))
+
+# every row ended, its outcome unknown
+def Lost.unknown(ls: List<&2, String>) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      (M.Bg.line(M.Bg.field(l, 0n), M.Bg.ended.mark() ++ "unknown") ++ M.Bg.rest(l)) <> Lost.unknown(t)
+
+# an archived or deleted thread is told nothing
+def Lost.live(t: M.Thread) -> Bool:
+  match t:
+    case M.Thread{_, _, _, _, _, _, _, ar, _, _, _, _, _, _, _, _, _, _, _, _, de}:
+      Bool.not(Bool.or(ar, de))
+
+# the note itself: to an idle thread it starts a turn; behind a running
+# turn or a held queue it waits
+def Lost.note(held: Bool, +s: M.State, +now: Nat, +th: String, +text: String) -> Step:
+  match held:
+    case True{}:
+      Hub.post.go(True{}, Hub.thread(s, th), Hub.cwd(s, Hub.thread(s, th)), M.Queue.of(s, th), now, th, M.Link.id("backplane", Hub.id("l", now, Hub.seq(s))), M.System{}, text)
+    case False{}:
+      Hub.inbox.id(s, now, "backplane", th, M.System{}, text, M.Link.id("backplane", Hub.id("l", now, Hub.seq(s))))
+
+def Bg.lost.k(has: Bool, on: Bool, +s: M.State, +now: Nat, +th: String, +why: String, +ls: List<&2, String>) -> Step:
+  match has on:
+    case False{} _:
+      Step.none()
+    case True{} True{}:
+      Step.cat(Lost.note(M.Queue.waiting(s, th), s, now, th, Lost.text(ls, why)), Step{[M.WorkSet{th, "bg", "", now}], Nil{}})
+    case True{} False{}:
+      Step{[M.ActivityLogged{th, Hub.id("l", now, Hub.seq(s)), "info", "lost", Lost.text(ls, why), now}, M.WorkSet{th, "bg", M.Bg.show(Lost.unknown(ls)), now}], Nil{}}
+
+# a thread's background work lost (why: "restart", "exit", "replaced"):
+# told once; nothing for a thread with none new, or archived or deleted
+def Bg.lost(+s: M.State, +now: Nat, +th: String, +why: String) -> Step:
+  Bg.lost.k(Bool.and(Lost.new(M.Bg.of(s, th)), Lost.live(Hub.thread(s, th))), M.Carry.on(s), s, now, th, why, M.Bg.of(s, th))
+
+def Bg.gone(live: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
+  match live:
+    case True{}:
+      Bg.lost(s, now, th, "exit")
+    case False{}:
+      Step{Bg.clear(s, th, now), Nil{}}
+
+# an agent process ended; a turn still running ends with it, and the
+# background work it owned is told lost (behind the failed turn's queue
+# when one ran: law gone_idle_told)
 def Hub.agent_gone(+s: M.State, +now: Nat, +thread: String, +code: U32) -> Step:
   Step.before(Nil{}, Retire.answers(M.Asks.all(s), thread),
-    Step.after(Task.finish(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, now, thread, Hub.agent_gone.k(Hub.running(Hub.thread(s, thread)), thread, now, code)))),
-      List.append(&2, M.Change, Bg.clear(s, thread, now), Retire.asks(M.Asks.all(s), thread, now))))
+    Step.cat(Step.after(Task.finish(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, now, thread, Hub.agent_gone.k(Hub.running(Hub.thread(s, thread)), thread, now, code)))),
+      Retire.asks(M.Asks.all(s), thread, now)), Bg.gone(Lost.live(Hub.thread(s, thread)), s, now, thread)))
 
 def Step.outs_of(st: Step) -> List<&2, Out>:
   match st:
@@ -2770,7 +2896,7 @@ def Hub.tick.k(+s: M.State, +now: Nat, +kids: Map<&2, Nat>) -> Step:
         Step.join(Wt.stale(Map.values(&2, M.Thread, ts), s, now), Scratch.sweep(Map.values(&2, M.Thread, ts), kids, s, now, M.Scratch.window(s))))
 
 def Hub.tick(+s: M.State, +now: Nat) -> Step:
-  Hub.tick.k(s, now, M.Work.kids.map(s))
+  Step.join(Hub.tick.k(s, now, M.Work.kids.map(s)), Update.due(s, now))
 
 # Asks keep their thread busy
 # ---------------------------
@@ -2813,6 +2939,42 @@ def Pend.go(cs: List<&2, M.Change>, +before: M.State, +after: M.State) -> List<&
 def Pend.fix(+s: M.State, +cs: List<&2, M.Change>) -> List<&2, M.Change>:
   List.append(&2, M.Change, cs, Pend.go(cs, s, M.State.replay(cs, s)))
 
+# whether the newest entry is the "restart" note Carry.k adds after its
+# message (it is no progress)
+def Carry.restart(es: List<&2, M.Entry>) -> Bool:
+  match es:
+    case M.Act{_, _, _, +kind, _, _} <> _:
+      String.eq(kind, "restart")
+    case _:
+      False{}
+
+# progress since the last carry: the newest entry, past restart notes, is
+# anything but the continue message
+def Carry.fresh.go(es: List<&2, M.Entry>, skip: Bool) -> Bool:
+  match es skip:
+    case Nil{} _:
+      True{}
+    case _ <> +t True{}:
+      Carry.fresh.go(t, Carry.restart(t))
+    case M.Msg{_, _, _, +text, _} <> _ False{}:
+      Bool.not(String.eq(text, M.Carry.text()))
+    case _ False{}:
+      True{}
+
+def Carry.fresh(+es: List<&2, M.Entry>) -> Bool:
+  Carry.fresh.go(es, Carry.restart(es))
+
+# an archived or deleted thread never carries on
+def Carry.live(t: M.Thread) -> Bool:
+  match t:
+    case M.Thread{_, _, _, _, _, _, _, ar, _, _, _, _, _, _, _, _, _, _, _, _, de}:
+      Bool.not(Bool.or(ar, de))
+
+# whether a turn the restart cut short carries on: the setting is on, the
+# thread was running, is live, and made progress since the last carry
+def Carry.will(+before: M.State, +th: String) -> Bool:
+  Bool.and(M.Carry.on(before), Bool.and(Bool.and(Hub.running(Hub.thread(before, th)), Carry.live(Hub.thread(before, th))), Carry.fresh(M.State.mine(before, th))))
+
 # Recovery
 # --------
 # After a restart nothing the old process held is left: no agent runs, no
@@ -2833,24 +2995,28 @@ def Rec.add(r: Rec, st: Step) -> Rec:
 def Rec.note(+th: String, +now: Nat, +seq: Nat, +text: String) -> M.Change:
   M.ActivityLogged{th, Hub.id("r", now, seq), "error", "restart", text, now}
 
-def Rec.turn.k(run: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
-  match run:
-    case True{}:
+# (a turn that carries on (Carry.will) keeps a delegated child's task
+# open: the child goes on and delivers it; law carry_keeps_child_task)
+def Rec.turn.k(run: Bool, will: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
+  match run will:
+    case True{} False{}:
       Task.finish(s, now, th, Step{[Rec.note(th, now, Hub.seq(s), "Backplane restarted before this turn finished"), M.TurnChanged{th, M.Interrupted{}, now}], Nil{}})
-    case False{}:
+    case True{} True{}:
+      Step{[Rec.note(th, now, Hub.seq(s), "Backplane restarted before this turn finished"), M.TurnChanged{th, M.Interrupted{}, now}], Nil{}}
+    case False{} _:
       Step.none()
 
-def Rec.turn(r: Rec, +now: Nat, +th: String) -> Rec:
+def Rec.turn(r: Rec, +before: M.State, +now: Nat, +th: String) -> Rec:
   match r:
     case Rec{+s, cs, os}:
-      Rec.add(Rec{s, cs, os}, Rec.turn.k(Hub.running(Hub.thread(s, th)), s, now, th))
+      Rec.add(Rec{s, cs, os}, Rec.turn.k(Hub.running(Hub.thread(s, th)), Carry.will(before, th), s, now, th))
 
-def Rec.turns(ts: List<&2, String>, r: Rec, +now: Nat) -> Rec:
+def Rec.turns(ts: List<&2, String>, r: Rec, +before: M.State, +now: Nat) -> Rec:
   match ts:
     case Nil{}:
       r
     case +th <> t:
-      Rec.turns(t, Rec.turn(r, now, th), now)
+      Rec.turns(t, Rec.turn(r, before, now, th), before, now)
 
 def Rec.ask.k(a: M.Ask, +s: M.State, +now: Nat) -> Step:
   match a:
@@ -2976,31 +3142,33 @@ def Task.repair.fin(e: Nat, +s: M.State, +now: Nat, +id: String, +parent: String
       Step.before([M.TaskStateSet{id, M.TaskFailed{}, Task.last(s, child), now}], Nil{},
         Task.repair.k(True{}, s, now, id, parent, child, Task.note(id, provider, model, "failed", Task.last(s, child))))
 
-def Task.repair.st(term: Bool, +s: M.State, +now: Nat, +id: String, +parent: String, +child: String, +st: M.TaskState, +summary: String, +dl: Bool, +provider: String, +model: String) -> Step:
+# (before: the state the hub started from: a child the restart cut short
+# is the restart's business, Rec.turns and Carry)
+def Task.repair.st(term: Bool, +before: M.State, +s: M.State, +now: Nat, +id: String, +parent: String, +child: String, +st: M.TaskState, +summary: String, +dl: Bool, +provider: String, +model: String) -> Step:
   match term:
     case True{}:
       Task.repair.k(Bool.not(dl), s, now, id, parent, child,
         Task.note(id, provider, model, Task.word.of(st), Bool.pick(String, String.is_empty(summary), Task.last(s, child), summary)))
     # torn before TaskStateSet: the child's turn ended, its task did not
     case False{}:
-      Task.repair.fin(Task.child.end(M.Thread.turn(Hub.thread(s, child)), M.Work.ready(s, child)), s, now, id, parent, child, provider, model)
+      Task.repair.fin(Task.child.end(M.Thread.turn(Hub.thread(before, child)), M.Work.ready(before, child)), s, now, id, parent, child, provider, model)
 
-def Task.repair.one(t: M.Task, +s: M.State, +now: Nat) -> Step:
+def Task.repair.one(t: M.Task, +before: M.State, +s: M.State, +now: Nat) -> Step:
   match t:
     case M.Task{+id, +parent, +child, _, +st, +summary, +dl, +provider, +model}:
-      Task.repair.st(M.TaskState.terminal(st), s, now, id, parent, child, st, summary, dl, provider, model)
+      Task.repair.st(M.TaskState.terminal(st), before, s, now, id, parent, child, st, summary, dl, provider, model)
 
-def Task.repair.r(r: Rec, t: M.Task, +now: Nat) -> Rec:
+def Task.repair.r(r: Rec, t: M.Task, +before: M.State, +now: Nat) -> Rec:
   match r:
     case Rec{+s, cs, os}:
-      Rec.add(Rec{s, cs, os}, Task.repair.one(t, s, now))
+      Rec.add(Rec{s, cs, os}, Task.repair.one(t, before, s, now))
 
-def Task.repair.go(ts: List<&2, M.Task>, r: Rec, +now: Nat) -> Rec:
+def Task.repair.go(ts: List<&2, M.Task>, r: Rec, +before: M.State, +now: Nat) -> Rec:
   match ts:
     case Nil{}:
       r
     case t <> rest:
-      Task.repair.go(rest, Task.repair.r(r, t, now), now)
+      Task.repair.go(rest, Task.repair.r(r, t, before, now), before, now)
 
 def Task.repair.tasks(s: M.State) -> List<&2, M.Task>:
   match s:
@@ -3008,14 +3176,14 @@ def Task.repair.tasks(s: M.State) -> List<&2, M.Task>:
       Map.values(&2, M.Task, tk)
 
 # every finished task's delivery, finished (over the recovery so far)
-def Rec.repair(r: Rec, +now: Nat) -> Rec:
+def Rec.repair(r: Rec, +before: M.State, +now: Nat) -> Rec:
   match r:
     case Rec{+s, cs, os}:
-      Task.repair.go(Task.repair.tasks(s), Rec{s, cs, os}, now)
+      Task.repair.go(Task.repair.tasks(s), Rec{s, cs, os}, before, now)
 
 # the same as a step of its own (for the laws)
 def Task.repair(+s: M.State, +now: Nat) -> Step:
-  Rec.step(Rec.repair(Rec{s, Nil{}, Nil{}}, now))
+  Rec.step(Rec.repair(Rec{s, Nil{}, Nil{}}, s, now))
 
 # a child's finished task k1 whose delivery a crash tore: stage 0 before
 # the parent's message, 1 after it, 2 after the parent's turn started, 3
@@ -3040,10 +3208,96 @@ def Repair.msgs(cs: List<&2, M.Change>) -> Nat:
     case _ <> t:
       Repair.msgs(t)
 
-# what a hub that just started from its log does first (turns marked
-# running end, asks close, then torn task deliveries are finished)
+# Resuming, bounded
+# -----------------
+# A restart may leave many threads to tell or carry on. At most
+# Rec.burst() start at once (Hub.carry); each of the rest keeps a private
+# setting resume.<thread> ("restart": its lost work to tell, "carry": its
+# turn to carry on), listed in resume.ids, and Rec.release starts up to
+# Rec.burst() of them each minute and after each turn's end. A marker that
+# survives another restart (resume.<thread>.n reaches 2) is only logged
+# (laws rec_*).
+
+def Rec.burst() -> Nat:
+  4n
+
+def Resume.key(+th: String) -> String:
+  "resume." ++ th
+
+def Resume.n.key(+th: String) -> String:
+  "resume." ++ th ++ ".n"
+
+def Resume.why(+s: M.State, +th: String) -> String:
+  M.Setting.get(s, Resume.key(th), "")
+
+def Resume.n(+s: M.State, +th: String) -> Nat:
+  M.Switch.num(M.Setting.get(s, Resume.n.key(th), "0"), 0n)
+
+def Resume.ids(+s: M.State) -> List<&2, String>:
+  M.Bg.lines(M.Setting.get(s, "resume.ids", ""))
+
+def Resume.del.go(ids: List<&2, String>, +th: String) -> List<&2, String>:
+  match ids:
+    case Nil{}:
+      Nil{}
+    case +x <> t:
+      M.Bg.keep(String.eq(x, th), x, Resume.del.go(t, th))
+
+# a thread's marker set (and listed once)
+def Resume.set(+s: M.State, +now: Nat, +th: String, +why: String) -> List<&2, M.Change>:
+  [M.SettingSet{Resume.key(th), why, now}, M.SettingSet{"resume.ids", M.Bg.show(List.append(&2, String, Resume.del.go(Resume.ids(s), th), [th])), now}]
+
+# a thread's marker cleared
+def Resume.clear(+s: M.State, +now: Nat, +th: String) -> List<&2, M.Change>:
+  [M.SettingSet{Resume.key(th), "", now}, M.SettingSet{"resume.ids", M.Bg.show(Resume.del.go(Resume.ids(s), th)), now}]
+
+def Rec.lost.again(give: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
+  match give:
+    case True{}:
+      Step{List.append(&2, M.Change, [M.ActivityLogged{th, Hub.id("l", now, Hub.seq(s)), "info", "lost", Lost.text(M.Bg.of(s, th), "restart"), now},
+        M.WorkSet{th, "bg", M.Bg.show(Lost.unknown(M.Bg.of(s, th))), now}, M.SettingSet{Resume.n.key(th), "0", now}], Resume.clear(s, now, th)), Nil{}}
+    case False{}:
+      Step{[M.SettingSet{Resume.n.key(th), Nat.show(1n+Resume.n(s, th)), now}], Nil{}}
+
+# a restart found a thread's work lost: with the setting off it is logged
+# (Bg.lost); else it is marked to be told (a marker already there counts
+# a restart it outlived, and on the second it is only logged)
+def Rec.lost.on(again: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
+  match again:
+    case False{}:
+      Step{Resume.set(s, now, th, "restart"), Nil{}}
+    case True{}:
+      Rec.lost.again(Nat.is_ge(1n+Resume.n(s, th), 2n), s, now, th)
+
+def Rec.lost.k(has: Bool, live: Bool, on: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
+  match has live on:
+    case False{} _ _:
+      Step.none()
+    case True{} False{} _:
+      Step{Bg.clear(s, th, now), Nil{}}
+    case True{} True{} False{}:
+      Bg.lost(s, now, th, "restart")
+    case True{} True{} True{}:
+      Rec.lost.on(Bool.not(String.is_empty(Resume.why(s, th))), s, now, th)
+
+def Rec.lost.one(r: Rec, +now: Nat, +th: String) -> Rec:
+  match r:
+    case Rec{+s, cs, os}:
+      Rec.add(Rec{s, cs, os}, Rec.lost.k(Lost.new(M.Bg.of(s, th)), Lost.live(Hub.thread(s, th)), M.Carry.on(s), s, now, th))
+
+def Rec.lost(ts: List<&2, String>, r: Rec, +now: Nat) -> Rec:
+  match ts:
+    case Nil{}:
+      r
+    case +th <> t:
+      Rec.lost(t, Rec.lost.one(r, now, th), now)
+
+# what a hub that just started from its log does first: turns marked
+# running end (a carried child's task stays open), asks close, torn task
+# deliveries are finished, and lost background work is logged or marked
+# to be told (Hub.carry and Rec.release tell it)
 def Hub.recover(+s: M.State, +now: Nat) -> Step:
-  Step.after(Rec.step(Rec.repair(Rec.turns(Rec.ids(Rec.threads(s)), Rec.asks(M.Asks.all(s), Rec{s, Nil{}, Nil{}}, now), now), now)), Bg.clear.all(Rec.ids(Rec.threads(s)), s, now))
+  Rec.step(Rec.lost(Rec.ids(Rec.threads(s)), Rec.repair(Rec.turns(Rec.ids(Rec.threads(s)), Rec.asks(M.Asks.all(s), Rec{s, Nil{}, Nil{}}, now), s, now), s, now), now))
 
 # Carrying on
 # -----------
@@ -3055,37 +3309,6 @@ def Hub.recover(+s: M.State, +now: Nat) -> Step:
 # never loops (laws carry_*). Runs after Hub.recover, over the state from
 # before it.
 
-# whether the newest entry is the "restart" note Carry.k adds after its
-# message (it is no progress)
-def Carry.restart(es: List<&2, M.Entry>) -> Bool:
-  match es:
-    case M.Act{_, _, _, +kind, _, _} <> _:
-      String.eq(kind, "restart")
-    case _:
-      False{}
-
-# progress since the last carry: the newest entry, past restart notes, is
-# anything but the continue message
-def Carry.fresh.go(es: List<&2, M.Entry>, skip: Bool) -> Bool:
-  match es skip:
-    case Nil{} _:
-      True{}
-    case _ <> +t True{}:
-      Carry.fresh.go(t, Carry.restart(t))
-    case M.Msg{_, _, _, +text, _} <> _ False{}:
-      Bool.not(String.eq(text, M.Carry.text()))
-    case _ False{}:
-      True{}
-
-def Carry.fresh(+es: List<&2, M.Entry>) -> Bool:
-  Carry.fresh.go(es, Carry.restart(es))
-
-# an archived or deleted thread never carries on
-def Carry.live(t: M.Thread) -> Bool:
-  match t:
-    case M.Thread{_, _, _, _, _, _, _, ar, _, _, _, _, _, _, _, _, _, _, _, _, de}:
-      Bool.not(Bool.or(ar, de))
-
 def Carry.k(go: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
   match go:
     case True{}:
@@ -3094,28 +3317,157 @@ def Carry.k(go: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
     case False{}:
       Step.none()
 
-def Carry.one(r: Rec, +before: M.State, +now: Nat, +th: String) -> Rec:
+def Rec.carry(will: Bool, r: Rec, +now: Nat, +th: String) -> Rec:
   match r:
     case Rec{+s, cs, os}:
-      Rec.add(Rec{s, cs, os}, Carry.k(Bool.and(Bool.and(Hub.running(Hub.thread(before, th)), Carry.live(Hub.thread(before, th))), Carry.fresh(M.State.mine(before, th))), s, now, th))
+      Rec.add(Rec{s, cs, os}, Carry.k(will, s, now, th))
 
-def Carry.all(ts: List<&2, String>, r: Rec, +before: M.State, +now: Nat) -> Rec:
+# a marked thread's lost work told (after its carry, if any: behind it)
+def Rec.tell(marked: Bool, r: Rec, +now: Nat, +th: String) -> Rec:
+  match marked r:
+    case True{} Rec{+s, cs, os}:
+      Rec.add(Rec{s, cs, os}, Step.cat(Bg.lost(s, now, th, "restart"), Step{Resume.clear(s, now, th), Nil{}}))
+    case False{} _:
+      r
+
+def Rec.defer(will: Bool, r: Rec, +now: Nat, +th: String) -> Rec:
+  match will r:
+    case True{} Rec{+s, cs, os}:
+      Rec.add(Rec{s, cs, os}, Step{Resume.set(s, now, th, "carry"), Nil{}})
+    case False{} _:
+      r
+
+# the restart's starts, Rec.burst() at most: the rest are marked
+type Cr is Data:
+  Cr{r: Rec, n: Nat}
+
+def Carry.one.b(go: Bool, +will: Bool, +marked: Bool, r: Rec, +n: Nat, +now: Nat, +th: String) -> Cr:
+  match go:
+    case True{}:
+      Cr{Rec.tell(marked, Rec.carry(will, r, now, th), now, th), n}
+    case False{}:
+      Cr{r, 1n+n}
+
+def Carry.one.k(+will: Bool, +marked: Bool, c: Cr, +now: Nat, +th: String) -> Cr:
+  match c:
+    case Cr{r, 1n+n}:
+      Carry.one.b(Bool.or(will, marked), will, marked, r, n, now, th)
+    case Cr{r, 0n}:
+      Cr{Rec.defer(will, r, now, th), 0n}
+
+def Carry.one(c: Cr, +before: M.State, +now: Nat, +th: String) -> Cr:
+  match c:
+    case Cr{Rec{+s, cs, os}, n}:
+      Carry.one.k(Carry.will(before, th), Bool.not(String.is_empty(Resume.why(s, th))), Cr{Rec{s, cs, os}, n}, now, th)
+
+def Carry.all(ts: List<&2, String>, c: Cr, +before: M.State, +now: Nat) -> Cr:
   match ts:
     case Nil{}:
-      r
+      c
     case +th <> t:
-      Carry.all(t, Carry.one(r, before, now, th), before, now)
+      Carry.all(t, Carry.one(c, before, now, th), before, now)
+
+def Cr.step(c: Cr) -> Step:
+  match c:
+    case Cr{r, _}:
+      Rec.step(r)
 
 def Carry.go(on: Bool, +before: M.State, +after: M.State, +now: Nat) -> Step:
   match on:
     case True{}:
-      Rec.step(Carry.all(Rec.ids(Rec.threads(before)), Rec{after, Nil{}, Nil{}}, before, now))
+      Cr.step(Carry.all(Rec.ids(Rec.threads(before)), Cr{Rec{after, Nil{}, Nil{}}, Rec.burst()}, before, now))
     case False{}:
       Step.none()
 
 # before: the state Hub.recover started from; after: once its step applied
+# (turns carried on and lost work told, Rec.burst() threads at most)
 def Hub.carry(+before: M.State, +after: M.State, +now: Nat) -> Step:
   Carry.go(M.Carry.on(after), before, after, now)
+
+def Rel.k(run: Bool, live: Bool, r: Rec, +now: Nat, +th: String) -> Rec:
+  match run live r:
+    case True{} _ _:
+      r
+    case False{} False{} Rec{+s, cs, os}:
+      Rec.add(Rec{s, cs, os}, Step{Resume.clear(s, now, th), Nil{}})
+    case False{} True{} Rec{+s, cs, os}:
+      Rec.tell(True{}, Rec.carry(String.eq(Resume.why(s, th), "carry"), Rec{s, cs, os}, now, th), now, th)
+
+def Rel.one(r: Rec, +now: Nat, +th: String) -> Rec:
+  match r:
+    case Rec{+s, cs, os}:
+      Rel.k(Hub.running(Hub.thread(s, th)), Lost.live(Hub.thread(s, th)), Rec{s, cs, os}, now, th)
+
+def Rel.all(ts: List<&2, String>, r: Rec, +now: Nat) -> Rec:
+  match ts:
+    case Nil{}:
+      r
+    case +th <> t:
+      Rel.all(t, Rel.one(r, now, th), now)
+
+# the next marked threads (Rec.burst() at most) carried on or told their
+# lost work; a running one waits for its turn's end (the server runs this
+# each minute and after each turn ends). A lost-work note never takes a
+# held queue (Lost.note)
+def Rec.release(+s: M.State, +now: Nat) -> Step:
+  Rec.step(Rel.all(List.take(&2, String, Resume.ids(s), Rec.burst()), Rec{s, Nil{}, Nil{}}, now))
+
+# Scenarios the lost-work laws are stated over: thread t1 (claude) with a
+# background shell at work, idle or running, restart.continue on or off;
+# six such threads; a thread marked to be told with a queue held
+def Lost.demo.cs(+on: Bool, +run: Bool, +th: String) -> List<&2, M.Change>:
+  List.concat(&2, M.Change, [[M.ThreadCreated{th, "p1", th, M.Local{}, "", "", "claude", "", 1n}, M.WorkSet{th, "bg", "b1\tsleep 60\tc1\tsleep 60\tshell", 2n}],
+    Bool.pick(List<&2, M.Change>, run, [M.MessagePosted{th, "u1", M.User{}, "go", 2n}, M.TurnChanged{th, M.Running{}, 2n}], [M.TurnChanged{th, M.Completed{}, 3n}]),
+    Bool.pick(List<&2, M.Change>, on, Nil{}, [M.SettingSet{"restart.continue", "off", 1n}])])
+
+def Lost.demo(+on: Bool, +run: Bool) -> M.State:
+  M.State.replay(M.ProjectCreated{"p1", "p", "/p", 1n} <> Lost.demo.cs(on, run, "t1"), M.State.empty())
+
+def Lost.many() -> M.State:
+  M.State.replay(List.concat(&2, M.Change, [[M.ProjectCreated{"p1", "p", "/p", 1n}], Lost.demo.cs(True{}, False{}, "a1"), Lost.demo.cs(True{}, False{}, "a2"),
+    Lost.demo.cs(True{}, False{}, "a3"), Lost.demo.cs(True{}, False{}, "a4"), Lost.demo.cs(True{}, False{}, "a5"), Lost.demo.cs(True{}, False{}, "a6")]), M.State.empty())
+
+def Lost.marked() -> M.State:
+  M.State.replay(List.append(&2, M.Change, Resume.set(Lost.demo(True{}, False{}), 4n, "t1", "restart"), [M.TurnQueued{"t1", "q1", "held", 4n}]), Lost.demo(True{}, False{}))
+
+def Lost.running.go(ids: List<&2, String>, +s: M.State) -> Nat:
+  match ids:
+    case Nil{}:
+      0n
+    case +i <> t:
+      Nat.add(Bool.pick(Nat, Hub.running(Hub.thread(s, i)), 1n, 0n), Lost.running.go(t, s))
+
+# how many threads run
+def Lost.running(+s: M.State) -> Nat:
+  Lost.running.go(Rec.ids(Rec.threads(s)), s)
+
+# how many of a thread's messages tell lost work
+def Lost.told(es: List<&2, M.Entry>) -> Nat:
+  match es:
+    case Nil{}:
+      0n
+    case M.Msg{_, _, _, +text, _} <> t:
+      Nat.add(Bool.pick(Nat, String.contains(text, "ended your background work"), 1n, 0n), Lost.told(t))
+    case _ <> t:
+      Lost.told(t)
+
+def Lost.taken(cs: List<&2, M.Change>) -> Bool:
+  match cs:
+    case Nil{}:
+      False{}
+    case M.QueueTaken{_, _} <> _:
+      True{}
+    case _ <> t:
+      Lost.taken(t)
+
+def Lost.upgrades(os: List<&2, Out>) -> Nat:
+  match os:
+    case Nil{}:
+      0n
+    case Upgrade{} <> t:
+      1n+Lost.upgrades(t)
+    case _ <> t:
+      Lost.upgrades(t)
 
 # Turn processes
 # --------------

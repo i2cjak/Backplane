@@ -6714,3 +6714,63 @@ def Laws.task_repair_finishes_ended_child():
 
 def Laws.task_repair_leaves_working_child():
   {==}
+
+def Laws.recover_lost_told():
+  {==}
+
+def Laws.recover_lost_clears():
+  {==}
+
+def Laws.recover_no_work_quiet():
+  {==}
+
+def Laws.recover_lost_once():
+  {==}
+
+def Laws.lost_off_logs_and_keeps():
+  {==}
+
+def Laws.gone_idle_told():
+  {==}
+
+def Laws.gone_running_queues():
+  {==}
+
+def Laws.replaced_told_once():
+  {==}
+
+def Laws.replaced_keeps_new_rows():
+  {==}
+
+def Laws.carry_keeps_child_task():
+  {==}
+
+def Laws.carry_off_fails_child_task():
+  {==}
+
+def Laws.carry_child_result_once():
+  {==}
+
+def Laws.rec_burst_bounded():
+  {==}
+
+def Laws.rec_release_bounded():
+  {==}
+
+def Laws.rec_release_never_drains_queue():
+  {==}
+
+def Laws.update_wait_busy(now, c, id):
+  {==}
+
+def Laws.update_wait_idle(now, c, id):
+  {==}
+
+def Laws.update_wait_goes_when_done():
+  {==}
+
+def Laws.update_wait_holds_while_busy():
+  {==}
+
+def Laws.lost_text_not_carry_text(ls):
+  {==}

@@ -565,6 +565,23 @@ def KiCad.ipc.note(+nf: Map<&2, String>) -> String:
 def Update.line(+nf: Map<&2, String>, +note: String) -> String:
   Bool.pick(String, Update.packaged(nf), "Updated by its package.", Bool.pick(String, String.is_empty(note), "Up to date, checked hourly.", note))
 
+# an update the hub holds back while threads work (hub.bend's Update.*):
+# how many it waits for (0: none, or not waiting)
+def Update.waits(+st: M.State) -> Nat:
+  Bool.pick(Nat, String.is_empty(M.Setting.get(st, "update.wait", "")), 0n, M.Work.threads(st))
+
+def Update.waits.line(+n: Nat, +nf: Map<&2, String>, +note: String) -> String:
+  Bool.pick(String, Nat.is_eq(n, 0n), Update.line(nf, note), "Update waits for " ++ Nat.show(n) ++ Bool.pick(String, Nat.is_eq(n, 1n), " thread", " threads") ++ " to finish their work.")
+
+# the version row's line, with the wait
+def Update.line.w(+st: M.State, +nf: Map<&2, String>, +note: String) -> String:
+  Update.waits.line(Update.waits(st), nf, note)
+
+# which button the version row shows: 0 none (a packaged install),
+# 1 install an update offered, 2 check now, 3 update now (one waiting)
+def Update.btn(+st: M.State, +nf: Map<&2, String>, +note: String) -> Nat:
+  Bool.pick(Nat, Update.packaged(nf), 0n, Bool.pick(Nat, Nat.is_gt(Update.waits(st), 0n), 3n, Bool.pick(Nat, String.starts_with(note, "update "), 1n, 2n)))
+
 # an update notice: a version to offer, or the progress of one being applied
 def Ui.update(u: Ui, +o: J.Json) -> Ui:
   match u:
@@ -970,7 +987,7 @@ def Ui.actions() -> List<&2, String>:
    "mech", "mech-part", "mech-3d", "mech-refresh", "mech-renders", "mech-render", "view-kind", "view-sheet", "view-layer",
    "attach-up", "attach-end",
    "hist-go", "hist-prev", "hist-next", "hist-first", "hist-last", "hist-play", "hist-tick", "hist-diff", "hist-live", "hist-jump",
-   "hist-show", "cmp", "cmp-pick", "cmp-close", "cmp-side", "cmp-shut", "key-add", "key-del", "fm", "fm-cd", "fm-up", "fm-open", "pdf-page", "fm-page"]
+   "hist-show", "cmp", "cmp-pick", "cmp-close", "cmp-side", "cmp-shut", "key-add", "key-del", "fm", "fm-cd", "fm-up", "fm-open", "pdf-page", "fm-page", "update-now"]
 
 # Reading the client state
 # ------------------------
@@ -3648,8 +3665,13 @@ def Fm.act(i: Nat, +u: Ui, +value: String) -> Act:
     case 4n:
       Pdf.ask(u, Ui.view_get(u, "view.path"), value)
     # (the window shows a long folder a page at a time: the first row shown)
-    case _:
+    case 5n:
       Act{Ui.info_set(u, "fm.top:" ++ Ui.sel(u), value), Nil{}}
+    # (an update held back while threads work goes now)
+    case 6n:
+      Ui.rpc(u, "update.now", Nil{})
+    case _:
+      Act{u, Nil{}}
 
 # A listed entry as every client shows it: its name, what a tap sends, its
 # size (files), and its kind ("folder", "board", "schematic", "3d",

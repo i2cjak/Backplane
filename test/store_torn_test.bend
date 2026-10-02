@@ -11,14 +11,15 @@ import ../src/core/hub.bend as H
 # turn completes, the task is done, the result reaches idle parent t0,
 # whose turn starts, TaskDelivered last), read back as the hub reads it at
 # start-up, and recovered (Hub.recover, then Hub.carry, as the server
-# does). Every cut ends with exactly one result message in the parent, the
+# does; restart.continue off, so a child cut short fails and delivers
+# rather than carrying on). Every cut ends with exactly one result message in the parent, the
 # task delivered, and the parent's turn running.
 
 def base() -> List<&2, M.Change>:
   [M.ProjectCreated{"p1", "p", "/p", 1n}, M.ThreadCreated{"t0", "p1", "root", M.Local{}, "", "", "codex", "", 1n},
    M.ThreadCreated{"t1", "p1", "child", M.Local{}, "", "", "claude", "", 1n}, M.TaskDelegated{"k1", "t0", "t1", 1n, "claude", "", 1n},
    M.TaskStateSet{"k1", M.TaskRunning{}, "", 1n}, M.MessagePosted{"t1", "u1", M.User{}, "do it", 2n}, M.TurnChanged{"t1", M.Running{}, 2n},
-   M.MessagePosted{"t1", "a1", M.Assistant{}, "it is done", 3n}]
+   M.MessagePosted{"t1", "a1", M.Assistant{}, "it is done", 3n}, M.SettingSet{"restart.continue", "off", 3n}]
 
 def lines(cs: List<&2, M.Change>) -> List<&2, String>:
   match cs:
@@ -63,9 +64,14 @@ def delivered.k(m: Maybe<&2, M.Task>) -> String:
     case None{}:
       "none"
 
-# what a cut leaves after recovery: results in t0 / delivered / t0 running
-def after(+s: M.State) -> String:
-  Nat.show(results(M.State.mine(s, "t0"))) ++ "/" ++ delivered.k(H.Task.of_child(s, "t1")) ++ "/" ++ Bool.show(H.Hub.running(H.Hub.thread(s, "t0")))
+# what a cut leaves after recovery: results in t0 / delivered / t0's turn
+# started (now running, or already running at the crash: with
+# restart.continue off the restart stops that one)
+def after.k(+before: M.State, +s: M.State) -> String:
+  Nat.show(results(M.State.mine(s, "t0"))) ++ "/" ++ delivered.k(H.Task.of_child(s, "t1")) ++ "/" ++ Bool.show(Bool.or(H.Hub.running(H.Hub.thread(before, "t0")), H.Hub.running(H.Hub.thread(s, "t0"))))
+
+def after(+before: M.State) -> String:
+  after.k(before, recovered(before))
 
 def bad.one(+k: Nat, +got: String) -> List<&2, String>:
   Bool.pick(List<&2, String>, String.eq(got, "1/True/True"), Nil{}, [Nat.show(k) ++ ":" ++ got])
@@ -76,14 +82,14 @@ def bad(n: Nat, +k: Nat, +head: String, +text: String, acc: List<&2, String>) ->
     case 0n:
       acc
     case 1n+p:
-      bad(p, 1n+k, head, text, List.append(&2, String, acc, bad.one(k, after(recovered(read(head ++ String.take(text, k)))))))
+      bad(p, 1n+k, head, text, List.append(&2, String, acc, bad.one(k, after(read(head ++ String.take(text, k))))))
 
 def main() -> IO(Unit):
   do IO<Unit>:
     +head : String = ST.Store.text(lines(base()))
     +text : String = ST.Store.text(lines(step()))
     C.Check.str("the step delivers, TaskDelivered last", Maybe.default(&2, String, List.head(&2, String, List.reverse(&2, String, lines(step()))), ""), J.Json.show(K.Change.encode(M.TaskDelivered{"k1", 9n})))
-    C.Check.str("whole step: one result, delivered, parent running", after(recovered(read(head ++ text))), "1/True/True")
-    C.Check.str("no step at all: one result, delivered, parent running", after(recovered(read(head))), "1/True/True")
+    C.Check.str("whole step: one result, delivered, parent running", after(read(head ++ text)), "1/True/True")
+    C.Check.str("no step at all: one result, delivered, parent running", after(read(head)), "1/True/True")
     C.Check.str("cut after every byte of the step (" ++ Nat.show(String.length(text)) ++ " bytes)", String.join(List.take(&2, String, bad(1n+String.length(text), 0n, head, text, Nil{}), 5n), " "), "")
     C.Check.str("a torn line resyncs: the next line reads", Nat.show(List.length(&2, M.Change, ST.Store.changes(nonempty(String.split(String.take(text, 20n) ++ ST.Store.tail_fix([65]) ++ J.Json.show(K.Change.encode(M.ProjectRemoved{"p9", 1n})) ++ "\n", '\n'))))), "1")

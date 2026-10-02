@@ -709,6 +709,18 @@ def View.keys.set(+u: U.Ui) -> List<&2, D.Node>:
     View.keys.form(U.Ui.flag(u, "keyform"), u), View.keys.list(U.Ui.flag(u, "keys"), u)])
 
 # the same settings as the native window
+# the version row's button (U.Update.btn)
+def View.update.btn(i: Nat) -> List<&2, D.Node>:
+  match i:
+    case 1n:
+      [D.Dom.button("primary", "update", "", "Install the update", "Install update")]
+    case 2n:
+      [D.Dom.button("", "update-check", "", "Look for an update now", "Check now")]
+    case 3n:
+      [D.Dom.button("primary", "update-now", "", "Update without waiting for the threads at work", "Update now")]
+    case _:
+      Nil{}
+
 def View.settings(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String) -> D.Node:
   +prov = M.Setting.get(st, "agent.provider", "claude")
   +ipc = M.Setting.get(st, "kicad.ipc", "on")
@@ -732,9 +744,7 @@ def View.settings(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +not
       View.setrow("Tailscale: " ++ U.Str.get(nf, "tailnet"), "Listening on " ++ U.Str.get(nf, "listen"), Nil{}),
       View.setrow("Pairing link", U.Pair.note(U.Pair.link(nf)), D.Dom.when(Bool.not(String.is_empty(U.Pair.link(nf))), D.Dom.copy(U.Pair.link(nf)))),
       View.setrow("Update channel", "Stable takes releases; nightly also takes the daily builds.", View.chips(["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel")),
-      View.setrow("Backplane " ++ v, U.Update.line(nf, note),
-        Bool.pick(List<&2, D.Node>, U.Update.packaged(nf), Nil{}, Bool.pick(List<&2, D.Node>, String.starts_with(note, "update "), [D.Dom.button("primary", "update", "", "Install the update", "Install update")],
-          [D.Dom.button("", "update-check", "", "Look for an update now", "Check now")])))], List.append(&2, D.Node, View.voice.set(u, st), View.keys.set(u)))}]}
+      View.setrow("Backplane " ++ v, U.Update.line.w(st, nf, note), View.update.btn(U.Update.btn(st, nf, note)))], List.append(&2, D.Node, View.voice.set(u, st), View.keys.set(u)))}]}
 
 def View.empty(n: Nat) -> D.Node:
   D.El{"main", "empty", [D.At{"class", "empty"}], [D.Txt{Bool.pick(String, Nat.is_eq(n, 0n), "Add a project with + to start.", "Pick a thread, or start one with + next to a project.")}]}
