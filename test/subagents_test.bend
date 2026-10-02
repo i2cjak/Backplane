@@ -77,6 +77,21 @@ def rows.show(rs: List<&2, SB.SubRow>) -> String:
 def rows(+es: List<&2, M.Change>) -> String:
   rows.show(SB.Subs.rows(state(es), Map.new(&2, String), "t100-1"))
 
+# the panel as a whole: open (1) or shut (0), its word, and its rows shown
+def panel.k(+info: Map<&2, String>, +rs: List<&2, SB.SubRow>) -> String:
+  +open = SB.Subs.panel.open(info, "t100-1", rs)
+  Bool.pick(String, open, "1", "0") ++ "|" ++ SB.Subs.panel.word(rs) ++ "|" ++ Nat.show(List.length(&2, SB.SubRow, SB.Subs.panel.rows(open, rs)))
+
+def panel.with(+es: List<&2, M.Change>, +info: Map<&2, String>) -> String:
+  panel.k(info, SB.Subs.rows(state(es), info, "t100-1"))
+
+def panel(+es: List<&2, M.Change>) -> String:
+  panel.with(es, Map.new(&2, String))
+
+# the info after a click on the panel's head (the "fold" action's value)
+def clicked(+v: String) -> Map<&2, String>:
+  Map.set(&2, String, Map.new(&2, String), "fold:" ++ String.drop(v, 1n), String.take(v, 1n))
+
 def stepped.ended() -> List<&2, M.Change>:
   after(stepped(), 105n, "{\"type\":\"system\",\"subtype\":\"task_notification\",\"task_id\":\"a847\",\"tool_use_id\":\"toolu_1\",\"status\":\"completed\",\"session_id\":\"s\"}")
 
@@ -105,6 +120,12 @@ def main() -> IO(Unit):
     C.Check.str("at work: its title kept through progress", rows(after(stepped(), 104n, "{\"type\":\"system\",\"subtype\":\"task_progress\",\"task_id\":\"a847\",\"description\":\"Running ls\"}")),
       "toolu_1|Run bash command and report output|running|Running ls|open|2|2;")
     C.Check.str("ended: listed, shut", rows(stepped.ended()), "toolu_1|Run bash command and report output|done||shut|2|0;")
+    # the panel: open while one works, folded to its head once all are done
+    C.Check.str("panel at work: open", panel(stepped()), "1|1 at work|1")
+    C.Check.str("panel all done: folded to its head", panel(stepped.ended()), "0|1 done|0")
+    C.Check.str("a click on a done panel's head asks to open it", SB.Subs.panel.ask(False{}, "t100-1"), "1subs:t100-1")
+    C.Check.str("opened by hand, a done panel stays open", panel.with(stepped.ended(), clicked(SB.Subs.panel.ask(False{}, "t100-1"))), "1|1 done|1")
+    C.Check.str("shut by hand, a working panel stays shut", panel.with(stepped(), clicked(SB.Subs.panel.ask(True{}, "t100-1"))), "0|1 at work|0")
     C.Check.str("a background shell is listed by its kind", rows(shell()), "b3|shell: scripts/check.sh|running|scripts/check.sh|open|0|0;")
     C.Check.str("a background shell is not an agent", SB.Subs.badge(SB.Subs.count(state(shell()), "t100-1")), "")
     C.Check.str("the sidebar's count", SB.Subs.badge(SB.Subs.count(state(stepped()), "t100-1")) ++ "/" ++ SB.Subs.badge(SB.Subs.count(state(stepped.ended()), "t100-1")), "1 agent/")

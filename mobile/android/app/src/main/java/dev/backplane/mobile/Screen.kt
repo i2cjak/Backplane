@@ -101,7 +101,9 @@ data class SubRow(
     val id: String, val agent: Boolean, val title: String, val who: String, val state: String, val doing: String,
     val live: Boolean, val open: Boolean, val n: Int, val steps: List<SubStep>, val act: String, val value: String,
 )
-data class Subs(val busy: String, val rows: List<SubRow>)
+// word: "3 at work" or "3 done"; open: the rows show (done, it folds to its
+// head); a tap on the head sends act with value
+data class Subs(val busy: String, val rows: List<SubRow>, val word: String = "", val open: Boolean = true, val act: String = "", val value: String = "")
 
 // a skill the `$` being typed may complete to ("skill" with its name)
 data class Skill(val name: String, val desc: String, val on: Boolean = false)
@@ -417,7 +419,7 @@ private fun thread(o: JSONObject) = threadOf(o).copy(
             SubRow(it.optString("id"), it.optBoolean("agent"), it.optString("title"), it.optString("who"), it.optString("state"),
                 it.optString("doing"), it.optBoolean("live"), it.optBoolean("open"), it.optInt("n"),
                 it.optJSONArray("steps").map { st -> SubStep(st.optString("kind"), st.optString("text")) }, it.optString("act"), it.optString("value"))
-        })
+        }, u.optString("word"), u.optBoolean("open", true), u.optString("act"), u.optString("value"))
     },
     asks = o.optJSONArray("asks").map { a ->
         Ask(a.optString("id"), a.optString("kind"), a.optString("head"), a.optString("detail"), blocks(a.optJSONArray("blocks")),

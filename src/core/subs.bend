@@ -253,6 +253,35 @@ def Subs.live(rs: List<&2, SubRow>) -> Nat:
 def Subs.busy(+n: Nat) -> String:
   Bool.pick(String, Nat.is_eq(n, 0n), "", Nat.show(n) ++ " at work")
 
+# The panel as a whole
+# --------------------
+# Open while anything in it is at work; once all of it is done it folds to
+# its head ("3 done"), so finished subagents never hold the top of the
+# thread. A click on the head opens or shuts it (the "fold" action, key
+# subs:<thread>), and the person's choice holds until they click again.
+
+def Subs.panel.key(+th: String) -> String:
+  "subs:" ++ th
+
+def Subs.panel.open(+info: Map<&2, String>, +th: String, +rs: List<&2, SubRow>) -> Bool:
+  FO.Fold.open(FO.Fold.user(info, Subs.panel.key(th)), Nat.is_gt(Subs.live(rs), 0n))
+
+# what a click on the head asks
+def Subs.panel.ask(+open: Bool, +th: String) -> String:
+  FO.Fold.ask(open, Subs.panel.key(th))
+
+# the head's word: "3 at work", else "3 done"
+def Subs.panel.word(+rs: List<&2, SubRow>) -> String:
+  Subs.or(Subs.busy(Subs.live(rs)), Nat.show(List.length(&2, SubRow, rs)) ++ " done")
+
+# the rows a panel shows: all of them open, none shut
+def Subs.panel.rows(open: Bool, rs: List<&2, SubRow>) -> List<&2, SubRow>:
+  match open:
+    case True{}:
+      rs
+    case False{}:
+      Nil{}
+
 def Subs.agent_n(ls: List<&2, String>) -> Nat:
   match ls:
     case Nil{}:

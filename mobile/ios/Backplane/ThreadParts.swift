@@ -232,11 +232,17 @@ struct SubsView: View {
     var body: some View {
         let busy = !subs.busy.isEmpty
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Subagents").font(.caption.bold()).foregroundStyle(busy ? .primary : .secondary)
-                Spacer(minLength: 0)
-                if busy { Text(subs.busy).font(.caption).foregroundStyle(PhaseColor.accent) }
+            // the head opens and shuts the panel; done, it is folded to this line
+            Button { if let a = subs.act, !a.isEmpty { model.act(a, subs.value ?? "") } } label: {
+                HStack {
+                    Text("Subagents").font(.caption.bold()).foregroundStyle(busy ? .primary : .secondary)
+                    Spacer(minLength: 0)
+                    Text(subs.word ?? subs.busy).font(.caption).foregroundStyle(busy ? PhaseColor.accent : .secondary)
+                    Image(systemName: (subs.open ?? true) ? "chevron.down" : "chevron.right").font(.caption).foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             ForEach(subs.rows) { r in
                 Button { model.act(r.act, r.value) } label: {
                     VStack(alignment: .leading, spacing: 2) {

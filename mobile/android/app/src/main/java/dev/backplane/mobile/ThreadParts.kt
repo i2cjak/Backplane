@@ -382,10 +382,15 @@ fun SubsView(m: AppModel, subs: Subs) {
     Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = corner, modifier = Modifier.fillMaxWidth()
         .then(if (busy) Modifier.border(1.dp, PhaseColor.accent, corner) else Modifier)) {
         Column(Modifier.padding(10.dp).heightIn(max = 260.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Row(Modifier.fillMaxWidth()) {
+            // the head opens and shuts the panel; done, it is folded to this line
+            Row(Modifier.fillMaxWidth().then(if (subs.act.isNotEmpty()) Modifier.clickable { m.act(subs.act, subs.value) } else Modifier),
+                verticalAlignment = Alignment.CenterVertically) {
                 Text("Subagents", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
                     color = if (busy) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline)
-                if (busy) Text(subs.busy, style = MaterialTheme.typography.labelMedium, color = PhaseColor.accent)
+                Text(subs.word.ifEmpty { subs.busy }, style = MaterialTheme.typography.labelMedium,
+                    color = if (busy) PhaseColor.accent else MaterialTheme.colorScheme.outline)
+                Icon(if (subs.open) Icons.Filled.ExpandMore else Icons.AutoMirrored.Filled.KeyboardArrowRight, null,
+                    Modifier.size(18.dp), tint = MaterialTheme.colorScheme.outline)
             }
             for (r in subs.rows) Column(Modifier.fillMaxWidth().clickable { m.act(r.act, r.value) }.padding(vertical = 4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

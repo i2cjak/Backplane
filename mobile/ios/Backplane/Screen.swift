@@ -145,6 +145,12 @@ struct SubRow: Decodable, Identifiable {
 struct Subs: Decodable {
     let busy: String
     let rows: [SubRow]
+    // "3 at work" or "3 done"; open: the rows show (done, it folds to its
+    // head); a tap on the head sends act with value
+    let word: String?
+    let open: Bool?
+    let act: String?
+    let value: String?
 }
 
 // a skill the `$` being typed may complete to ("skill" with its name)

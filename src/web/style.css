@@ -184,7 +184,11 @@ button.fold span { overflow: hidden; text-overflow: ellipsis; white-space: nowra
 .thread-view.dropping .composer { outline: 2px dashed var(--accent); outline-offset: -4px; background: var(--raise); }
 .subs { border: 1px solid var(--line); background: var(--panel); max-width: 860px; position: sticky; top: 0; z-index: 2; max-height: 40vh; overflow-y: auto; }
 .subs.busy { border-color: var(--accent); }
-.subs-head { display: flex; justify-content: space-between; padding: 6px 10px; color: var(--faint); font-size: 11px; }
+.subs-head { display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 10px; color: var(--faint); font-size: 11px; background: none; border: 0; text-align: left; cursor: pointer; }
+.subs-head:hover { color: var(--text); }
+.subs-head .icon, .subs-head svg { margin-left: auto; }
+/* done and folded: one quiet line that scrolls with the thread */
+.subs.shut { position: static; max-height: none; overflow: visible; background: none; }
 .subs.busy .subs-head { color: var(--text); }
 .subs-head .busy { color: var(--accent); }
 .sub-row { display: flex; gap: 10px; align-items: center; padding: 5px 10px; cursor: pointer; }
@@ -313,6 +317,8 @@ button.chip:hover { border-color: var(--bad); color: var(--bad); }
 .work { position: sticky; top: 0; z-index: 2; background: var(--bg); max-width: 860px; }
 .work:empty { display: none; }
 .work .subs { position: static; }
+/* folded subagents alone keep no place at the top: they scroll with the thread */
+.work:has(> .subs.shut:only-child) { position: static; }
 .emb-pins { padding: 0 0 4px; border-bottom: 1px solid var(--line); }
 .term-probe { position: absolute; visibility: hidden; font: 12px/17px var(--mono); white-space: pre; }
 

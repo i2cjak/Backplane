@@ -2357,26 +2357,35 @@ def Sa.sum(rs: List<&2, SB.SubRow>) -> U32:
     case +r <> rest:
       (Sa.h(r) + Sa.sum(rest) : U32)
 
+# the panel's box: its head, and its rows when open
+def Subs.box.h(+rs: List<&2, SB.SubRow>, +open: Bool) -> U32:
+  (Sa.sum(rs) + Bool.pick(U32, open, 36, 32) : U32)
+
 # the subagent viewer: every task this thread delegated and each of the
-# agent's own subagents, what each does now, and the steps of those open
-def Lay.subs.k(some: Bool, +ty: Ty, +rs: List<&2, SB.SubRow>, +x0: U32, +x1: U32, +y: U32) -> Out:
+# agent's own subagents, what each does now, and the steps of those open.
+# Its head opens and shuts it; once all is done it folds to the head
+# (subs.bend's panel)
+def Lay.subs.k(some: Bool, +ty: Ty, +all: List<&2, SB.SubRow>, +open: Bool, +th: String, +x0: U32, +x1: U32, +y: U32) -> Out:
   match some:
     case True{}:
-      +busy = SB.Subs.busy(SB.Subs.live(rs))
-      +on = Bool.not(String.is_empty(busy))
+      +rs = SB.Subs.panel.rows(open, all)
+      +on = Nat.is_gt(SB.Subs.live(all), 0n)
+      +word = SB.Subs.panel.word(all)
       Out.all([
-        Out.ops(Lay.box(D.Clip.all(), x0, y, (x1 - x0 : U32), (Sa.sum(rs) + 36 : U32), 8, T.Th.panel(), Bool.pick(U32, on, T.Th.accent(), T.Th.line()))),
+        Out.ops(Lay.box(D.Clip.all(), x0, y, (x1 - x0 : U32), Subs.box.h(rs, open), 8, T.Th.panel(), Bool.pick(U32, on, T.Th.accent(), T.Th.line()))),
         Out.ops(Ty.text(ty, 2n, "Subagents", D.Clip.all(), (x0 + 12 : U32), y, 32, Bool.pick(U32, on, T.Th.text(), T.Th.faint()))),
-        Out.ops(Ty.text(ty, 2n, busy, D.Clip.all(), (x1 - Ty.width(ty, 2n, busy) - 12 : U32), y, 32, T.Th.accent())),
+        Out.ops(Ty.text(ty, 2n, word, D.Clip.all(), (x1 - Ty.width(ty, 2n, word) - 36 : U32), y, 32, Bool.pick(U32, on, T.Th.accent(), T.Th.faint()))),
+        Out.ops(Lay.icon(ty, Bool.pick(String, open, "chevron-down", "chevron-right"), D.Clip.all(), (x1 - 28 : U32), (y + 8 : U32), T.Th.faint())),
+        Out{Nil{}, [Lay.hit(x0, y, (x1 - x0 : U32), 30, "fold", SB.Subs.panel.ask(open, th))]},
         Sa.rows(ty, rs, x0, x1, (y + 30 : U32))])
     case False{}:
       Out.none()
 
-def Lay.subs(+ty: Ty, +rs: List<&2, SB.SubRow>, +x0: U32, +x1: U32, +y: U32) -> Out:
-  Lay.subs.k(Bool.not(List.is_empty(&2, SB.SubRow, rs)), ty, rs, x0, x1, y)
+def Lay.subs(+ty: Ty, +all: List<&2, SB.SubRow>, +open: Bool, +th: String, +x0: U32, +x1: U32, +y: U32) -> Out:
+  Lay.subs.k(Bool.not(List.is_empty(&2, SB.SubRow, all)), ty, all, open, th, x0, x1, y)
 
-def Subs.height(+rs: List<&2, SB.SubRow>) -> U32:
-  Bool.pick(U32, List.is_empty(&2, SB.SubRow, rs), 0, (Sa.sum(rs) + 48 : U32))
+def Subs.height(+all: List<&2, SB.SubRow>, +open: Bool) -> U32:
+  Bool.pick(U32, List.is_empty(&2, SB.SubRow, all), 0, (Subs.box.h(SB.Subs.panel.rows(open, all), open) + 12 : U32))
 
 def Lay.parent.k(+ty: Ty, +p: String, +st: M.State, +x0: U32, +y: U32) -> Out:
   +label = "← delegated by " ++ U.Tasks.title(st, p)
@@ -4561,10 +4570,11 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
       +cx0 = {(x0 + U32.shr((x1 - x0 - cw : U32)) : U32) : U32}
       +cx1 = {(cx0 + cw : U32) : U32}
       +ts = SB.Subs.rows(st, pics, sel)
+      +sopen = SB.Subs.panel.open(pics, sel, ts)
       # the row under the header: the parent's link
       +pl = {Bool.pick(U32, String.is_empty(U.Tasks.parent(st, sel)), 0, 32) : U32}
       +pins = U.Ec.pins(ec, st, sel)
-      +top = {(52 + hy + pl + Subs.height(ts) + Pins.height(pins) : U32) : U32}
+      +top = {(52 + hy + pl + Subs.height(ts, sopen) + Pins.height(pins) : U32) : U32}
       +asks = U.Asks.open(st, sel)
       +ah = Asks.h(ty, asks, (cw - 32 : U32))
       +qs = M.Queue.items(st, sel)
@@ -4582,8 +4592,8 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
         cx0, cx1, top, (h - ah - qh - eh - bh : U32), sc, tsel, Out.none()) Out.all([Lay.header(ty, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, x0, x1, pa, term, M.Snooze.on(now, U.Side.until(st, sel)), del, hy),
           Ren.field.if(String.eq(ren, sel), ty, rtext, focus, blink, caret, mark, x0, x1, hy),
           Lay.parent(ty, st, sel, cx0, (58 + hy : U32)),
-          Lay.subs(ty, ts, cx0, cx1, (60 + hy + pl : U32)),
-          Lay.pins(ty, ec, pins, cx0, cx1, (60 + hy + pl + Subs.height(ts) : U32), fkey, blink),
+          Lay.subs(ty, ts, sopen, sel, cx0, cx1, (60 + hy + pl : U32)),
+          Lay.pins(ty, ec, pins, cx0, cx1, (60 + hy + pl + Subs.height(ts, sopen) : U32), fkey, blink),
           Lay.composer.a(ty, draft, ls, held, caret, mark, focus, blink, cx0, cx1, h, U.Follow.button(st, sel, Lay.running(turn), stop, draft), U.Follow.act(stop), U.Effort.label(U.Models.label(pr, mo), U.Effort.of(st, sel)) ++ U.Usage.tail(st, sel), rs, atts, up, path),
           Lay.queued(ty, qs, Lay.running(turn), cx0, cx1, (h - eh : U32)),
           Lay.todos(ty, tds, cx0, cx1, (h - eh - 124 - Lay.qh(qs) : U32)),

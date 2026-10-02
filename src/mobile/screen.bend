@@ -638,10 +638,16 @@ def Mob.subs.go(rs: List<&2, SB.SubRow>) -> List<&2, J.Json>:
     case r <> rest:
       Mob.sub(r) <> Mob.subs.go(rest)
 
-# the panel: its rows and how many are at work ("" with none)
-def Mob.subs(+rs: List<&2, SB.SubRow>) -> J.Json:
-  Bool.pick(J.Json, List.is_empty(&2, SB.SubRow, rs), J.Null{},
-    J.Json.obj([J.KV{"busy", J.Json.str(SB.Subs.busy(SB.Subs.live(rs)))}, J.KV{"rows", J.Json.arr(Mob.subs.go(rs))}]))
+# the panel: how many are at work ("" with none), its word ("3 at work",
+# "3 done"), whether it is open, the head's tap (the "fold" action with
+# value), and its rows, none while shut (subs.bend's panel: done, it folds)
+def Mob.subs.k(+open: Bool, +th: String, +rs: List<&2, SB.SubRow>) -> J.Json:
+  J.Json.obj([J.KV{"busy", J.Json.str(SB.Subs.busy(SB.Subs.live(rs)))}, J.KV{"word", J.Json.str(SB.Subs.panel.word(rs))},
+    J.KV{"open", J.Json.bool(open)}, J.KV{"act", J.Json.str("fold")}, J.KV{"value", J.Json.str(SB.Subs.panel.ask(open, th))},
+    J.KV{"rows", J.Json.arr(Mob.subs.go(SB.Subs.panel.rows(open, rs)))}])
+
+def Mob.subs(+info: Map<&2, String>, +th: String, +rs: List<&2, SB.SubRow>) -> J.Json:
+  Bool.pick(J.Json, List.is_empty(&2, SB.SubRow, rs), J.Null{}, Mob.subs.k(SB.Subs.panel.open(info, th, rs), th, rs))
 
 def Mob.parent(none: Bool, +st: M.State, +p: String) -> J.Json:
   match none:
@@ -808,7 +814,7 @@ def Mob.thread(u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J.Json, +atts: 
         J.KV{"tools", J.Json.arr(Mob.head(V.View.running(turn), pinned, TO.Tools.settled(o, Nat.is_gt(sa, ua)), archived, Bool.not(String.is_empty(M.Fork.source(st, id)))))},
         J.KV{"menu", J.Json.arr(Mob.menu(id, M.Snooze.on(now, U.Side.until(st, id))))},
         J.KV{"parent", Mob.parent(String.is_empty(U.Tasks.parent(st, id)), st, U.Tasks.parent(st, id))},
-        J.KV{"subs", Mob.subs(SB.Subs.rows(st, nf, id))},
+        J.KV{"subs", Mob.subs(nf, id, SB.Subs.rows(st, nf, id))},
         J.KV{"entries", J.Json.arr(Mob.paged.es(pg, st, id, nf, drafts, V.View.running(turn)))},
         J.KV{"earlier", J.Json.nat(U.Win.hidden(pg))},
         J.KV{"sending", J.Json.arr(Mob.strs(pend))},
