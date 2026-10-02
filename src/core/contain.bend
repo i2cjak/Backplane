@@ -100,10 +100,15 @@ def Contain.unit(thread: String, gen: String) -> String:
 # command itself. systemd-run --scope puts this very process in the scope
 # and then runs the command in place, so the pid the hub holds is the
 # agent's, and stdin, stdout and the working folder are the ones given. A
-# scope that ends failed stays until it is read (Contain.result) and reset,
-# which is how an out-of-memory end is told from any other.
+# scope that ends failed stays until it is read (Contain.show.args) and
+# reset, which is how an out-of-memory end is told from any other.
+# systemd-run expands ${VAR} and $VAR in the arguments it is given, and a
+# prompt may hold such text: --expand-environment=no turns that off, and a
+# systemd too old to have the flag gets every $ written $$ (its escape for a
+# literal one). TimeoutStopSec bounds how long stopping a scope waits
+# before it kills what is left.
 def Contain.script() -> String:
-  "l=$1; u=$2; shift 2\nif command -v systemd-run >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then\n  exec systemd-run --user --scope --quiet \"--unit=$u\" \"--property=MemoryMax=$l\" --property=MemorySwapMax=0 --property=OOMPolicy=kill -- \"$@\"\nfi\nexec \"$@\"\n"
+  "l=$1; u=$2; shift 2\nif command -v systemd-run >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then\n  if systemd-run --help 2>&1 | grep -q -- --expand-environment; then\n    exec systemd-run --user --scope --quiet --expand-environment=no \"--unit=$u\" \"--property=MemoryMax=$l\" --property=MemorySwapMax=0 --property=OOMPolicy=kill --property=TimeoutStopSec=5s -- \"$@\"\n  fi\n  n=$#\n  while [ \"$n\" -gt 0 ]; do\n    a=$(printf '%sx' \"$1\" | sed 's/\\$/$$/g'); a=${a%x}\n    shift; set -- \"$@\" \"$a\"; n=$((n - 1))\n  done\n  exec systemd-run --user --scope --quiet \"--unit=$u\" \"--property=MemoryMax=$l\" --property=MemorySwapMax=0 --property=OOMPolicy=kill --property=TimeoutStopSec=5s -- \"$@\"\nfi\nexec \"$@\"\n"
 
 # the program and arguments that start cmd contained
 def Contain.argv(limit: String, unit: String, cmd: String, args: List<&2, String>) -> List<&2, String>:
@@ -140,3 +145,4 @@ def Contain.exit_text(code: U32, result: String, limit: String) -> String:
 # worth asking the scope: the process was killed by a signal
 def Contain.ask(+code: U32) -> Bool:
   U32.is_ge(code, 128)
+

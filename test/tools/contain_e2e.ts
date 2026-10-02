@@ -115,6 +115,15 @@ try {
   const scoped = lines().some((l) => l.startsWith("START"));
   check(scoped, "the agent started");
 
+  // dollar text in an argument reaches the agent as it is (systemd-run
+  // would expand ${VAR} without --expand-environment=no)
+  const lit = "m-${BP_EXAMPLE}-$HOME-$$";
+  send("thread.modes", { thread: ok1, model: lit });
+  send("turn.start", { thread: ok1, text: "dollars", msg: "c-d" });
+  await until(15000, () => lines().some((l) => l.startsWith("ARGV") && l.includes(JSON.stringify(lit).slice(1, -1))) ? true : undefined);
+  check(lines().some((l) => l.startsWith("ARGV") && l.includes(JSON.stringify(lit).slice(1, -1))), "dollar text in an argument reaches the agent literally");
+  await until(15000, () => turns(ok1).filter((s) => s === "completed").length >= 2 ? true : undefined);
+
   const bad = await made("runaway");
   send("turn.start", { thread: bad, text: "mode:oom go", msg: "c-2" });
   await until(15000, () => turns(bad).at(-1) === "failed" ? true : undefined);
@@ -129,8 +138,8 @@ try {
   const hello = await fetch(`http://127.0.0.1:${port}/hello`).then((r) => r.status).catch(() => 0);
   check(hello === 200, `the hub answers (${hello})`);
   send("turn.start", { thread: ok1, text: "again", msg: "c-3" });
-  await until(15000, () => turns(ok1).filter((s) => s === "completed").length >= 2 ? true : undefined);
-  check(turns(ok1).filter((s) => s === "completed").length >= 2, `another thread keeps working (${turns(ok1).join(",")})`);
+  await until(15000, () => turns(ok1).filter((s) => s === "completed").length >= 3 ? true : undefined);
+  check(turns(ok1).filter((s) => s === "completed").length >= 3, `another thread keeps working (${turns(ok1).join(",")})`);
 } finally {
   proc.kill(9);
   await proc.exited;

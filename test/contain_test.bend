@@ -23,6 +23,7 @@ def main() -> IO(Unit):
     C.Check.str("limit default", CT.Contain.limit(meminfo(), "", ""), "7812M")
     C.Check.str("unit name", CT.Contain.unit("t/1 x", "170-9"), "bp-agent-t_1_x-170-9")
     C.Check.str("argv", Nat.show(List.length(&2, String, CT.Contain.argv("1K", "u", "claude", ["-p", "x"]))), "8")
+    C.Check.str("no expansion", Bool.show(String.contains(CT.Contain.script(), "--expand-environment=no")), "True")
     C.Check.str("oom words", CT.Contain.exit_text(137, "oom-kill", "200M"), "agent ran out of memory (limit 200 MB)")
     C.Check.str("oom words GB", CT.Contain.exit_text(137, "oom-kill", "8192M"), "agent ran out of memory (limit 8 GB)")
     C.Check.str("other exit", CT.Contain.exit_text(3, "success", "200M"), "agent exited with code 3")

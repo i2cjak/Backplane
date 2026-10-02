@@ -48,6 +48,7 @@ const log = (s: string) => {
   if (logf) appendFileSync(logf, s + "\n");
 };
 log(`START ${process.pid} ${args.join(" ").slice(0, 200).replace(/\n/g, " ")}`);
+log(`ARGV ${JSON.stringify(args)}`);
 const workMs = Number(process.env.BP_WORK_MS ?? 1500);
 const bgMs = Number(process.env.BP_BG_MS ?? 2500);
 let mode = process.env.BP_STANDIN_MODE ?? "";

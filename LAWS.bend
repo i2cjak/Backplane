@@ -5350,6 +5350,12 @@ law contain_plain_exit:
 law contain_words_gb:
   {CTN.Contain.words.g(12n, 4n) == "3 GB" : String}
 
+# systemd-run expands ${VAR} in the arguments it is given, so the scope's
+# script turns that off (and, for a systemd without the flag, writes each
+# $ as $$): a prompt's dollar text reaches the agent as it is.
+law contain_no_expand:
+  {Bool.and(String.contains(CTN.Contain.script(), "--expand-environment=no"), String.contains(CTN.Contain.script(), "s/\\$/$$/g")) == True{} : Bool}
+
 # A streamed reply's settled prefix (client.bend's Live.head: the text up
 # to the last blank line outside a fenced block) renders, and lays out,
 # exactly as it does alone, so a window keeps it and lays out the rest.

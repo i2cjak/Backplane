@@ -7115,6 +7115,9 @@ def Laws.contain_plain_exit():
 def Laws.contain_words_gb():
   {==}
 
+def Laws.contain_no_expand():
+  {==}
+
 def Laws.live_split_fence_safe():
   {==}
 
