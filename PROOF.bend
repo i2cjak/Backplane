@@ -7087,4 +7087,29 @@ def Laws.bots_post_once(mid, m, s, now, client, id, text):
   {==}
 
 def Laws.bots_tell_once(mid, remote, s, now, client, id, to, text):
+def Laws.contain_default_half():
+  {==}
+
+def Laws.contain_clamp_min():
+  {==}
+
+def Laws.contain_clamp_max():
+  {==}
+
+def Laws.contain_set_gib():
+  {==}
+
+def Laws.contain_test_mib():
+  {==}
+
+def Laws.contain_unit_safe():
+  {==}
+
+def Laws.contain_oom_words():
+  {==}
+
+def Laws.contain_plain_exit():
+  {==}
+
+def Laws.contain_words_gb():
   {==}

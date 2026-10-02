@@ -80,6 +80,7 @@ import ./src/core/desk.bend as DK
 import ./src/core/emb.bend as EMB
 import ./src/core/outbox.bend as OB
 import ./src/core/live.bend as LV
+import ./src/core/contain.bend as CTN
 
 # Backplane's rules, stated over the real code. `bend PROOF.bend` proves each
 # one. Humans own this file: an agent may add laws, never weaken or delete
@@ -5315,3 +5316,34 @@ law bots_tell_once:
   for +to: String
   for +text: String
   {BHS.Bots.tell.once(True{}, mid, remote, s, now, client, id, to, text) == H.Step.outs([H.Reply.ok(client, id)]) : H.Step}
+# Agent containment (core/contain.bend): each agent runs in a scope with a
+# memory limit; the limit is half the machine unless set, clamped between
+# 2 GiB and 90% of it, and a test's MiB setting is taken as it is; a scope
+# that ended in an out-of-memory kill gives the turn its words. The laws
+# count in a unit that is 4 to a GiB, so no big number is normalized.
+law contain_default_half:
+  {CTN.Contain.units(64n, 0n, 0n, 4n) == 32n : Nat}
+
+law contain_clamp_min:
+  {CTN.Contain.units(10n, 0n, 0n, 4n) == 8n : Nat}
+
+law contain_clamp_max:
+  {CTN.Contain.units(64n, 100n, 0n, 4n) == 57n : Nat}
+
+law contain_set_gib:
+  {CTN.Contain.units(64n, 5n, 0n, 4n) == 20n : Nat}
+
+law contain_test_mib:
+  {CTN.Contain.units(64n, 5n, 3n, 4n) == 3n : Nat}
+
+law contain_unit_safe:
+  {CTN.Contain.unit("t/1 x", "17-9") == "bp-agent-t_1_x-17-9" : String}
+
+law contain_oom_words:
+  {CTN.Contain.exit_text(137, "oom-kill", "200M") == "agent ran out of memory (limit 200 MB)" : String}
+
+law contain_plain_exit:
+  {CTN.Contain.exit_text(3, "success", "200M") == "agent exited with code 3" : String}
+
+law contain_words_gb:
+  {CTN.Contain.words.g(12n, 4n) == "3 GB" : String}

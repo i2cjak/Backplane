@@ -22,6 +22,8 @@
 //   tail-nonl    an old CLI whose last line, its result, has no newline,
 //                then exit with a child holding stdout
 //   exit-now     the process exits (3) as the first command starts
+//   oom          the first command allocates 20 MB blocks (600 MB at most,
+//                touched) until the kernel ends it; BP_ALLOC_MB (600)
 //   plain        each command: init, an answer, its result
 //   stream       each command streams BP_STREAM_N (40) text deltas
 //                "<tag>0 <tag>1 ..." (tag: the message's last word),
@@ -157,6 +159,19 @@ async function run(c: Cmd, firstOne: boolean) {
     log(`EXIT ${process.pid}`);
     await sleep(100);
     process.exit(mode === "exit-held" ? 3 : 0);
+  }
+  if (firstOne && mode === "oom") {
+    log(`ALLOC ${process.pid}`);
+    const keep: Buffer[] = [];
+    for (let i = 0; i < Number(process.env.BP_ALLOC_MB ?? 600) / 20; i++) {
+      keep.push(Buffer.alloc(20 * 1024 * 1024, 1));
+      await sleep(20);
+    }
+    log(`SURVIVED ${keep.length}`);
+    say("ALIVE");
+    result("ALIVE");
+    lc(c.uuid, "completed");
+    return;
   }
   if (firstOne && mode === "delegate") {
     let task = "";

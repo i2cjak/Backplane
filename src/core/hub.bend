@@ -1934,10 +1934,12 @@ def Stop.outs(+provider: String, +thread: String, +rid: String) -> List<&2, Out>
 def Hub.resume(+s: M.State, +now: Nat, +client: U32, +id: String, +thread: String) -> Step:
   Step.before(Nil{}, [Reply.ok(client, id)], Wt.start(s, now, thread, False{}))
 
-def Hub.agent_gone.k(running: Bool, +thread: String, +now: Nat, +code: U32) -> Step:
+# why: what the server learned of the exit (core/contain.bend's words for
+# an out-of-memory end); "" says the plain exit code
+def Hub.agent_gone.k(running: Bool, +thread: String, +now: Nat, +code: U32, +why: String) -> Step:
   match running:
     case True{}:
-      Step{[M.ActivityLogged{thread, Hub.id("x", now, 0n), "error", "exit", "agent exited with code " ++ U32.show(code), now},
+      Step{[M.ActivityLogged{thread, Hub.id("x", now, 0n), "error", "exit", Bool.pick(String, String.is_empty(why), "agent exited with code " ++ U32.show(code), why), now},
         M.TurnChanged{thread, M.Failed{}, now}], Nil{}}
     case False{}:
       Step.none()
@@ -3199,10 +3201,13 @@ def Bg.gone(live: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
 # an agent process ended; a turn still running ends with it, and the
 # background work it owned is told lost (behind the failed turn's queue
 # when one ran: law gone_idle_told)
-def Hub.agent_gone(+s: M.State, +now: Nat, +thread: String, +code: U32) -> Step:
+def Hub.agent_gone.why(+s: M.State, +now: Nat, +thread: String, +code: U32, +why: String) -> Step:
   Step.before(Nil{}, Retire.answers(M.Asks.all(s), thread),
-    Step.cat(Step.after(Task.finish(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, now, thread, Hub.agent_gone.k(Hub.running(Hub.thread(s, thread)), thread, now, code)))),
+    Step.cat(Step.after(Task.finish(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, now, thread, Hub.agent_gone.k(Hub.running(Hub.thread(s, thread)), thread, now, code, why)))),
       Retire.asks(M.Asks.all(s), thread, now)), Bg.gone(Lost.live(Hub.thread(s, thread)), s, now, thread)))
+
+def Hub.agent_gone(+s: M.State, +now: Nat, +thread: String, +code: U32) -> Step:
+  Hub.agent_gone.why(s, now, thread, code, "")
 
 def Step.outs_of(st: Step) -> List<&2, Out>:
   match st:
