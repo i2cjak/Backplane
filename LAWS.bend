@@ -4569,6 +4569,21 @@ law cmds_mode_old_legacy:
 law cmds_mode_lc:
   {CM.Cmds.mode(CM.Cmds.see(CM.Cmds.new(), CM.Cmds.o(CM.Cmds.l.lc("u1", "queued")))) == 1n : Nat}
 
+# an old CLI answers no command: its ledger does not grow. A command is
+# forgotten once written (a ledger that knows it is legacy), and the ones
+# written before it knew go when it learns; one still being prepared stays
+law cmds_legacy_retires_sent:
+  {List.length(&2, CM.Cmd, CM.Cmds.cs(CM.Cmds.sent(CM.Cmds.accept(CM.Cmds.see(CM.Cmds.new(), CM.Cmds.o(CM.Cmds.l.init("2.0.0"))), "u1"), "u1"))) == 0n : Nat}
+
+law cmds_legacy_learned_retires:
+  {List.length(&2, CM.Cmd, CM.Cmds.cs(CM.Cmds.see(CM.Cmds.sent(CM.Cmds.accept(CM.Cmds.new(), "u1"), "u1"), CM.Cmds.o(CM.Cmds.l.init("2.0.0"))))) == 0n : Nat}
+
+law cmds_legacy_prep_stays:
+  {List.length(&2, CM.Cmd, CM.Cmds.cs(CM.Cmds.see(CM.Cmds.accept(CM.Cmds.new(), "u1"), CM.Cmds.o(CM.Cmds.l.init("2.0.0"))))) == 1n : Nat}
+
+law cmds_lifecycle_keeps_sent:
+  {List.length(&2, CM.Cmd, CM.Cmds.cs(CM.Cmds.sent(CM.Cmds.accept(CM.Cmds.see(CM.Cmds.new(), CM.Cmds.o(CM.Cmds.l.init("2.1.286"))), "u1"), "u1"))) == 1n : Nat}
+
 law cmds_legacy_same:
   for s: M.State
   for now: Nat

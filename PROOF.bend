@@ -6562,6 +6562,18 @@ def Laws.cmds_mode_old_legacy():
 def Laws.cmds_mode_lc():
   {==}
 
+def Laws.cmds_legacy_retires_sent():
+  {==}
+
+def Laws.cmds_legacy_learned_retires():
+  {==}
+
+def Laws.cmds_legacy_prep_stays():
+  {==}
+
+def Laws.cmds_lifecycle_keeps_sent():
+  {==}
+
 def Laws.cmds_legacy_same(s, now, thread, line, text):
   {==}
 
