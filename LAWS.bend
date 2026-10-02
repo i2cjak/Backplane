@@ -4794,7 +4794,7 @@ law task_repair_delivers_once:
   {H.Task.repair(H.Repair.again(H.Repair.demo(0n), 9n), 10n) == H.Step{[], []} : H.Step}
 
 law task_repair_activates_idle:
-  {H.Queue.changes(H.Task.repair(H.Repair.demo(1n), 9n)) == [M.TaskDelivered{"k1", 9n}, M.TurnChanged{"t0", M.Running{}, 9n}] : List<&2, M.Change>}
+  {H.Queue.changes(H.Task.repair(H.Repair.demo(1n), 9n)) == [M.TurnChanged{"t0", M.Running{}, 9n}, M.TaskDelivered{"k1", 9n}] : List<&2, M.Change>}
 
 law task_repair_running_marks_only:
   {H.Task.repair(H.Repair.demo(2n), 9n) == H.Step{[M.TaskDelivered{"k1", 9n}], []} : H.Step}

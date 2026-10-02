@@ -3470,7 +3470,7 @@ def Task.word.of(st: M.TaskState) -> String:
 def Task.repair.has(has: Bool, wake: Bool, +s: M.State, +now: Nat, +id: String, +parent: String, +child: String, +text: String) -> Step:
   match has wake:
     case True{} True{}:
-      Step{[M.TaskDelivered{id, now}, M.TurnChanged{parent, M.Running{}, now}],
+      Step{[M.TurnChanged{parent, M.Running{}, now}, M.TaskDelivered{id, now}],
         Git{0, "", "checkpoint0", parent, Hub.cwd(s, Hub.thread(s, parent)), "", ""} <> Git{0, "", "step", parent, Hub.cwd(s, Hub.thread(s, parent)), "", ""}
           <> Hub.run(Hub.thread(s, parent), Hub.cwd(s, Hub.thread(s, parent)), text, Hub.uuid(now, parent ++ "/r/" ++ id))}
     case True{} False{}:
