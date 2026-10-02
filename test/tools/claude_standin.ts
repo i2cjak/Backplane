@@ -20,6 +20,9 @@
 //   exit-held    a child holds stdout open, the process exits 3
 //   result-exit  a result, then exit with a child holding stdout
 //   plain        each command: init, an answer, its result
+//   delegate     the first command calls the hub's delegate_task (its MCP
+//                URL from --mcp-config) for a child "mode:plain child
+//                work", then ends; later commands as plain
 // Every line read is appended to $FAKE_LOG ("IN <line>"), and "START pid".
 //
 //   test/tools/claude_standin.ts is run through a `claude` wrapper:
@@ -42,6 +45,10 @@ const bgMs = Number(process.env.BP_BG_MS ?? 2500);
 let mode = process.env.BP_STANDIN_MODE ?? "";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const rnd = () => crypto.randomUUID();
+const mcpAt = args.indexOf("--mcp-config");
+const mcpUrl = (() => {
+  try { return JSON.parse(args[mcpAt + 1]).mcpServers.backplane.url as string; } catch { return ""; }
+})();
 
 const emit = (o: object) => process.stdout.write(JSON.stringify(o) + "\n");
 const lc = (u: string, state: string) => {
@@ -131,6 +138,19 @@ async function run(c: Cmd, firstOne: boolean) {
     log(`EXIT ${process.pid}`);
     await sleep(100);
     process.exit(mode === "exit-held" ? 3 : 0);
+  }
+  if (firstOne && mode === "delegate") {
+    let task = "";
+    try {
+      const r = await fetch(mcpUrl, { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "delegate_task", arguments: { prompt: "mode:plain child work", provider: "claude" } } }) });
+      task = await r.text();
+    } catch (e) { task = String(e); }
+    log(`DELEGATED ${task.slice(0, 300)}`);
+    say("DELEGATED");
+    result("DELEGATED");
+    lc(c.uuid, "completed");
+    return;
   }
   if (firstOne && (mode === "wake" || mode === "bg")) {
     const t = bgStart();

@@ -4744,3 +4744,45 @@ law phase_failed_before_monitoring:
 law status_wait_f_keeps_failed:
   for any: Bool
   {M.Status.wait.f(any, M.StFailed{}) == M.StFailed{} : M.Status}
+
+# Durable steps: a step is one write (ST.Store.text); a delivery's
+# TaskDelivered comes after the parent's message, whose id is the task's,
+# so a restart finishes a torn delivery once (Task.repair); a torn last
+# line is left as one malformed line
+law commit_text_joins:
+  {ST.Store.text(["a", "b"]) == "a\nb\n" : String}
+
+law task_finish_delivered_last:
+  {List.head(&2, M.Change, List.reverse(&2, M.Change, H.Queue.changes(H.Task.finish(H.Task.demo(False{}), 9n, "t1", H.Step{[M.TurnChanged{"t1", M.Completed{}, 9n}], []}))))
+    == Some{M.TaskDelivered{"k1", 9n}} : Maybe<&2, M.Change>}
+
+law task_repair_delivers:
+  {H.Repair.msgs(H.Queue.changes(H.Task.repair(H.Repair.demo(0n), 9n))) == 1n : Nat}
+
+law task_repair_delivers_once:
+  {H.Task.repair(H.Repair.again(H.Repair.demo(0n), 9n), 10n) == H.Step{[], []} : H.Step}
+
+law task_repair_activates_idle:
+  {H.Queue.changes(H.Task.repair(H.Repair.demo(1n), 9n)) == [M.TaskDelivered{"k1", 9n}, M.TurnChanged{"t0", M.Running{}, 9n}] : List<&2, M.Change>}
+
+law task_repair_running_marks_only:
+  {H.Task.repair(H.Repair.demo(2n), 9n) == H.Step{[M.TaskDelivered{"k1", 9n}], []} : H.Step}
+
+law task_repair_quiet_when_done:
+  {H.Task.repair(H.Repair.demo(3n), 9n) == H.Step{[], []} : H.Step}
+
+# (the lines after it read as before: test/native/store_torn_test.bend)
+law store_torn_tail_resyncs:
+  for +rest: List<&2, String>
+  {ST.Store.changes(ST.Store.torn.demo() <> rest) == ST.Store.changes(rest) : List<&2, M.Change>}
+
+law store_torn_tail_newline:
+  {ST.Store.tail_fix([123, 34]) ++ "|" ++ ST.Store.tail_fix([123, 10]) ++ "|" ++ ST.Store.tail_fix([]) == "\n||" : String}
+
+# torn before the task's state: the child's turn ended, so its task ends
+law task_repair_finishes_ended_child:
+  {H.Task.marked(H.Queue.changes(H.Task.repair(M.State.replay([M.TurnChanged{"t1", M.Completed{}, 5n}], H.Task.demo(False{})), 9n)), "k1") == True{} : Bool}
+
+# a child still at work keeps its task
+law task_repair_leaves_working_child:
+  {H.Task.repair(H.Task.demo(False{}), 9n) == H.Step{[], []} : H.Step}

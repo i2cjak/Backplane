@@ -645,7 +645,7 @@ def Laws.task_finish_not_ended_same(s, now, thread, cs, os, h):
   {==}
 
 def Laws.inbox_never_interrupts(s, now, from, to, role, text, h):
-  %Equal.sym(Bool, H.Hub.running(H.Hub.thread(s, to)), True{}, h) : {H.Step.outs_of(H.Hub.inbox.w(_, M.Worktree.gone(H.Hub.thread(s, to)), M.Worktree.pending(H.Hub.thread(s, to), now), s, now, from, to, role, text)) == [] : List<&2, H.Out>}
+  %Equal.sym(Bool, H.Hub.running(H.Hub.thread(s, to)), True{}, h) : {H.Step.outs_of(H.Hub.inbox.w(_, M.Worktree.gone(H.Hub.thread(s, to)), M.Worktree.pending(H.Hub.thread(s, to), now), s, now, from, to, role, text, M.Link.id(from, H.Hub.id("m", now, H.Hub.seq(s))))) == [] : List<&2, H.Out>}
   {==}
 
 law or_true_r:
@@ -6680,4 +6680,37 @@ def Laws.phase_failed_before_monitoring(n, q):
   {==}
 
 def Laws.status_wait_f_keeps_failed(any):
+  {==}
+
+def Laws.commit_text_joins():
+  {==}
+
+def Laws.task_finish_delivered_last():
+  {==}
+
+def Laws.task_repair_delivers():
+  {==}
+
+def Laws.task_repair_delivers_once():
+  {==}
+
+def Laws.task_repair_activates_idle():
+  {==}
+
+def Laws.task_repair_running_marks_only():
+  {==}
+
+def Laws.task_repair_quiet_when_done():
+  {==}
+
+def Laws.store_torn_tail_resyncs(rest):
+  {==}
+
+def Laws.store_torn_tail_newline():
+  {==}
+
+def Laws.task_repair_finishes_ended_child():
+  {==}
+
+def Laws.task_repair_leaves_working_child():
   {==}

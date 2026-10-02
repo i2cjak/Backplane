@@ -741,20 +741,6 @@ def Bot.dir.changed(c: M.Change, +inbox: Chan(Msg)) -> IO(Unit):
     case _:
       IO.pure(Unit, Unit{})
 
-def Hub.commit.wrote(r: File & Result<&1, &1, U32 & String, Unit>, c: M.Change, st: M.State, +line: String, ls: List<&2, String>, cl: List<&2, Client>,
-    as: List<&2, Agent>, +inbox: Chan(Msg), cfg: Cfg, note: String, fresh: List<&2, String>, k: Hub -> List<&2, String> -> IO(Hub & List<&2, String>)) -> IO(Hub & List<&2, String>):
-  (f, _) = r
-  do IO<Hub & List<&2, String>>:
-    Bot.dir.changed(c, inbox)
-    k(Hub{st, f, line <> ls, cl, as, inbox, cfg, note}, line <> fresh)
-
-# the full line goes to disk; `wire`, its copy for clients, to the log
-def Hub.commit.one(h: Hub, line: String, +wire: String, +c: M.Change, fresh: List<&2, String>, k: Hub -> List<&2, String> -> IO(Hub & List<&2, String>)) -> IO(Hub & List<&2, String>):
-  match h:
-    case Hub{st, f, ls, cl, as, +inbox, cfg, note}:
-      IO.bind(File & Result<&1, &1, U32 & String, Unit>, Hub & List<&2, String>, File.write(f, line ++ "\n"),
-        r => Hub.commit.wrote(r, c, M.State.apply(st, c), wire, ls, cl, as, inbox, cfg, note, fresh, k))
-
 def Hub.announce(r: Hub & List<&2, String>) -> IO(Hub):
   (h, fresh) = r
   match h fresh:
@@ -765,14 +751,85 @@ def Hub.announce(r: Hub & List<&2, String>) -> IO(Hub):
         Wire.all(cl, Hub.changes_msg(List.reverse(&2, String, l <> t)))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
 
-# persist changes, fold them in; answers the hub and the new lines (newest first)
-def Hub.commit(cs: List<&2, M.Change>, h: Hub, fresh: List<&2, String>) -> IO(Hub & List<&2, String>):
+# One write per step
+# -----------------
+# A step's changes go to the log in one write (ST.Store.text), and only once
+# it is written are they folded in, announced and their effects run. A
+# write that fails folds nothing of the step and runs none of its effects;
+# the hub logs it, counts it (hub.write_fail) and tells every client, and
+# keeps serving (the window lives in this process).
+
+# what a step's write did: the new lines for clients (newest first), or
+# why it failed
+type Wrote is Data:
+  Wrote{fresh: List<&2, String>, ok: Bool, err: String}
+
+def Hub.lines.disk(cs: List<&2, M.Change>) -> List<&2, String>:
   match cs:
     case Nil{}:
-      IO.pure(Hub & List<&2, String>, (h, fresh))
-    case +c <> t:
-      Hub.commit.one(h, J.Json.show(C.Change.encode(c)), J.Json.show(C.Change.wire(c)), c, fresh,
-        h2 => fr2 => Hub.commit(t, h2, fr2))
+      Nil{}
+    case c <> t:
+      J.Json.show(C.Change.encode(c)) <> Hub.lines.disk(t)
+
+# the written changes folded in: the state, the log's lines and the new
+# ones (both newest first)
+type Folded is Data:
+  Folded{st: M.State, ls: List<&2, String>, fresh: List<&2, String>}
+
+def Hub.fold(cs: List<&2, M.Change>, f: Folded) -> Folded:
+  match cs f:
+    case Nil{} _:
+      f
+    case +c <> t Folded{st, ls, fr}:
+      Hub.fold(t, Folded{M.State.apply(st, c), J.Json.show(C.Change.wire(c)) <> ls, J.Json.show(C.Change.wire(c)) <> fr})
+
+def Bot.dir.changed.all(cs: List<&2, M.Change>, +inbox: Chan(Msg)) -> IO(Unit):
+  match cs:
+    case Nil{}:
+      IO.pure(Unit, Unit{})
+    case c <> t:
+      do IO<Unit>:
+        Bot.dir.changed(c, inbox)
+        Bot.dir.changed.all(t, inbox)
+
+def Hub.commit.k(fd: Folded, f: File, cl: List<&2, Client>, as: List<&2, Agent>, inbox: Chan(Msg), cfg: Cfg, note: String) -> Hub & Wrote:
+  match fd:
+    case Folded{st, ls, fr}:
+      (Hub{st, f, ls, cl, as, inbox, cfg, note}, Wrote{fr, True{}, ""})
+
+def Hub.err.msg(e: U32 & String) -> String:
+  (_, msg) = e
+  msg
+
+def Hub.commit.done(r: File & Result<&1, &1, U32 & String, Unit>, +cs: List<&2, M.Change>, st: M.State, ls: List<&2, String>, cl: List<&2, Client>,
+    as: List<&2, Agent>, +inbox: Chan(Msg), cfg: Cfg, note: String) -> IO(Hub & Wrote):
+  (f, res) = r
+  match res:
+    case Done{_}:
+      do IO<Hub & Wrote>:
+        Bot.dir.changed.all(cs, inbox)
+        return Hub.commit.k(Hub.fold(cs, Folded{st, ls, Nil{}}), f, cl, as, inbox, cfg, note)
+    case Fail{e}:
+      IO.pure(Hub & Wrote, (Hub{st, f, ls, cl, as, inbox, cfg, note}, Wrote{Nil{}, False{}, Hub.err.msg(e)}))
+
+# persist a step's changes in one write, then fold them in
+def Hub.commit.w(+cs: List<&2, M.Change>, h: Hub) -> IO(Hub & Wrote):
+  match cs h:
+    case Nil{} _:
+      IO.pure(Hub & Wrote, (h, Wrote{Nil{}, True{}, ""}))
+    case _ Hub{st, f, ls, cl, as, +inbox, cfg, note}:
+      IO.bind(File & Result<&1, &1, U32 & String, Unit>, Hub & Wrote, File.write(f, ST.Store.text(Hub.lines.disk(cs))),
+        r => Hub.commit.done(r, cs, st, ls, cl, as, inbox, cfg, note))
+
+def Hub.commit.r(r: Hub & Wrote, fresh: List<&2, String>) -> Hub & List<&2, String>:
+  (h, w) = r
+  match w:
+    case Wrote{fr, _, _}:
+      (h, List.append(&2, String, fr, fresh))
+
+# persist changes, fold them in; answers the hub and the new lines (newest first)
+def Hub.commit(+cs: List<&2, M.Change>, h: Hub, fresh: List<&2, String>) -> IO(Hub & List<&2, String>):
+  IO.bind(Hub & Wrote, Hub & List<&2, String>, Hub.commit.w(cs, h), r => IO.pure(Hub & List<&2, String>, Hub.commit.r(r, fresh)))
 
 def Hub.spawned.fail(e: U32 & String, h: Hub, +thread: String) -> IO(Hub):
   (_, +msg) = e
@@ -5039,23 +5096,47 @@ def Hub.announce.far(r: Hub & List<&2, String>, cs: List<&2, M.Change>, +from: N
   (h, +fresh) = r
   IO.bind(Hub, Hub, Hub.announce((h, fresh)), h2 => Far.push(h2, cs, fresh, from))
 
-def Hub.step.go(+st: M.State, h: Hub, cs: List<&2, M.Change>, os: List<&2, B.Out>) -> IO(Hub):
-  do IO<Hub>:
-    +cs2 : List<&2, M.Change> = B.Pend.fix(st, cs)
-    r : Hub & List<&2, String> <- Hub.commit(cs2, h, Nil{})
-    h2 : Hub <- Hub.announce.far(r, cs2, M.State.seq(st))
-    Hub.outs(os, h2)
+def Hub.write_fail.note(+err: String) -> String:
+  J.Json.show(J.Json.obj([J.KV{"t", J.Str{"update"}}, J.KV{"error", J.Str{"log write failed: " ++ err}}]))
 
-def Hub.step.k(p: M.State & Hub, cs: List<&2, M.Change>, os: List<&2, B.Out>) -> IO(Hub):
+def Hub.step.wrote(r: Hub & Wrote, +cs: List<&2, M.Change>, os: List<&2, B.Out>, +from: Nat) -> IO(Hub & Bool):
+  (h, w) = r
+  match w:
+    case Wrote{+fresh, True{}, _}:
+      do IO<Hub & Bool>:
+        h2 : Hub <- Hub.announce.far((h, fresh), cs, from)
+        h3 : Hub <- Hub.outs(os, h2)
+        return (h3, True{})
+    case Wrote{_, False{}, +err}:
+      do IO<Hub & Bool>:
+        PS.Log.error("hub", "log write failed: " ++ err)
+        PS.Perf.add("hub.write_fail", 1)
+        h2 : Hub <- Hub.note(h, Hub.write_fail.note(err))
+        return (h2, False{})
+
+def Hub.step.go(+st: M.State, h: Hub, cs: List<&2, M.Change>, os: List<&2, B.Out>) -> IO(Hub & Bool):
+  do IO<Hub & Bool>:
+    +cs2 : List<&2, M.Change> = B.Pend.fix(st, cs)
+    r : Hub & Wrote <- Hub.commit.w(cs2, h)
+    Hub.step.wrote(r, cs2, os, M.State.seq(st))
+
+def Hub.step.k(p: M.State & Hub, cs: List<&2, M.Change>, os: List<&2, B.Out>) -> IO(Hub & Bool):
   (st, h) = p
   Hub.step.go(st, h, cs, os)
 
 # a step's changes are stored (with the pending counts they move), then
-# its effects run
-def Hub.step(h: Hub, s: B.Step) -> IO(Hub):
+# its effects run; answers whether it was stored
+def Hub.step.ok(h: Hub, s: B.Step) -> IO(Hub & Bool):
   match s:
     case B.Step{cs, os}:
       Hub.step.k(Hub.state(h), cs, os)
+
+def Hub.step.drop(r: Hub & Bool) -> Hub:
+  (h, _) = r
+  h
+
+def Hub.step(h: Hub, s: B.Step) -> IO(Hub):
+  IO.bind(Hub & Bool, Hub, Hub.step.ok(h, s), r => IO.pure(Hub, Hub.step.drop(r)))
 
 def Hub.rpc.k(p: M.State & Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
   (st, h) = p
@@ -5140,12 +5221,27 @@ def Hub.tick(h: Hub, +now: Nat) -> IO(Hub):
         PS.Perf.set("hub.changes", U32.from_nat(List.length(&2, String, ls)))
         Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Hub.tick(st, now))
 
-def Hub.mcp.k(o: MC.McpOut, h: Hub, +reply: Chan(String), +body: String) -> IO(Hub):
-  match o h:
-    case MC.McpOut{+text, st, +park} Hub{hs, f, ls, cl, as, inbox, +cfg, note}:
+# a tool call's answer goes once its step is stored: a call whose changes
+# could not be written is told so, never that it worked
+def Hub.mcp.fail(+body: String) -> String:
+  MC.Mcp.error(Maybe.default(&2, J.Json, J.Json.get(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), "id"), J.Null{}), "-32000", "Backplane could not record this (the log write failed); nothing was done")
+
+def Hub.mcp.after(r: Hub & Bool, +park: String, +body: String, +text: String, +reply: Chan(String)) -> IO(Hub):
+  (h, ok) = r
+  match h ok:
+    case Hub{hs, f, ls, cl, as, inbox, +cfg, note} True{}:
       do IO<Hub>:
         Hub.mcp.send(Bool.not(String.is_empty(park)), park, body, text, reply, cfg)
-        Hub.step(Hub{hs, f, ls, cl, as, inbox, cfg, note}, st)
+        return Hub{hs, f, ls, cl, as, inbox, cfg, note}
+    case Hub{hs, f, ls, cl, as, inbox, +cfg, note} False{}:
+      do IO<Hub>:
+        Hub.mcp.send(False{}, "", body, Hub.mcp.fail(body), reply, cfg)
+        return Hub{hs, f, ls, cl, as, inbox, cfg, note}
+
+def Hub.mcp.k(o: MC.McpOut, h: Hub, +reply: Chan(String), +body: String) -> IO(Hub):
+  match o:
+    case MC.McpOut{+text, st, +park}:
+      IO.bind(Hub & Bool, Hub, Hub.step.ok(h, st), r => Hub.mcp.after(r, park, body, text, reply))
 
 def Hub.mcp.hub(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match h:
@@ -6554,6 +6650,26 @@ def Main.opened(r: Result<&1, &1, U32 & String, File>, st: M.State, ls: List<&2,
     case Fail{e} _:
       Main.nolog(e)
 
+def Main.torn.k(r: File & Result<&1, &1, U32 & String, Unit>) -> IO(Result<&1, &1, U32 & String, File>):
+  (f, _) = r
+  IO.pure(Result<&1, &1, U32 & String, File>, Done{f})
+
+# a log whose last line was torn by a crash ends without a newline: the
+# next line starts on its own (ST.Store.tail_fix)
+def Main.torn.w(none: Bool, f: File, +fix: String) -> IO(Result<&1, &1, U32 & String, File>):
+  match none:
+    case True{}:
+      IO.pure(Result<&1, &1, U32 & String, File>, Done{f})
+    case False{}:
+      IO.bind(File & Result<&1, &1, U32 & String, Unit>, Result<&1, &1, U32 & String, File>, File.write(f, fix), Main.torn.k)
+
+def Main.torn(r: Result<&1, &1, U32 & String, File>, +fix: String) -> IO(Result<&1, &1, U32 & String, File>):
+  match r:
+    case Done{f}:
+      Main.torn.w(String.is_empty(fix), f, fix)
+    case Fail{e}:
+      IO.pure(Result<&1, &1, U32 & String, File>, Fail{e})
+
 # replay the log, start the hub (and the web server), then run front
 # with the hub's inbox; `need` makes a taken web port fatal
 def Main.boot(cfg: Cfg, need: Bool, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
@@ -6562,14 +6678,15 @@ def Main.boot(cfg: Cfg, need: Bool, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
       do IO<Unit>:
         mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(home)
         t0 : U32 <- PS.Perf.us()
-        bs : List<&2, U32> <- Files.read(Store.path(home))
+        +bs : List<&2, U32> <- Files.read(Store.path(home))
         t1 : U32 <- PS.Perf.span("boot.read", t0)
         +ld : ST.Loaded = ST.Store.load(Store.lines(bs), ST.Loaded{M.State.empty(), Nil{}})
         +st : M.State = ST.Loaded.st(ld)
         +ls : List<&2, String> = ST.Loaded.wire(ld)
         t2 : U32 <- PS.Perf.span("boot.replay", t1)
         Log.info("replayed " ++ Nat.show(List.length(&2, String, ls)) ++ " changes from " ++ Store.path(home))
-        f : Result<&1, &1, U32 & String, File> <- File.open(Store.path(home), "a")
+        f0 : Result<&1, &1, U32 & String, File> <- File.open(Store.path(home), "a")
+        f : Result<&1, &1, U32 & String, File> <- Main.torn(f0, ST.Store.tail_fix(bs))
         tok : String <- Token.load(home)
         +mc : String <- Files.text(Models.cache(home))
         +bc : String <- BN.Bf.text(BN.Bn.cache(home))

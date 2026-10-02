@@ -1520,20 +1520,25 @@ def Hub.post(+s: M.State, +now: Nat, +thread: String, +msg: String, role: M.Role
 # it lands in the target's inbox and waits while the target works, for
 # every provider (it never interrupts a running turn, Claude's included);
 # its id names the sender, which is what the link visuals read
-def Hub.inbox.v(revive: Bool, +running: Bool, +pending: Bool, +s: M.State, +now: Nat, +from: String, +to: String, role: M.Role, +text: String) -> Step:
+def Hub.inbox.v(revive: Bool, +running: Bool, +pending: Bool, +s: M.State, +now: Nat, +from: String, +to: String, role: M.Role, +text: String, +msg: String) -> Step:
   match revive:
     case True{}:
       Step.before(Nil{}, [Wt.revive(s, to)], Hub.post.go(True{}, Hub.thread(s, to), Hub.cwd(s, Hub.thread(s, to)), M.Queue.of(s, to), now, to,
-        M.Link.id(from, Hub.id("m", now, Hub.seq(s))), role, text))
+        msg, role, text))
     case False{}:
       Hub.post.go(Bool.or(running, pending), Hub.thread(s, to), Hub.cwd(s, Hub.thread(s, to)), M.Queue.of(s, to), now, to,
-        M.Link.id(from, Hub.id("m", now, Hub.seq(s))), role, text)
+        msg, role, text)
 
-def Hub.inbox.w(+running: Bool, gone: Bool, +pending: Bool, +s: M.State, +now: Nat, +from: String, +to: String, role: M.Role, +text: String) -> Step:
-  Hub.inbox.v(Hub.revive(running, gone, pending), running, pending, s, now, from, to, role, text)
+def Hub.inbox.w(+running: Bool, gone: Bool, +pending: Bool, +s: M.State, +now: Nat, +from: String, +to: String, role: M.Role, +text: String, +msg: String) -> Step:
+  Hub.inbox.v(Hub.revive(running, gone, pending), running, pending, s, now, from, to, role, text, msg)
+
+# the same under a message id of the caller's (a delegated task's result:
+# Task.finish.go, so a delivery torn by a crash is found again, Task.repair)
+def Hub.inbox.id(+s: M.State, +now: Nat, +from: String, +to: String, role: M.Role, +text: String, +msg: String) -> Step:
+  Hub.inbox.w(Hub.running(Hub.thread(s, to)), M.Worktree.gone(Hub.thread(s, to)), M.Worktree.pending(Hub.thread(s, to), now), s, now, from, to, role, text, msg)
 
 def Hub.inbox(+s: M.State, +now: Nat, +from: String, +to: String, role: M.Role, +text: String) -> Step:
-  Hub.inbox.w(Hub.running(Hub.thread(s, to)), M.Worktree.gone(Hub.thread(s, to)), M.Worktree.pending(Hub.thread(s, to), now), s, now, from, to, role, text)
+  Hub.inbox.id(s, now, from, to, role, text, M.Link.id(from, Hub.id("m", now, Hub.seq(s))))
 
 def Hub.answer.plan(impl: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String, +th: String) -> Step:
   match impl:
@@ -2305,11 +2310,19 @@ def Task.word(e: Ended) -> String:
 def Task.note(+id: String, +provider: String, +model: String, +word: String, +summary: String) -> String:
   "[Backplane] Delegated task " ++ id ++ " (" ++ provider ++ Bool.pick(String, String.is_empty(model), "", "/" ++ model) ++ ") " ++ word ++ ":\n\n" ++ summary
 
+# the parent's message with a task's result: its id is the task's, so a
+# restart finds it (Task.repair)
+def Task.msg(+thread: String, +id: String) -> String:
+  M.Link.id(thread, "td-" ++ id)
+
+# (the result reaches the parent before TaskDelivered: a step torn by a
+# crash after the message leaves the task undelivered, and Task.repair
+# finishes it without a second message; law task_finish_delivered_last)
 def Task.finish.go(deliver: Bool, +s: M.State, +now: Nat, +id: String, +thread: String, +parent: String, +provider: String, +model: String, +word: String, st: M.TaskState, +summary: String, cs: List<&2, M.Change>, os: List<&2, Out>) -> Step:
   match deliver:
     case True{}:
-      Step.before(List.append(&2, M.Change, cs, [M.TaskStateSet{id, st, summary, now}, M.TaskDelivered{id, now}]), os,
-        Hub.inbox(s, now, thread, parent, M.System{}, Task.note(id, provider, model, word, summary)))
+      Step.after(Step.before(List.append(&2, M.Change, cs, [M.TaskStateSet{id, st, summary, now}]), os,
+        Hub.inbox.id(s, now, thread, parent, M.System{}, Task.note(id, provider, model, word, summary), Task.msg(thread, id))), [M.TaskDelivered{id, now}])
     case False{}:
       Step{List.append(&2, M.Change, cs, [M.TaskStateSet{id, st, summary, now}]), os}
 
@@ -2883,9 +2896,154 @@ def Bg.clear.all(ids: List<&2, String>, +s: M.State, +now: Nat) -> List<&2, M.Ch
     case +id <> t:
       List.append(&2, M.Change, Bg.clear(s, id, now), Bg.clear.all(t, s, now))
 
-# what a hub that just started from its log does first
+# Repairing deliveries
+# --------------------
+# One write per step is still not atomic: a crash can tear a delivery
+# after the parent's message, after its turn started, or before either.
+# At start-up every finished task not yet delivered is finished: a parent
+# that already holds its message (Task.msg) only gets TaskDelivered, and,
+# idle with that message as its newest and nothing queued, its turn starts;
+# otherwise the result is delivered now (laws task_repair_*). It does not
+# make the agent's own work exactly-once across a crash.
+
+def Task.holds(es: List<&2, M.Entry>, +msg: String) -> Bool:
+  match es:
+    case Nil{}:
+      False{}
+    case M.Msg{+id, _, _, _, _} <> t:
+      Bool.or(String.eq(id, msg), Task.holds(t, msg))
+    case _ <> t:
+      Task.holds(t, msg)
+
+# whether a thread's newest message is msg (entries newest first)
+def Task.newest(es: List<&2, M.Entry>, +msg: String) -> Bool:
+  match es:
+    case Nil{}:
+      False{}
+    case M.Msg{+id, _, _, _, _} <> _:
+      String.eq(id, msg)
+    case _ <> t:
+      Task.newest(t, msg)
+
+def Task.word.of(st: M.TaskState) -> String:
+  match st:
+    case M.TaskDone{}:
+      "finished"
+    case _:
+      "failed"
+
+def Task.repair.has(has: Bool, wake: Bool, +s: M.State, +now: Nat, +id: String, +parent: String, +child: String, +text: String) -> Step:
+  match has wake:
+    case True{} True{}:
+      Step{[M.TaskDelivered{id, now}, M.TurnChanged{parent, M.Running{}, now}],
+        Git{0, "", "checkpoint0", parent, Hub.cwd(s, Hub.thread(s, parent)), "", ""} <> Git{0, "", "step", parent, Hub.cwd(s, Hub.thread(s, parent)), "", ""}
+          <> Hub.run(Hub.thread(s, parent), Hub.cwd(s, Hub.thread(s, parent)), text, Hub.uuid(now, parent ++ "/r/" ++ id))}
+    case True{} False{}:
+      Step{[M.TaskDelivered{id, now}], Nil{}}
+    case False{} _:
+      Step.after(Hub.inbox.id(s, now, child, parent, M.System{}, text, Task.msg(child, id)), [M.TaskDelivered{id, now}])
+
+def Task.repair.k(due: Bool, +s: M.State, +now: Nat, +id: String, +parent: String, +child: String, +text: String) -> Step:
+  match due:
+    case True{}:
+      Task.repair.has(Task.holds(M.State.mine(s, parent), Task.msg(child, id)),
+        Bool.and(Bool.not(Hub.running(Hub.thread(s, parent))), Bool.and(Task.newest(M.State.mine(s, parent), Task.msg(child, id)), Bool.not(M.Queue.waiting(s, parent)))),
+        s, now, id, parent, child, text)
+    case False{}:
+      Step.none()
+
+# where a child's turn left its task: 0 still its business (running, idle,
+# or work out), 1 it completed, 2 it failed or was stopped
+def Task.child.end(t: M.TurnState, ready: Bool) -> Nat:
+  match t ready:
+    case M.Completed{} True{}:
+      1n
+    case M.Failed{} _:
+      2n
+    case M.Interrupted{} _:
+      2n
+    case _ _:
+      0n
+
+def Task.repair.fin(e: Nat, +s: M.State, +now: Nat, +id: String, +parent: String, +child: String, +provider: String, +model: String) -> Step:
+  match e:
+    case 0n:
+      Step.none()
+    case 1n:
+      Step.before([M.TaskStateSet{id, M.TaskDone{}, Task.last(s, child), now}], Nil{},
+        Task.repair.k(True{}, s, now, id, parent, child, Task.note(id, provider, model, "finished", Task.last(s, child))))
+    case _:
+      Step.before([M.TaskStateSet{id, M.TaskFailed{}, Task.last(s, child), now}], Nil{},
+        Task.repair.k(True{}, s, now, id, parent, child, Task.note(id, provider, model, "failed", Task.last(s, child))))
+
+def Task.repair.st(term: Bool, +s: M.State, +now: Nat, +id: String, +parent: String, +child: String, +st: M.TaskState, +summary: String, +dl: Bool, +provider: String, +model: String) -> Step:
+  match term:
+    case True{}:
+      Task.repair.k(Bool.not(dl), s, now, id, parent, child,
+        Task.note(id, provider, model, Task.word.of(st), Bool.pick(String, String.is_empty(summary), Task.last(s, child), summary)))
+    # torn before TaskStateSet: the child's turn ended, its task did not
+    case False{}:
+      Task.repair.fin(Task.child.end(M.Thread.turn(Hub.thread(s, child)), M.Work.ready(s, child)), s, now, id, parent, child, provider, model)
+
+def Task.repair.one(t: M.Task, +s: M.State, +now: Nat) -> Step:
+  match t:
+    case M.Task{+id, +parent, +child, _, +st, +summary, +dl, +provider, +model}:
+      Task.repair.st(M.TaskState.terminal(st), s, now, id, parent, child, st, summary, dl, provider, model)
+
+def Task.repair.r(r: Rec, t: M.Task, +now: Nat) -> Rec:
+  match r:
+    case Rec{+s, cs, os}:
+      Rec.add(Rec{s, cs, os}, Task.repair.one(t, s, now))
+
+def Task.repair.go(ts: List<&2, M.Task>, r: Rec, +now: Nat) -> Rec:
+  match ts:
+    case Nil{}:
+      r
+    case t <> rest:
+      Task.repair.go(rest, Task.repair.r(r, t, now), now)
+
+def Task.repair.tasks(s: M.State) -> List<&2, M.Task>:
+  match s:
+    case M.State{_, _, _, _, tk, _, _, _, _, _, _}:
+      Map.values(&2, M.Task, tk)
+
+# every finished task's delivery, finished (over the recovery so far)
+def Rec.repair(r: Rec, +now: Nat) -> Rec:
+  match r:
+    case Rec{+s, cs, os}:
+      Task.repair.go(Task.repair.tasks(s), Rec{s, cs, os}, now)
+
+# the same as a step of its own (for the laws)
+def Task.repair(+s: M.State, +now: Nat) -> Step:
+  Rec.step(Rec.repair(Rec{s, Nil{}, Nil{}}, now))
+
+# a child's finished task k1 whose delivery a crash tore: stage 0 before
+# the parent's message, 1 after it, 2 after the parent's turn started, 3
+# delivered (the laws' example)
+def Repair.demo(+stage: Nat) -> M.State:
+  M.State.replay(List.concat(&2, M.Change, [[M.ProjectCreated{"p1", "p", "/p", 1n}, M.ThreadCreated{"t0", "p1", "x", M.Local{}, "", "", "codex", "", 1n},
+    M.ThreadCreated{"t1", "p1", "y", M.Local{}, "", "", "codex", "", 1n}, M.TaskDelegated{"k1", "t0", "t1", 1n, "codex", "", 1n},
+    M.TaskStateSet{"k1", M.TaskRunning{}, "", 1n}, M.MessagePosted{"t1", "a1", M.Assistant{}, "done it", 2n}, M.TaskStateSet{"k1", M.TaskDone{}, "done it", 3n}],
+    Bool.pick(List<&2, M.Change>, Nat.is_ge(stage, 1n), [M.MessagePosted{"t0", Task.msg("t1", "k1"), M.System{}, "note", 3n}], Nil{}),
+    Bool.pick(List<&2, M.Change>, Nat.is_ge(stage, 2n), [M.TurnChanged{"t0", M.Running{}, 3n}], Nil{}),
+    Bool.pick(List<&2, M.Change>, Nat.is_ge(stage, 3n), [M.TaskDelivered{"k1", 3n}], Nil{})]), M.State.empty())
+
+def Repair.again(+s: M.State, +now: Nat) -> M.State:
+  M.State.replay(Queue.changes(Task.repair(s, now)), s)
+
+def Repair.msgs(cs: List<&2, M.Change>) -> Nat:
+  match cs:
+    case Nil{}:
+      0n
+    case M.MessagePosted{_, _, _, _, _} <> t:
+      1n+Repair.msgs(t)
+    case _ <> t:
+      Repair.msgs(t)
+
+# what a hub that just started from its log does first (turns marked
+# running end, asks close, then torn task deliveries are finished)
 def Hub.recover(+s: M.State, +now: Nat) -> Step:
-  Step.after(Rec.step(Rec.turns(Rec.ids(Rec.threads(s)), Rec.asks(M.Asks.all(s), Rec{s, Nil{}, Nil{}}, now), now)), Bg.clear.all(Rec.ids(Rec.threads(s)), s, now))
+  Step.after(Rec.step(Rec.repair(Rec.turns(Rec.ids(Rec.threads(s)), Rec.asks(M.Asks.all(s), Rec{s, Nil{}, Nil{}}, now), now), now)), Bg.clear.all(Rec.ids(Rec.threads(s)), s, now))
 
 # Carrying on
 # -----------

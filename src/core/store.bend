@@ -68,3 +68,40 @@ def Store.changes(ls: List<&2, String>) -> List<&2, M.Change>:
       Nil{}
     case +l <> t:
       Store.change(J.Json.parse(l), Store.changes(t))
+
+# Writing
+# -------
+# A step's lines go to the log in one write (the server's Hub.commit), so a
+# crash tears at most the step being written; Task.repair (hub.bend)
+# finishes a delivery torn that way. A log whose last line was torn ends
+# without a newline: the next write starts on a line of its own, so the
+# fragment stays one malformed line that Store.step leaves out (laws
+# commit_text_joins, store_torn_tail_resyncs).
+
+# a step's lines, each ended by a newline
+def Store.text(ls: List<&2, String>) -> String:
+  match ls:
+    case Nil{}:
+      ""
+    case l <> t:
+      l ++ "\n" ++ Store.text(t)
+
+def Store.last.go(bs: List<&2, U32>, +last: U32) -> U32:
+  match bs:
+    case Nil{}:
+      last
+    case +b <> t:
+      Store.last.go(t, b)
+
+# what to write before a log's first new line: a newline when its last
+# byte (read at start-up) is not one
+def Store.tail_fix(bs: List<&2, U32>) -> String:
+  match bs:
+    case Nil{}:
+      ""
+    case +b <> t:
+      Bool.pick(String, U32.is_eq(Store.last.go(t, b), 10), "", "\n")
+
+# a line cut by a crash (the laws' example)
+def Store.torn.demo() -> String:
+  "{\"$\":\"ProjectRem"
