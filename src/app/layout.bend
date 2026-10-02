@@ -286,12 +286,12 @@ def Lay.row.nc(+badge: String, +other: U32) -> U32:
   Bool.pick(U32, String.is_empty(badge), other, T.Th.accent())
 
 # a sidebar row; a snoozed one shows the time left instead of its age
-def Lay.row.on(+ty: Ty, +t: M.Thread, +st: M.State, +sel: String, +now: Nat, +snoozed: Bool, +c: D.Clip, +y: U32) -> Out:
+def Lay.row.on(+ty: Ty, +t: M.Thread, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +snoozed: Bool, +c: D.Clip, +y: U32) -> Out:
   match t:
     case M.Thread{+id, +p, title, _, +a, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
-      +b = SB.Subs.badge(SB.Subs.count(st, id))
+      +b = SB.Subs.badge(SB.Subs.count.ix(ix, st, id))
       Lay.row.k(ty, String.eq(id, sel), id, U.Label.title(st, id, title), Lay.row.note(b, Bool.pick(String, snoozed, U.Time.ago(U.Side.until(st, id), now), U.Time.ago(now, a))), Lay.row.nc(b, T.Th.faint()),
-        Lay.phase(U.Side.phase(st, t)), BG.Badge.rgb_of(st, p), c, y)
+        Lay.phase(U.Side.phase.ix(ix, st, t)), BG.Badge.rgb_of(st, p), c, y)
 
 # whether a row at y (32 tall) shows in c at all (one scrolled above the
 # top sits at y modulo 2^32, past the bottom)
@@ -307,15 +307,15 @@ def Lay.row.id(t: M.Thread) -> String:
 
 # a row out of sight draws nothing (a long sidebar lays out only what
 # shows); its hit stays, for the links, hints and slide that read rows
-def Lay.row.k2(seen: Bool, +ty: Ty, +t: M.Thread, +st: M.State, +sel: String, +now: Nat, +snoozed: Bool, +c: D.Clip, +y: U32) -> Out:
+def Lay.row.k2(seen: Bool, +ty: Ty, +t: M.Thread, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +snoozed: Bool, +c: D.Clip, +y: U32) -> Out:
   match seen:
     case True{}:
-      Lay.row.on(ty, t, st, sel, now, snoozed, c, y)
+      Lay.row.on(ty, t, ix, st, sel, now, snoozed, c, y)
     case False{}:
       Out{Nil{}, [Lay.hit(0, y, 264, 32, "select", Lay.row.id(t))]}
 
-def Lay.row(+ty: Ty, +t: M.Thread, +st: M.State, +sel: String, +now: Nat, +snoozed: Bool, +c: D.Clip, +y: U32) -> Out:
-  Lay.row.k2(Lay.row.seen(c, y), ty, t, st, sel, now, snoozed, c, y)
+def Lay.row(+ty: Ty, +t: M.Thread, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +snoozed: Bool, +c: D.Clip, +y: U32) -> Out:
+  Lay.row.k2(Lay.row.seen(c, y), ty, t, ix, st, sel, now, snoozed, c, y)
 
 # rows from y down; answers the output and the next y
 type Col is Data:
@@ -326,42 +326,42 @@ def Lay.col.cat(o: Out, c: Col) -> Col:
     case Col{o2, y}:
       Col{Out.cat(o, o2), y}
 
-def Lay.rows(+ty: Ty, ts: List<&2, M.Thread>, +st: M.State, +sel: String, +now: Nat, +snoozed: Bool, +c: D.Clip, +y: U32) -> Col:
+def Lay.rows(+ty: Ty, ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +snoozed: Bool, +c: D.Clip, +y: U32) -> Col:
   match ts:
     case Nil{}:
       Col{Out.none(), y}
     case +t <> rest:
-      Lay.col.cat(Lay.row(ty, t, st, sel, now, snoozed, c, y), Lay.rows(ty, rest, st, sel, now, snoozed, c, (y + 32 : U32)))
+      Lay.col.cat(Lay.row(ty, t, ix, st, sel, now, snoozed, c, y), Lay.rows(ty, rest, ix, st, sel, now, snoozed, c, (y + 32 : U32)))
 
 def Lay.col.then(a: Col, k: U32 -> Col) -> Col:
   match a:
     case Col{o, +y}:
       Lay.col.cat(o, k(y))
 
-def Lay.shelf.k(+ty: Ty, open: Bool, +key: String, +label: String, ts: List<&2, M.Thread>, +st: M.State, +sel: String, +now: Nat, +c: D.Clip, +y: U32) -> Col:
+def Lay.shelf.k(+ty: Ty, open: Bool, +key: String, +label: String, ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +c: D.Clip, +y: U32) -> Col:
   match open:
     case True{}:
       Lay.col.cat(Out{List.append(&2, R.Op, Lay.icon(ty, "chevron-down", c, 12, (y + 6 : U32), T.Th.dim()), Ty.text(ty, 2n, label, c, 32, y, 28, T.Th.dim())), [Lay.hit(0, y, 264, 28, "toggle-settled", key)]},
-        Lay.rows(ty, ts, st, sel, now, False{}, c, (y + 28 : U32)))
+        Lay.rows(ty, ts, ix, st, sel, now, False{}, c, (y + 28 : U32)))
     case False{}:
       Col{Out{List.append(&2, R.Op, Lay.icon(ty, "chevron-right", c, 12, (y + 6 : U32), T.Th.faint()), Ty.text(ty, 2n, label, c, 32, y, 28, T.Th.faint())), [Lay.hit(0, y, 264, 28, "toggle-settled", key)]}, (y + 28 : U32)}
 
 # a collapsible shelf (Settled, Archived): its name and count, then its rows
 # when open; nothing when empty
-def Lay.shelf(+ty: Ty, open: Bool, +key: String, +name: String, st: List<&2, M.Thread>, +s: M.State, +sel: String, +now: Nat, +c: D.Clip, +y: U32) -> Col:
+def Lay.shelf(+ty: Ty, open: Bool, +key: String, +name: String, st: List<&2, M.Thread>, +ix: U.SIx, +s: M.State, +sel: String, +now: Nat, +c: D.Clip, +y: U32) -> Col:
   match st:
     case Nil{}:
       Col{Out.none(), y}
     case +t <> +rest:
-      Lay.shelf.k(ty, open, key, name ++ " " ++ Nat.show(1n+List.length(&2, M.Thread, rest)), t <> rest, s, sel, now, c, y)
+      Lay.shelf.k(ty, open, key, name ++ " " ++ Nat.show(1n+List.length(&2, M.Thread, rest)), t <> rest, ix, s, sel, now, c, y)
 
 # snoozed threads under a label, soonest to wake first
-def Lay.snoozed(+ty: Ty, ts: List<&2, M.Thread>, +st: M.State, +sel: String, +now: Nat, +c: D.Clip, +y: U32) -> Col:
+def Lay.snoozed(+ty: Ty, ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +c: D.Clip, +y: U32) -> Col:
   match ts:
     case Nil{}:
       Col{Out.none(), y}
     case +t <> +rest:
-      Lay.col.cat(Out.ops(Ty.text(ty, 2n, "Snoozed", c, 16, y, 28, T.Th.faint())), Lay.rows(ty, t <> rest, st, sel, now, True{}, c, (y + 28 : U32)))
+      Lay.col.cat(Out.ops(Ty.text(ty, 2n, "Snoozed", c, 16, y, 28, T.Th.faint())), Lay.rows(ty, t <> rest, ix, st, sel, now, True{}, c, (y + 28 : U32)))
 
 # A project's badge editor, open under its name: the tints, then the
 # icons, each set placed by the flow in core/menu.bend (law
@@ -429,59 +429,59 @@ def Look.open(open: Bool, +ty: Ty, +st: M.State, +id: String, +rm: Bool, +c: D.C
 # hit starts past x 10, where a drag drops onto the header), its
 # + for a new thread, the editor when open, then its threads
 # (quiet: no live thread, so its name and badge are faded)
-def Lay.project(+ty: Ty, r: U.SRow, +quiet: Bool, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.project(+ty: Ty, r: U.SRow, +quiet: Bool, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
   match r:
     case U.SRow{_, M.Project{+id, title, _, _, _}, M.Shelves{pinned, active, settled, hidden, snoozed}}:
       Lay.col.cat(Out.all([Out{Ty.text(ty, 2n, Ty.fit(ty, 2n, U.Label.title(st, id, title), 180), c, 38, (y + 4 : U32), 28, Bool.pick(U32, quiet, T.Th.faint(), T.Th.dim())), [Lay.hit(0, y, 228, 32, "project", id)]},
           Out{Lay.icon(ty, BG.Badge.icon(st, id), c, 14, (y + 10 : U32), Bool.pick(U32, quiet, T.Th.faint(), BG.Badge.rgb_of(st, id))), [Lay.hit(12, (y + 4 : U32), 24, 28, "look", id)]},
           Out{Lay.icon(ty, "plus", c, 236, (y + 10 : U32), T.Th.faint()), [Lay.hit(230, (y + 4 : U32), 28, 28, "new-thread", id)]}]),
         Lay.col.then(Look.open(String.eq(look, id), ty, st, id, String.eq(rm, id), c, (y + 32 : U32)), y0 =>
-        Lay.col.then(Lay.rows(ty, pinned, st, sel, now, False{}, c, y0), y1 =>
-          Lay.col.then(Lay.rows(ty, active, st, sel, now, False{}, c, y1), y2 =>
-            Lay.col.then(Lay.snoozed(ty, snoozed, st, sel, now, c, y2), y3 =>
-              Lay.col.then(Lay.shelf(ty, U.Flag.get(open, id), id, "Settled", settled, st, sel, now, c, y3), y4 =>
-                Lay.shelf(ty, U.Flag.get(open, "arch:" ++ id), "arch:" ++ id, "Archived", M.Archive.of(hidden), st, sel, now, c, y4)))))))
+        Lay.col.then(Lay.rows(ty, pinned, ix, st, sel, now, False{}, c, y0), y1 =>
+          Lay.col.then(Lay.rows(ty, active, ix, st, sel, now, False{}, c, y1), y2 =>
+            Lay.col.then(Lay.snoozed(ty, snoozed, ix, st, sel, now, c, y2), y3 =>
+              Lay.col.then(Lay.shelf(ty, U.Flag.get(open, id), id, "Settled", settled, ix, st, sel, now, c, y3), y4 =>
+                Lay.shelf(ty, U.Flag.get(open, "arch:" ++ id), "arch:" ++ id, "Archived", M.Archive.of(hidden), ix, st, sel, now, c, y4)))))))
 
-def Lay.projects(+ty: Ty, rs: List<&2, U.SRow>, +quiet: Bool, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.projects(+ty: Ty, rs: List<&2, U.SRow>, +quiet: Bool, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
   match rs:
     case Nil{}:
       Col{Out.none(), y}
     case r <> t:
-      Lay.col.then(Lay.project(ty, r, quiet, open, st, sel, now, look, rm, c, y), y2 => Lay.projects(ty, t, quiet, open, st, sel, now, look, rm, c, (y2 + 8 : U32)))
+      Lay.col.then(Lay.project(ty, r, quiet, open, ix, st, sel, now, look, rm, c, y), y2 => Lay.projects(ty, t, quiet, open, ix, st, sel, now, look, rm, c, (y2 + 8 : U32)))
 
 # the older projects (quiet for Quiet.days): folded under one row at the
 # end; a search shows them in place
-def Lay.older.rows(open: Bool, +ty: Ty, rs: List<&2, U.SRow>, +op: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.older.rows(open: Bool, +ty: Ty, rs: List<&2, U.SRow>, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
   match open:
     case True{}:
-      Lay.projects(ty, rs, True{}, op, st, sel, now, look, rm, c, y)
+      Lay.projects(ty, rs, True{}, op, ix, st, sel, now, look, rm, c, y)
     case False{}:
       Col{Out.none(), y}
 
-def Lay.older.k(searching: Bool, +ty: Ty, +rs: List<&2, U.SRow>, +op: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.older.k(searching: Bool, +ty: Ty, +rs: List<&2, U.SRow>, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
   match searching:
     case True{}:
-      Lay.projects(ty, rs, True{}, op, st, sel, now, look, rm, c, y)
+      Lay.projects(ty, rs, True{}, op, ix, st, sel, now, look, rm, c, y)
     case False{}:
       Lay.col.cat(Out{List.append(&2, R.Op, Lay.icon(ty, Bool.pick(String, U.Flag.get(op, "old-projects"), "chevron-down", "chevron-right"), c, 12, (y + 6 : U32), T.Th.faint()),
           Ty.text(ty, 2n, "Older " ++ Nat.show(List.length(&2, U.SRow, rs)), c, 32, y, 28, T.Th.faint())), [Lay.hit(0, y, 264, 28, "side-older", "")]},
-        Lay.older.rows(U.Flag.get(op, "old-projects"), ty, rs, op, st, sel, now, look, rm, c, (y + 32 : U32)))
+        Lay.older.rows(U.Flag.get(op, "old-projects"), ty, rs, op, ix, st, sel, now, look, rm, c, (y + 32 : U32)))
 
-def Lay.older(+ty: Ty, rs: List<&2, U.SRow>, +searching: Bool, +op: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.older(+ty: Ty, rs: List<&2, U.SRow>, +searching: Bool, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
   match rs:
     case Nil{}:
       Col{Out.none(), y}
     case +r <> +t:
-      Lay.older.k(searching, ty, r <> t, op, st, sel, now, look, rm, c, y)
+      Lay.older.k(searching, ty, r <> t, op, ix, st, sel, now, look, rm, c, y)
 
 # the projects view: live projects, then the quiet ones faded, then the
 # older ones folded (core's Side.groups)
-def Lay.groups(+ty: Ty, g: U.SGroups, +q: String, +op: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.groups(+ty: Ty, g: U.SGroups, +q: String, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
   match g:
     case U.SGroups{l, qs, o}:
-      Lay.col.then(Lay.projects(ty, l, False{}, op, st, sel, now, look, rm, c, y), y1 =>
-        Lay.col.then(Lay.projects(ty, qs, True{}, op, st, sel, now, look, rm, c, y1), y2 =>
-          Lay.older(ty, o, Bool.not(String.is_empty(q)), op, st, sel, now, look, rm, c, y2)))
+      Lay.col.then(Lay.projects(ty, l, False{}, op, ix, st, sel, now, look, rm, c, y), y1 =>
+        Lay.col.then(Lay.projects(ty, qs, True{}, op, ix, st, sel, now, look, rm, c, y1), y2 =>
+          Lay.older(ty, o, Bool.not(String.is_empty(q)), op, ix, st, sel, now, look, rm, c, y2)))
 
 # The active view
 # ---------------
@@ -499,74 +499,79 @@ def Lay.arow.k(+ty: Ty, +on: Bool, id: String, title: String, +proj: String, +ba
       Ty.text(ty, 2n, pn, c, (252 - pw : U32), y, 32, Lay.row.nc(badge, Bool.pick(U32, faded, T.Th.line(), T.Th.faint())))]),
     [Lay.hit(0, y, 264, 32, "select", id)]}
 
-def Lay.arow.on(+ty: Ty, r: U.ARow, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Out:
+def Lay.arow.on(+ty: Ty, r: U.ARow, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Out:
   match r:
     case U.ARow{_, _, +t, +pid, +pt, +faded}:
-      Lay.arow.k(ty, String.eq(M.Thread.id(t), sel), M.Thread.id(t), U.Label.title(st, M.Thread.id(t), U.Active.title(t)), pt, SB.Subs.badge(SB.Subs.count(st, M.Thread.id(t))), faded, Lay.phase(U.Side.phase(st, t)), BG.Badge.rgb_of(st, pid), c, y)
+      Lay.arow.k(ty, String.eq(M.Thread.id(t), sel), M.Thread.id(t), U.Label.title(st, M.Thread.id(t), U.Active.title(t)), pt, SB.Subs.badge(SB.Subs.count.ix(ix, st, M.Thread.id(t))), faded, Lay.phase(U.Side.phase.ix(ix, st, t)), BG.Badge.rgb_of(st, pid), c, y)
 
 def Lay.arow.id(r: U.ARow) -> String:
   match r:
     case U.ARow{_, _, t, _, _, _}:
       M.Thread.id(t)
 
-def Lay.arow.k2(seen: Bool, +ty: Ty, r: U.ARow, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Out:
+def Lay.arow.k2(seen: Bool, +ty: Ty, r: U.ARow, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Out:
   match seen:
     case True{}:
-      Lay.arow.on(ty, r, st, sel, c, y)
+      Lay.arow.on(ty, r, ix, st, sel, c, y)
     case False{}:
       Out{Nil{}, [Lay.hit(0, y, 264, 32, "select", Lay.arow.id(r))]}
 
-def Lay.arows(+ty: Ty, rs: List<&2, U.ARow>, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.arows(+ty: Ty, rs: List<&2, U.ARow>, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
   match rs:
     case Nil{}:
       Col{Out.none(), y}
     case r <> t:
-      Lay.col.cat(Lay.arow.k2(Lay.row.seen(c, y), ty, r, st, sel, c, y), Lay.arows(ty, t, st, sel, c, (y + 32 : U32)))
+      Lay.col.cat(Lay.arow.k2(Lay.row.seen(c, y), ty, r, ix, st, sel, c, y), Lay.arows(ty, t, ix, st, sel, c, (y + 32 : U32)))
 
 # the settled rows: folded under one "Settled N" row, shown while it is
 # open or a search is on (core's Active.open)
-def Lay.afaded.rows(open: Bool, +ty: Ty, rs: List<&2, U.ARow>, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.afaded.rows(open: Bool, +ty: Ty, rs: List<&2, U.ARow>, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
   match open:
     case True{}:
-      Lay.arows(ty, rs, st, sel, c, y)
+      Lay.arows(ty, rs, ix, st, sel, c, y)
     case False{}:
       Col{Out.none(), y}
 
-def Lay.afaded.k(searching: Bool, +open: Bool, +ty: Ty, +rs: List<&2, U.ARow>, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.afaded.k(searching: Bool, +open: Bool, +ty: Ty, +rs: List<&2, U.ARow>, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
   match searching:
     case True{}:
-      Lay.arows(ty, rs, st, sel, c, y)
+      Lay.arows(ty, rs, ix, st, sel, c, y)
     case False{}:
       Lay.col.cat(Out{List.append(&2, R.Op, Lay.icon(ty, Bool.pick(String, open, "chevron-down", "chevron-right"), c, 12, (y + 6 : U32), T.Th.faint()),
           Ty.text(ty, 2n, "Settled " ++ Nat.show(List.length(&2, U.ARow, rs)), c, 32, y, 28, T.Th.faint())), [Lay.hit(0, y, 264, 28, "side-settled", "")]},
-        Lay.afaded.rows(open, ty, rs, st, sel, c, (y + 32 : U32)))
+        Lay.afaded.rows(open, ty, rs, ix, st, sel, c, (y + 32 : U32)))
 
-def Lay.afaded(+ty: Ty, rs: List<&2, U.ARow>, +q: String, +op: Map<&2, Bool>, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.afaded(+ty: Ty, rs: List<&2, U.ARow>, +q: String, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
   match rs:
     case Nil{}:
       Col{Out.none(), y}
     case +r <> +t:
-      Lay.afaded.k(Bool.not(String.is_empty(q)), U.Flag.get(op, "active-settled"), ty, r <> t, st, sel, c, y)
+      Lay.afaded.k(Bool.not(String.is_empty(q)), U.Flag.get(op, "active-settled"), ty, r <> t, ix, st, sel, c, y)
 
-def Lay.active.k(p: U.AParts, +ty: Ty, +q: String, +op: Map<&2, Bool>, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.active.k(p: U.AParts, +ty: Ty, +q: String, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
   match p:
     case U.AParts{l, f}:
-      Lay.col.then(Lay.arows(ty, l, st, sel, c, y), y1 => Lay.afaded(ty, f, q, op, st, sel, c, y1))
+      Lay.col.then(Lay.arows(ty, l, ix, st, sel, c, y), y1 => Lay.afaded(ty, f, q, op, ix, st, sel, c, y1))
 
-def Lay.active(+ty: Ty, rs: List<&2, U.ARow>, +q: String, +op: Map<&2, Bool>, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.active(+ty: Ty, rs: List<&2, U.ARow>, +q: String, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +c: D.Clip, +y: U32) -> Col:
   match rs:
     case Nil{}:
       Col{Out.ops(Ty.text(ty, 2n, "Nothing active", c, 16, y, 32, T.Th.faint())), (y + 32 : U32)}
     case +r <> +t:
-      Lay.active.k(U.Active.parts(r <> t), ty, q, op, st, sel, c, y)
+      Lay.active.k(U.Active.parts(r <> t), ty, q, op, ix, st, sel, c, y)
 
 # the list the "sidebar.view" setting picks (only that one is laid out)
-def Lay.side.list(active: Bool, +ty: Ty, +q: String, +op: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+def Lay.side.list.k(active: Bool, +ty: Ty, +q: String, +op: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
   match active:
     case True{}:
-      Lay.active(ty, U.Active.rows(st, now, q), q, op, st, sel, c, y)
+      Lay.active(ty, U.Active.rows.ix(st, ix, now, q), q, op, ix, st, sel, c, y)
     case False{}:
-      Lay.groups(ty, U.Side.groups(U.Side.shown(st, now, q), now), q, op, st, sel, now, look, rm, c, y)
+      Lay.groups(ty, U.Side.groups(U.Side.shown.ix(st, ix, now, q), now), q, op, ix, st, sel, now, look, rm, c, y)
+
+# (what every row asks of the whole state is gathered once a frame:
+# core's Side.ix)
+def Lay.side.list(active: Bool, +ty: Ty, +q: String, +op: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
+  Lay.side.list.k(active, ty, q, op, U.Side.ix(st), st, sel, now, look, rm, c, y)
 
 def Lay.field(+ty: Ty, +c: D.Clip, +x: U32, +y: U32, +w: U32, +text: String, +focused: Bool, +blink: Bool, +caret: Nat, +mark: Nat, +placeholder: String, +id: String) -> Out:
   +vis = Ty.fit(ty, 2n, text, (w - 16 : U32))

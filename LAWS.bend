@@ -5090,3 +5090,35 @@ law made_stale_quiet:
 
 law made_fork_selects_own:
   {U.Ui.sel(U.Ui.recv(U.Ui.recv(U.Act.ui(U.Ui.fork(U.Ui.init(0n))), U.Made.made("changes", "t9")), U.Made.demo("0", "t9"))) == "t9" : String}
+
+# The sidebar's index (client.bend's Side.ix, gathered once a frame) gives
+# what walking the state gives: rows, phases, subagent counts, the active
+# view, and work for the settle tick; phones compare only the threads a
+# frame touches and raise the same alerts
+law side_rows_ix_eq:
+  {U.Side.rows.ix(U.Side.demo(), U.Side.ix(U.Side.demo()), 100n) == U.Side.rows(U.Side.demo(), 100n) : List<&2, U.SRow>}
+
+law side_phase_ix_eq:
+  {U.Side.phases.ix(U.Ui.threads(U.Side.demo()), U.Side.ix(U.Side.demo()), U.Side.demo()) == U.Side.phases(U.Ui.threads(U.Side.demo()), U.Side.demo()) : List<&2, M.Phase>}
+
+law subs_count_ix_eq:
+  {SB.Subs.counts.ix(U.Ui.threads(U.Side.demo()), U.Side.ix(U.Side.demo()), U.Side.demo()) == SB.Subs.counts(U.Ui.threads(U.Side.demo()), U.Side.demo()) : List<&2, Nat>}
+
+law active_rows_ix_eq:
+  {U.Active.rows.ix(U.Side.demo(), U.Side.ix(U.Side.demo()), 100n, "") == U.Active.rows(U.Side.demo(), 100n, "") : List<&2, U.ARow>}
+
+law settle_ix_eq:
+  {U.Side.busies.ix(U.Ui.threads(U.Side.demo()), M.Work.kids.map(U.Side.demo()), U.Side.demo()) == U.Side.busies(U.Ui.threads(U.Side.demo()), U.Side.demo()) : List<&2, Nat>}
+
+law alerts_ids_same:
+  {Hb.Did.alerts(Hb.One.got(U.Ui.recv(U.Ui.init(0n), U.Seq.demo("log", [C.Change.encode(M.ThreadCreated{"t1", "p1", "a", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.ThreadCreated{"t2", "p1", "b", M.Local{}, "", "", "claude", "", 1n}),
+      C.Change.encode(M.ThreadCreated{"t3", "p1", "c", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.TurnChanged{"t1", M.Running{}, 2n}), C.Change.encode(M.TurnChanged{"t2", M.Running{}, 2n}), C.Change.encode(M.TurnChanged{"t3", M.Running{}, 2n})])),
+      U.Seq.demo("changes", [C.Change.encode(M.TurnChanged{"t1", M.Completed{}, 3n}), C.Change.encode(M.TurnChanged{"t3", M.Failed{}, 3n})])))
+    == Hb.Did.alerts(Hb.One.got.all(U.Ui.recv(U.Ui.init(0n), U.Seq.demo("log", [C.Change.encode(M.ThreadCreated{"t1", "p1", "a", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.ThreadCreated{"t2", "p1", "b", M.Local{}, "", "", "claude", "", 1n}),
+      C.Change.encode(M.ThreadCreated{"t3", "p1", "c", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.TurnChanged{"t1", M.Running{}, 2n}), C.Change.encode(M.TurnChanged{"t2", M.Running{}, 2n}), C.Change.encode(M.TurnChanged{"t3", M.Running{}, 2n})])),
+      U.Seq.demo("changes", [C.Change.encode(M.TurnChanged{"t1", M.Completed{}, 3n}), C.Change.encode(M.TurnChanged{"t3", M.Failed{}, 3n})]))) : List<&2, J.Json>}
+
+law alerts_ids_raise:
+  {List.length(&2, J.Json, Hb.Did.alerts(Hb.One.got(U.Ui.recv(U.Ui.init(0n), U.Seq.demo("log", [C.Change.encode(M.ThreadCreated{"t1", "p1", "a", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.ThreadCreated{"t2", "p1", "b", M.Local{}, "", "", "claude", "", 1n}),
+      C.Change.encode(M.ThreadCreated{"t3", "p1", "c", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.TurnChanged{"t1", M.Running{}, 2n}), C.Change.encode(M.TurnChanged{"t2", M.Running{}, 2n}), C.Change.encode(M.TurnChanged{"t3", M.Running{}, 2n})])),
+      U.Seq.demo("changes", [C.Change.encode(M.TurnChanged{"t1", M.Completed{}, 3n}), C.Change.encode(M.TurnChanged{"t3", M.Failed{}, 3n})])))) == 2n : Nat}

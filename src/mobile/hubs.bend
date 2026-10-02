@@ -322,12 +322,45 @@ def One.got.b(booting: Bool, +seen: List<&2, N.Seen>, +a: U.Act) -> Did:
     case False{}:
       One.got.b2(U.Boot.on(U.Act.ui(a)), seen, a)
 
+# the threads a frame of log changes touches (each item's "thread", and
+# "id" for a thread made)
+def One.ids.one(+x: String, +acc: List<&2, String>) -> List<&2, String>:
+  Bool.pick(List<&2, String>, String.is_empty(x), acc, x <> acc)
+
+def One.ids.k(+t: String, +i: String, +acc: List<&2, String>) -> List<&2, String>:
+  One.ids.one(i, One.ids.one(t, acc))
+
+def One.ids(xs: List<&2, J.Json>, acc: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      acc
+    case +x <> rest:
+      One.ids(rest, One.ids.k(J.Json.get_str(x, "thread", ""), J.Json.get_str(x, "id", ""), acc))
+
+# what was seen before a frame: for log changes only the threads they
+# touch (the phone compared every thread after every frame); for anything
+# else (a log, a far batch) every thread
+def One.seen.k(changes: Bool, +u: U.Ui, +o: J.Json) -> List<&2, N.Seen>:
+  match changes:
+    case True{}:
+      N.Note.seen.ids(One.ids(J.Json.elems(J.Json.get_obj(o, "items")), Nil{}), S.Mob.st(u))
+    case False{}:
+      N.Note.seen(U.Ui.threads(S.Mob.st(u)))
+
+def One.seen(+u: U.Ui, +o: J.Json) -> List<&2, N.Seen>:
+  One.seen.k(String.eq(J.Json.get_str(o, "t", ""), "changes"), u, o)
+
 def One.got.d(delta: Bool, +u: U.Ui, +o: J.Json) -> Did:
   match delta:
     case True{}:
       Did{One.got.seen(U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o)), Nil{}}
     case False{}:
-      One.got.b(U.Boot.on(u), N.Note.seen(U.Ui.threads(S.Mob.st(u))), One.got.seen(U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o)))
+      One.got.b(U.Boot.on(u), One.seen(u, o), One.got.seen(U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o)))
+
+# the same comparing every thread (the spec One.got.d keeps to: law
+# alerts_ids_same)
+def One.got.all(+u: U.Ui, +o: J.Json) -> Did:
+  One.got.b(U.Boot.on(u), N.Note.seen(U.Ui.threads(S.Mob.st(u))), One.got.seen(U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o)))
 
 def One.got(+u: U.Ui, +o: J.Json) -> Did:
   One.got.d(String.eq(J.Json.get_str(o, "t", ""), "delta"), u, o)
@@ -1115,9 +1148,9 @@ def Hubs.fold.settled(p: U.AParts, +hs: List<&2, Hub>, +from: String) -> Nat:
 def Hubs.fold.count(older: Bool, h: Maybe<&2, Hub>, +hs: List<&2, Hub>, +from: String) -> Nat:
   match older h:
     case True{} Some{Hub{_, U.Ui{+st, _, +dr, _, +o, _, +now, _, _, _, _, _, _, _, _, _, _}}}:
-      Hubs.fold.older(U.Side.groups(U.Side.shown(st, now, U.Find.q(o, dr)), now), hs, from)
+      Hubs.fold.older(U.Side.groups(U.Side.shown.ix(st, U.Side.ix(st), now, U.Find.q(o, dr)), now), hs, from)
     case False{} Some{Hub{_, U.Ui{+st, _, +dr, _, +o, _, +now, _, _, _, _, _, _, _, _, _, _}}}:
-      Hubs.fold.settled(U.Active.parts(U.Active.rows(st, now, U.Find.q(o, dr))), hs, from)
+      Hubs.fold.settled(U.Active.parts(U.Active.rows.ix(st, U.Side.ix(st), now, U.Find.q(o, dr))), hs, from)
     case _ None{}:
       0n
 

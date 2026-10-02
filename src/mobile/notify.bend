@@ -52,6 +52,16 @@ def Note.seen(ts: List<&2, M.Thread>) -> List<&2, Seen>:
     case M.Thread{id, _, _, _, _, turn, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _} <> t:
       Seen{id, Note.running(turn)} <> Note.seen(t)
 
+# what was seen of only the threads a frame touches (any other thread's
+# turn cannot change, so it raises nothing either way: law
+# alerts_ids_same)
+def Note.seen.ids(ids: List<&2, String>, +st: M.State) -> List<&2, Seen>:
+  match ids:
+    case Nil{}:
+      Nil{}
+    case +id <> t:
+      Seen{id, M.State.running.k(M.State.thread.get(st, id))} <> Note.seen.ids(t, st)
+
 def Note.was.k(hit: Bool, r: Bool, acc: Bool) -> Bool:
   match hit:
     case True{}:

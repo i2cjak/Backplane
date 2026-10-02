@@ -6946,3 +6946,24 @@ def Laws.made_stale_quiet():
 
 def Laws.made_fork_selects_own():
   {==}
+
+def Laws.side_rows_ix_eq():
+  {==}
+
+def Laws.side_phase_ix_eq():
+  {==}
+
+def Laws.subs_count_ix_eq():
+  {==}
+
+def Laws.active_rows_ix_eq():
+  {==}
+
+def Laws.settle_ix_eq():
+  {==}
+
+def Laws.alerts_ids_same():
+  {==}
+
+def Laws.alerts_ids_raise():
+  {==}

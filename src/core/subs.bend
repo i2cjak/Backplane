@@ -343,6 +343,24 @@ def Subs.agent_n(ls: List<&2, String>) -> Nat:
 def Subs.count(+st: M.State, +th: String) -> Nat:
   Nat.add(U.Side.live(U.Tasks.of(st, th)), Subs.agent_n(M.Bg.of(st, th)))
 
+# Subs.count from the sidebar's index (law subs_count_ix_eq)
+def Subs.count.ix(+ix: U.SIx, +st: M.State, +th: String) -> Nat:
+  Nat.add(U.SIx.kids(ix, th), Subs.agent_n(M.Bg.of(st, th)))
+
+def Subs.counts(ts: List<&2, M.Thread>, +st: M.State) -> List<&2, Nat>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case +t <> rest:
+      Subs.count(st, M.Thread.id(t)) <> Subs.counts(rest, st)
+
+def Subs.counts.ix(ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State) -> List<&2, Nat>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case +t <> rest:
+      Subs.count.ix(ix, st, M.Thread.id(t)) <> Subs.counts.ix(rest, ix, st)
+
 # a sidebar row's badge: "1 agent", "3 agents", or "" with none
 def Subs.badge(+n: Nat) -> String:
   Bool.pick(String, Nat.is_eq(n, 0n), "", Nat.show(n) ++ Bool.pick(String, Nat.is_eq(n, 1n), " agent", " agents"))
