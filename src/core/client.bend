@@ -1,4 +1,5 @@
 import Base
+import ./live.bend as LV
 import ./json.bend as J
 import ./model.bend as M
 import ./codec.bend as C
@@ -411,6 +412,26 @@ def Ui.seq(u: Ui) -> Nat:
   match u:
     case Ui{st, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, tr}:
       M.State.seq(st)
+
+def Ui.live.put(r: Map<&2, String> & Map<&2, String>, u: Ui) -> Ui:
+  (lv, nf) = r
+  match u:
+    case Ui{st, sel, dr, _, op, on, now, ad, pa, v, rid, w, er, note, _, ob, tr}:
+      Ui{st, sel, dr, lv, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
+
+# a hub's snapshot of every thread's streamed text ({"t":"live"}, when this
+# client is live again after a join): it replaces the live text, so a
+# reconnect shows a reply once and whole (core/live.bend; laws live_*)
+def Ui.live.set(u: Ui, +o: J.Json) -> Ui:
+  match u:
+    case Ui{st, sel, dr, +live, op, on, now, ad, pa, v, rid, w, er, note, +nf, ob, tr}:
+      Ui.live.put(LV.Live.set(o, live, nf), Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr})
+
+# the live text a thread shows
+def Ui.live.of(u: Ui, +thread: String) -> String:
+  match u:
+    case Ui{_, _, _, live, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      Str.get(live, thread)
 
 def Ui.delta(u: Ui, +thread: String, text: String) -> Ui:
   match u:
@@ -5653,6 +5674,8 @@ def Ui.recv.k(i: Nat, u: Ui, +o: J.Json) -> Ui:
       Voice.recv(u, o)
     case 9n:
       Ui.far(u, o)
+    case 10n:
+      Ui.live.set(u, o)
     case _:
       u
 
@@ -5773,7 +5796,7 @@ def Ui.recv.b(+i: Nat, u: Ui, +o: J.Json) -> Ui:
 
 # A message can resolve a want only against the installed destination.
 def Ui.recv(+u: Ui, +o: J.Json) -> Ui:
-  Ui.reselect(Ui.sel(u), Bots.wanted(Ui.join(String.eq(J.Json.get_str(o, "t", ""), "log"), Ui.recv.b(C.Codec.pos(["log", "changes", "delta", "reply", "update", "view", "term", "info", "voice", "far"], J.Json.get_str(o, "t", "")), u, o))))
+  Ui.reselect(Ui.sel(u), Bots.wanted(Ui.join(String.eq(J.Json.get_str(o, "t", ""), "log"), Ui.recv.b(C.Codec.pos(["log", "changes", "delta", "reply", "update", "view", "term", "info", "voice", "far", "live"], J.Json.get_str(o, "t", "")), u, o))))
 
 # The cache contains home and at most one linked hub; each slot keeps its
 # read model and machine info (including the log origin) together.

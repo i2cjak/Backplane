@@ -6904,3 +6904,27 @@ def Laws.credit_behind_catches():
 
 def Laws.join_window_same():
   {==}
+
+def Laws.live_snapshot_replaces():
+  {==}
+
+def Laws.live_snapshot_idempotent():
+  {==}
+
+def Laws.live_snapshot_clears_absent():
+  {==}
+
+def Laws.live_end_clears():
+  {==}
+
+def Laws.live_turn_end_clears():
+  {==}
+
+def Laws.live_joined_exact():
+  {==}
+
+def Laws.live_old_gen_quiet():
+  {==}
+
+def Laws.live_trunc_marked():
+  {==}

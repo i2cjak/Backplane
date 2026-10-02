@@ -79,6 +79,7 @@ import ./src/core/once.bend as ON
 import ./src/core/desk.bend as DK
 import ./src/core/emb.bend as EMB
 import ./src/core/outbox.bend as OB
+import ./src/core/live.bend as LV
 
 # Backplane's rules, stated over the real code. `bend PROOF.bend` proves each
 # one. Humans own this file: an agent may add laws, never weaken or delete
@@ -5039,3 +5040,32 @@ law pong_rate_bounded:
 law wire_all_bin_eq:
   for t: String
   {WS.Ws.encode(2, WS.Ws.cbor.bytes(t)) == WS.Ws.cbor(t) : List<&2, U32>}
+
+# Live text (core/live.bend): a reconnect's snapshot replaces the live
+# text (never appended to it), taking it twice is taking it once, a thread
+# not in it shows none, a posted reply or an ended turn clears the hub's
+# buffer, what streamed is what a joining client shows, and an older
+# snapshot than one already taken changes nothing
+law live_snapshot_replaces:
+  {U.Ui.live.of(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{"t1"}}, J.KV{"text", J.Str{"abc"}}])), LV.Live.demo("t1", "abcdef", False{}, 0n)), "t1") == "abcdef" : String}
+
+law live_snapshot_idempotent:
+  {U.Ui.live.of(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), LV.Live.demo("t1", "abcdef", False{}, 0n)), LV.Live.demo("t1", "abcdef", False{}, 0n)), "t1") == "abcdef" : String}
+
+law live_snapshot_clears_absent:
+  {U.Ui.live.of(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{"t2"}}, J.KV{"text", J.Str{"x"}}])), LV.Live.demo("t1", "abc", False{}, 0n)), "t2") == "" : String}
+
+law live_end_clears:
+  {LV.Live.msg(LV.Live.ends([M.MessagePosted{"t1", "m:0", M.Assistant{}, "ab", 3n}], LV.Live.add(LV.Live.add(Nil{}, "t1", "a"), "t1", "b"))) == "{\"t\":\"live\",\"items\":[]}" : String}
+
+law live_turn_end_clears:
+  {LV.Live.msg(LV.Live.ends([M.TurnChanged{"t1", M.Interrupted{}, 3n}], LV.Live.add(Nil{}, "t1", "a"))) == "{\"t\":\"live\",\"items\":[]}" : String}
+
+law live_joined_exact:
+  {U.Ui.live.of(U.Ui.recv(U.Ui.init(0n), Maybe.default(&2, J.Json, J.Json.parse(LV.Live.msg(LV.Live.add(LV.Live.add(LV.Live.add(Nil{}, "t1", "ab"), "t2", "zz"), "t1", "cd"))), J.Null{})), "t1") == "abcd" : String}
+
+law live_old_gen_quiet:
+  {U.Ui.live.of(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), LV.Live.demo("t1", "new", False{}, 2n)), LV.Live.demo("t1", "old", False{}, 1n)), "t1") == "new" : String}
+
+law live_trunc_marked:
+  {U.Ui.live.of(U.Ui.recv(U.Ui.init(0n), LV.Live.demo("t1", "tail", True{}, 0n)), "t1") == "…tail" : String}

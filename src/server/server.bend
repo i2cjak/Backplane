@@ -53,6 +53,7 @@ import ../core/hist.bend as HI
 import ../core/emb.bend as EM
 import ../core/cmds.bend as CM
 import ../core/outbox.bend as OB
+import ../core/live.bend as LV
 
 # The server. One hub computation owns the read model and the event log;
 # every connection and agent process is its own computation and talks to
@@ -1202,35 +1203,11 @@ def Hub.err.msg(e: U32 & String) -> String:
   (_, msg) = e
   msg
 
-def Hub.commit.done(r: File & Result<&1, &1, U32 & String, Unit>, +cs: List<&2, M.Change>, st: M.State, ls: List<&2, String>, cl: List<&2, Client>,
-    as: List<&2, Agent>, +inbox: Chan(Msg), cfg: Cfg, note: String) -> IO(Hub & Wrote):
-  (f, res) = r
-  match res:
-    case Done{_}:
-      do IO<Hub & Wrote>:
-        Bot.dir.changed.all(cs, inbox)
-        return Hub.commit.k(Hub.fold(cs, Folded{st, ls, Nil{}}), f, cl, as, inbox, cfg, note)
-    case Fail{e}:
-      IO.pure(Hub & Wrote, (Hub{st, f, ls, cl, as, inbox, cfg, note}, Wrote{Nil{}, False{}, Hub.err.msg(e)}))
-
-# persist a step's changes in one write, then fold them in
-def Hub.commit.w(+cs: List<&2, M.Change>, h: Hub) -> IO(Hub & Wrote):
-  match cs h:
-    case Nil{} _:
-      IO.pure(Hub & Wrote, (h, Wrote{Nil{}, True{}, ""}))
-    case _ Hub{st, f, ls, cl, as, +inbox, cfg, note}:
-      IO.bind(File & Result<&1, &1, U32 & String, Unit>, Hub & Wrote, File.write(f, ST.Store.text(Hub.lines.disk(cs))),
-        r => Hub.commit.done(r, cs, st, ls, cl, as, inbox, cfg, note))
-
 def Hub.commit.r(r: Hub & Wrote, fresh: List<&2, String>) -> Hub & List<&2, String>:
   (h, w) = r
   match w:
     case Wrote{fr, _, _}:
       (h, List.append(&2, String, fr, fresh))
-
-# persist changes, fold them in; answers the hub and the new lines (newest first)
-def Hub.commit(+cs: List<&2, M.Change>, h: Hub, fresh: List<&2, String>) -> IO(Hub & List<&2, String>):
-  IO.bind(Hub & Wrote, Hub & List<&2, String>, Hub.commit.w(cs, h), r => IO.pure(Hub & List<&2, String>, Hub.commit.r(r, fresh)))
 
 # a generation's name: when it started and the log's length then
 def Hub.gen(+st: M.State, +now: Nat) -> String:
@@ -4281,10 +4258,40 @@ def Cfg.bn(c: Cfg) -> BN.Bn:
     case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}:
       bnx
 
+def Live.of(+cfg: Cfg) -> List<&2, LV.Buf>:
+  BN.Bn.live(Cfg.bn(cfg))
+
 def Cfg.with_bn(c: Cfg, b: BN.Bn) -> Cfg:
   match c:
     case Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, _, mgd, lk, fc}}:
       Cfg{h, w, ho, p, pr, ds, v, Net{tn, hs, t, ms, mt, rt, brx, pkx, tmx, mc, pvx, b, mgd, lk, fc}}
+
+def Live.with(+cfg: Cfg, lv: List<&2, LV.Buf>) -> Cfg:
+  Cfg.with_bn(cfg, BN.Bn.with_live(Cfg.bn(cfg), lv))
+
+def Hub.commit.done(r: File & Result<&1, &1, U32 & String, Unit>, +cs: List<&2, M.Change>, st: M.State, ls: List<&2, String>, cl: List<&2, Client>,
+    as: List<&2, Agent>, +inbox: Chan(Msg), +cfg: Cfg, note: String) -> IO(Hub & Wrote):
+  (f, res) = r
+  match res:
+    case Done{_}:
+      do IO<Hub & Wrote>:
+        Bot.dir.changed.all(cs, inbox)
+        return Hub.commit.k(Hub.fold(cs, Folded{st, ls, Nil{}}), f, cl, as, inbox, Live.with(cfg, LV.Live.ends(cs, Live.of(cfg))), note)
+    case Fail{e}:
+      IO.pure(Hub & Wrote, (Hub{st, f, ls, cl, as, inbox, cfg, note}, Wrote{Nil{}, False{}, Hub.err.msg(e)}))
+
+# persist a step's changes in one write, then fold them in
+def Hub.commit.w(+cs: List<&2, M.Change>, h: Hub) -> IO(Hub & Wrote):
+  match cs h:
+    case Nil{} _:
+      IO.pure(Hub & Wrote, (h, Wrote{Nil{}, True{}, ""}))
+    case _ Hub{st, f, ls, cl, as, +inbox, cfg, note}:
+      IO.bind(File & Result<&1, &1, U32 & String, Unit>, Hub & Wrote, File.write(f, ST.Store.text(Hub.lines.disk(cs))),
+        r => Hub.commit.done(r, cs, st, ls, cl, as, inbox, cfg, note))
+
+# persist changes, fold them in; answers the hub and the new lines (newest first)
+def Hub.commit(+cs: List<&2, M.Change>, h: Hub, fresh: List<&2, String>) -> IO(Hub & List<&2, String>):
+  IO.bind(Hub & Wrote, Hub & List<&2, String>, Hub.commit.w(cs, h), r => IO.pure(Hub & List<&2, String>, Hub.commit.r(r, fresh)))
 
 def Cfg.host(c: Cfg) -> String:
   match c:
@@ -5660,6 +5667,11 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
       do IO<Hub>:
         cl2 : List<&2, Client> <- Wire.to(cl, client, text)
         return Hub{st, f, ls, cl2, as, inbox, cfg, note}
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.Live{+thread, +text}:
+      do IO<Hub>:
+        +now : Nat <- Now.nat()
+        cl2 : List<&2, Client> <- Wire.delta(cl, B.Delta.msg(thread, text))
+        return Hub{st, f, ls, cl2, as, inbox, Live.with(cfg, LV.Live.add.at(Live.of(cfg), thread, text, Nat.mul(now, 1000n))), note}
     case Hub{st, f, ls, cl, as, inbox, cfg, note} B.Broadcast{+text}:
       do IO<Hub>:
         cl2 : List<&2, Client> <- Wire.all.of(cl, text, All{Bool.pick(Nat, String.starts_with(text, "{\"t\":\"delta"), 2n, 0n), 0n, 0n, Nil{}})
@@ -5797,9 +5809,18 @@ def Hub.join.here(h: Hub, +client: U32, +out: Chan(Wire), +gen: U32, +now: Nat) 
     case Hub{+st, f, +ls, +cl, as, inbox, +cfg, +note}:
       do IO<Hub>:
         m : Maybe<&2, Client> <- Hub.join.state(Client{client, out, DK.Look.none(), OB.Cr.new(gen, True{}, False{}, 0n), 0}, WState{M.State.private(st), Hub.log_msg.k(0n, ls, cfg, 0n)})
-        m2 : Maybe<&2, Client> <- Far.join.here(Far.mirrors(cfg), m)
+        m1 : Maybe<&2, Client> <- Far.join.here(Far.mirrors(cfg), m)
+        m2 : Maybe<&2, Client> <- Wire.text.m(m1, LV.Live.msg(Live.of(cfg)))
         m3 : Maybe<&2, Client> <- Hub.join.notes(m2, note, Desk.join(DK.Desk.text(Clients.looks(cl), now)))
         return Hub{st, f, ls, Clients.add(m3, cl), as, inbox, cfg, note}
+
+# a join in one frame is live at once: the streamed text follows it
+def Hub.join.live(more: Bool, m: Maybe<&2, Client>, +cfg: Cfg) -> IO(Maybe<&2, Client>):
+  match more:
+    case True{}:
+      IO.pure(Maybe<&2, Client>, m)
+    case False{}:
+      Wire.text.m(m, LV.Live.msg(Live.of(cfg)))
 
 def Hub.join.more(more: Bool, +inbox: Chan(Msg), +client: U32, +gen: U32) -> IO(Unit):
   match more:
@@ -5816,7 +5837,8 @@ def Hub.join.k(+n: Nat, +s0: Nat, +xs: List<&2, String>, h: Hub, +client: U32, +
       do IO<Hub>:
         m : Maybe<&2, Client> <- Wire.offer(Client{client, out, DK.Look.none(), OB.Cr.rest.set(OB.Cr.wait.set(OB.Cr.new(gen, U32.is_eq(client, 0), more, Nat.add(s0, k)), more), OB.Join.from(ls, n, Nat.add(s0, k))), sock},
           Hub.log_items(origin, cfg, s0, List.take(&2, String, xs, k), more), 0n)
-        m2 : Maybe<&2, Client> <- Hub.join.notes(m, note, Desk.join(DK.Desk.text(Clients.looks(cl), now)))
+        m1 : Maybe<&2, Client> <- Hub.join.live(more, m, cfg)
+        m2 : Maybe<&2, Client> <- Hub.join.notes(m1, note, Desk.join(DK.Desk.text(Clients.looks(cl), now)))
         Hub.join.more(more, inbox, client, gen)
         return Hub{st, f, ls, Clients.add(m2, cl), as, inbox, cfg, note}
 
@@ -5923,6 +5945,16 @@ def Boot.send(h: Hub, c: Client, w: Wire, +n: Nat, +id: U32) -> IO(Hub):
 def Boot.text(+text: String) -> Wire:
   WText{text}
 
+# the last frame of a join (or a catch-up), then every thread's streamed
+# text so far, which replaces the client's (core/live.bend)
+def Boot.last(h: Hub, c: Client, +id: U32) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        m : Maybe<&2, Client> <- Wire.offer(c, Boot.text(Hub.boot_msg(Nil{}, True{})), 0n)
+        m2 : Maybe<&2, Client> <- Wire.text.m(m, LV.Live.msg(Live.of(cfg)))
+        return Hub{st, f, ls, Clients.swap(cl, id, m2), as, inbox, cfg, note}
+
 def Boot.far.c(fc: FR.FC, h: Hub, +c: Client, +id: U32) -> IO(Hub):
   match fc:
     case FR.FC{+text, +next, True{}}:
@@ -5936,7 +5968,7 @@ def Boot.far.k(m: Maybe<&2, FR.In>, h: Hub, +c: Client, +id: U32) -> IO(Hub):
     case Some{+i}:
       Boot.far.c(FR.In.chunk(i, OB.Cr.fseq(Boot.r(c))), h, c, id)
     case None{}:
-      Boot.send(h, Boot.cr(c, OB.Cr.live(Boot.r(c))), Boot.text(Hub.boot_msg(Nil{}, True{})), 0n, id)
+      Boot.last(h, Boot.cr(c, OB.Cr.live(Boot.r(c))), id)
 
 # what the next chunk comes from: what was left when the client joined
 # (or caught up), else the changes made since

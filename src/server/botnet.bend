@@ -8,6 +8,7 @@ import ../core/model.bend as M
 import ../core/bot.bend as BO
 import ../core/bothub.bend as BH
 import ../core/far.bend as FR
+import ../core/live.bend as LV
 
 # Bots' IO that needs secrets (docs/bots.md): webhook and peer secrets,
 # signed requests to linked machines, verifying signed requests to us, and
@@ -20,27 +21,38 @@ import ../core/far.bend as FR
 
 # what the server keeps for bots: the linked machines' bots (a JSON array,
 # as clients read it), the signatures accepted within the window, and the
-# threads elsewhere (far.bend: mirrors, pushes, this hub's feed)
+# threads elsewhere (far.bend: mirrors, pushes, this hub's feed), and each
+# thread's streamed text since its last message (core/live.bend)
 type Bn is Data:
-  Bn{dir: String, seen: SG.Seen, work: BH.DirWork, far: FR.Fh}
+  Bn{dir: String, seen: SG.Seen, work: BH.DirWork, far: FR.Fh, live: List<&2, LV.Buf>}
 
 def Bn.empty() -> Bn:
-  Bn{"[]", SG.Seen.empty(), BH.DirWork.empty(), FR.Fh.empty()}
+  Bn{"[]", SG.Seen.empty(), BH.DirWork.empty(), FR.Fh.empty(), Nil{}}
 
 def Bn.dir(b: Bn) -> String:
   match b:
-    case Bn{d, _, _, _}:
+    case Bn{d, _, _, _, lv}:
       d
 
 def Bn.far(b: Bn) -> FR.Fh:
   match b:
-    case Bn{_, _, _, f}:
+    case Bn{_, _, _, f, lv}:
       f
+
+def Bn.live(b: Bn) -> List<&2, LV.Buf>:
+  match b:
+    case Bn{_, _, _, _, lv}:
+      lv
+
+def Bn.with_live(b: Bn, lv: List<&2, LV.Buf>) -> Bn:
+  match b:
+    case Bn{d, s, w, f, _}:
+      Bn{d, s, w, f, lv}
 
 def Bn.with_far(b: Bn, f: FR.Fh) -> Bn:
   match b:
-    case Bn{d, s, w, _}:
-      Bn{d, s, w, f}
+    case Bn{d, s, w, _, lv}:
+      Bn{d, s, w, f, lv}
 
 # Files
 # -----
@@ -428,18 +440,18 @@ def Bn.seen.k(had: Bool, s: SG.Seen, +key: String, +now: Nat) -> Maybe<&2, SG.Se
 
 def Bn.accept(+b: Bn, +key: String, +now: Nat) -> Maybe<&2, SG.Seen>:
   match b:
-    case Bn{_, +s, _, _}:
+    case Bn{_, +s, _, _, lv}:
       Bn.seen.k(SG.Seen.has(s, key), s, key, now)
 
 def Bn.with_seen(b: Bn, s: SG.Seen) -> Bn:
   match b:
-    case Bn{d, _, w, f}:
-      Bn{d, s, w, f}
+    case Bn{d, _, w, f, lv}:
+      Bn{d, s, w, f, lv}
 
 def Bn.with_dir(b: Bn, d: String) -> Bn:
   match b:
-    case Bn{_, s, w, f}:
-      Bn{d, s, w, f}
+    case Bn{_, s, w, f, lv}:
+      Bn{d, s, w, f, lv}
 
 # Signed requests out
 # -------------------
@@ -641,13 +653,13 @@ def Bn.fetched(r: Resp, +peer: String, +pname: String, +now: Nat) -> Maybe<&2, L
 
 def Bn.work(b: Bn) -> BH.DirWork:
   match b:
-    case Bn{_, _, w, _}:
+    case Bn{_, _, w, _, lv}:
       w
 
 def Bn.with_work(b: Bn, w: BH.DirWork) -> Bn:
   match b:
-    case Bn{d, s, _, f}:
-      Bn{d, s, w, f}
+    case Bn{d, s, _, f, lv}:
+      Bn{d, s, w, f, lv}
 
 def Bn.cache(home: String) -> String:
   home ++ "/bots.cache"

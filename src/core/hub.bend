@@ -63,6 +63,9 @@ type Out is Data:
   Await{thread: String, id: String, kind: String, target: String, ident: String, deadline: Nat, cwd: String}
   # stop owned work (work_cancel): its watcher reports the end
   WatchStop{thread: String, id: String, kind: String, target: String, ident: String}
+  # a thread's streamed text: kept by the server (core/live.bend) until its
+  # message is posted or its turn ends, and sent as a delta
+  Live{thread: String, text: String}
 
 type Step is Data:
   Step{changes: List<&2, M.Change>, outs: List<&2, Out>}
@@ -812,7 +815,11 @@ def Hub.methods() -> List<&2, String>:
 # ---------------------------------
 
 def Delta.push(thread: String, text: String) -> Out:
-  Broadcast{J.Json.show(J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{thread}}, J.KV{"text", J.Str{text}}]))}
+  Live{thread, text}
+
+# the delta a Live out is sent as
+def Delta.msg(+thread: String, +text: String) -> String:
+  J.Json.show(J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{thread}}, J.KV{"text", J.Str{text}}]))
 
 # Claude streams a token a line, and each was a frame to every client: a
 # phone rebuilt its screen per token. The lines of one read of the agent's
