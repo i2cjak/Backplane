@@ -6498,6 +6498,7 @@ def Laws.emb_idle_ends():
 def Laws.emb_note_none():
   {==}
 def Laws.emb_focus_round():
+  {==}
 def Laws.cmds_foreign_result_quiet():
   {==}
 
