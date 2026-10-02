@@ -103,6 +103,15 @@ def wire_out(text: String) -> List<&2, U32>:
 def show(j: J.Json) -> String:
   J.Json.show(j)
 
+# whether a message can change the page (another thread's streamed text
+# cannot: U.Ui.shows), and its kind ("log", "changes", "delta"...): the
+# host renders and keeps the log only when these say so
+def shows(+u: U.Ui, +o: J.Json) -> Bool:
+  U.Ui.shows(u, o)
+
+def kind(+j: J.Json) -> String:
+  J.Json.get_str(j, "t", "")
+
 # how many bytes of a file go in one upload piece
 def chunk() -> String:
   Nat.show(AT.Att.chunk())
