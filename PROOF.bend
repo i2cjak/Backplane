@@ -7087,6 +7087,7 @@ def Laws.bots_post_once(mid, m, s, now, client, id, text):
   {==}
 
 def Laws.bots_tell_once(mid, remote, s, now, client, id, to, text):
+  {==}
 def Laws.contain_default_half():
   {==}
 
