@@ -200,11 +200,13 @@ try {
   // a restart stops the scopes a previous run left for threads in its log, and no one else's
   const mine = `bp-agent-${ok1}-1-1`;
   const other = `bp-agent-zz-not-mine-1-1`;
-  for (const u of [mine, other]) {
+  // a scope of a thread in the log that another hub (another home) started
+  const foreign = `bp-agent-${ok1}-2-2`;
+  for (const [u, d] of [[mine, `backplane ${home}`], [other, `backplane ${home}`], [foreign, "backplane /somewhere/else"]]) {
     leftovers.push(u);
-    Bun.spawn(["systemd-run", "--user", "--scope", "--quiet", `--unit=${u}`, "sleep", "300"], { stdout: "ignore", stderr: "ignore" });
+    Bun.spawn(["systemd-run", "--user", "--scope", "--quiet", `--unit=${u}`, `--description=${d}`, "sleep", "300"], { stdout: "ignore", stderr: "ignore" });
   }
-  await until(10000, () => units(`${mine}.scope`) && units(`${other}.scope`) ? true : undefined);
+  await until(10000, () => units(`${mine}.scope`) && units(`${other}.scope`) && units(`${foreign}.scope`) ? true : undefined);
   check(!!units(`${mine}.scope`), "a leftover scope of a known thread exists");
   proc.kill(9);
   await proc.exited;
@@ -216,6 +218,7 @@ try {
   await until(15000, () => !units(`${mine}.scope`) ? true : undefined);
   check(!units(`${mine}.scope`), "recovery stopped the scope an earlier run left for a thread of the log");
   check(!!units(`${other}.scope`), "a scope of a thread not in the log is left alone");
+  check(!!units(`${foreign}.scope`), "another hub's scope for a thread of the log is left alone");
 } finally {
   for (const u of leftovers) Bun.spawnSync(["systemctl", "--user", "stop", `${u}.scope`], { stdout: "ignore", stderr: "ignore" });
   proc.kill(9);

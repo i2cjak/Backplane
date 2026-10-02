@@ -108,11 +108,23 @@ def Contain.unit(thread: String, gen: String) -> String:
 # literal one). TimeoutStopSec bounds how long stopping a scope waits
 # before it kills what is left.
 def Contain.script() -> String:
-  "l=$1; u=$2; shift 2\nif command -v systemd-run >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then\n  if systemd-run --help 2>&1 | grep -q -- --expand-environment; then\n    exec systemd-run --user --scope --quiet --expand-environment=no \"--unit=$u\" \"--property=MemoryMax=$l\" --property=MemorySwapMax=0 --property=OOMPolicy=kill --property=TimeoutStopSec=5s -- \"$@\"\n  fi\n  n=$#\n  while [ \"$n\" -gt 0 ]; do\n    a=$(printf '%sx' \"$1\" | sed 's/\\$/$$/g'); a=${a%x}\n    shift; set -- \"$@\" \"$a\"; n=$((n - 1))\n  done\n  exec systemd-run --user --scope --quiet \"--unit=$u\" \"--property=MemoryMax=$l\" --property=MemorySwapMax=0 --property=OOMPolicy=kill --property=TimeoutStopSec=5s -- \"$@\"\nfi\nexec \"$@\"\n"
+  "l=$1; u=$2; d=$3; shift 3\nif command -v systemd-run >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then\n  if systemd-run --help 2>&1 | grep -q -- --expand-environment; then\n    exec systemd-run --user --scope --quiet --expand-environment=no \"--unit=$u\" \"--description=$d\" \"--property=MemoryMax=$l\" --property=MemorySwapMax=0 --property=OOMPolicy=kill --property=TimeoutStopSec=5s -- \"$@\"\n  fi\n  n=$#\n  while [ \"$n\" -gt 0 ]; do\n    a=$(printf '%sx' \"$1\" | sed 's/\\$/$$/g'); a=${a%x}\n    shift; set -- \"$@\" \"$a\"; n=$((n - 1))\n  done\n  exec systemd-run --user --scope --quiet \"--unit=$u\" \"--description=$d\" \"--property=MemoryMax=$l\" --property=MemorySwapMax=0 --property=OOMPolicy=kill --property=TimeoutStopSec=5s -- \"$@\"\nfi\nexec \"$@\"\n"
 
 # the program and arguments that start cmd contained
-def Contain.argv(limit: String, unit: String, cmd: String, args: List<&2, String>) -> List<&2, String>:
-  "-c" <> Contain.script() <> "sh" <> limit <> unit <> cmd <> args
+def Contain.argv(limit: String, unit: String, tag: String, cmd: String, args: List<&2, String>) -> List<&2, String>:
+  "-c" <> Contain.script() <> "sh" <> limit <> unit <> tag <> cmd <> args
+
+# which hub a scope belongs to (its description): a hub stops only its
+# own leftovers, so a test or throwaway hub on a copy of the log, whose
+# home differs, never touches the live hub's agents
+def Contain.tag(home: String) -> String:
+  "backplane " ++ home
+
+def Contain.desc.args(unit: String) -> List<&2, String>:
+  ["3", "systemctl", "--user", "show", "-p", "Description", "--value", unit ++ ".scope"]
+
+def Contain.mine(+desc: String, +tag: String) -> Bool:
+  String.eq(String.trim(desc), tag)
 
 # the scope's own answer after its process ended
 def Contain.show.args(unit: String) -> List<&2, String>:

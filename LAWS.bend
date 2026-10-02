@@ -5430,6 +5430,11 @@ law contain_thread_of:
 law contain_no_expand:
   {Bool.and(String.contains(CTN.Contain.script(), "--expand-environment=no"), String.contains(CTN.Contain.script(), "s/\\$/$$/g")) == True{} : Bool}
 
+# a hub stops only the scopes it started: one whose description names
+# another home is not its own
+law contain_tag_mine:
+  {Bool.show(CTN.Contain.mine(" backplane /h\n", CTN.Contain.tag("/h"))) ++ Bool.show(CTN.Contain.mine("backplane /other", CTN.Contain.tag("/h"))) == "TrueFalse" : String}
+
 # A streamed reply's settled prefix (client.bend's Live.head: the text up
 # to the last blank line outside a fenced block) renders, and lays out,
 # exactly as it does alone, so a window keeps it and lays out the rest.

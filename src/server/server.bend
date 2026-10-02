@@ -333,34 +333,44 @@ def Ctn.stop.k(none: Bool, +thread: String, +gen: String) -> IO(Unit):
 def Ctn.stop(+thread: String, +gen: String) -> IO(Unit):
   Ctn.stop.k(String.is_empty(gen), thread, gen)
 
-def Ctn.stale.one(owned: Bool, +unit: String) -> IO(Unit):
-  match owned:
+def Ctn.stale.mine(mine: Bool, +unit: String) -> IO(Unit):
+  match mine:
     case True{}:
       Ctn.stop.unit(unit)
     case False{}:
       IO.pure(Unit, Unit{})
 
-def Ctn.stale.go(us: List<&2, String>, +st: M.State) -> IO(Unit):
+def Ctn.stale.one(owned: Bool, +unit: String, +tag: String) -> IO(Unit):
+  match owned:
+    case True{}:
+      do IO<Unit>:
+        r : P.Ran <- P.Proc.run("timeout", CN.Contain.desc.args(unit), "/")
+        Ctn.stale.mine(CN.Contain.mine(Ctn.mem.of(r), tag), unit)
+    case False{}:
+      IO.pure(Unit, Unit{})
+
+def Ctn.stale.go(us: List<&2, String>, +st: M.State, +tag: String) -> IO(Unit):
   match us:
     case Nil{}:
       IO.pure(Unit, Unit{})
     case +u <> t:
       do IO<Unit>:
-        Ctn.stale.one(B.Hub.owns(st, CN.Contain.thread.of(u)), u)
-        Ctn.stale.go(t, st)
+        Ctn.stale.one(B.Hub.owns(st, CN.Contain.thread.of(u)), u, tag)
+        Ctn.stale.go(t, st, tag)
 
 # at start nothing of this hub's runs: every agent scope of a thread in
-# its log is one a previous run left (a service restart does not end a
-# scope), and is stopped before the thread resumes
-def Ctn.stale(+st: M.State) -> IO(Unit):
+# its log that this hub (its home, Contain.tag) started is one a previous
+# run left (a service restart does not end a scope), and is stopped before
+# the thread resumes; another hub's scopes are left alone
+def Ctn.stale(+st: M.State, +tag: String) -> IO(Unit):
   do IO<Unit>:
     r : P.Ran <- P.Proc.run("timeout", CN.Contain.stale.args(), "/")
-    Ctn.stale.go(CN.Contain.stale(Ctn.mem.of(r)), st)
+    Ctn.stale.go(CN.Contain.stale(Ctn.mem.of(r)), st, tag)
 
-def Ctn.spawn.k(found: Bool, limit: String, thread: String, gen: String, cmd: String, args: List<&2, String>, cwd: String) -> IO(Result<&1, &1, U32 & String, U32 & Socket>):
+def Ctn.spawn.k(found: Bool, limit: String, tag: String, thread: String, gen: String, cmd: String, args: List<&2, String>, cwd: String) -> IO(Result<&1, &1, U32 & String, U32 & Socket>):
   match found:
     case True{}:
-      H.Proc.spawn("sh", CN.Contain.argv(limit, CN.Contain.unit(thread, gen), cmd, args), cwd, 0)
+      H.Proc.spawn("sh", CN.Contain.argv(limit, CN.Contain.unit(thread, gen), tag, cmd, args), cwd, 0)
     case False{}:
       H.Proc.spawn(cmd, args, cwd, 0)
 
@@ -371,10 +381,10 @@ def Ctn.found(r: P.Ran) -> Bool:
 
 # cmd with args, in its own scope; a program that is not there fails to
 # spawn as it always did (its turn says it could not start)
-def Ctn.spawn(+limit: String, +thread: String, +gen: String, +cmd: String, +args: List<&2, String>, +cwd: String) -> IO(Result<&1, &1, U32 & String, U32 & Socket>):
+def Ctn.spawn(+limit: String, +tag: String, +thread: String, +gen: String, +cmd: String, +args: List<&2, String>, +cwd: String) -> IO(Result<&1, &1, U32 & String, U32 & Socket>):
   do IO<Result<&1, &1, U32 & String, U32 & Socket>>:
     r : P.Ran <- P.Proc.run("sh", ["-c", "command -v \"$1\" >/dev/null 2>&1", "sh", cmd], "/")
-    Ctn.spawn.k(Ctn.found(r), limit, thread, gen, cmd, args, cwd)
+    Ctn.spawn.k(Ctn.found(r), limit, tag, thread, gen, cmd, args, cwd)
 
 # Event log
 # ---------
@@ -2489,8 +2499,8 @@ def Codex.started(r: Result<&1, &1, U32 & String, U32 & Socket>, +thread: String
     case Fail{e}:
       Codex.failed(e, thread, gen, inbox)
 
-def Codex.run(+limit: String, +args: List<&2, String>, +cwd: String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
-  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, Ctn.spawn(limit, thread, gen, "codex", args, cwd), r => Codex.started(r, thread, gen, inbox))
+def Codex.run(+limit: String, +tag: String, +args: List<&2, String>, +cwd: String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
+  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, Ctn.spawn(limit, tag, thread, gen, "codex", args, cwd), r => Codex.started(r, thread, gen, inbox))
 
 def Grok.stop(s: Socket, +pid: U32, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
@@ -2595,8 +2605,8 @@ def Grok.started(r: Result<&1, &1, U32 & String, U32 & Socket>, +t: AC.AcpTurn, 
     case Fail{e}:
       Grok.failed(e, thread, gen, inbox)
 
-def Grok.run(+limit: String, +args: List<&2, String>, +t: AC.AcpTurn, +cwd: String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
-  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, Ctn.spawn(limit, thread, gen, "grok", args, cwd), r => Grok.started(r, t, thread, gen, inbox))
+def Grok.run(+limit: String, +tag: String, +args: List<&2, String>, +t: AC.AcpTurn, +cwd: String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
+  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, Ctn.spawn(limit, tag, thread, gen, "grok", args, cwd), r => Grok.started(r, t, thread, gen, inbox))
 
 # Updates
 # -------
@@ -3372,7 +3382,7 @@ def Codex.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: Str
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
     +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
     +lim : String <- Ctn.limit(st)
-    Codex.run(lim, Codex.args(cfg, thread, model, session, r, AG.Mention.expand("codex", text, ss), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), Hub.effort_of(st, thread), gen), cwd, thread, gen, inbox)
+    Codex.run(lim, CN.Contain.tag(Cfg.home(cfg)), Codex.args(cfg, thread, model, session, r, AG.Mention.expand("codex", text, ss), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), Hub.effort_of(st, thread), gen), cwd, thread, gen, inbox)
 
 def Grok.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +text: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
@@ -3380,7 +3390,7 @@ def Grok.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: Stri
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
     +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
     +lim : String <- Ctn.limit(st)
-    Grok.run(lim, Grok.args(r, model, Hub.effort_of(st, thread)),
+    Grok.run(lim, CN.Contain.tag(Cfg.home(cfg)), Grok.args(r, model, Hub.effort_of(st, thread)),
       AC.AcpTurn{cwd, Hub.mcp_url.g(cfg, thread, gen), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), AG.Mention.expand("grok", text, ss), session, Grok.asks(r)}, cwd, thread, gen, inbox)
 
 def Term.nums(bs: List<&2, U32>) -> List<&2, String>:
@@ -6026,7 +6036,7 @@ def Claude.job(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: S
     ok : Bool <- Chan.send(Msg, inbox, AutoView{thread, fs})
     +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
     +lim : String <- Ctn.limit(st)
-    res : Result<&1, &1, U32 & String, U32 & Socket> <- Ctn.spawn(lim, thread, gen, "env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen), cwd)
+    res : Result<&1, &1, U32 & String, U32 & Socket> <- Ctn.spawn(lim, CN.Contain.tag(Cfg.home(cfg)), thread, gen, "env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen), cwd)
     Claude.started(res, thread, gen, input, inbox)
 
 def Agents.pid.k(same: Bool, a: Agent, +pid: U32) -> Agent:
@@ -6751,9 +6761,9 @@ def Hub.recover.k(h: Hub, +now: Nat) -> IO(Hub):
 # (and threads elsewhere start: Far.start)
 def Hub.recover.stale(h: Hub, +now: Nat) -> IO(Hub):
   match h:
-    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       do IO<Hub>:
-        Ctn.stale(st)
+        Ctn.stale(st, CN.Contain.tag(Cfg.home(cfg)))
         Hub.recover.k(Hub{st, f, ls, cl, as, inbox, cfg, note}, now)
 
 def Hub.recover(h: Hub, +now: Nat) -> IO(Hub):

@@ -7153,6 +7153,8 @@ def Laws.contain_words_gb():
 
 def Laws.contain_no_expand():
   {==}
+def Laws.contain_tag_mine():
+  {==}
 
 def Laws.contain_stop_scope():
   {==}
