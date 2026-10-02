@@ -171,15 +171,100 @@ function mul(a, b) {
   return o;
 }
 
-// one canvas's view: the camera turns about the model's centre, z up,
-// fitted to its box when a new part comes
+// A camera turning freely about a pivot (the model's centre), as the phones'
+// and the window's do: r, u, f are the view's right, up and forward; sx, sy
+// the pan in the view plane; dist from the eye to the pivot's depth; home
+// the fitted distance, which bounds the zoom so any model zooms alike
+const V3 = {
+  cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]],
+  norm: (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; },
+  // v turned by angle a about the unit axis k (Rodrigues)
+  turned: (v, k, a) => {
+    const c = Math.cos(a), s = Math.sin(a), kv = V3.cross(k, v), d = (k[0] * v[0] + k[1] * v[1] + k[2] * v[2]) * (1 - c);
+    return [0, 1, 2].map((i) => v[i] * c + kv[i] * s + k[i] * d);
+  },
+};
+
+export class Orbit {
+  constructor() {
+    this.pivot = [0, 0, 0]; this.r = [1, 0, 0]; this.u = [0, 0, 1]; this.f = [0, 1, 0];
+    this.sx = 0; this.sy = 0; this.dist = 1; this.home = 0; this.fov = 0.7;
+  }
+
+  target() { return [0, 1, 2].map((i) => this.pivot[i] + this.r[i] * this.sx + this.u[i] * this.sy); }
+  eye() { const t = this.target(); return [0, 1, 2].map((i) => t[i] - this.f[i] * this.dist); }
+
+  // world units per pixel at the pivot's depth
+  unit(h) { return (this.dist * 2 * Math.tan(this.fov / 2)) / Math.max(h, 1); }
+
+  // orthonormal again (no drift)
+  square() {
+    this.f = V3.norm(this.f);
+    this.r = V3.norm(V3.cross(this.f, this.u));
+    this.u = V3.norm(V3.cross(this.r, this.f));
+    return this;
+  }
+
+  // looking at the pivot from yaw and pitch (radians), z up
+  aim(yaw, pitch) {
+    this.f = [-Math.sin(yaw) * Math.cos(pitch), Math.cos(yaw) * Math.cos(pitch), -Math.sin(pitch)];
+    this.u = [0, 0, 1];
+    return this.square();
+  }
+
+  turn(k, a) {
+    this.r = V3.turned(this.r, k, a); this.u = V3.turned(this.u, k, a); this.f = V3.turned(this.f, k, a);
+    return this.square();
+  }
+
+  // the pointer moved (mx, my) pixels: the model under it follows
+  spin(mx, my, k = 0.008) {
+    const l = Math.hypot(mx, my);
+    if (l < 1e-6) return this;
+    return this.turn([0, 1, 2].map((i) => (this.u[i] * mx + this.r[i] * my) / l), -l * k);
+  }
+
+  // the model turned clockwise on screen by a
+  roll(a) { return this.turn(this.f.slice(), -a); }
+
+  // the point under the pointer moves with it (s: world units per pixel)
+  pan(mx, my, s) { this.sx -= mx * s; this.sy += my * s; return this; }
+
+  // dist over k, keeping the point (x, y) world units from the view's centre
+  // where it is
+  zoom(k, x, y) {
+    const lo = this.home > 0 ? this.home / 60 : 1e-9, hi = this.home > 0 ? this.home * 20 : 1e9;
+    const d = Math.min(Math.max(this.dist / k, lo), hi), q = d / this.dist;
+    this.sx += x * (1 - q); this.sy += y * (1 - q); this.dist = d;
+    return this;
+  }
+}
+
+// a wheel event from a touchpad (two fingers scrolling: pan) or from a mouse
+// wheel (zoom). A pinch comes as a wheel with ctrl. Touchpads scroll in small
+// pixel steps, sideways too; a wheel in notches of about 100 px, or in lines.
+// A gesture keeps the kind its first event had.
+export function wheelKind(e, last) {
+  if (e.ctrlKey) return "pinch";
+  if (last && last.kind !== "pinch" && e.timeStamp - last.t < 250) return last.kind;
+  if (e.deltaMode !== 0) return "wheel";
+  if (e.deltaX !== 0 || Math.abs(e.deltaY) < 40 || !Number.isInteger(e.deltaY)) return "pad";
+  return "wheel";
+}
+
+// one canvas's view of a model, turned, moved and zoomed by the pointer:
+// a mouse's left drag turns (shift or ctrl, or the right or middle button,
+// moves it; alt rolls), the wheel zooms at the pointer, a touchpad's two
+// fingers move it and a pinch zooms; on a touch screen one finger turns and
+// two move, pinch and twist it, as on the phones. Double-click fits.
 class View {
   constructor(canvas) {
     this.canvas = canvas;
     this.key = "";
     this.gl = canvas.getContext("webgl", { antialias: true, alpha: true, premultipliedAlpha: true });
     this.count = 0;
-    this.yaw = -0.6; this.pitch = 0.5; this.dist = 1; this.cx = 0; this.cy = 0; this.cz = 0; this.r = 1;
+    this.cam = new Orbit().aim(-0.6, 0.5);
+    this.r = 1;
     if (!this.gl) return;
     const gl = this.gl;
     const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
@@ -188,76 +273,89 @@ class View {
     gl.attachShader(this.prog, sh(gl.FRAGMENT_SHADER, FS));
     gl.linkProgram(this.prog);
     this.bufs = ["p", "n", "c"].map((a) => ({ a: gl.getAttribLocation(this.prog, a), b: gl.createBuffer() }));
-    this.drag = null;
-    // one finger (or the mouse) turns, shift or a second button pans; two
-    // fingers pinch to zoom and move the model with their middle
     this.pts = new Map();
+    this.drag = null;
+    this.gesture = null;
+    this.wheelLast = null;
+    const local = (e) => { const b = canvas.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top }; };
     const two = () => {
       const [a, b] = [...this.pts.values()];
-      return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) };
+      return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y), a: Math.atan2(b.y - a.y, b.x - a.x) };
     };
     canvas.addEventListener("pointerdown", (e) => {
       try { canvas.setPointerCapture(e.pointerId); } catch {}
-      this.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      this.drag = this.pts.size === 1 ? { x: e.clientX, y: e.clientY, pan: e.shiftKey || e.button !== 0 } : null;
-      this.pinch = this.pts.size === 2 ? two() : null;
+      this.pts.set(e.pointerId, local(e));
+      const p = local(e);
+      const mode = e.pointerType === "touch" ? "turn"
+        : e.button === 1 || e.button === 2 || e.shiftKey || e.ctrlKey || e.metaKey ? "pan" : e.altKey ? "roll" : "turn";
+      this.drag = this.pts.size === 1 ? { x: p.x, y: p.y, mode } : null;
+      this.gesture = this.pts.size === 2 ? two() : null;
+      canvas.classList.add("dragging");
     });
     canvas.addEventListener("pointermove", (e) => {
       if (!this.pts.has(e.pointerId)) return;
-      this.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (this.pinch && this.pts.size === 2) {
-        const m = two();
-        this.zoomTo(this.dist * Math.max(this.pinch.d, 1) / Math.max(m.d, 1));
-        this.panBy(m.x - this.pinch.x, m.y - this.pinch.y);
-        this.pinch = m;
+      this.pts.set(e.pointerId, local(e));
+      const h = canvas.clientHeight;
+      if (this.gesture && this.pts.size === 2) {
+        const g = two(), was = this.gesture;
+        this.cam.pan(g.x - was.x, g.y - was.y, this.cam.unit(h));
+        this.zoomAt(g.d / Math.max(was.d, 1), g.x, g.y);
+        let da = g.a - was.a;
+        if (da > Math.PI) da -= 2 * Math.PI; else if (da < -Math.PI) da += 2 * Math.PI;
+        this.cam.roll(da);
+        this.gesture = g;
         this.later();
-      } else this.move(e);
+        return;
+      }
+      if (!this.drag) return;
+      const p = local(e), dx = p.x - this.drag.x, dy = p.y - this.drag.y;
+      this.drag.x = p.x; this.drag.y = p.y;
+      if (this.drag.mode === "pan") this.cam.pan(dx, dy, this.cam.unit(h));
+      else if (this.drag.mode === "roll") this.cam.roll(dx * 0.008);
+      else this.cam.spin(dx, dy);
+      this.later();
     });
     const up = (e) => {
       this.pts.delete(e.pointerId);
-      this.pinch = null;
+      this.gesture = null;
       const [rest] = [...this.pts.values()];
-      this.drag = rest ? { x: rest.x, y: rest.y, pan: false } : null;
+      this.drag = rest ? { x: rest.x, y: rest.y, mode: "turn" } : null;
+      if (!rest) canvas.classList.remove("dragging");
     };
     canvas.addEventListener("pointerup", up);
     canvas.addEventListener("pointercancel", up);
-    canvas.addEventListener("wheel", (e) => { e.preventDefault(); this.zoomTo(this.dist * Math.exp(e.deltaY * 0.0015)); this.later(); }, { passive: false });
+    canvas.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const kind = wheelKind(e, this.wheelLast);
+      this.wheelLast = { kind, t: e.timeStamp };
+      const px = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? canvas.clientHeight : 1;
+      const p = local(e);
+      if (kind === "pad") this.cam.pan(-e.deltaX * px, -e.deltaY * px, this.cam.unit(canvas.clientHeight));
+      else this.zoomAt(Math.exp(-e.deltaY * px * (kind === "pinch" ? 0.01 : 0.0015)), p.x, p.y);
+      this.later();
+    }, { passive: false });
     canvas.addEventListener("dblclick", () => { this.fit(); this.later(); });
     canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+    // a pane resized (the viewer's edge dragged) draws again at its new size
+    new ResizeObserver(() => this.later()).observe(canvas);
   }
 
-  // the distance, kept between a fiftieth and forty times the model's size
-  zoomTo(d) {
-    this.dist = Math.min(Math.max(d, this.r / 50), this.r * 40);
-  }
-
-  // the model moved with the pointer by (dx, dy) pixels
-  panBy(dx, dy) {
-    const s = this.dist / Math.max(this.canvas.clientHeight, 1);
-    const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
-    this.cx -= (dx * cy) * s; this.cy -= (dx * sy) * s; this.cz += dy * s;
-  }
-
-  move(e) {
-    if (!this.drag) return;
-    const dx = e.clientX - this.drag.x, dy = e.clientY - this.drag.y;
-    this.drag.x = e.clientX; this.drag.y = e.clientY;
-    if (this.drag.pan) {
-      this.panBy(dx, dy);
-    } else {
-      this.yaw -= dx * 0.008;
-      this.pitch = Math.max(-1.55, Math.min(1.55, this.pitch + dy * 0.008));
-    }
-    this.later();
+  // closer by k (over 1 in), keeping the point under (x, y) on the canvas where it is
+  zoomAt(k, x, y) {
+    const w = this.canvas.clientWidth, h = this.canvas.clientHeight, s = this.cam.unit(h);
+    this.cam.zoom(k, (x - w / 2) * s, (h / 2 - y) * s);
   }
 
   fit() {
     const [x0, y0, z0, x1, y1, z1] = this.box;
-    this.cx = (x0 + x1) / 2; this.cy = (y0 + y1) / 2; this.cz = (z0 + z1) / 2;
     this.r = Math.max(Math.hypot(x1 - x0, y1 - y0, z1 - z0) / 2, 1);
     // the field of view is vertical: a narrow canvas fits the width instead
     const a = this.canvas.clientWidth / Math.max(this.canvas.clientHeight, 1);
-    this.dist = this.r / Math.sin(Math.atan(Math.tan(0.35) * Math.min(a, 1))) * 1.05;
+    const cam = new Orbit().aim(-0.6, 0.5);
+    cam.pivot = [(x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2];
+    cam.dist = this.r / Math.sin(Math.atan(Math.tan(cam.fov / 2) * Math.min(a, 1))) * 1.05;
+    cam.home = cam.dist;
+    this.cam = cam;
   }
 
   show(m) {
@@ -293,9 +391,9 @@ class View {
     if (!this.count) return;
     gl.enable(gl.DEPTH_TEST);
     gl.useProgram(this.prog);
-    const cp = Math.cos(this.pitch);
-    const eye = [this.cx + this.dist * cp * Math.sin(this.yaw), this.cy - this.dist * cp * Math.cos(this.yaw), this.cz + this.dist * Math.sin(this.pitch)];
-    const m = mul(persp(0.7, w / h, this.dist / 100, this.dist + this.r * 4), look(eye, [this.cx, this.cy, this.cz], [0, 0, 1]));
+    const cam = this.cam, eye = cam.eye();
+    const reach = cam.dist + Math.hypot(cam.sx, cam.sy) + this.r * 4;
+    const m = mul(persp(cam.fov, w / h, Math.max(cam.dist / 100, this.r / 1000), reach), look(eye, cam.target(), cam.u));
     gl.uniformMatrix4fv(gl.getUniformLocation(this.prog, "m"), false, m);
     gl.uniform3fv(gl.getUniformLocation(this.prog, "eye"), eye);
     for (const { a, b } of this.bufs) {

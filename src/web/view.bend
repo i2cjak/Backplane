@@ -1459,7 +1459,7 @@ def View.hist.menu(+u: U.Ui) -> D.Node:
 # a board or schematic: host.js (plot2d.js) draws the hub's plot of it on
 # the canvas whose data-key it carries, less the layers data-off names
 def View.plot(+u: U.Ui, +what: List<&2, D.Node>) -> List<&2, D.Node>:
-  View.bar(List.append(&2, D.Node, what, [View.layers(String.eq(U.Solid.kind(u), "schematic"), Nat.is_eq(HS.Hist.kind(U.Ui.view_get(u, "view.path")), 2n), U.Solid.off(u))]), "drag to pan · wheel to zoom · double-click to fit")
+  View.bar(List.append(&2, D.Node, what, [View.layers(String.eq(U.Solid.kind(u), "schematic"), Nat.is_eq(HS.Hist.kind(U.Ui.view_get(u, "view.path")), 2n), U.Solid.off(u))]), "drag or two fingers to pan · wheel or pinch to zoom · double-click to fit")
    <> D.El{"div", "", [D.At{"class", "viewer-stage"}], [D.El{"canvas", "plot", [D.At{"id", "plot"}, D.At{"data-key", U.Solid.want(u)}, D.At{"data-off", U32.show(U.Solid.off(u))},
         D.At{"data-fade", Nat.show(U.Hs.fade())}, D.At{"data-fam", HS.Hist.key.family(U.Solid.want(u))}], Nil{}}, View.hist.menu(u)]}
    <> View.hist(U.Hs.bar(u), u)
@@ -1485,7 +1485,7 @@ def View.solid.what(on: Bool, +u: U.Ui) -> List<&2, D.Node>:
 # with a mesh, as the phones get) on the canvas whose data-key it carries,
 # and says in the note why there is none
 def View.solid(+u: U.Ui) -> List<&2, D.Node>:
-  View.bar(View.solid.what(U.Mpage.onpart(u), u), "drag to turn · shift-drag to pan · wheel to zoom")
+  View.bar(View.solid.what(U.Mpage.onpart(u), u), "drag to turn · right-drag or two fingers to move · wheel or pinch to zoom · double-click to fit")
     <> List.append(&2, D.Node, D.Dom.when(Bool.not(String.is_empty(U.Ui.info(u, "plotnote:" ++ U.Solid.want(u)))), D.Dom.span("viewer-say", U.Ui.info(u, "plotnote:" ++ U.Solid.want(u)))),
       [D.El{"div", "", [D.At{"class", "viewer-stage"}], [D.El{"canvas", "solid", [D.At{"id", "solid"}, D.At{"data-key", U.Solid.want(u)}], Nil{}},
         D.El{"div", "", [D.At{"class", "viewer-note"}], Nil{}}, D.El{"div", "", [D.At{"class", "viewer-stat"}], Nil{}}]}])
@@ -1582,10 +1582,15 @@ def View.aside.n(+kind: String) -> Nat:
     Bool.pick(Nat, String.eq(kind, "3d"), 3n, Bool.pick(Nat, String.eq(kind, "schematic"), 4n,
       Bool.pick(Nat, String.eq(kind, "files"), 6n, Bool.pick(Nat, String.eq(kind, "image"), 7n, Bool.pick(Nat, String.eq(kind, "pdf"), 8n, 5n))))))))
 
-# the side pane of the selected thread: the tabs, then what they show
+# the side pane of the selected thread: the tabs, then what they show. Its
+# left edge is a handle that resizes it (host.js keeps the width per
+# browser; a double-click gives the pane its share back)
+def View.split() -> D.Node:
+  D.El{"div", "split", [D.At{"class", "viewer-split"}, D.At{"title", "Drag to resize the viewer; double-click to reset"}], Nil{}}
+
 def View.aside(+kind: String, +u: U.Ui) -> D.Node:
   D.El{"aside", "viewer", [D.At{"class", "viewer " ++ Bool.pick(String, String.is_empty(kind), "board", kind)}, D.At{"id", "viewer"}],
-    View.tabs(Bool.pick(String, U.Mpage.onpart(u), "mech", U.Fm.tab(U.Solid.kind(u)))) <> View.aside.k(View.aside.n(kind), u)}
+    View.split() <> View.tabs(Bool.pick(String, U.Mpage.onpart(u), "mech", U.Fm.tab(U.Solid.kind(u)))) <> View.aside.k(View.aside.n(kind), u)}
 
 def View.aside.if(open: Bool, +kind: String, +u: U.Ui) -> List<&2, D.Node>:
   match open:
