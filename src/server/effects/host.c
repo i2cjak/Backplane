@@ -218,15 +218,19 @@ static void __attribute__((constructor)) sock_send_bytes_use(void) {
 
 #ifdef CID_SOCK_SEND_UNTIL
 
-// Like Sock.send_bytes, with one deadline for the whole frame: a peer that
-// stops reading cannot hold the writer past it. The deadline (in io_tick
-// units) sits in the first 8 bytes of w->data; the frame follows. A send
-// that fails or runs out of time shuts the socket both ways, so its reader
-// sees the end too and the client leaves.
+// Like Sock.send_bytes, with a deadline: a peer that stops reading cannot
+// hold the writer past it. The deadline is renewed after every write that
+// made progress, so a slow reader that keeps reading is never cut off,
+// only one that stalls for the whole span. The deadline and the span (both
+// in io_tick units) sit in the first 16 bytes of w->data; the frame
+// follows. A send that fails or runs out of time shuts the socket both
+// ways, so its reader sees the end too and the client leaves.
 static Term sock_send_until_more(Env e, IoWork* w) {
   int fd = (int)w->hand;
   u64 deadline;
+  u64 span;
   memcpy(&deadline, w->data, sizeof deadline);
+  memcpy(&span, w->data + sizeof deadline, sizeof span);
   while (w->code == 0 && (u64)w->made < w->size) {
     ssize_t n = host_write(fd, w->data + w->made, w->size - (u64)w->made);
     if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
@@ -237,6 +241,10 @@ static Term sock_send_until_more(Env e, IoWork* w) {
       return io_wait_on(w, fd, POLLOUT, deadline, sock_send_until_more);
     }
     w->made += io_sys_end(w, n);
+    if (n > 0) {
+      deadline = io_tick() + span;
+      memcpy(w->data, &deadline, sizeof deadline);
+    }
   }
   if (w->code != 0) {
     shutdown(fd, SHUT_RDWR);
@@ -249,13 +257,15 @@ static Term sock_send_until_more(Env e, IoWork* w) {
 Term sock_send_until_run(Env e, Term* f, IoWork* w) {
   u64  cap = 256;
   Term xs  = f[1];
-  u64  deadline = io_tick() + (u64)f[2] * 1000000ull;
+  u64  span = (u64)f[2] * 1000000ull;
+  u64  deadline = io_tick() + span;
   w->hand = (intptr_t)io_hand_v(f[0]);
   w->code = 0;
-  w->size = sizeof deadline;
-  w->made = sizeof deadline;
+  w->size = sizeof deadline + sizeof span;
+  w->made = sizeof deadline + sizeof span;
   w->data = io_mem(malloc(cap));
   memcpy(w->data, &deadline, sizeof deadline);
+  memcpy(w->data + sizeof deadline, &span, sizeof span);
   while (term_aux(xs) == CID_CON) {
     Term fb[2];
     spare_free(e, cls_fit(2), ctr_take(e, xs, 2, fb));

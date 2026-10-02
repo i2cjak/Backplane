@@ -119,9 +119,10 @@ function sock_send_bytes(socket, data) {
   return host_send(socket, Uint8Array.from(bytes));
 }
 
-// Sock.send_until: host_send with one deadline for the frame; out of time
-// (or failed), the socket is shut both ways
-function sock_send_until(socket, data, ms) {
+// Sock.send_until: a deadline renewed after every send that made progress;
+// a full socket parks on the socket and the clock (never a spin), and a
+// stall for the whole span (or a failure) shuts the socket both ways
+function sock_send_until(socket, data, ms, k) {
   const bytes = [];
   for (let xs = data; xs.$ === "Con"; xs = xs.tail) {
     bytes.push(xs.head);
@@ -130,22 +131,29 @@ function sock_send_until(socket, data, ms) {
     return io_tup(socket, io_fail(22));
   }
   const sys = io_sys();
+  const again = sys.mac ? 35 : 11;
   const b = Uint8Array.from(bytes);
-  const until = performance.now() + Number(ms);
+  const span = Number(ms);
+  let until = performance.now() + span;
   let at = 0;
-  while (at < b.length) {
-    const n = Number(sys.send(socket, sys.ptr(b.subarray(at)), BigInt(b.length - at), 0x4000));
-    if (n < 0) {
-      const code = sys.errno();
-      if (code === (sys.mac ? 35 : 11) && performance.now() < until) {
-        continue;
+  const go = () => {
+    while (at < b.length) {
+      const n = Number(sys.send(socket, sys.ptr(b.subarray(at)), BigInt(b.length - at), 0x4000));
+      if (n < 0) {
+        const code = sys.errno();
+        if (code === again && performance.now() < until) {
+          io_park_on(socket, true, k, go, until);
+          return undefined;
+        }
+        host_libc().shutdown(socket, 2);
+        return io_tup(socket, io_fail(code === again ? 110 : code));
       }
-      host_libc().shutdown(socket, 2);
-      return io_tup(socket, io_fail(code === (sys.mac ? 35 : 11) ? 110 : code));
+      at += n;
+      until = performance.now() + span;
     }
-    at += n;
-  }
-  return io_tup(socket, io_done({ $: "Unit" }));
+    return io_tup(socket, io_done({ $: "Unit" }));
+  };
+  return go();
 }
 
 function sock_send_text(socket, text) {
