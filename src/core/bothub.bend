@@ -672,55 +672,23 @@ def Bots.fire(+s: M.State, +now: Nat, +i: Nat, r: BT.Routine) -> B.Step:
 
 # the machine a person wrote from, read from the head of a turn's message
 # ("[message from person@<machine>]"); "" for anything else: a bot, a room
-def Reply.peer.k(ok: Bool, +head: String) -> String:
-  match ok:
-    case True{}:
-      String.take(String.drop(head, 21n), Nat.sub(String.length(head), 22n))
-    case False{}:
-      ""
-
-def Reply.peer.head(+head: String) -> String:
-  Reply.peer.k(Bool.and(Bool.and(String.starts_with(head, "[message from person@"), String.ends_with(head, "]")),
-    Bool.and(Bool.not(String.contains(head, " in #")), Nat.is_gt(String.length(head), 22n))), head)
-
+# (read by hub.bend's Answer.*, which captures the answer when the turn
+# that finishes the thread's work ends)
 def Reply.peer(+text: String) -> String:
-  Reply.peer.head(Maybe.default(&2, String, List.head(&2, String, String.split(text, '\n')), ""))
+  B.Answer.peer(text)
 
 # a thread's current turn read back from its entries (newest first): the
 # message that started it and the newest answer since
 type Said is Data:
   Said{answer: String, trigger: String}
 
-def Said.user(hit: Bool, text: String, acc: Said) -> Said:
-  match hit acc:
-    case True{} Said{a, _}:
-      Said{a, text}
-    case False{} _:
-      acc
-
-def Said.answer(hit: Bool, text: String, acc: Said) -> Said:
-  match hit acc:
-    case True{} Said{+a, t}:
-      Said{Bool.pick(String, String.is_empty(a), text, a), t}
-    case False{} _:
-      acc
-
-# the walk stops at the thread's newest user message
-def Said.scan(es: List<&2, M.Entry>, +id: String, done: Bool, acc: Said) -> Said:
-  match es done:
-    case _ True{}:
-      acc
-    case Nil{} False{}:
-      acc
-    case M.Msg{_, +th, M.User{}, text, _} <> t False{}:
-      Said.scan(t, id, String.eq(th, id), Said.user(String.eq(th, id), text, acc))
-    case M.Msg{_, +th, M.Assistant{}, text, _} <> t False{}:
-      Said.scan(t, id, False{}, Said.answer(String.eq(th, id), text, acc))
-    case _ <> t False{}:
-      Said.scan(t, id, False{}, acc)
+def Said.from(a: B.Answer) -> Said:
+  match a:
+    case B.Answer{x, t}:
+      Said{x, t}
 
 def Said.of(es: List<&2, M.Entry>, +id: String) -> Said:
-  Said.scan(es, id, False{}, Said{"", ""})
+  Said.from(B.Answer.of(es, id))
 
 def Reply.back.k(p: Maybe<&2, BT.Peer>, b: Maybe<&2, BT.Bot>, +s: M.State, +now: Nat, +machine: String, +text: String) -> B.Step:
   match p b:
@@ -743,8 +711,14 @@ def Reply.back.said(sd: Said, +s: M.State, +now: Nat, +thread: String, +done: Bo
       Reply.back.go(Bool.and(done, Bool.and(Bool.not(String.is_empty(answer)), Bool.not(String.is_empty(Reply.peer(trigger))))),
         s, now, thread, Reply.peer(trigger), answer)
 
+# an answer captured at the turn's end (hub.bend's BotReply): it goes back
+# to the person's machine and is logged in their room with the bot
+def Reply.send(+s: M.State, +now: Nat, +thread: String, +to: String, +text: String) -> B.Step:
+  Reply.back.k(Bots.peer(s, to), BT.World.of_thread(M.State.bots(s), thread), s, now, to, text)
+
 # a turn ended ("completed" or "failed"): a bot's completed answer to a
-# person on a linked machine goes back to them
+# person on a linked machine goes back to them (bots.answered, which a
+# hub no longer sends itself: BotReply is captured instead)
 def Reply.back(+s: M.State, +now: Nat, +thread: String, +state: String) -> B.Step:
   Reply.back.said(Said.of(M.State.entries.all(s), thread), s, now, thread, String.eq(state, "completed"))
 

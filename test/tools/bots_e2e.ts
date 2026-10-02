@@ -268,6 +268,10 @@ try {
   check("alpha logs miso's answer in the person's direct room", sent?.room === posted?.room, sent ?? a.seen.filter((c) => c.$ === "RoomPosted"));
   const answered = await change(b, "RoomPosted", (c) => c.from === "miso@alpha" && c.text === answer);
   check("the answer reaches the person on beta, in the room they wrote in", answered?.room === "dm:miso@alpha:you", answered ?? b.seen.filter((c) => c.$ === "RoomPosted"));
+  // captured once, when the turn that finished the work ended
+  await sleep(1500);
+  const once = a.seen.filter((c) => c.$ === "RoomPosted" && c.from === "miso" && c.text === answer && c.room === posted?.room).length;
+  check("the answer goes back exactly once", once === 1, once);
 
   // a thread on beta mentions the bot on alpha (@name@machine): alpha's bot
   // hears it as beta's person, and its answer reaches beta's conversation

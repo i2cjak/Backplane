@@ -131,6 +131,14 @@ def main() -> IO(Unit):
       Nat.add(ph.alerts(pb1(), "tp"), Nat.add(ph.alerts(pb2(), "tp"), ph.alerts(pb3(), "tp"))))), "1")
     # kept: failures, work the person started, asks, a new exchange
     C.Check.str("failure alerts", show(NO.Notice.of(desk2(), "tb", True{}, True{})), "fail turn-tb")
+    # work out: a finished turn tells nothing until the work is done; a
+    # failure or a question still does
+    +busy : M.State = more(desk2(), cat([turn("tw", "9", "go", 1030n), [M.WorkSet{"tw", "bg", "b1\tsleep 8\tc1\tsleep 8\tshell", 1035n}], done("tw", "9", 1040n)]))
+    C.Check.str("busy: a finished turn waits for its work", hub(busy, "tw"), "quiet")
+    C.Check.str("busy: a failure still alerts", show(NO.Notice.of(busy, "tw", True{}, True{})), "fail turn-tw")
+    C.Check.str("busy: a question still alerts", hub(more(busy, [M.AskOpened{"k9", "tw", "question", "AskUserQuestion", "Which?", "", 1041n}]), "tw"), "done turn-tw")
+    C.Check.str("busy: the turn that ends the work alerts", hub(more(busy, cat([[M.WorkSet{"tw", "bg", "", 1050n}], turn("tw", "10", "more", 1051n), done("tw", "10", 1060n)])), "tw"), "done turn-tw")
+    C.Check.str("busy: a running child keeps it quiet", hub(more(desk2(), cat([turn("tw", "9", "go", 1030n), [M.TaskDelegated{"k1", "tw", "tc", 1n, "codex", "", 1031n}], done("tw", "9", 1040n)])), "tw"), "quiet")
     C.Check.str("thread finishing alerts", hub(more(desk2(), cat([turn("tw", "9", "go", 1030n), done("tw", "9", 1040n)])), "tw"), "done turn-tw")
     C.Check.str("person in the bot's thread", hub(more(desk2(), cat([turn("tb", "3", "What's left?", 1030n), done("tb", "3", 1040n)])), "tb"), "done turn-tb")
     C.Check.str("bot asking the person", hub(more(desk2(), cat([turn("tb", "4", "[message from Pebble@backplane in #ring-requests]\nq", 1030n),

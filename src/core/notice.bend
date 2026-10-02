@@ -62,6 +62,21 @@ def Notice.decide(failed: Bool, bot: Bool, asking: Bool, posted: Bool, first: Bo
     case False{} True{} False{} False{} _ False{}:
       1n
 
+# the same while the thread still waits on work (busy: model.bend's
+# Work.busy, its unfinished child tasks, background and watched work):
+# a finished turn tells nothing yet (the turn that ends the work will),
+# but a failure or a question for the person still alerts (laws
+# notice_busy_*)
+def Notice.decide.b(quiet: Bool, failed: Bool, bot: Bool, asking: Bool, posted: Bool, first: Bool, msg: Bool) -> Nat:
+  match quiet:
+    case True{}:
+      0n
+    case False{}:
+      Notice.decide(failed, bot, asking, posted, first, msg)
+
+def Notice.decide.w(+busy: Nat, +failed: Bool, bot: Bool, +asking: Bool, posted: Bool, first: Bool, msg: Bool) -> Nat:
+  Notice.decide.b(Bool.and(Nat.is_gt(busy, 0n), Bool.and(Bool.not(failed), Bool.not(asking))), failed, bot, asking, posted, first, msg)
+
 def Notice.name(n: Nat) -> String:
   match n:
     case 0n:
@@ -279,14 +294,14 @@ def Notice.of.bot.n(+n: Nat, own: Bool, +room: String, +thread: String) -> Notic
     case False{}:
       Notice{Notice.name(n), Notice.room.key(n, room, thread)}
 
-def Notice.of.bot.k(+failed: Bool, +asking: Bool, +t: Turn, e: Ex, +thread: String) -> Notice:
+def Notice.of.bot.k(+busy: Nat, +failed: Bool, +asking: Bool, +t: Turn, e: Ex, +thread: String) -> Notice:
   match e:
     case Ex{+room, first}:
-      Notice.of.bot.n(Notice.decide(failed, True{}, asking, Bool.and(Turn.posted(t), Bool.not(String.is_empty(room))), first, Turn.msg(t)),
+      Notice.of.bot.n(Notice.decide.w(busy, failed, True{}, asking, Bool.and(Turn.posted(t), Bool.not(String.is_empty(room))), first, Turn.msg(t)),
         Bool.or(failed, asking), room, thread)
 
 def Notice.of.bot.t(+s: M.State, +t: Turn, +name: String, +thread: String, +failed: Bool, local: Bool) -> Notice:
-  Notice.of.bot.k(failed, Ask.open(s, thread), t, Ex.of(M.State.bots(s), name, Turn.start(t), local), thread)
+  Notice.of.bot.k(M.Work.busy(s, thread), failed, Ask.open(s, thread), t, Ex.of(M.State.bots(s), name, Turn.start(t), local), thread)
 
 def Notice.of.bot(+s: M.State, b: BT.Bot, +thread: String, +failed: Bool, local: Bool) -> Notice:
   match b:
@@ -298,7 +313,7 @@ def Notice.of.k(m: Maybe<&2, BT.Bot>, +s: M.State, +thread: String, +failed: Boo
     case Some{b}:
       Notice.of.bot(s, b, thread, failed, local)
     case None{}:
-      Notice{Notice.name(Notice.decide(failed, False{}, False{}, False{}, False{}, False{})), "turn-" ++ thread}
+      Notice{Notice.name(Notice.decide.w(M.Work.busy(s, thread), failed, False{}, Ask.open(s, thread), False{}, False{}, False{})), "turn-" ++ thread}
 
 # what one ended turn tells the person: kind "" (nothing), "done" or
 # "fail", and the key its alert replaces others under

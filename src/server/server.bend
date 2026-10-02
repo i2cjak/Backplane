@@ -137,6 +137,9 @@ type Msg is Data:
   FarHere{answered: String}
   # a pull to try again (the other hub was still making its feed)
   FarRetry{link: String}
+  # a bot's answer to a person elsewhere, captured at its turn's end
+  # (hub.bend's BotReply): sent and logged now
+  Replied{thread: String, to: String, text: String}
 
 # remote access: also listen on the tailnet, serve HTTPS through
 # `tailscale serve`, and the token remote clients must present
@@ -4401,7 +4404,12 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         +seen : Bool = DK.Desk.seen(Clients.looks(cl), thread, now)
         Desk.tell(DK.Desk.to(Clients.looks(cl), thread, now), cl, st, thread, state)
         IO.spawn(Unit, Hub.phone(Cfg.home(cfg), st, thread, state, seen, inbox))
-        Self.post(inbox, Rpc{0, BH.Reply.request(thread, state)})
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    # a bot's answer to a person elsewhere, captured by the step that left
+    # its thread ready (hub.bend's Answer.out)
+    case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.BotReply{+thread, +to, +text, _}:
+      do IO<Hub>:
+        Self.post(inbox, Replied{thread, to, text})
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.Fs{+client, +id, +op, +path}:
       do IO<Hub>:
@@ -6291,6 +6299,12 @@ def Msg.kind(m: Msg) -> String:
       "far_here"
     case FarRetry{_}:
       "far_retry"
+    case Replied{_, _, _}:
+      "replied"
+
+def Hub.replied(p: M.State & Hub, +thread: String, +to: String, +text: String, +now: Nat) -> IO(Hub):
+  (st, h) = p
+  Hub.step(h, BH.Reply.send(st, now, thread, to, text))
 
 def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
   match m:
@@ -6368,6 +6382,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.far.here(h, ans)
     case FarRetry{link}:
       Far.pull.here(h, link)
+    case Replied{+thread, +to, +text}:
+      Hub.replied(Hub.state(h), thread, to, text, now)
 
 # each message's handling is timed as hub.<kind> (docs/perf.md)
 def Hub.got(m: Maybe<&1, Msg>, h: Hub, k: Hub -> IO(Unit)) -> IO(Unit):

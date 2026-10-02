@@ -4639,3 +4639,108 @@ law far_forget_drops_work:
 
 law prompt_background_work:
   {Bool.and(String.contains(PM.Prompt.background(), "wakes you"), Bool.and(String.contains(PM.Prompt.background(), "poll"), String.contains(PM.Prompt.background(), "restart"))) == True{} : Bool}
+
+# One readiness check (model.bend's Work.*): a thread is done when no turn
+# runs, nothing is queued and no work is out (unfinished child tasks, its
+# background rows, ended ones included, and watched work); alerts,
+# thread_wait, settling, scratch expiry, worktree removal, the phone's
+# island, delegated tasks and bot replies all ask it
+law work_busy_counts_ended_rows:
+  {M.Work.busy(M.State.replay([M.WorkSet{"t1", "bg", M.Bg.line("a", M.Bg.ended.mark() ++ "done"), 1n}], M.State.empty()), "t1") == 1n : Nat}
+
+law work_ready_idle:
+  {M.Work.ready(H.Answer.demo(False{}), "t1") == True{} : Bool}
+
+law work_not_ready_busy:
+  {M.Work.ready(H.Answer.demo(True{}), "t1") == False{} : Bool}
+
+law notice_decide_w_idle_same:
+  for f: Bool
+  for b: Bool
+  for a: Bool
+  for p: Bool
+  for fi: Bool
+  for m: Bool
+  {NO.Notice.decide.w(0n, f, b, a, p, fi, m) == NO.Notice.decide(f, b, a, p, fi, m) : Nat}
+
+law notice_busy_quiet:
+  for n: Nat
+  for b: Bool
+  for p: Bool
+  for fi: Bool
+  for m: Bool
+  {NO.Notice.decide.w(1n+n, False{}, b, False{}, p, fi, m) == 0n : Nat}
+
+law notice_busy_fail_alerts:
+  for busy: Nat
+  for b: Bool
+  for a: Bool
+  for p: Bool
+  for fi: Bool
+  for m: Bool
+  {NO.Notice.decide.w(busy, True{}, b, a, p, fi, m) == 2n : Nat}
+
+law notice_busy_ask_kept:
+  for busy: Nat
+  for p: Bool
+  for fi: Bool
+  for m: Bool
+  {NO.Notice.decide.w(busy, False{}, True{}, True{}, p, fi, m) == 1n : Nat}
+
+law wait_busy_not_done:
+  {MC.Mcp.done.w(H.Answer.demo(True{}), "t1") == False{} : Bool}
+
+law wait_idle_done:
+  {MC.Mcp.done.w(H.Answer.demo(False{}), "t1") == True{} : Bool}
+
+law settle_waits_for_work:
+  {H.Hub.settle.go([H.Hub.thread(H.Answer.demo(True{}), "t1")], M.State.navs(H.Answer.demo(True{})), M.Work.kids.map(H.Answer.demo(True{})), H.Answer.demo(True{}), 9n, 2n) == [] : List<&2, M.Change>}
+
+law settle_without_work:
+  {H.Hub.settle.go([H.Hub.thread(H.Answer.demo(False{}), "t1")], M.State.navs(H.Answer.demo(False{})), M.Work.kids.map(H.Answer.demo(False{})), H.Answer.demo(False{}), 9n, 2n) == [M.ThreadSettled{"t1", False{}, 9n}] : List<&2, M.Change>}
+
+law scratch_busy_kept:
+  for +now: Nat
+  for +w: Nat
+  for t: M.Thread
+  for n: Nat
+  {M.Scratch.expired.w(now, w, t, 1n+n) == False{} : Bool}
+
+law worktree_busy_kept:
+  for +s: M.State
+  for +t: M.Thread
+  for +now: Nat
+  for +window: Nat
+  for n: Nat
+  {M.Worktree.drop.w(s, t, now, window, 1n+n) == False{} : Bool}
+
+law island_busy_shows:
+  {J.Json.show(J.Json.arr(Nt.Note.lines.w([H.Hub.thread(H.Answer.demo(True{}), "t1")], M.Work.kids.map(H.Answer.demo(True{})), H.Answer.demo(True{}))))
+    == "[{\"thread\":\"t1\",\"title\":\"x\",\"doing\":\"waiting on 1\"}]" : String}
+
+law task_waits_for_child_work:
+  {H.Task.finish.w(H.Task.demo(True{}), 9n, "t1", H.Step{[M.TurnChanged{"t1", M.Completed{}, 9n}], []}) == H.Step{[M.TurnChanged{"t1", M.Completed{}, 9n}], []} : H.Step}
+
+law task_ends_when_ready:
+  {H.Task.marked(H.Queue.changes(H.Task.finish.w(H.Task.demo(False{}), 9n, "t1", H.Step{[M.TurnChanged{"t1", M.Completed{}, 9n}], []})), "k1") == True{} : Bool}
+
+law task_ended_last_change:
+  {H.Task.ended.last([M.TurnChanged{"t1", M.Completed{}, 9n}, M.QueueTaken{"t1", 9n}, M.TurnChanged{"t1", M.Running{}, 9n}], "t1") == H.NotEnded{} : H.Ended}
+
+law task_failed_ends_even_busy:
+  {H.Task.marked(H.Queue.changes(H.Task.finish.w(H.Task.demo(True{}), 9n, "t1", H.Step{[M.TurnChanged{"t1", M.Failed{}, 9n}], []})), "k1") == True{} : Bool}
+
+law bot_reply_captured_once:
+  {H.Answer.out(True{}, H.Answer.demo(False{}), "t1") == [H.BotReply{"t1", "desk", "hi", "t1:" ++ Nat.show(H.Hub.seq(H.Answer.demo(False{})))}] : List<&2, H.Out>}
+
+law bot_reply_waits_for_work:
+  {H.Answer.out(True{}, H.Answer.demo(True{}), "t1") == [] : List<&2, H.Out>}
+
+law phase_failed_before_monitoring:
+  for +n: Nat
+  for q: Bool
+  {M.Phase.of(False{}, False{}, 1n+n, M.Failed{}, q) == M.PhFailed{} : M.Phase}
+
+law status_wait_f_keeps_failed:
+  for any: Bool
+  {M.Status.wait.f(any, M.StFailed{}) == M.StFailed{} : M.Status}

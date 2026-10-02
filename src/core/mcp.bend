@@ -488,13 +488,27 @@ def Mcp.last(es: List<&2, M.Entry>, +th: String) -> String:
 def Mcp.done(+s: M.State, +th: String) -> Bool:
   Bool.and(Bool.not(B.Hub.running(B.Hub.thread(s, th))), Bool.not(M.Queue.waiting(s, th)))
 
+# done, and nothing out of hand either (model.bend's Work.ready): a turn
+# that left a subagent, background shell or watched work running is not
+# done until that work is (law wait_busy_not_done)
+def Mcp.done.w(+s: M.State, +th: String) -> Bool:
+  Bool.and(Mcp.done(s, th), Nat.is_eq(M.Work.busy(s, th), 0n))
+
+def Mcp.strs(xs: List<&2, String>) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case x <> t:
+      J.Str{x} <> Mcp.strs(t)
+
 # where a thread stands, answered at once (the server asks again each
 # second while it waits, up to the timeout)
 def Mcp.wait.k(ok: Bool, +s: M.State, +target: String) -> Res:
   match ok:
     case True{}:
       Res.ok(J.Json.obj([J.KV{"threadId", J.Str{target}}, J.KV{"turn", J.Str{C.Turn.name(M.Thread.turn(B.Hub.thread(s, target)))}},
-        J.KV{"done", J.Flag{Mcp.done(s, target)}}, J.KV{"lastReply", J.Str{String.take(Mcp.last(M.State.mine(s, target), target), 8000n)}}]))
+        J.KV{"done", J.Flag{Mcp.done.w(s, target)}}, J.KV{"waiting", J.Json.nat(M.Work.busy(s, target))}, J.KV{"work", J.Json.arr(Mcp.strs(M.Work.titles(s, target)))},
+        J.KV{"lastReply", J.Str{String.take(Mcp.last(M.State.mine(s, target), target), 8000n)}}]))
     case False{}:
       Res.fail("that thread is not in this project")
 

@@ -6607,3 +6607,77 @@ def Laws.far_forget_drops_work():
 
 def Laws.prompt_background_work():
   {==}
+
+def Laws.work_busy_counts_ended_rows():
+  {==}
+
+def Laws.work_ready_idle():
+  {==}
+
+def Laws.work_not_ready_busy():
+  {==}
+
+def Laws.notice_decide_w_idle_same(f, b, a, p, fi, m):
+  {==}
+
+def Laws.notice_busy_quiet(n, b, p, fi, m):
+  {==}
+
+def Laws.notice_busy_fail_alerts(busy, b, a, p, fi, m):
+  match busy:
+    case 0n:
+      {==}
+    case 1n+k:
+      {==}
+
+def Laws.notice_busy_ask_kept(busy, p, fi, m):
+  match busy:
+    case 0n:
+      {==}
+    case 1n+k:
+      {==}
+
+def Laws.wait_busy_not_done():
+  {==}
+
+def Laws.wait_idle_done():
+  {==}
+
+def Laws.settle_waits_for_work():
+  {==}
+
+def Laws.settle_without_work():
+  {==}
+
+def Laws.scratch_busy_kept(now, w, t, n):
+  and_false_r(M.Scratch.expired(now, w, t))
+
+def Laws.worktree_busy_kept(s, t, now, window, n):
+  and_false_r(M.Worktree.drop(s, t, now, window))
+
+def Laws.island_busy_shows():
+  {==}
+
+def Laws.task_waits_for_child_work():
+  {==}
+
+def Laws.task_ends_when_ready():
+  {==}
+
+def Laws.task_ended_last_change():
+  {==}
+
+def Laws.task_failed_ends_even_busy():
+  {==}
+
+def Laws.bot_reply_captured_once():
+  {==}
+
+def Laws.bot_reply_waits_for_work():
+  {==}
+
+def Laws.phase_failed_before_monitoring(n, q):
+  {==}
+
+def Laws.status_wait_f_keeps_failed(any):
+  {==}

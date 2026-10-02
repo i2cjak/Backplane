@@ -126,7 +126,7 @@ try {
   const runAtWake = tt1.filter((x) => x.t <= wakeAt + 5).pop()?.s;
   check(runAtWake === "Running", `wake: running when the Act came (${runAtWake})`);
   const n1 = notes.filter((n) => n.thread === t1);
-  check(n1.some((n) => n.t >= wakeAt), `wake: a notify after the wake (${n1.length})`);
+  check(n1.length === 1 && n1[0].t >= wakeAt, `wake: no notify while the shell ran, one after the wake (${n1.length})`);
 
   // stale-first
   const t2 = await newThread("stale");

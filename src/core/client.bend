@@ -2282,7 +2282,7 @@ def Asks.kind(as: List<&2, M.Ask>, +k: String) -> Bool:
 # (a thread's open asks are looked up once: a row asks three questions of
 # them, and the sidebar has a row a thread)
 def Side.status.k(+st: M.State, +id: String, turn: M.TurnState, +pending: Nat, +as: List<&2, M.Ask>) -> M.Status:
-  M.Status.wait(Bool.not(List.is_empty(&2, String, M.Bg.of(st, id))), M.Status.of(Bool.or(Nat.is_gt(pending, 0n), Asks.kind(as, "approval")),
+  M.Status.wait.f(Nat.is_gt(M.Work.rows(st, id), 0n), M.Status.of(Bool.or(Nat.is_gt(pending, 0n), Asks.kind(as, "approval")),
     Bool.or(Asks.kind(as, "input"), Asks.kind(as, "plan")), turn,
     M.Queue.waiting(st, id)))
 
@@ -2302,7 +2302,7 @@ def Side.live(ts: List<&2, M.Task>) -> Nat:
 # what the line at the end of a thread's timeline says (M.Phase.of has the order)
 def Side.phase.k(+st: M.State, +id: String, turn: M.TurnState, +pending: Nat, +as: List<&2, M.Ask>) -> M.Phase:
   M.Phase.of(Bool.or(Nat.is_gt(pending, 0n), Asks.kind(as, "approval")),
-    Bool.or(Asks.kind(as, "input"), Asks.kind(as, "plan")), Nat.add(Side.live(Tasks.of(st, id)), List.length(&2, String, M.Bg.of(st, id))), turn,
+    Bool.or(Asks.kind(as, "input"), Asks.kind(as, "plan")), Nat.add(Side.live(Tasks.of(st, id)), M.Work.rows(st, id)), turn,
     M.Queue.waiting(st, id))
 
 def Side.phase(+st: M.State, t: M.Thread) -> M.Phase:

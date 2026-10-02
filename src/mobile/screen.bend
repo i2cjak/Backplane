@@ -1062,7 +1062,7 @@ def Mob.screen.go(+focus: Bool, +u: U.Ui, +g: U.SGroups) -> J.Json:
         J.KV{"settings", Mob.settings(U.Ui.flag(u, "settings"), u)},
         J.KV{"find", Mob.find(U.Ui.flag(u, "palette"), u)},
         J.KV{"folders", PK.MPick.json(u)},
-        J.KV{"island", N.Note.island.st(U.Ui.threads(st), st)},
+        J.KV{"island", N.Note.island.w(U.Ui.threads(st), st)},
         J.KV{"thread", Mob.focus.thread(focus, u, sel)},
         J.KV{"bots", J.Json.arr(MB.MBots.rows(B.BU.rows(u)))},
         J.KV{"rooms", J.Json.arr(MB.MBots.rooms(B.BU.rooms(u)))},
