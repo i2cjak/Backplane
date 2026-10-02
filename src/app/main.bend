@@ -155,7 +155,7 @@ def Fwd.got(m: Maybe<&1, S.Wire>, +q: Chan(ShellMsg), +tag: String, k: Unit -> I
       do IO<Unit>:
         ok : Bool <- Chan.send(ShellMsg, q, FromHubSt{tag, st, h})
         k(Unit{})
-    case Some{S.WItems{hd, xs, tl}}:
+    case Some{S.WItems{hd, xs, tl, _}}:
       do IO<Unit>:
         ok : Bool <- Chan.send(ShellMsg, q, FromHub{tag, hd ++ String.join(xs, ",") ++ tl})
         k(Unit{})

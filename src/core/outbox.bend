@@ -314,3 +314,28 @@ def Join.flat(cs: List<&2, List<&2, String>>) -> List<&2, String>:
       Nil{}
     case c <> t:
       List.append(&2, String, c, Join.flat(t))
+
+# A join frame's lines as the writer sends them: in frames of at most
+# Join.most() lines and Join.bytes() bytes (a line larger than that goes
+# alone), so no message nears a client's limit however big the events are.
+# The first is hd, lines, tl as the hub offered it; each later one is a
+# "changes" frame with "boot": true, the very last "boot": false when the
+# offered frame was the join's last (ends). Counted as one frame by the
+# writer (its bytes are not charged: Wr.put, law items_frames_one)
+def Items.cont(last: Bool, c: List<&2, String>) -> String:
+  "{\"t\":\"changes\",\"boot\":" ++ Bool.pick(String, last, "false", "true") ++ ",\"items\":[" ++ String.join(c, ",") ++ "]}"
+
+def Items.more(fuel: Nat, +ends: Bool, +xs: List<&2, String>, +most: Nat, +bytes: Nat) -> List<&2, String>:
+  match fuel xs:
+    case _ Nil{}:
+      Nil{}
+    case 0n _:
+      [Items.cont(False{}, xs)]
+    case 1n+f _:
+      Items.cont(Bool.and(ends, List.is_empty(&2, String, List.drop(&2, String, xs, Join.count.at(xs, most, bytes)))), List.take(&2, String, xs, Join.count.at(xs, most, bytes))) <> Items.more(f, ends, List.drop(&2, String, xs, Join.count.at(xs, most, bytes)), most, bytes)
+
+def Items.texts.at(+hd: String, +xs: List<&2, String>, +tl: String, +ends: Bool, +most: Nat, +bytes: Nat) -> List<&2, String>:
+  (hd ++ String.join(List.take(&2, String, xs, Join.count.at(xs, most, bytes)), ",") ++ tl) <> Items.more(List.length(&2, String, xs), ends, List.drop(&2, String, xs, Join.count.at(xs, most, bytes)), most, bytes)
+
+def Items.texts(+hd: String, +xs: List<&2, String>, +tl: String, +ends: Bool) -> List<&2, String>:
+  Items.texts.at(hd, xs, tl, ends, Join.most(), Join.bytes())

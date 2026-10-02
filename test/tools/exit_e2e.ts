@@ -10,6 +10,11 @@
 //                exit is handled once
 //   replaced     a new model replaces the process: the old one's exit is
 //                ignored and the new turn completes
+//   cx-held      a codex process exits without ending its turn while a
+//                child keeps its output open: the turn fails within a few
+//                seconds anyway (every provider is supervised)
+//   cx-nonl      a codex turn's last line, turn.completed, has no newline:
+//                it is read at the end of the stream, the turn completes
 //
 //   bun test/tools/exit_e2e.ts [BINARY] [WIREDIR]
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -27,10 +32,18 @@ const log = join(root, "claude.log");
 mkdirSync(fake);
 writeFileSync(join(fake, "claude"), `#!/bin/sh\nexec ${process.execPath} ${resolve("test/tools/claude_standin.ts")} "$@"\n`);
 chmodSync(join(fake, "claude"), 0o755);
-for (const n of ["codex", "grok"]) {
-  writeFileSync(join(fake, n), "#!/bin/sh\nexit 1\n");
-  chmodSync(join(fake, n), 0o755);
-}
+writeFileSync(join(fake, "grok"), "#!/bin/sh\nexit 1\n");
+chmodSync(join(fake, "grok"), 0o755);
+// codex exec --json: the prompt is the last argument
+writeFileSync(join(fake, "codex"), `#!/bin/sh
+for a in "$@"; do last="$a"; done
+printf '%s\\n' '{"type":"thread.started","thread_id":"cx-1"}'
+case "$last" in
+  *cx-held*) sleep 30 & printf '%s\\n' '{"type":"item.completed","item":{"id":"i1","type":"agent_message","text":"working"}}'; exit 3 ;;
+  *cx-nonl*) printf '%s\\n' '{"type":"item.completed","item":{"id":"i1","type":"agent_message","text":"DONE"}}'; printf '%s' '{"type":"turn.completed","usage":{}}' ;;
+esac
+`);
+chmodSync(join(fake, "codex"), 0o755);
 const home = join(root, "home");
 const proj = join(root, "proj");
 mkdirSync(proj);
@@ -87,9 +100,9 @@ try {
   const exits = (th: string) => changes().filter((x) => x.$ === "ActivityLogged" && x.thread === th && x.kind === "exit").length;
   send("project.add", { path: proj });
   const pc = await until(10000, () => changes().find((x) => x.$ === "ProjectCreated"));
-  const made = async (title: string) => {
+  const made = async (title: string, provider = "claude") => {
     const n = changes().filter((x) => x.$ === "ThreadCreated").length;
-    send("thread.create", { project: pc.id, title, env: "local", provider: "claude" });
+    send("thread.create", { project: pc.id, title, env: "local", provider });
     return (await until(10000, () => changes().filter((x) => x.$ === "ThreadCreated")[n]))?.id as string;
   };
   const exitAt = (n: number) => { const l = lines().filter((x) => x.startsWith("EXIT")); return l.length >= n ? Date.now() : undefined; };
@@ -135,6 +148,20 @@ try {
   await until(10000, () => turns(t5).filter((s) => s === "completed").length >= 2 ? true : undefined);
   await sleep(3500);
   check(turns(t5).at(-1) === "completed" && exits(t5) === 0 && !turns(t5).includes("failed"), `replaced: the old process's exit is ignored (${turns(t5).join(",")})`);
+
+  // cx-held: a codex process exits, a child keeps its output open
+  const t6 = await made("cx-held", "codex");
+  const s6 = Date.now();
+  send("turn.start", { thread: t6, text: "cx-held go", msg: "x-7" });
+  await until(9000, () => turns(t6).at(-1) === "failed" ? true : undefined);
+  check(turns(t6).at(-1) === "failed" && Date.now() - s6 < 7000, `cx-held: a codex turn fails within seconds though a child holds the output (${turns(t6).join(",")}; ${Date.now() - s6} ms)`);
+
+  // cx-nonl: the last line has no newline
+  const t7 = await made("cx-nonl", "codex");
+  send("turn.start", { thread: t7, text: "cx-nonl go", msg: "x-8" });
+  await until(8000, () => turns(t7).at(-1) === "completed" ? true : undefined);
+  await sleep(500);
+  check(turns(t7).at(-1) === "completed" && !turns(t7).includes("failed"), `cx-nonl: a codex turn's last line without a newline completes it (${turns(t7).join(",")})`);
 } finally {
   proc.kill(9);
   await proc.exited;

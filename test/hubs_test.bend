@@ -102,6 +102,7 @@ def main() -> IO(Unit):
     # a log arriving in chunks is history: no alert from a chunk or the
     # last one; after it, a turn's end alerts again
     C.Check.str("a split join's chunk raises no alert", Nat.show(alerts(H.Hubs.recv(split(), "box:3787", chunk("changes", False{}, True{}, [M.TurnChanged{"t2", M.Completed{}, 300n}])))), "0")
+    C.Check.str("a catch-up chunk of a live client raises no alert", Nat.show(alerts(H.Hubs.recv(busy(), "box:3787", chunk("changes", False{}, True{}, [M.TurnChanged{"t2", M.Completed{}, 300n}])))), "0")
     C.Check.str("a split join's last chunk raises no alert", Nat.show(alerts(H.Hubs.recv(split(), "box:3787", chunk("changes", False{}, False{}, [M.TurnChanged{"t2", M.Completed{}, 300n}])))), "0")
     C.Check.str("after a split join a turn's end alerts", Nat.show(alerts(H.Hubs.recv(H.Hubs.after(H.Hubs.recv(split(), "box:3787", chunk("changes", False{}, False{}, Nil{}))), "box:3787", changes([M.TurnChanged{"t2", M.Completed{}, 300n}])))), "1")
     C.Check.str("a split join holds what one log holds", Nat.show(U.Ui.seq(H.Hubs.ui(H.Hubs.after(H.Hubs.recv(split(), "box:3787", chunk("changes", False{}, False{}, [M.TurnChanged{"t2", M.Completed{}, 300n}]))), "box:3787"))), "4")

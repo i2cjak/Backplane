@@ -4569,6 +4569,21 @@ law cmds_mode_old_legacy:
 law cmds_mode_lc:
   {CM.Cmds.mode(CM.Cmds.see(CM.Cmds.new(), CM.Cmds.o(CM.Cmds.l.lc("u1", "queued")))) == 1n : Nat}
 
+# an old CLI answers no command: its ledger does not grow. A command is
+# forgotten once written (a ledger that knows it is legacy), and the ones
+# written before it knew go when it learns; one still being prepared stays
+law cmds_legacy_retires_sent:
+  {List.length(&2, CM.Cmd, CM.Cmds.cs(CM.Cmds.sent(CM.Cmds.accept(CM.Cmds.see(CM.Cmds.new(), CM.Cmds.o(CM.Cmds.l.init("2.0.0"))), "u1"), "u1"))) == 0n : Nat}
+
+law cmds_legacy_learned_retires:
+  {List.length(&2, CM.Cmd, CM.Cmds.cs(CM.Cmds.see(CM.Cmds.sent(CM.Cmds.accept(CM.Cmds.new(), "u1"), "u1"), CM.Cmds.o(CM.Cmds.l.init("2.0.0"))))) == 0n : Nat}
+
+law cmds_legacy_prep_stays:
+  {List.length(&2, CM.Cmd, CM.Cmds.cs(CM.Cmds.see(CM.Cmds.accept(CM.Cmds.new(), "u1"), CM.Cmds.o(CM.Cmds.l.init("2.0.0"))))) == 1n : Nat}
+
+law cmds_lifecycle_keeps_sent:
+  {List.length(&2, CM.Cmd, CM.Cmds.cs(CM.Cmds.sent(CM.Cmds.accept(CM.Cmds.see(CM.Cmds.new(), CM.Cmds.o(CM.Cmds.l.init("2.1.286"))), "u1"), "u1"))) == 1n : Nat}
+
 law cmds_legacy_same:
   for s: M.State
   for now: Nat
@@ -5070,6 +5085,18 @@ law join_chunks_flat:
 law join_oversized_alone:
   {OB.Join.chunks.at(10n, ["toolong", "a", "b"], 5n, 3n) == [["toolong"], ["a", "b"]] : List<&2, List<&2, String>>}
 
+# a join frame's lines go out in byte-bounded frames: a small chunk is
+# the frame as offered; a big one is split, the later frames "boot": true
+# and the very last "boot": false when the offered frame ended the join
+law items_one_frame:
+  {OB.Items.texts("H[", ["a", "b"], "]", True{}) == ["H[a,b]"] : List<&2, String>}
+
+law items_split_by_bytes:
+  {OB.Items.texts.at("H[", ["aaa", "bb", "cccc"], "]", True{}, 5n, 4n) == ["H[aaa]", "{\"t\":\"changes\",\"boot\":true,\"items\":[bb]}", "{\"t\":\"changes\",\"boot\":false,\"items\":[cccc]}"] : List<&2, String>}
+
+law items_split_keeps_boot:
+  {OB.Items.texts.at("H[", ["aaa", "bb", "cccc"], "]", False{}, 5n, 4n) == ["H[aaa]", "{\"t\":\"changes\",\"boot\":true,\"items\":[bb]}", "{\"t\":\"changes\",\"boot\":true,\"items\":[cccc]}"] : List<&2, String>}
+
 law ui_chunked_join_equals_whole:
   {U.Ui.state(U.Ui.recv(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", True{}, True{}, [C.Change.encode(M.SettingSet{"a", "1", 1n})])),
       U.Boot.demo("changes", False{}, True{}, [C.Change.encode(M.SettingSet{"b", "2", 2n})])), U.Boot.demo("changes", False{}, False{}, [])))
@@ -5089,7 +5116,13 @@ law boot_no_alerts:
 
 law boot_done_alerts:
   {List.length(&2, J.Json, Hb.Did.alerts(Hb.One.got(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", False{}, False{}, [C.Change.encode(M.ThreadCreated{"t1", "p1", "hi", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.TurnChanged{"t1", M.Running{}, 2n})])),
-      U.Boot.demo("changes", False{}, True{}, [C.Change.encode(M.TurnChanged{"t1", M.Completed{}, 3n})])))) == 1n : Nat}
+      U.Seq.demo("changes", [C.Change.encode(M.TurnChanged{"t1", M.Completed{}, 3n})])))) == 1n : Nat}
+
+# a live client's catch-up (changes with "boot": true, no log before it)
+# is history too: no alert from it
+law boot_catchup_no_alerts:
+  {List.length(&2, J.Json, Hb.Did.alerts(Hb.One.got(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", False{}, False{}, [C.Change.encode(M.ThreadCreated{"t1", "p1", "hi", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.TurnChanged{"t1", M.Running{}, 2n})])), U.Boot.demo("changes", False{}, True{}, [])),
+      U.Boot.demo("changes", False{}, True{}, [C.Change.encode(M.TurnChanged{"t1", M.Completed{}, 3n})])))) == 0n : Nat}
 
 law pong_rate_bounded:
   {Bool.show(OB.Pong.due(1000n, 1999n)) ++ Bool.show(OB.Pong.due(1000n, 2000n)) ++ Bool.show(OB.Pong.due(0n, 999n)) == "FalseTrueFalse" : String}

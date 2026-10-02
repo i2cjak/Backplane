@@ -158,10 +158,48 @@ def Cmds.mode.of(lc: Bool, +mode: Nat, +o: J.Json) -> Nat:
     case False{}:
       Cmds.mode.init(Cmds.is(o, "system", "init"), mode, J.Json.get_str(o, "claude_code_version", ""))
 
+def Cmds.drop.k(hit: Bool, c: Cmd, rest: List<&2, Cmd>) -> List<&2, Cmd>:
+  match hit:
+    case True{}:
+      rest
+    case False{}:
+      c <> rest
+
+def Cmds.drop(cs: List<&2, Cmd>, +u: String) -> List<&2, Cmd>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case Cmd{+v, st, e, x} <> t:
+      Cmds.drop.k(String.eq(v, u), Cmd{v, st, e, x}, Cmds.drop(t, u))
+
+# An old CLI reports no lifecycle, so nothing would ever retire a command
+# it was sent: in legacy mode a command is forgotten once written, and
+# when a ledger finds itself legacy, the ones already written go (those
+# still being prepared, and tombs, stay: the writer reads them)
+def Cmds.keep.one(+st: Nat) -> Bool:
+  Bool.or(Nat.is_eq(st, 0n), Nat.is_ge(st, 4n))
+
+def Cmds.trim(cs: List<&2, Cmd>) -> List<&2, Cmd>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case Cmd{+v, +st, e, x} <> t:
+      Cmds.drop.k(Bool.not(Cmds.keep.one(st)), Cmd{v, st, e, x}, Cmds.trim(t))
+
+def Cmds.trim.k(legacy: Bool, cs: List<&2, Cmd>) -> List<&2, Cmd>:
+  match legacy:
+    case True{}:
+      Cmds.trim(cs)
+    case False{}:
+      cs
+
+def Cmds.mode.set(+m2: Nat, cs: List<&2, Cmd>, w: Bool) -> Cmds:
+  Cmds{Cmds.trim.k(Nat.is_eq(m2, 2n), cs), m2, w}
+
 def Cmds.mode.see(c: Cmds, +o: J.Json) -> Cmds:
   match c:
     case Cmds{cs, +m, w}:
-      Cmds{cs, Cmds.mode.of(Cmds.is_lc(o), m, o), w}
+      Cmds.mode.set(Cmds.mode.of(Cmds.is_lc(o), m, o), cs, w)
 
 # The ledger
 # ----------
@@ -226,10 +264,18 @@ def Cmds.sent.go(cs: List<&2, Cmd>, +u: String) -> List<&2, Cmd>:
     case Cmd{+v, +st, +e, +x} <> t:
       Cmds.set.k(Bool.and(String.eq(v, u), Nat.is_eq(st, 0n)), v, st, e, x, 1n) <> Cmds.sent.go(t, u)
 
+def Cmds.sent.k(legacy: Bool, cs: List<&2, Cmd>, +u: String) -> List<&2, Cmd>:
+  match legacy:
+    case True{}:
+      Cmds.drop(cs, u)
+    case False{}:
+      Cmds.sent.go(cs, u)
+
+# written to the process (an old CLI never answers it: forgotten)
 def Cmds.sent(c: Cmds, +u: String) -> Cmds:
   match c:
-    case Cmds{cs, m, w}:
-      Cmds{Cmds.sent.go(cs, u), m, w}
+    case Cmds{cs, +m, w}:
+      Cmds{Cmds.sent.k(Nat.is_eq(m, 2n), cs, u), m, w}
 
 def Cmds.in(xs: List<&2, String>, +u: String) -> Bool:
   match xs:
@@ -275,20 +321,6 @@ def Cmds.strs(xs: List<&2, J.Json>) -> List<&2, String>:
 # a control_response's still_queued
 def Cmds.queued(+o: J.Json) -> List<&2, String>:
   Cmds.strs(J.Json.elems(J.Json.get_obj(J.Json.get_obj(J.Json.get_obj(o, "response"), "response"), "still_queued")))
-
-def Cmds.drop.k(hit: Bool, c: Cmd, rest: List<&2, Cmd>) -> List<&2, Cmd>:
-  match hit:
-    case True{}:
-      rest
-    case False{}:
-      c <> rest
-
-def Cmds.drop(cs: List<&2, Cmd>, +u: String) -> List<&2, Cmd>:
-  match cs:
-    case Nil{}:
-      Nil{}
-    case Cmd{+v, st, e, x} <> t:
-      Cmds.drop.k(String.eq(v, u), Cmd{v, st, e, x}, Cmds.drop(t, u))
 
 def Cmds.start.go(cs: List<&2, Cmd>, +u: String) -> List<&2, Cmd>:
   match cs:

@@ -6562,6 +6562,18 @@ def Laws.cmds_mode_old_legacy():
 def Laws.cmds_mode_lc():
   {==}
 
+def Laws.cmds_legacy_retires_sent():
+  {==}
+
+def Laws.cmds_legacy_learned_retires():
+  {==}
+
+def Laws.cmds_legacy_prep_stays():
+  {==}
+
+def Laws.cmds_lifecycle_keeps_sent():
+  {==}
+
 def Laws.cmds_legacy_same(s, now, thread, line, text):
   {==}
 
@@ -6927,6 +6939,15 @@ def Laws.join_chunks_flat():
 def Laws.join_oversized_alone():
   {==}
 
+def Laws.items_one_frame():
+  {==}
+
+def Laws.items_split_by_bytes():
+  {==}
+
+def Laws.items_split_keeps_boot():
+  {==}
+
 def Laws.ui_chunked_join_equals_whole():
   {==}
 
@@ -6937,6 +6958,9 @@ def Laws.boot_no_alerts():
   {==}
 
 def Laws.boot_done_alerts():
+  {==}
+
+def Laws.boot_catchup_no_alerts():
   {==}
 
 def Laws.pong_rate_bounded():
