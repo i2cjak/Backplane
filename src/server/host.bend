@@ -25,6 +25,13 @@ def Sock.send_bytes(sock: Socket, data: List<&2, U32>) ->
   import "./effects/host.c"
   import "./effects/host.js"
 
+# send_bytes with one deadline (ms) for all of it: a peer that stops
+# reading fails it (ETIMEDOUT) and the socket is shut both ways
+def Sock.send_until(sock: Socket, data: List<&2, U32>, ms: U32) ->
+  IO(Socket & Result<&1, &1, U32 & String, Unit>):
+  import "./effects/host.c"
+  import "./effects/host.js"
+
 def Sock.send_text(sock: Socket, text: String) ->
   IO(Socket & Result<&1, &1, U32 & String, Unit>):
   import "./effects/host.c"

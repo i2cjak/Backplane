@@ -199,19 +199,35 @@ def Step.before(cs: List<&2, M.Change>, os: List<&2, Out>, st: Step) -> Step:
     case Step{c2, o2}:
       Step{List.append(&2, M.Change, cs, c2), List.append(&2, Out, os, o2)}
 
-def Hub.has_msg(es: List<&2, M.Entry>, +id: String) -> Bool:
-  match es:
-    case Nil{}:
+# whether a message with this id is in the entries: a tail walk that stops
+# at the first hit
+def Hub.has_msg.go(es: List<&2, M.Entry>, +id: String, found: Bool) -> Bool:
+  match es found:
+    case _ True{}:
+      True{}
+    case Nil{} False{}:
       False{}
-    case M.Msg{i, _, _, _, _} <> t:
-      Bool.or(String.eq(i, id), Hub.has_msg(t, id))
-    case M.Act{_, _, _, _, _, _} <> t:
-      Hub.has_msg(t, id)
+    case M.Msg{i, _, _, _, _} <> t False{}:
+      Hub.has_msg.go(t, id, String.eq(i, id))
+    case M.Act{_, _, _, _, _, _} <> t False{}:
+      Hub.has_msg.go(t, id, False{})
+
+def Hub.has_msg(es: List<&2, M.Entry>, +id: String) -> Bool:
+  Hub.has_msg.go(es, id, False{})
 
 def Hub.entries(s: M.State) -> List<&2, M.Entry>:
   match s:
     case M.State{_, _, es, _, _, _, _, _, _, _, _}:
       es
+
+# a message the client named and the hub already stored: only a named one
+# looks anything up
+def Hub.dup(named: Bool, +s: M.State, +msg: String) -> Bool:
+  match named:
+    case True{}:
+      Hub.has_msg(Hub.entries(s), msg)
+    case False{}:
+      False{}
 
 # a thread works in its own worktree unless asked for the project folder
 # ("local"): "auto" (the default) and "worktree" both ask the server for
@@ -896,6 +912,27 @@ def Claude.result.k(err: Bool, +thread: String, +now: Nat, text: String) -> Step
 def Claude.result(+thread: String, +now: Nat, +o: J.Json) -> Step:
   Claude.result.k(J.Json.get_bool(o, "is_error", False{}), thread, now, J.Json.get_str(o, "result", ""))
 
+# Claude keeps its process across a Stop, and what it still says for the
+# stopped turn (its partial text, its result) changes nothing: only a
+# running turn completes or fails, and only a running turn's text streams
+# (laws claude_result_after_stop_quiet, claude_delta_after_stop_quiet). Its
+# whole messages, tool results and background tasks still land. (A result
+# for the old turn that comes after a new one started is still taken: the
+# lines carry no turn of their own.)
+def Claude.stream.if(run: Bool, +thread: String, +ev: J.Json) -> Step:
+  match run:
+    case True{}:
+      Claude.stream(thread, ev)
+    case False{}:
+      Step.none()
+
+def Claude.result.if(run: Bool, +thread: String, +now: Nat, +o: J.Json) -> Step:
+  match run:
+    case True{}:
+      Claude.result(thread, now, o)
+    case False{}:
+      Step.none()
+
 # Claude's todo tools
 # -------------------
 # TodoWrite sets the whole list; TaskCreate adds a step and TaskUpdate
@@ -1180,21 +1217,6 @@ def Steps.after.if(on: Bool, st: Step, +thread: String, +cwd: String) -> Step:
     case False{}:
       st
 
-def Claude.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) -> Step:
-  match i:
-    case 0n:
-      Step.after(Step.after(Claude.init(s, thread, now, o), Usage.compact(s, thread, now, o)), Bg.system(s, thread, now, o))
-    case 1n:
-      Claude.stream(thread, J.Json.get_obj(o, "event"))
-    case 2n:
-      Claude.assistant.t(s, thread, now, J.Json.get_obj(o, "message"))
-    case 3n:
-      Step.after(Claude.result(thread, now, o), Usage.window(s, thread, now, o))
-    case 4n:
-      Step.also(Claude.named(s, thread, now, o), Steps.claude(J.Json.elems(J.Json.get_obj(J.Json.get_obj(o, "message"), "content")), thread, Hub.cwd(s, Hub.thread(s, thread))))
-    case _:
-      Step.none()
-
 # A subagent's own lines (parent_tool_use_id names the Agent call that
 # started it): what it writes and the tools it calls go to its log, not the
 # thread's timeline, and its partial text, tool results and usage are not
@@ -1226,6 +1248,33 @@ def Sub.line(i: Nat, +thread: String, +now: Nat, +call: String, +o: J.Json) -> S
     case _:
       Step.none()
 
+def Hub.provider(t: M.Thread) -> String:
+  match t:
+    case M.Thread{_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, p, _, _, _, _, _}:
+      p
+
+def Hub.running(t: M.Thread) -> Bool:
+  match t:
+    case M.Thread{_, _, _, _, _, M.Running{}, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      True{}
+    case _:
+      False{}
+
+def Claude.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) -> Step:
+  match i:
+    case 0n:
+      Step.after(Step.after(Claude.init(s, thread, now, o), Usage.compact(s, thread, now, o)), Bg.system(s, thread, now, o))
+    case 1n:
+      Claude.stream.if(Hub.running(Hub.thread(s, thread)), thread, J.Json.get_obj(o, "event"))
+    case 2n:
+      Claude.assistant.t(s, thread, now, J.Json.get_obj(o, "message"))
+    case 3n:
+      Step.after(Claude.result.if(Hub.running(Hub.thread(s, thread)), thread, now, o), Usage.window(s, thread, now, o))
+    case 4n:
+      Step.also(Claude.named(s, thread, now, o), Steps.claude(J.Json.elems(J.Json.get_obj(J.Json.get_obj(o, "message"), "content")), thread, Hub.cwd(s, Hub.thread(s, thread))))
+    case _:
+      Step.none()
+
 def Claude.line.who(main: Bool, i: Nat, +s: M.State, +thread: String, +now: Nat, +call: String, +o: J.Json) -> Step:
   match main:
     case True{}:
@@ -1240,18 +1289,6 @@ def Claude.line.parsed(m: Maybe<&2, J.Json>, +s: M.State, +thread: String, +now:
       Claude.line.who(String.is_empty(call), C.Codec.pos(["system", "stream_event", "assistant", "result", "user"], J.Json.get_str(o, "type", "")), s, thread, now, call, o)
     case None{}:
       Step.none()
-
-def Hub.provider(t: M.Thread) -> String:
-  match t:
-    case M.Thread{_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, p, _, _, _, _, _}:
-      p
-
-def Hub.running(t: M.Thread) -> Bool:
-  match t:
-    case M.Thread{_, _, _, _, _, M.Running{}, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
-      True{}
-    case _:
-      False{}
 
 # first: the thread's first worktree (not one made again), whose waiting
 # message names its branch
@@ -1447,7 +1484,7 @@ def Hub.turn.k(dup: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +th
       Hub.turn.go(s, Hub.thread(s, thread), now, client, id, thread, msg, text)
 
 def Hub.turn.m(+s: M.State, +now: Nat, +client: U32, +id: String, +thread: String, +text: String, +msg: String, named: Bool) -> Step:
-  Hub.turn.k(Bool.and(named, Hub.has_msg(Hub.entries(s), msg)), s, now, client, id, thread, msg, text)
+  Hub.turn.k(Hub.dup(named, s, msg), s, now, client, id, thread, msg, text)
 
 # a user message. The client names it (msg), so a message resent after a
 # dropped connection is stored once; the hub names it otherwise
@@ -1519,7 +1556,7 @@ def Hub.turnx.k(dup: Bool, +mode: String, +s: M.State, +now: Nat, +client: U32, 
 
 # a user message with an explicit follow-up mode (Hub.turn is "auto")
 def Hub.turnx(+mode: String, +s: M.State, +now: Nat, +client: U32, +id: String, +thread: String, +text: String, +msg: String) -> Step:
-  Hub.turnx.k(Bool.and(Bool.not(String.is_empty(msg)), Hub.has_msg(Hub.entries(s), msg)), mode, s, now, client, id, thread,
+  Hub.turnx.k(Hub.dup(Bool.not(String.is_empty(msg)), s, msg), mode, s, now, client, id, thread,
     Bool.pick(String, String.is_empty(msg), Hub.id("m", now, Hub.seq(s)), msg), text)
 
 def Hub.turn.mode(auto: Bool, +mode: String, +s: M.State, +now: Nat, +client: U32, +id: String, +thread: String, +text: String, +msg: String) -> Step:
@@ -1669,103 +1706,10 @@ def Hub.switch(+s: M.State, +now: Nat, +client: U32, +id: String, +th: String, +
 def Stop.outs(+provider: String, +thread: String, +rid: String) -> List<&2, Out>:
   Bool.pick(List<&2, Out>, String.eq(provider, "claude"), [AgentSend{thread, Claude.interrupt(rid)}], [AgentStop{thread}])
 
-def Hub.interrupt.k(run: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +thread: String) -> Step:
-  match run:
-    case True{}:
-      Step{[M.TurnChanged{thread, M.Interrupted{}, now}], Reply.ok(client, id) <> Stop.outs(Hub.provider(Hub.thread(s, thread)), thread, Hub.id("i", now, Hub.seq(s)))}
-    case False{}:
-      Step.outs([Reply.ok(client, id)])
-
-def Hub.interrupt(+s: M.State, +now: Nat, +client: U32, +id: String, +thread: String) -> Step:
-  Hub.interrupt.k(Hub.running(Hub.thread(s, thread)), s, now, client, id, thread)
-
 # the held queue of an idle thread (kept across a restart, or after a
 # stop) starts now
 def Hub.resume(+s: M.State, +now: Nat, +client: U32, +id: String, +thread: String) -> Step:
   Step.before(Nil{}, [Reply.ok(client, id)], Wt.start(s, now, thread, False{}))
-
-def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json, +m: String) -> Step:
-  match i:
-    case 0n:
-      Step.outs([Fs{client, id, "add", J.Json.get_str(p, "path", "")}])
-    case 1n:
-      Step.reply(client, id, [M.ProjectRemoved{J.Json.get_str(p, "project", ""), now}])
-    case 2n:
-      Hub.thread_create(s, now, client, id, p)
-    case 3n:
-      Hub.turn.mode(Bool.or(String.is_empty(J.Json.get_str(p, "mode", "")), String.eq(J.Json.get_str(p, "mode", ""), "auto")), J.Json.get_str(p, "mode", ""),
-        s, now, client, id, J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "text", ""), J.Json.get_str(p, "msg", ""))
-    case 4n:
-      Hub.interrupt(s, now, client, id, J.Json.get_str(p, "thread", ""))
-    case 5n:
-      Step.reply(client, id, [M.ThreadSettled{J.Json.get_str(p, "thread", ""), True{}, now}])
-    case 6n:
-      Step.reply(client, id, [M.ThreadUnsettled{J.Json.get_str(p, "thread", ""), now}])
-    case 7n:
-      Step{[M.ThreadArchived{J.Json.get_str(p, "thread", ""), True{}, now}], [Reply.ok(client, id), AgentStop{J.Json.get_str(p, "thread", "")}]}
-    case 8n:
-      Step.reply(client, id, [M.ThreadArchived{J.Json.get_str(p, "thread", ""), False{}, now}])
-    case 9n:
-      Step.reply(client, id, [M.ThreadPinned{J.Json.get_str(p, "thread", ""), True{}, now}])
-    case 10n:
-      Step.reply(client, id, [M.ThreadPinned{J.Json.get_str(p, "thread", ""), False{}, now}])
-    # a rename: the title trimmed; a blank one changes nothing
-    case 11n:
-      Step.reply(client, id, Rename.changes(J.Json.get_str(p, "thread", ""), String.trim(J.Json.get_str(p, "title", "")), now))
-    case 12n:
-      Step{[M.ThreadDeleted{J.Json.get_str(p, "thread", ""), now}], [Reply.ok(client, id), AgentStop{J.Json.get_str(p, "thread", "")}, BotFx{"gone", J.Json.get_str(p, "thread", ""), "", ""}]}
-    case 13n:
-      Step.outs([Reply.ok(client, id), Watch{client, J.Json.get_str(p, "kind", ""), J.Json.get_str(p, "root", ""), J.Json.get_str(p, "path", "")}])
-    case 14n:
-      Hub.modes(s, now, client, id, p, Hub.thread(s, J.Json.get_str(p, "thread", "")))
-    case 15n:
-      Step.outs([Reply.ok(client, id), Upgrade{}])
-    case 16n:
-      Step.reply(client, id, [M.SettingSet{J.Json.get_str(p, "key", ""), J.Json.get_str(p, "value", ""), now}])
-    case 17n:
-      Step.outs([Reply.ok(client, id), KiCadInstall{}])
-    case 18n:
-      Hub.answer(s, now, client, id, J.Json.get_str(p, "id", ""), J.Json.get_str(p, "answer", ""))
-    case 19n:
-      Device.register(now, client, id, p)
-    case 20n:
-      Step.reply(client, id, [M.DeviceDropped{J.Json.get_str(p, "token", ""), now}])
-    case 21n:
-      Step.outs([PlotInfo{client, id, J.Json.get_str(p, "key", ""), Maybe.default(&2, Nat, Nat.read(J.Json.as_raw(J.Json.get(p, "at"), "0")), 0n),
-        Maybe.default(&2, Nat, Nat.read(J.Json.as_raw(J.Json.get(p, "idx"), "0")), 0n)}])
-    case 22n:
-      Hub.resume(s, now, client, id, J.Json.get_str(p, "thread", ""))
-    case 23n:
-      Queue.op(0n, s, now, client, id, p)
-    case 24n:
-      Queue.op(1n, s, now, client, id, p)
-    case 25n:
-      Queue.op(2n, s, now, client, id, p)
-    case 26n:
-      Queue.op(3n, s, now, client, id, p)
-    case 27n:
-      Hub.fork(s, now, client, id, J.Json.get_str(p, "thread", ""))
-    case 28n:
-      Hub.back(s, now, client, id, J.Json.get_str(p, "thread", ""))
-    case 29n:
-      Hub.switch(s, now, client, id, J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "provider", ""))
-    case _:
-      Hub.more(C.Codec.pos(Hub.methods.git(), m), s, now, client, id, p, m)
-
-# one client request {"id": n, "m": method, "p": params}
-def Hub.request(+s: M.State, +now: Nat, +client: U32, +o: J.Json) -> Step:
-  Hub.request.k(C.Codec.pos(Hub.methods(), J.Json.get_str(o, "m", "")), s, now, client,
-    J.Json.as_raw(J.Json.get(o, "id"), "0"), J.Json.get_obj(o, "p"), J.Json.get_str(o, "m", ""))
-
-def Hub.request_text.k(m: Maybe<&2, J.Json>, +s: M.State, +now: Nat, +client: U32) -> Step:
-  match m:
-    case Some{o}:
-      Hub.request(s, now, client, o)
-    case None{}:
-      Step.outs([Reply.err(client, "0", "malformed request")])
-
-def Hub.request_text(+s: M.State, +now: Nat, +client: U32, text: String) -> Step:
-  Hub.request_text.k(J.Json.parse(text), s, now, client)
 
 def Hub.agent_gone.k(running: Bool, +thread: String, +now: Nat, +code: U32) -> Step:
   match running:
@@ -2138,10 +2082,12 @@ def Task.last.go(es: List<&2, M.Entry>, hit: Bool, +th: String) -> String:
     case _ _:
       ""
 
-def Task.last(s: M.State, +th: String) -> String:
-  match s:
-    case M.State{_, _, +es, _, _, _, _, _, _, _, _}:
-      Task.last.go(es, Task.last.hit(es, th), th)
+def Task.last.of(+es: List<&2, M.Entry>, +th: String) -> String:
+  Task.last.go(es, Task.last.hit(es, th), th)
+
+# read from the thread's own entries (M.State.mine), never the whole log
+def Task.last(+s: M.State, +th: String) -> String:
+  Task.last.of(M.State.mine(s, th), th)
 
 # the turn outcome a step reports for a thread, if it ended one
 type Ended is Data:
@@ -2199,10 +2145,184 @@ def Task.finish.k(e: Ended, m: Maybe<&2, M.Task>, +s: M.State, +now: Nat, +threa
 
 # when a child thread's turn ends, its task ends and the result goes to the
 # parent once (the pending check makes delivery exactly-once)
+# (the task is looked up only once the step is known to end a turn: every
+# agent line comes through here)
+def Task.finish.e(e: Ended, +s: M.State, +now: Nat, +thread: String, cs: List<&2, M.Change>, os: List<&2, Out>) -> Step:
+  match e:
+    case NotEnded{}:
+      Step{cs, os}
+    case EndedOk{}:
+      Task.finish.k(EndedOk{}, Task.of_child(s, thread), s, now, thread, cs, os)
+    case EndedBad{}:
+      Task.finish.k(EndedBad{}, Task.of_child(s, thread), s, now, thread, cs, os)
+
 def Task.finish(+s: M.State, +now: Nat, +thread: String, st: Step) -> Step:
   match st:
     case Step{+cs, os}:
-      Task.finish.k(Task.ended(cs), Task.of_child(s, thread), s, now, thread, cs, os)
+      Task.finish.e(Task.ended(cs), s, now, thread, cs, os)
+
+# Retiring a run
+# --------------
+# Whenever a thread's process is retired (Stop, archive, delete, a crash,
+# a process that could not start) nothing it held is left waiting: its
+# open asks close, and each parked request gets the empty answer (deny for
+# an approval, "dismissed" for a question: Perm.verdict.k in mcp.bend); a
+# plan card parks nothing and stays. A turn still running ends as
+# interrupted and a delegated child's task ends with it (laws
+# archive_*, interrupt_closes_approval, interrupt_keeps_plan,
+# interrupt_ends_child_task, gone_closes_approval).
+
+def Retire.hit(a: M.Ask, +th: String) -> Bool:
+  match a:
+    case M.Ask{_, t, kind, _, _, _, op, _}:
+      Bool.and(op, Bool.and(String.eq(t, th), Bool.not(String.eq(kind, "plan"))))
+
+def Retire.id(a: M.Ask) -> String:
+  match a:
+    case M.Ask{id, _, _, _, _, _, _, _}:
+      id
+
+def Retire.close(hit: Bool, +id: String, +now: Nat, rest: List<&2, M.Change>) -> List<&2, M.Change>:
+  match hit:
+    case True{}:
+      M.AskClosed{id, "", now} <> rest
+    case False{}:
+      rest
+
+def Retire.answer(hit: Bool, +id: String, rest: List<&2, Out>) -> List<&2, Out>:
+  match hit:
+    case True{}:
+      AskAnswered{id, ""} <> rest
+    case False{}:
+      rest
+
+# the open asks of th that wait on its process, closed unanswered
+def Retire.asks(as: List<&2, M.Ask>, +th: String, +now: Nat) -> List<&2, M.Change>:
+  match as:
+    case Nil{}:
+      Nil{}
+    case +a <> t:
+      Retire.close(Retire.hit(a, th), Retire.id(a), now, Retire.asks(t, th, now))
+
+# the same asks' parked requests, answered empty
+def Retire.answers(as: List<&2, M.Ask>, +th: String) -> List<&2, Out>:
+  match as:
+    case Nil{}:
+      Nil{}
+    case +a <> t:
+      Retire.answer(Retire.hit(a, th), Retire.id(a), Retire.answers(t, th))
+
+# a turn still running ends as interrupted, and its task with it
+def Retire.turn(run: Bool, +s: M.State, +now: Nat, +th: String, st: Step) -> Step:
+  match run:
+    case True{}:
+      Task.finish(s, now, th, Step.before([M.TurnChanged{th, M.Interrupted{}, now}], Nil{}, st))
+    case False{}:
+      st
+
+# Stop: the running turn is interrupted (Stop.outs), its asks close
+def Retire.stop(+s: M.State, +now: Nat, +th: String, os: List<&2, Out>) -> Step:
+  Retire.turn(True{}, s, now, th, Step{Retire.asks(M.Asks.all(s), th, now),
+    List.append(&2, Out, os, List.append(&2, Out, Stop.outs(Hub.provider(Hub.thread(s, th)), th, Hub.id("i", now, Hub.seq(s))), Retire.answers(M.Asks.all(s), th)))})
+
+def Hub.interrupt.k(run: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +thread: String) -> Step:
+  match run:
+    case True{}:
+      Retire.stop(s, now, thread, [Reply.ok(client, id)])
+    case False{}:
+      Step.outs([Reply.ok(client, id)])
+
+def Hub.interrupt(+s: M.State, +now: Nat, +client: U32, +id: String, +thread: String) -> Step:
+  Hub.interrupt.k(Hub.running(Hub.thread(s, thread)), s, now, client, id, thread)
+
+# archive and delete kill the process whatever it was doing: its asks and
+# background rows go, and a running turn ends
+def Retire.archive(+s: M.State, +now: Nat, +th: String, base: Step) -> Step:
+  Retire.turn(Hub.running(Hub.thread(s, th)), s, now, th,
+    Step.also(Step.after(base, List.append(&2, M.Change, Retire.asks(M.Asks.all(s), th, now), Bg.clear(s, th, now))), Retire.answers(M.Asks.all(s), th)))
+
+def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json, +m: String) -> Step:
+  match i:
+    case 0n:
+      Step.outs([Fs{client, id, "add", J.Json.get_str(p, "path", "")}])
+    case 1n:
+      Step.reply(client, id, [M.ProjectRemoved{J.Json.get_str(p, "project", ""), now}])
+    case 2n:
+      Hub.thread_create(s, now, client, id, p)
+    case 3n:
+      Hub.turn.mode(Bool.or(String.is_empty(J.Json.get_str(p, "mode", "")), String.eq(J.Json.get_str(p, "mode", ""), "auto")), J.Json.get_str(p, "mode", ""),
+        s, now, client, id, J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "text", ""), J.Json.get_str(p, "msg", ""))
+    case 4n:
+      Hub.interrupt(s, now, client, id, J.Json.get_str(p, "thread", ""))
+    case 5n:
+      Step.reply(client, id, [M.ThreadSettled{J.Json.get_str(p, "thread", ""), True{}, now}])
+    case 6n:
+      Step.reply(client, id, [M.ThreadUnsettled{J.Json.get_str(p, "thread", ""), now}])
+    case 7n:
+      Retire.archive(s, now, J.Json.get_str(p, "thread", ""), Step{[M.ThreadArchived{J.Json.get_str(p, "thread", ""), True{}, now}], [Reply.ok(client, id), AgentStop{J.Json.get_str(p, "thread", "")}]})
+    case 8n:
+      Step.reply(client, id, [M.ThreadArchived{J.Json.get_str(p, "thread", ""), False{}, now}])
+    case 9n:
+      Step.reply(client, id, [M.ThreadPinned{J.Json.get_str(p, "thread", ""), True{}, now}])
+    case 10n:
+      Step.reply(client, id, [M.ThreadPinned{J.Json.get_str(p, "thread", ""), False{}, now}])
+    # a rename: the title trimmed; a blank one changes nothing
+    case 11n:
+      Step.reply(client, id, Rename.changes(J.Json.get_str(p, "thread", ""), String.trim(J.Json.get_str(p, "title", "")), now))
+    case 12n:
+      Retire.archive(s, now, J.Json.get_str(p, "thread", ""), Step{[M.ThreadDeleted{J.Json.get_str(p, "thread", ""), now}], [Reply.ok(client, id), AgentStop{J.Json.get_str(p, "thread", "")}, BotFx{"gone", J.Json.get_str(p, "thread", ""), "", ""}]})
+    case 13n:
+      Step.outs([Reply.ok(client, id), Watch{client, J.Json.get_str(p, "kind", ""), J.Json.get_str(p, "root", ""), J.Json.get_str(p, "path", "")}])
+    case 14n:
+      Hub.modes(s, now, client, id, p, Hub.thread(s, J.Json.get_str(p, "thread", "")))
+    case 15n:
+      Step.outs([Reply.ok(client, id), Upgrade{}])
+    case 16n:
+      Step.reply(client, id, [M.SettingSet{J.Json.get_str(p, "key", ""), J.Json.get_str(p, "value", ""), now}])
+    case 17n:
+      Step.outs([Reply.ok(client, id), KiCadInstall{}])
+    case 18n:
+      Hub.answer(s, now, client, id, J.Json.get_str(p, "id", ""), J.Json.get_str(p, "answer", ""))
+    case 19n:
+      Device.register(now, client, id, p)
+    case 20n:
+      Step.reply(client, id, [M.DeviceDropped{J.Json.get_str(p, "token", ""), now}])
+    case 21n:
+      Step.outs([PlotInfo{client, id, J.Json.get_str(p, "key", ""), Maybe.default(&2, Nat, Nat.read(J.Json.as_raw(J.Json.get(p, "at"), "0")), 0n),
+        Maybe.default(&2, Nat, Nat.read(J.Json.as_raw(J.Json.get(p, "idx"), "0")), 0n)}])
+    case 22n:
+      Hub.resume(s, now, client, id, J.Json.get_str(p, "thread", ""))
+    case 23n:
+      Queue.op(0n, s, now, client, id, p)
+    case 24n:
+      Queue.op(1n, s, now, client, id, p)
+    case 25n:
+      Queue.op(2n, s, now, client, id, p)
+    case 26n:
+      Queue.op(3n, s, now, client, id, p)
+    case 27n:
+      Hub.fork(s, now, client, id, J.Json.get_str(p, "thread", ""))
+    case 28n:
+      Hub.back(s, now, client, id, J.Json.get_str(p, "thread", ""))
+    case 29n:
+      Hub.switch(s, now, client, id, J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "provider", ""))
+    case _:
+      Hub.more(C.Codec.pos(Hub.methods.git(), m), s, now, client, id, p, m)
+
+# one client request {"id": n, "m": method, "p": params}
+def Hub.request(+s: M.State, +now: Nat, +client: U32, +o: J.Json) -> Step:
+  Hub.request.k(C.Codec.pos(Hub.methods(), J.Json.get_str(o, "m", "")), s, now, client,
+    J.Json.as_raw(J.Json.get(o, "id"), "0"), J.Json.get_obj(o, "p"), J.Json.get_str(o, "m", ""))
+
+def Hub.request_text.k(m: Maybe<&2, J.Json>, +s: M.State, +now: Nat, +client: U32) -> Step:
+  match m:
+    case Some{o}:
+      Hub.request(s, now, client, o)
+    case None{}:
+      Step.outs([Reply.err(client, "0", "malformed request")])
+
+def Hub.request_text(+s: M.State, +now: Nat, +client: U32, text: String) -> Step:
+  Hub.request_text.k(J.Json.parse(text), s, now, client)
 
 # one line of an agent's stdout
 def Hub.agent_line(+s: M.State, +now: Nat, +thread: String, line: String) -> Step:
@@ -2210,7 +2330,9 @@ def Hub.agent_line(+s: M.State, +now: Nat, +thread: String, line: String) -> Ste
 
 # an agent process ended; a turn still running ends with it
 def Hub.agent_gone(+s: M.State, +now: Nat, +thread: String, +code: U32) -> Step:
-  Step.after(Task.finish(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, now, thread, Hub.agent_gone.k(Hub.running(Hub.thread(s, thread)), thread, now, code)))), Bg.clear(s, thread, now))
+  Step.before(Nil{}, Retire.answers(M.Asks.all(s), thread),
+    Step.after(Task.finish(s, now, thread, Queue.drain(s, now, thread, Ended.out(s, now, thread, Hub.agent_gone.k(Hub.running(Hub.thread(s, thread)), thread, now, code)))),
+      List.append(&2, M.Change, Bg.clear(s, thread, now), Retire.asks(M.Asks.all(s), thread, now))))
 
 def Step.outs_of(st: Step) -> List<&2, Out>:
   match st:
@@ -2431,12 +2553,36 @@ def Hub.recover(+s: M.State, +now: Nat) -> Step:
 # never loops (laws carry_*). Runs after Hub.recover, over the state from
 # before it.
 
-def Carry.fresh(es: List<&2, M.Entry>) -> Bool:
+# whether the newest entry is the "restart" note Carry.k adds after its
+# message (it is no progress)
+def Carry.restart(es: List<&2, M.Entry>) -> Bool:
   match es:
-    case M.Msg{_, _, _, +text, _} <> _:
-      Bool.not(String.eq(text, M.Carry.text()))
+    case M.Act{_, _, _, +kind, _, _} <> _:
+      String.eq(kind, "restart")
     case _:
+      False{}
+
+# progress since the last carry: the newest entry, past restart notes, is
+# anything but the continue message
+def Carry.fresh.go(es: List<&2, M.Entry>, skip: Bool) -> Bool:
+  match es skip:
+    case Nil{} _:
       True{}
+    case _ <> +t True{}:
+      Carry.fresh.go(t, Carry.restart(t))
+    case M.Msg{_, _, _, +text, _} <> _ False{}:
+      Bool.not(String.eq(text, M.Carry.text()))
+    case _ False{}:
+      True{}
+
+def Carry.fresh(+es: List<&2, M.Entry>) -> Bool:
+  Carry.fresh.go(es, Carry.restart(es))
+
+# an archived or deleted thread never carries on
+def Carry.live(t: M.Thread) -> Bool:
+  match t:
+    case M.Thread{_, _, _, _, _, _, _, ar, _, _, _, _, _, _, _, _, _, _, _, _, de}:
+      Bool.not(Bool.or(ar, de))
 
 def Carry.k(go: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
   match go:
@@ -2449,7 +2595,7 @@ def Carry.k(go: Bool, +s: M.State, +now: Nat, +th: String) -> Step:
 def Carry.one(r: Rec, +before: M.State, +now: Nat, +th: String) -> Rec:
   match r:
     case Rec{+s, cs, os}:
-      Rec.add(Rec{s, cs, os}, Carry.k(Bool.and(Hub.running(Hub.thread(before, th)), Carry.fresh(M.State.mine(before, th))), s, now, th))
+      Rec.add(Rec{s, cs, os}, Carry.k(Bool.and(Bool.and(Hub.running(Hub.thread(before, th)), Carry.live(Hub.thread(before, th))), Carry.fresh(M.State.mine(before, th))), s, now, th))
 
 def Carry.all(ts: List<&2, String>, r: Rec, +before: M.State, +now: Nat) -> Rec:
   match ts:
@@ -2567,3 +2713,27 @@ def Demo.state(+provider: String, +st: M.TurnState) -> M.State:
 def Demo.switched() -> M.State:
   M.State.replay([M.SessionSet{"t1", "S1", 3n}, M.MessagePosted{"t1", "m1", M.User{}, "hi", 3n}, M.MessagePosted{"t1", "m2", M.Assistant{}, "hello", 3n},
     M.ProviderSet{"t1", "codex", "", 4n}, M.SessionSet{"t1", "S2", 5n}], Demo.state("claude", M.Completed{}))
+
+# a step applied as the server does (with the pending counts it moves)
+def Retire.after(+s: M.State, st: Step) -> M.State:
+  M.State.replay(Pend.fix(s, Queue.changes(st)), s)
+
+# thread.archive (or thread.delete: i 12n) of "t1" (for laws)
+def Retire.request(i: Nat, +s: M.State) -> Step:
+  Hub.request.k(i, s, 9n, 0, "r", J.Json.obj([J.KV{"thread", J.Str{"t1"}}]), "")
+
+def Retire.task.k(m: Maybe<&2, M.Task>) -> Bool:
+  match m:
+    case Some{M.Task{_, _, _, _, st, _, _, _, _}}:
+      M.TaskState.terminal(st)
+    case None{}:
+      False{}
+
+# whether the task "t1" works on has ended (for laws)
+def Retire.task(+s: M.State) -> Bool:
+  Retire.task.k(Task.of_child(s, "t1"))
+
+# the running scenario with an open plan card and a task t0 gave t1
+def Retire.demo() -> M.State:
+  M.State.replay([M.ThreadCreated{"t0", "p1", "x", M.Local{}, "", "", "codex", "", 1n}, M.TaskDelegated{"k1", "t0", "t1", 1n, "codex", "", 2n},
+    M.AskOpened{"a2", "t1", "plan", "", "plan", "", 3n}], Rec.demo(M.Running{}))

@@ -216,6 +216,70 @@ static void __attribute__((constructor)) sock_send_bytes_use(void) {
 
 #endif
 
+#ifdef CID_SOCK_SEND_UNTIL
+
+// Like Sock.send_bytes, with one deadline for the whole frame: a peer that
+// stops reading cannot hold the writer past it. The deadline (in io_tick
+// units) sits in the first 8 bytes of w->data; the frame follows. A send
+// that fails or runs out of time shuts the socket both ways, so its reader
+// sees the end too and the client leaves.
+static Term sock_send_until_more(Env e, IoWork* w) {
+  int fd = (int)w->hand;
+  u64 deadline;
+  memcpy(&deadline, w->data, sizeof deadline);
+  while (w->code == 0 && (u64)w->made < w->size) {
+    ssize_t n = host_write(fd, w->data + w->made, w->size - (u64)w->made);
+    if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+      if (io_tick() >= deadline) {
+        w->code = ETIMEDOUT;
+        break;
+      }
+      return io_wait_on(w, fd, POLLOUT, deadline, sock_send_until_more);
+    }
+    w->made += io_sys_end(w, n);
+  }
+  if (w->code != 0) {
+    shutdown(fd, SHUT_RDWR);
+  }
+  Term r = w->code != 0 ? io_fail(e, w->code, NULL) : io_done(e, host_unit());
+  free(w->data);
+  return io_tup(e, io_hand(w->hand), r);
+}
+
+Term sock_send_until_run(Env e, Term* f, IoWork* w) {
+  u64  cap = 256;
+  Term xs  = f[1];
+  u64  deadline = io_tick() + (u64)f[2] * 1000000ull;
+  w->hand = (intptr_t)io_hand_v(f[0]);
+  w->code = 0;
+  w->size = sizeof deadline;
+  w->made = sizeof deadline;
+  w->data = io_mem(malloc(cap));
+  memcpy(w->data, &deadline, sizeof deadline);
+  while (term_aux(xs) == CID_CON) {
+    Term fb[2];
+    spare_free(e, cls_fit(2), ctr_take(e, xs, 2, fb));
+    if (w->size == cap) {
+      cap *= 2;
+      w->data = io_mem(realloc(w->data, cap));
+    }
+    w->code = fb[0] > 255 ? EINVAL : w->code;
+    w->data[w->size++] = (char)fb[0];
+    xs = fb[1];
+  }
+  if (w->code) {
+    free(w->data);
+    return io_tup(e, io_hand(w->hand), io_fail(e, w->code, NULL));
+  }
+  return sock_send_until_more(e, w);
+}
+
+static void __attribute__((constructor)) sock_send_until_use(void) {
+  io_eff(CID_SOCK_SEND_UNTIL, sock_send_until_run, 0);
+}
+
+#endif
+
 #ifdef CID_SOCK_SEND_TEXT
 
 // A String sent as UTF-8, never raising SIGPIPE.
@@ -248,6 +312,20 @@ Term sock_dup_run(Env e, Term* f, IoWork* w) {
   int fd  = (int)io_hand_v(f[0]);
   int one = 1;
   setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
+  // a peer gone without a word (a phone that lost its network) is found
+  // in about 35 s idle, and unacknowledged data gives up after 30 s; on a
+  // socketpair these just fail
+  setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &one, sizeof one);
+#ifdef TCP_KEEPIDLE
+  int idle = 20, intvl = 5, cnt = 3;
+  setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof idle);
+  setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof intvl);
+  setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &cnt, sizeof cnt);
+#endif
+#ifdef TCP_USER_TIMEOUT
+  unsigned int uto = 30000;
+  setsockopt(fd, IPPROTO_TCP, TCP_USER_TIMEOUT, &uto, sizeof uto);
+#endif
   int got = dup(fd);
   if (got >= 0) {
     fcntl(got, F_SETFD, FD_CLOEXEC);

@@ -742,20 +742,47 @@ let cache = (() => {
   }
 })();
 
-function keep(msg) {
-  if (msg.t === "log") {
-    cache = { origin: msg.origin ?? "", items: msg.since > 0 && cache ? cache.items.concat(msg.items) : msg.items };
-  } else if (msg.t === "changes" && cache) {
-    cache.items = cache.items.concat(msg.items);
-  } else {
-    return;
+// The log grows in place and is written out at most every 2 s (and when
+// the page is hidden or left), not stringified whole for every message;
+// a reload before a write catches up from the server (since). Over quota,
+// the page keeps its copy in memory and drops only the stored one.
+let dirty = false;
+let flushing = null;
+
+function flush() {
+  if (flushing !== null) {
+    clearTimeout(flushing);
+    flushing = null;
   }
+  if (!dirty || !cache) return;
+  dirty = false;
   try {
     localStorage.setItem(CACHE, JSON.stringify(cache));
   } catch {
-    localStorage.removeItem(CACHE); // over quota: start from the server next time
+    try { localStorage.removeItem(CACHE); } catch {} // over quota: start from the server next time
   }
 }
+
+function keep(msg) {
+  if (msg.t === "log") {
+    if (msg.since > 0 && cache) {
+      for (const x of msg.items) cache.items.push(x);
+    } else {
+      cache = { origin: msg.origin ?? "", items: msg.items };
+    }
+  } else if (msg.t === "changes" && cache) {
+    for (const x of msg.items) cache.items.push(x);
+  } else {
+    return;
+  }
+  dirty = true;
+  if (flushing === null) flushing = setTimeout(flush, 2000);
+}
+
+addEventListener("pagehide", flush);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") flush();
+});
 
 if (cache && Array.isArray(cache.items)) {
   ui = App.recv(ui, toJson({ t: "log", since: 0, origin: cache.origin, items: cache.items })).ui;
@@ -792,11 +819,21 @@ function connect() {
       return;
     }
     const j = App.wire_in(toList(bytes));
-    keep(JSON.parse(App.show(j)));
+    // another thread's streamed text draws nothing and is not kept: only
+    // the log and its changes are, and the page renders when the message
+    // shows or gives commands
+    const t = App.kind(j);
+    const vis = App.shows(ui, j);
+    if (t === "log" || t === "changes") keep(JSON.parse(App.show(j)));
     const r = App.recv(ui, j);
     ui = r.ui;
+    let acts = false;
+    for (const _ of each(r.cmds)) {
+      acts = true;
+      break;
+    }
     run(r.cmds);
-    later();
+    if (vis || acts) later();
   };
   s.onclose = () => {
     if (socket === s) socket = null;

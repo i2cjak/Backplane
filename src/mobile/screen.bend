@@ -979,15 +979,46 @@ def Mob.find(open: Bool, +u: U.Ui) -> J.Json:
     case False{}:
       J.Null{}
 
-# the whole screen
-def Mob.screen(+u: U.Ui) -> J.Json:
+def Mob.focus.thread(focus: Bool, +u: U.Ui, +sel: String) -> J.Json:
+  match focus:
+    case True{}:
+      Mob.main(String.is_empty(sel), u, sel)
+    case False{}:
+      J.Null{}
+
+def Mob.focus.bot(focus: Bool, +u: U.Ui) -> J.Json:
+  match focus:
+    case True{}:
+      MB.MBots.json(u)
+    case False{}:
+      J.Null{}
+
+def Mob.now(u: U.Ui) -> Nat:
+  match u:
+    case U.Ui{_, _, _, _, _, _, now, _, _, _, _, _, _, _, _, _, _}:
+      now
+
+def Mob.open(u: U.Ui) -> Map<&2, Bool>:
+  match u:
+    case U.Ui{_, _, _, _, o, _, _, _, _, _, _, _, _, _, _, _, _}:
+      o
+
+def Mob.scratch(u: U.Ui) -> Map<&2, String>:
+  match u:
+    case U.Ui{_, _, dr, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      dr
+
+# the whole screen. A hub out of focus (focus False) builds no thread, bot
+# or viewer (null: the merged screen reads them from the hub in focus),
+# and the sidebar's groups are found once
+def Mob.screen.go(+focus: Bool, +u: U.Ui, +g: U.SGroups) -> J.Json:
   match u:
     case U.Ui{+st, +sel, +dr, _, +o, +on, +now, _, _, +v, _, _, +e, +note, _, _, _}:
       J.Json.obj([J.KV{"online", J.Json.bool(on)}, J.KV{"version", J.Json.str(v)}, J.KV{"seq", J.Json.nat(U.Ui.seq(u))}, J.KV{"error", J.Json.str(e)},
         J.KV{"note", J.Json.str(note)}, J.KV{"sel", J.Json.str(sel)}, J.KV{"theme", J.Json.str(M.Setting.get(st, "ui.theme", ""))},
         J.KV{"empty", J.Json.str(Mob.empty(List.length(&2, M.Project, U.Ui.projects(st))))},
-        J.KV{"projects", J.Json.arr(Mob.grouped(U.Side.groups(U.Side.shown(st, now, U.Find.q(o, dr)), now), o, st, now, U.Find.q(o, dr)))},
-        J.KV{"older", Mob.older(U.Side.groups(U.Side.shown(st, now, U.Find.q(o, dr)), now), o, U.Find.q(o, dr))},
+        J.KV{"projects", J.Json.arr(Mob.grouped(g, o, st, now, U.Find.q(o, dr)))},
+        J.KV{"older", Mob.older(g, o, U.Find.q(o, dr))},
         J.KV{"view", J.Json.str(U.Side.view(st))},
         J.KV{"active", J.Json.arr(Mob.active(String.eq(U.Side.view(st), "active"), st, now, U.Find.q(o, dr), o))},
         J.KV{"settled", Mob.settled.if(String.eq(U.Side.view(st), "active"), st, now, U.Find.q(o, dr), o)},
@@ -999,10 +1030,16 @@ def Mob.screen(+u: U.Ui) -> J.Json:
         J.KV{"settings", Mob.settings(U.Ui.flag(u, "settings"), u)},
         J.KV{"find", Mob.find(U.Ui.flag(u, "palette"), u)},
         J.KV{"folders", PK.MPick.json(u)},
-        J.KV{"island", N.Note.island(U.Ui.threads(st), U.Ui.entries(st))},
-        J.KV{"thread", Mob.main(String.is_empty(sel), u, sel)},
+        J.KV{"island", N.Note.island.st(U.Ui.threads(st), st)},
+        J.KV{"thread", Mob.focus.thread(focus, u, sel)},
         J.KV{"bots", J.Json.arr(MB.MBots.rows(B.BU.rows(u)))},
         J.KV{"rooms", J.Json.arr(MB.MBots.rooms(B.BU.rooms(u)))},
         J.KV{"newBot", MB.MBots.new(u)},
         J.KV{"newRoom", MB.MBots.rnew(u)},
-        J.KV{"bot", MB.MBots.json(u)}])
+        J.KV{"bot", Mob.focus.bot(focus, u)}])
+
+def Mob.screen.f(focus: Bool, +u: U.Ui) -> J.Json:
+  Mob.screen.go(focus, u, U.Side.groups(U.Side.shown(U.Ui.state.of(u), Mob.now(u), U.Find.q(Mob.open(u), Mob.scratch(u))), Mob.now(u)))
+
+def Mob.screen(+u: U.Ui) -> J.Json:
+  Mob.screen.f(True{}, u)

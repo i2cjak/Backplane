@@ -183,6 +183,54 @@ def Ui.fold(cs: List<&2, M.Change>, u: Ui) -> Ui:
     case +c <> t Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
       Ui.fold(t, Ui.see(Ui{M.State.apply(st, c), sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}, c))
 
+# Changes this client cannot read (a hub newer than it: a TestFlight build
+# behind, a cached web page) still count: the hub resumes a reconnect by
+# how many it sent, so each is a tick of the read model's sequence (and
+# nothing else), or every reconnect would ask for the tail again and post
+# its messages twice (laws ui_seq_counts_unknown, ui_seq_known_unchanged)
+type Decoded is Data:
+  Decoded{cs: List<&2, M.Change>, missed: Nat}
+
+def Ui.decode.d(m: Maybe<&2, M.Change>, d: Decoded) -> Decoded:
+  match m d:
+    case Some{c} Decoded{cs, n}:
+      Decoded{c <> cs, n}
+    case None{} Decoded{cs, n}:
+      Decoded{cs, 1n+n}
+
+# (tail-recursive, reversed once, as Ui.decode)
+def Ui.decode.all(xs: List<&2, J.Json>, d: Decoded) -> Decoded:
+  match xs:
+    case Nil{}:
+      d
+    case +x <> t:
+      Ui.decode.all(t, Ui.decode.d(C.Change.decode(x), d))
+
+def Ui.skip.st(n: Nat, st: M.State) -> M.State:
+  match n:
+    case 0n:
+      st
+    case 1n+k:
+      Ui.skip.st(k, M.State.tick(st))
+
+def Ui.skip(u: Ui, n: Nat) -> Ui:
+  match u:
+    case Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      Ui{Ui.skip.st(n, st), sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
+
+def Ui.fold.d(d: Decoded, u: Ui) -> Ui:
+  match d:
+    case Decoded{cs, n}:
+      Ui.skip(Ui.fold(List.reverse(&2, M.Change, cs), u), n)
+
+# a message's items folded in, the unreadable ones counted
+def Ui.fold.items(xs: List<&2, J.Json>, u: Ui) -> Ui:
+  Ui.fold.d(Ui.decode.all(xs, Decoded{Nil{}, 0n}), u)
+
+# a "changes" message (or "log") holding these items (for laws)
+def Seq.demo(+t: String, xs: List<&2, J.Json>) -> J.Json:
+  J.Json.obj([J.KV{"t", J.Str{t}}, J.KV{"items", J.Json.arr(xs)}])
+
 def Info.fields(fs: J.Json, m: Map<&2, String>) -> Map<&2, String>:
   match fs:
     case J.Field{k, J.Str{v}, t}:
@@ -220,6 +268,50 @@ def Local.keep.go(ks: List<&2, String>, +old: Map<&2, String>, m: Map<&2, String
 # reads)
 def Local.keep(+old: Map<&2, String>, m: Map<&2, String>) -> Map<&2, String>:
   Local.keep.go(["cid", "local.machine", "local.machines", "local.drafts", "local.hub", "clock", "local.fixed", "local.generation", "local.state.hub", "local.state.gen"], old, m)
+
+# A reconnect to the same hub (the log's origin is the one this client
+# had) keeps what the person chose in each thread's viewer: its kind, path
+# and panel, whether they toggled it by hand, the diff, folds, the
+# history step and comparison, the Files folder. Results asked again
+# (refs:, fm.list:) and playback (hist.play:) are left out. Another
+# machine's log keeps none of them (Local.keep runs on a switch too)
+# (laws reset_keeps_viewer, reset_new_origin_drops_viewer)
+def Reset.prefixes() -> List<&2, String>:
+  ["view.", "panel:", "panel.hand:", "diff:", "fold:", "hist.at:", "hist.back:", "hist.diff:", "cmp.a:", "cmp.b:", "cmp.al", "cmp.bl", "fm.want:"]
+
+def Reset.hit(ps: List<&2, String>, +k: String, found: Bool) -> Bool:
+  match ps found:
+    case _ True{}:
+      True{}
+    case Nil{} False{}:
+      False{}
+    case p <> t False{}:
+      Reset.hit(t, k, String.starts_with(k, p))
+
+def Reset.one(hit: Bool, +k: String, +old: Map<&2, String>, m: Map<&2, String>) -> Map<&2, String>:
+  match hit:
+    case True{}:
+      Map.set(&2, String, m, k, Str.get(old, k))
+    case False{}:
+      m
+
+def Reset.copy(ks: List<&2, String>, +old: Map<&2, String>, m: Map<&2, String>) -> Map<&2, String>:
+  match ks:
+    case Nil{}:
+      m
+    case +k <> t:
+      Reset.copy(t, old, Reset.one(Reset.hit(Reset.prefixes(), k, False{}), k, old, m))
+
+def Ui.reset.keep(same: Bool, +old: Map<&2, String>, m: Map<&2, String>) -> Map<&2, String>:
+  match same:
+    case True{}:
+      Reset.copy(Map.keys(&2, String, old), old, m)
+    case False{}:
+      m
+
+# a log from this origin (for laws)
+def Reset.demo(+origin: String) -> J.Json:
+  J.Json.obj([J.KV{"t", J.Str{"log"}}, J.KV{"origin", J.Str{origin}}, J.KV{"items", J.Json.arr(Nil{})}])
 
 def Machines.home.k(home: Bool, +nf: Map<&2, String>) -> Map<&2, String>:
   Bool.pick(Map<&2, String>, Bool.and(home, Bool.not(String.is_empty(Str.get(nf, "machines")))), Map.set(&2, String, nf, "local.machines", Str.get(nf, "machines")), nf)
@@ -302,9 +394,10 @@ def Ui.base(resume: Bool, st: M.State) -> M.State:
 def Ui.reset(u: Ui, +o: J.Json) -> Ui:
   match u:
     case Ui{st, sel, dr, live, op, _, now, ad, pa, _, rid, w, er, note, +nf, ob, tr}:
-      Ui.fold(Ui.decode(J.Json.elems(J.Json.get_obj(o, "items"))),
+      Ui.fold.items(J.Json.elems(J.Json.get_obj(o, "items")),
         Ui{Ui.base(Nat.is_gt(J.Json.get_nat(o, "since", 0n), 0n), st), sel, dr, live, op, True{}, now, ad, pa, J.Json.get_str(o, "version", ""), rid, w, er, note,
-          Machines.home(Local.keep(nf, Map.set(&2, String, Map.set(&2, String, Info.of(J.Json.get_obj(o, "info")), "cid", Str.get(nf, "cid")), "origin", J.Json.get_str(o, "origin", "")))), ob, tr})
+          Machines.home(Ui.reset.keep(String.eq(J.Json.get_str(o, "origin", ""), Str.get(nf, "origin")), nf,
+            Local.keep(nf, Map.set(&2, String, Map.set(&2, String, Info.of(J.Json.get_obj(o, "info")), "cid", Str.get(nf, "cid")), "origin", J.Json.get_str(o, "origin", ""))))), ob, tr})
 
 # how many changes this client holds (a reconnect asks for the rest)
 # the log's read model handed over whole (the hub's own window: nothing
@@ -3466,6 +3559,45 @@ def Fm.dir(+u: Ui) -> String:
 def Fm.ask(+u: Ui, +dir: String) -> Act:
   Ui.on_thread.p(Ui.info_set(Ui.info_set(Ui.view_put(u, "files", ""), "fm.want:" ++ Ui.sel(u), dir), "fm.top:" ++ Ui.sel(u), ""), "files.dir", [J.KV{"path", J.Str{dir}}])
 
+# A reconnect's log drops the listings (they may be stale) but keeps each
+# thread's folder (fm.want:<t>), so every kept folder is listed again;
+# else a Files tab left open waits on "Listing the folder" for good
+def Fm.again.join(cs: List<&2, Cmd>, a: Act) -> Act:
+  match a:
+    case Act{u, ds}:
+      Act{u, List.append(&2, Cmd, cs, ds)}
+
+def Fm.again.one(want: Bool, +k: String, a: Act) -> Act:
+  match want a:
+    case True{} Act{+u, cs}:
+      Fm.again.join(cs, Ui.rpc(u, "files.dir", [J.KV{"thread", J.Str{String.drop(k, 8n)}}, J.KV{"path", J.Str{Ui.info(u, k)}}]))
+    case False{} _:
+      a
+
+def Fm.again.k(+k: String, a: Act) -> Act:
+  match a:
+    case Act{+u, cs}:
+      Fm.again.one(Bool.and(String.starts_with(k, "fm.want:"), Bool.not(String.is_empty(Ui.info(u, k)))), k, Act{u, cs})
+
+def Fm.again.go(ks: List<&2, String>, a: Act) -> Act:
+  match ks:
+    case Nil{}:
+      a
+    case +k <> t:
+      Fm.again.go(t, Fm.again.k(k, a))
+
+def Fm.again.keys(u: Ui) -> List<&2, String>:
+  match u:
+    case Ui{_, _, _, _, _, _, _, _, _, _, _, _, _, _, nf, ob, tr}:
+      Map.keys(&2, String, nf)
+
+def Fm.again(log: Bool, a: Act) -> Act:
+  match log a:
+    case True{} Act{+u, cs}:
+      Fm.again.go(Fm.again.keys(u), Act{u, cs})
+    case False{} _:
+      a
+
 def Pdf.ask(+u: Ui, +path: String, +page: String) -> Act:
   Ui.rpc(Ui.info_set(u, "pdf.page:" ++ Ui.sel(u), page), "pdf.page", [J.KV{"path", J.Str{path}}, J.KV{"page", J.Str{page}}])
 
@@ -5469,7 +5601,7 @@ def Ui.recv.k(i: Nat, u: Ui, +o: J.Json) -> Ui:
     case 0n:
       Ui.reset(u, o)
     case 1n:
-      Ui.fold(Ui.decode(J.Json.elems(J.Json.get_obj(o, "items"))), u)
+      Ui.fold.items(J.Json.elems(J.Json.get_obj(o, "items")), u)
     case 2n:
       Ui.delta(u, J.Json.get_str(o, "thread", ""), J.Json.get_str(o, "text", ""))
     case 3n:
@@ -5709,7 +5841,7 @@ def Ui.shows(+u: Ui, +o: J.Json) -> Bool:
 # server's log arrives first on each) sends the outbox again, so nothing
 # the user sent is lost to a dropped link
 def Ui.recv_act.go(u: Ui, +o: J.Json) -> Act:
-  Ui.recv_act.t(String.eq(J.Json.get_str(o, "t", ""), "term"), J.Json.get_str(o, "thread", ""), Ui.recv_act.k(String.eq(J.Json.get_str(o, "t", ""), "log"), Ui.recv(u, o)))
+  Ui.recv_act.t(String.eq(J.Json.get_str(o, "t", ""), "term"), J.Json.get_str(o, "thread", ""), Fm.again(String.eq(J.Json.get_str(o, "t", ""), "log"), Ui.recv_act.k(String.eq(J.Json.get_str(o, "t", ""), "log"), Ui.recv(u, o))))
 
 # a desktop notification ({"t":"notify"}, sent only to a desk)
 def Ui.recv_act.n(notify: Bool, u: Ui, +o: J.Json) -> Act:

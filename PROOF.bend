@@ -631,7 +631,17 @@ def Laws.queue_never_concurrent(s, now, th, msg, role, text, h1, h2):
 
 def Laws.resend_stored_once(s, now, client, id, th, text, msg, h1, h2):
   %Equal.sym(Bool, String.is_empty(msg), False{}, h1) : {H.Queue.changes(H.Hub.turn.m(s, now, client, id, th, text, Bool.pick(String, _, H.Hub.id("m", now, H.Hub.seq(s)), msg), Bool.not(_))) == [] : List<&2, M.Change>}
-  %Equal.sym(Bool, H.Hub.has_msg(H.Hub.entries(s), msg), True{}, h2) : {H.Queue.changes(H.Hub.turn.k(Bool.and(True{}, _), s, now, client, id, th, msg, text)) == [] : List<&2, M.Change>}
+  %Equal.sym(Bool, H.Hub.has_msg(H.Hub.entries(s), msg), True{}, h2) : {H.Queue.changes(H.Hub.turn.k(_, s, now, client, id, th, msg, text)) == [] : List<&2, M.Change>}
+  {==}
+
+def Laws.has_msg_unnamed_skips(s, msg):
+  {==}
+
+def Laws.mcp_last_newest():
+  {==}
+
+def Laws.task_finish_not_ended_same(s, now, thread, cs, os, h):
+  %Equal.sym(H.Ended, H.Task.ended(cs), H.NotEnded{}, h) : {H.Task.finish.e(_, s, now, thread, cs, os) == H.Step{cs, os} : H.Step}
   {==}
 
 def Laws.inbox_never_interrupts(s, now, from, to, role, text, h):
@@ -4162,6 +4172,30 @@ def Laws.draft_keep_no_scratch(text):
 def Laws.draft_keep_no_path(text):
   {==}
 
+def Laws.ui_seq_counts_unknown():
+  {==}
+
+def Laws.ui_seq_known_unchanged():
+  {==}
+
+def Laws.ui_seq_log_counts_unknown():
+  {==}
+
+def Laws.reset_keeps_viewer():
+  {==}
+
+def Laws.reset_keeps_hand():
+  {==}
+
+def Laws.reset_new_origin_drops_viewer():
+  {==}
+
+def Laws.reset_drops_results():
+  {==}
+
+def Laws.far_feed_after_stops():
+  {==}
+
 def Laws.draft_restore_fills(saved):
   {==}
 
@@ -4178,6 +4212,48 @@ def Laws.interrupt_codex_stops(th, r):
   {==}
 
 def Laws.interrupt_grok_stops(th, r):
+  {==}
+
+def Laws.archive_running_stops():
+  {==}
+
+def Laws.archive_idle_no_turn():
+  {==}
+
+def Laws.archive_closes_approval():
+  {==}
+
+def Laws.delete_running_stops():
+  {==}
+
+def Laws.interrupt_closes_approval():
+  {==}
+
+def Laws.interrupt_keeps_plan():
+  {==}
+
+def Laws.interrupt_ends_child_task():
+  {==}
+
+def Laws.gone_closes_approval():
+  {==}
+
+def Laws.retire_answers_empty():
+  {==}
+
+def Laws.claude_result_after_stop_quiet():
+  {==}
+
+def Laws.claude_result_after_stop_interrupted():
+  {==}
+
+def Laws.claude_result_running_completes():
+  {==}
+
+def Laws.claude_delta_after_stop_quiet():
+  {==}
+
+def Laws.claude_delta_running_streams():
   {==}
 
 def Laws.stopped_turn_quiet(s, now, thread, line):
@@ -4205,6 +4281,12 @@ def Laws.carry_off_nothing():
   {==}
 
 def Laws.carry_once():
+  {==}
+
+def Laws.carry_twice_once():
+  {==}
+
+def Laws.carry_skips_archived():
   {==}
 
 def Laws.ask_makes_pending():
@@ -5808,6 +5890,27 @@ def Laws.hubs_delta_elsewhere(hs, key, o, h):
 def Laws.hubs_delta_other_thread(hs, th, text, h):
   %Equal.sym(Bool, String.eq(Hb.Hubs.cur(hs), Hb.Hubs.cur(hs)), True{}, Laws.string_eq_refl(Hb.Hubs.cur(hs))) : {Hb.Hubs.shows.k(_, hs, Hb.Hubs.cur(hs), J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{th}}, J.KV{"text", J.Str{text}}])) == False{} : Bool}
   Laws.shows_other_delta(Hb.Hubs.ui(hs, Hb.Hubs.cur(hs)), th, text, h)
+
+def Laws.hubs_redraw_changes_elsewhere(hs, key, items):
+  {==}
+
+def Laws.hubs_redraw_delta_elsewhere(hs, key, th, text, h):
+  Laws.hubs_delta_elsewhere(hs, key, J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{th}}, J.KV{"text", J.Str{text}}]), h)
+
+def Laws.hubs_redraw_delta_other_thread(hs, th, text, h):
+  Laws.hubs_delta_other_thread(hs, th, text, h)
+
+def Laws.alerts_none_for_delta(u, th, text):
+  {==}
+
+def Laws.island_doing_mine_same():
+  {==}
+
+def Laws.island_doing_mine_text():
+  {==}
+
+def Laws.hubs_screen_unfocused_thread_null():
+  {==}
 
 def Laws.shows_changes(u, items):
   {==}

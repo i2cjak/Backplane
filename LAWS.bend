@@ -38,6 +38,7 @@ import ./src/core/lightbox.bend as LBX
 import ./src/core/links.bend as LK
 import ./src/web/dom.bend as DM
 import ./src/core/client.bend as U
+import ./src/mobile/screen.bend as MSC
 import ./src/core/gh.bend as GH
 import ./src/gfx/text.bend as X
 import ./src/core/fold.bend as FO
@@ -552,6 +553,28 @@ law resend_stored_once:
   for h2: {H.Hub.has_msg(H.Hub.entries(s), msg) == True{} : Bool}
   {H.Queue.changes(H.Hub.turn(s, now, client, id, th, text, msg)) == [] : List<&2, M.Change>}
 
+# an unnamed message is never taken for one already stored: only a named
+# one is looked up
+law has_msg_unnamed_skips:
+  for s: M.State
+  for msg: String
+  {H.Hub.dup(False{}, s, msg) == False{} : Bool}
+
+# a thread's last reply is its newest assistant message, read from its own
+# entries; what it sent another thread is not its reply
+law mcp_last_newest:
+  {MC.Mcp.last(M.State.mine(M.State.replay([M.MessagePosted{"t1", "m1", M.Assistant{}, "first", 3n}, M.MessagePosted{"t1", "m2", M.Assistant{}, "second", 4n}, M.MessagePosted{"t2", M.Link.id("t1", "x"), M.Assistant{}, "to t2", 5n}], H.Demo.state("claude", M.Completed{})), "t1"), "t1") == "second" : String}
+
+# a step that ends no turn finishes no task: it comes back as it was
+law task_finish_not_ended_same:
+  for +s: M.State
+  for +now: Nat
+  for +thread: String
+  for +cs: List<&2, M.Change>
+  for os: List<&2, H.Out>
+  for h: {H.Task.ended(cs) == H.NotEnded{} : H.Ended}
+  {H.Task.finish(s, now, thread, H.Step{cs, os}) == H.Step{cs, os} : H.Step}
+
 # a message from another thread never interrupts the target's running turn,
 # whatever its provider: it waits in the target's inbox
 law inbox_never_interrupts:
@@ -836,6 +859,49 @@ law hubs_delta_other_thread:
   for +text: String
   for h: {String.eq(th, U.Ui.sel(Hb.Hubs.ui(hs, Hb.Hubs.cur(hs)))) == False{} : Bool}
   {Hb.Hubs.shows(hs, Hb.Hubs.cur(hs), J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{th}}, J.KV{"text", J.Str{text}}])) == False{} : Bool}
+
+# the phone redraws for any message from any paired hub (the merged
+# sidebar and the island show them all); streamed text only as Hubs.shows
+# says: not from a hub out of focus, nor for another thread
+law hubs_redraw_changes_elsewhere:
+  for +hs: Hb.Hubs
+  for +key: String
+  for +items: List<&2, J.Json>
+  {Hb.Hubs.redraw(hs, key, J.Json.obj([J.KV{"t", J.Str{"changes"}}, J.KV{"items", J.Json.arr(items)}])) == True{} : Bool}
+
+law hubs_redraw_delta_elsewhere:
+  for +hs: Hb.Hubs
+  for +key: String
+  for +th: String
+  for +text: String
+  for h: {String.eq(key, Hb.Hubs.cur(hs)) == False{} : Bool}
+  {Hb.Hubs.redraw(hs, key, J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{th}}, J.KV{"text", J.Str{text}}])) == False{} : Bool}
+
+law hubs_redraw_delta_other_thread:
+  for +hs: Hb.Hubs
+  for +th: String
+  for +text: String
+  for h: {String.eq(th, U.Ui.sel(Hb.Hubs.ui(hs, Hb.Hubs.cur(hs)))) == False{} : Bool}
+  {Hb.Hubs.redraw(hs, Hb.Hubs.cur(hs), J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{th}}, J.KV{"text", J.Str{text}}])) == False{} : Bool}
+
+# streamed text raises no alert (and nothing is compared for it)
+law alerts_none_for_delta:
+  for +u: U.Ui
+  for +th: String
+  for +text: String
+  {Hb.Did.alerts(Hb.One.got(u, J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{th}}, J.KV{"text", J.Str{text}}]))) == [] : List<&2, J.Json>}
+
+# the island read from each thread's own entries says what the walk over
+# the whole log says, a message the thread sent elsewhere included
+law island_doing_mine_same:
+  {Nt.Note.island.st(U.Ui.threads(Hb.Island.demo()), Hb.Island.demo()) == Nt.Note.island(U.Ui.threads(Hb.Island.demo()), U.Ui.entries(Hb.Island.demo())) : J.Json}
+
+law island_doing_mine_text:
+  {J.Json.show(Nt.Note.island.st(U.Ui.threads(Hb.Island.demo()), Hb.Island.demo())) == "{\"running\":1,\"headline\":\"x\",\"lines\":[{\"thread\":\"t1\",\"title\":\"x\",\"doing\":\"tool ran ls\"}]}" : String}
+
+# a hub out of focus builds no thread for the merged screen
+law hubs_screen_unfocused_thread_null:
+  {J.Json.get_obj(MSC.Mob.screen.f(False{}, U.Ui.init(0n)), "thread") == J.Null{} : J.Json}
 
 # a phone paired with no hub sends nothing, however time passes
 law hubs_unpaired_quiet:
@@ -2077,6 +2143,36 @@ law draft_keep_no_path:
   for +text: String
   {U.Draft.keep("../x", text) == Nil{} : List<&2, U.Cmd>}
 
+# a change the client cannot read still counts toward what it holds, so a
+# reconnect asks only for what came after it; known ones count once each
+law ui_seq_counts_unknown:
+  {U.Ui.seq(U.Ui.recv.k(1n, U.Ui.init(0n), U.Seq.demo("changes", [C.Change.encode(M.SettingSet{"a", "1", 1n}), J.Json.obj([J.KV{"$", J.Str{"NoSuch"}}]), C.Change.encode(M.SettingSet{"b", "2", 2n})]))) == 3n : Nat}
+
+law ui_seq_known_unchanged:
+  {U.Ui.seq(U.Ui.recv.k(1n, U.Ui.init(0n), U.Seq.demo("changes", [C.Change.encode(M.SettingSet{"a", "1", 1n}), C.Change.encode(M.SettingSet{"b", "2", 2n})]))) == 2n : Nat}
+
+law ui_seq_log_counts_unknown:
+  {U.Ui.seq(U.Ui.recv.k(0n, U.Ui.init(0n), U.Seq.demo("log", [J.Json.obj([J.KV{"$", J.Str{"NoSuch"}}]), C.Change.encode(M.SettingSet{"b", "2", 2n})]))) == 2n : Nat}
+
+# a reconnect to the same hub keeps each thread's viewer as the person
+# left it; a log from another hub keeps none of it
+law reset_keeps_viewer:
+  {U.Ui.info(U.Ui.reset(U.Ui.info_set(U.Ui.reset(U.Ui.init(0n), U.Reset.demo("O")), "view.kind:t1", "board"), U.Reset.demo("O")), "view.kind:t1") == "board" : String}
+
+law reset_keeps_hand:
+  {U.Ui.info(U.Ui.reset(U.Ui.info_set(U.Ui.reset(U.Ui.init(0n), U.Reset.demo("O")), "panel.hand:t1", "1"), U.Reset.demo("O")), "panel.hand:t1") == "1" : String}
+
+law reset_new_origin_drops_viewer:
+  {U.Ui.info(U.Ui.reset(U.Ui.info_set(U.Ui.reset(U.Ui.init(0n), U.Reset.demo("O")), "view.kind:t1", "board"), U.Reset.demo("P")), "view.kind:t1") == "" : String}
+
+law reset_drops_results:
+  {U.Ui.info(U.Ui.reset(U.Ui.info_set(U.Ui.reset(U.Ui.init(0n), U.Reset.demo("O")), "fm.list:t1", "x"), U.Reset.demo("O")), "fm.list:t1") == "" : String}
+
+# a page's lines are those after since, oldest first; the walk stops at
+# the first line at or below it
+law far_feed_after_stops:
+  {FR.Fr.feed.after([FR.Line{5n, "e"}, FR.Line{4n, "d"}, FR.Line{3n, "c"}, FR.Line{2n, "b"}, FR.Line{9n, "x"}], 3n, True{}, []) == [FR.Line{4n, "d"}, FR.Line{5n, "e"}] : List<&2, FR.Line>}
+
 # a draft read back after a restart fills an empty composer and never
 # replaces what is typed there
 law draft_restore_fills:
@@ -2118,6 +2214,55 @@ law interrupt_grok_stops:
   for r: String
   {H.Stop.outs("grok", th, r) == [H.AgentStop{th}] : List<&2, H.Out>}
 
+# a retired process leaves nothing waiting: archive ends a running turn
+# (an idle thread gets no turn change), Stop, archive and an exit close
+# the asks that wait on it, a plan card stays, a delegated child's task
+# ends, and the parked requests get the empty answer
+law archive_running_stops:
+  {H.Hub.running(H.Hub.thread(H.Retire.after(H.Rec.demo(M.Running{}), H.Retire.request(7n, H.Rec.demo(M.Running{}))), "t1")) == False{} : Bool}
+
+law archive_idle_no_turn:
+  {H.Task.ended(H.Queue.changes(H.Retire.request(7n, H.Rec.demo(M.Completed{})))) == H.NotEnded{} : H.Ended}
+
+law archive_closes_approval:
+  {H.Pend.open(M.Asks.all(H.Retire.after(H.Rec.demo(M.Running{}), H.Retire.request(7n, H.Rec.demo(M.Running{})))), "t1") == 0n : Nat}
+
+law delete_running_stops:
+  {H.Hub.running(H.Hub.thread(H.Retire.after(H.Rec.demo(M.Running{}), H.Retire.request(12n, H.Rec.demo(M.Running{}))), "t1")) == False{} : Bool}
+
+law interrupt_closes_approval:
+  {H.Pend.open(M.Asks.all(H.Retire.after(H.Rec.demo(M.Running{}), H.Hub.interrupt(H.Rec.demo(M.Running{}), 9n, 0, "r", "t1"))), "t1") == 0n : Nat}
+
+law interrupt_keeps_plan:
+  {H.Pend.open(M.Asks.all(H.Retire.after(H.Retire.demo(), H.Hub.interrupt(H.Retire.demo(), 9n, 0, "r", "t1"))), "t1") == 1n : Nat}
+
+law interrupt_ends_child_task:
+  {H.Retire.task(H.Retire.after(H.Retire.demo(), H.Hub.interrupt(H.Retire.demo(), 9n, 0, "r", "t1"))) == True{} : Bool}
+
+law gone_closes_approval:
+  {H.Pend.open(M.Asks.all(H.Retire.after(H.Rec.demo(M.Running{}), H.Hub.agent_gone(H.Rec.demo(M.Running{}), 9n, "t1", 1))), "t1") == 0n : Nat}
+
+law retire_answers_empty:
+  {H.Retire.answers(M.Asks.all(H.Rec.demo(M.Running{})), "t1") == [H.AskAnswered{"a1", ""}] : List<&2, H.Out>}
+
+# Claude's process outlives a Stop: its late result leaves the turn
+# stopped and its late text streams nowhere; a running turn's result
+# completes it
+law claude_result_after_stop_quiet:
+  {H.Hub.running(H.Hub.thread(M.State.replay(H.Queue.changes(H.Hub.agent_line(H.Demo.state("claude", M.Interrupted{}), 9n, "t1", "{\"type\":\"result\",\"is_error\":false}")), H.Demo.state("claude", M.Interrupted{})), "t1")) == False{} : Bool}
+
+law claude_result_after_stop_interrupted:
+  {M.Thread.turn(H.Hub.thread(M.State.replay(H.Queue.changes(H.Hub.agent_line(H.Demo.state("claude", M.Interrupted{}), 9n, "t1", "{\"type\":\"result\",\"is_error\":false}")), H.Demo.state("claude", M.Interrupted{})), "t1")) == M.Interrupted{} : M.TurnState}
+
+law claude_result_running_completes:
+  {M.Thread.turn(H.Hub.thread(M.State.replay(H.Queue.changes(H.Hub.agent_line(H.Demo.state("claude", M.Running{}), 9n, "t1", "{\"type\":\"result\",\"is_error\":false}")), H.Demo.state("claude", M.Running{})), "t1")) == M.Completed{} : M.TurnState}
+
+law claude_delta_after_stop_quiet:
+  {H.Step.outs_of(H.Hub.agent_line(H.Demo.state("claude", M.Interrupted{}), 9n, "t1", "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"late\"}}}")) == [] : List<&2, H.Out>}
+
+law claude_delta_running_streams:
+  {List.length(&2, H.Out, H.Step.outs_of(H.Hub.agent_line(H.Demo.state("claude", M.Running{}), 9n, "t1", "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"live\"}}}"))) == 1n : Nat}
+
 # what a stopped turn's process still says changes nothing
 law stopped_turn_quiet:
   for s: M.State
@@ -2157,6 +2302,15 @@ law carry_off_nothing:
 
 law carry_once:
   {H.Hub.running(H.Hub.thread(H.Carry.after(H.Carry.demo([M.MessagePosted{"t1", "c1", M.User{}, M.Carry.text(), 4n}]), 10n), "t1")) == False{} : Bool}
+
+# the restart note after the continue message is no progress either, so a
+# second restart before the agent wrote anything leaves it stopped; an
+# archived thread never carries on
+law carry_twice_once:
+  {H.Hub.running(H.Hub.thread(H.Carry.after(H.Carry.after(H.Rec.demo(M.Running{}), 10n), 20n), "t1")) == False{} : Bool}
+
+law carry_skips_archived:
+  {H.Hub.running(H.Hub.thread(H.Carry.after(H.Carry.demo([M.ThreadArchived{"t1", True{}, 4n}]), 10n), "t1")) == False{} : Bool}
 
 # an open ask makes its thread pending (so it never auto-settles); the
 # answer clears it

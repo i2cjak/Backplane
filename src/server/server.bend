@@ -313,6 +313,17 @@ def Wire.all(cs: List<&2, Client>, +text: String) -> IO(Unit):
         ok : Bool <- Chan.send(Wire, o, WText{text})
         Wire.all(t, text)
 
+# A message the hub sends itself. The hub fiber is the inbox's only
+# reader, so a send into a full inbox (4096 slots) would park it for good:
+# the send runs on a fiber of its own and the hub goes on
+def Self.post.go(+inbox: Chan(Msg), m: Msg) -> IO(Unit):
+  do IO<Unit>:
+    ok : Bool <- Chan.send(Msg, inbox, m)
+    return Unit{}
+
+def Self.post(+inbox: Chan(Msg), m: Msg) -> IO(Unit):
+  IO.spawn(Unit, Self.post.go(inbox, m))
+
 # Agent processes
 # ---------------
 
@@ -352,24 +363,26 @@ def Agent.fed(r: U.Lines & List<&2, String>, s: Socket, +thread: String, +inbox:
   (carry, ls) = r
   Agent.fed.k(ls, s, carry, thread, inbox, k)
 
-def Agent.got(r: Socket & Result<&1, &1, U32 & String, List<&2, U32>>, carry: U.Lines, +pid: U32, +thread: String, +inbox: Chan(Msg),
+# (lines go out under the tag, B.Tag.of(thread, pid), so a replaced
+# process is not heard; the exit names the plain thread and pid)
+def Agent.got(r: Socket & Result<&1, &1, U32 & String, List<&2, U32>>, carry: U.Lines, +pid: U32, +thread: String, +tag: String, +inbox: Chan(Msg),
     k: Socket -> U.Lines -> IO(Unit)) -> IO(Unit):
   (s, res) = r
   match res:
     case Done{Nil{}}:
       Agent.end(s, pid, thread, inbox)
     case Done{bs}:
-      Agent.fed(U.Lines.feed(carry, bs), s, thread, inbox, k)
+      Agent.fed(U.Lines.feed(carry, bs), s, tag, inbox, k)
     case Fail{_}:
       Agent.end(s, pid, thread, inbox)
 
-def Agent.reader(fuel: Nat, s: Socket, carry: U.Lines, +pid: U32, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Agent.reader(fuel: Nat, s: Socket, carry: U.Lines, +pid: U32, +thread: String, +tag: String, +inbox: Chan(Msg)) -> IO(Unit):
   match fuel:
     case 0n:
       Agent.end(s, pid, thread, inbox)
     case 1n+f:
       IO.bind(Socket & Result<&1, &1, U32 & String, List<&2, U32>>, Unit, H.Sock.recv_bytes(s, 65536),
-        r => Agent.got(r, carry, pid, thread, inbox, s2 => c2 => Agent.reader(f, s2, c2, pid, thread, inbox)))
+        r => Agent.got(r, carry, pid, thread, tag, inbox, s2 => c2 => Agent.reader(f, s2, c2, pid, thread, tag, inbox)))
 
 def Agent.wrote(r: Socket & Result<&1, &1, U32 & String, Unit>, k: Socket -> IO(Unit)) -> IO(Unit):
   (s, _) = r
@@ -412,14 +425,35 @@ def Conn.finish(s: Socket, bs: List<&2, U32>) -> IO(Unit):
 def Conn.frame.out(t: String) -> List<&2, U32>:
   W.Ws.cbor(t)
 
-def Conn.write(m: Maybe<&1, Wire>, s: Socket, k: Socket -> IO(Unit)) -> IO(Unit):
+# A client's frames go out with a deadline each (Conn.deadline, ms): a
+# peer that stops reading (a half-open link, a phone that no longer reads)
+# fails the send, and then its channel is closed first, so the hub's sends
+# to it end at once instead of waiting on a full queue, and the socket is
+# closed (the effect shut it both ways: its reader ends and it leaves)
+def Conn.deadline() -> U32:
+  10000
+
+def Conn.sent.k(r: Socket & Result<&1, &1, U32 & String, Unit>, +out: Chan(Wire), k: Socket -> IO(Unit)) -> IO(Unit):
+  (s, res) = r
+  match res:
+    case Done{_}:
+      k(s)
+    case Fail{_}:
+      do IO<Unit>:
+        Chan.close(Wire, out)
+        Socket.close(s)
+
+def Conn.out(s: Socket, bs: List<&2, U32>, +out: Chan(Wire), k: Socket -> IO(Unit)) -> IO(Unit):
+  IO.bind(Socket & Result<&1, &1, U32 & String, Unit>, Unit, H.Sock.send_until(s, bs, Conn.deadline()), r => Conn.sent.k(r, out, k))
+
+def Conn.write(m: Maybe<&1, Wire>, s: Socket, +out: Chan(Wire), k: Socket -> IO(Unit)) -> IO(Unit):
   match m:
     case Some{WText{t}}:
-      IO.bind(Socket, Unit, Conn.send(s, Conn.frame.out(t)), k)
+      Conn.out(s, Conn.frame.out(t), out, k)
     case Some{WPong{p}}:
-      IO.bind(Socket, Unit, Conn.send(s, W.Ws.encode(10, p)), k)
+      Conn.out(s, W.Ws.encode(10, p), out, k)
     case Some{WBin{bs}}:
-      IO.bind(Socket, Unit, Conn.send(s, W.Ws.encode(2, bs)), k)
+      Conn.out(s, W.Ws.encode(2, bs), out, k)
     case Some{WClose{}}:
       Conn.finish(s, W.Ws.encode(8, Nil{}))
     case Some{WState{_, _}}:
@@ -433,7 +467,7 @@ def Conn.writer(fuel: Nat, s: Socket, +out: Chan(Wire)) -> IO(Unit):
     case 0n:
       Socket.close(s)
     case 1n+f:
-      IO.bind(Maybe<&1, Wire>, Unit, Chan.recv(Wire, out), m => Conn.write(m, s, s2 => Conn.writer(f, s2, out)))
+      IO.bind(Maybe<&1, Wire>, Unit, Chan.recv(Wire, out), m => Conn.write(m, s, out, s2 => Conn.writer(f, s2, out)))
 
 def Conn.leave(s: Socket, +id: U32, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
@@ -659,9 +693,7 @@ def Hub.info(c: Cfg) -> J.Json:
 def Bot.dir.changed(c: M.Change, +inbox: Chan(Msg)) -> IO(Unit):
   match c:
     case M.PeerSet{peer, _, _, _, _}:
-      do IO<Unit>:
-        ok : Bool <- Chan.send(Msg, inbox, BotsRefresh{peer})
-        return Unit{}
+      Self.post(inbox, BotsRefresh{peer})
     case _:
       IO.pure(Unit, Unit{})
 
@@ -713,12 +745,18 @@ def Hub.spawned.dup(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32,
       do IO<Hub>:
         +input : Chan(String) <- Chan.new(String, 256)
         IO.spawn(Unit, Agent.writer(Fuel.forever(), wr, input))
-        IO.spawn(Unit, Agent.reader(Fuel.forever(), rd, U.Lines.new(), pid, thread, inbox))
+        IO.spawn(Unit, Agent.reader(Fuel.forever(), rd, U.Lines.new(), pid, thread, B.Tag.of(thread, pid), inbox))
         return Hub{st, f, ls, cl, Agent{thread, input, pid, key} <> as, inbox, cfg, note}
-    case Fail{_} _:
+    # the process started but its socket could not be shared: it is
+    # stopped and goes through the usual exit (Agent.end, AgentGone), so
+    # its turn fails, its asks close and its task ends
+    case Fail{_} Hub{st, f, ls, cl, as, +inbox, cfg, note}:
       do IO<Hub>:
-        Socket.close(rd)
-        return h
+        +input : Chan(String) <- Chan.new(String, 1)
+        Chan.close(String, input)
+        H.Proc.kill(pid, 15)
+        IO.spawn(Unit, Agent.end(rd, pid, thread, inbox))
+        return Hub{st, f, ls, cl, Agent{thread, input, pid, key} <> as, inbox, cfg, note}
 
 def Hub.spawned.ok(started: U32 & Socket, h: Hub, +thread: String, +key: String) -> IO(Hub):
   (pid, s) = started
@@ -1774,6 +1812,15 @@ def Grok.reader(fuel: Nat, s: Socket, carry: U.Lines, a: AC.Acp, +t: AC.AcpTurn,
       IO.bind(Socket & Result<&1, &1, U32 & String, List<&2, U32>>, Unit, H.Sock.recv_bytes(s, 65536),
         r => Grok.got(r, carry, a, t, pid, thread, input, inbox, s2 => c2 => a2 => Grok.reader(f, s2, c2, a2, t, pid, thread, input, inbox)))
 
+# a Grok process whose socket could not be shared is stopped and its turn
+# fails as one that could not start
+def Grok.dup.failed(e: U32 & String, rd: Socket, +pid: U32, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
+  (_, msg) = e
+  do IO<Unit>:
+    Socket.close(rd)
+    H.Proc.kill(pid, 15)
+    Grok.report([AC.Acp.failed("could not start grok: " ++ msg)], thread, inbox)
+
 def Grok.duped(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, +t: AC.AcpTurn, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
   (rd, res) = r
   match res:
@@ -1784,8 +1831,8 @@ def Grok.duped(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, +t: 
         ok : Bool <- Chan.send(Msg, inbox, TurnPid{thread, pid, input})
         ok2 : Bool <- Chan.send(String, input, AC.Acp.init())
         Grok.reader(Fuel.forever(), rd, U.Lines.new(), AC.Acp.new(), t, pid, B.Tag.of(thread, pid), input, inbox)
-    case Fail{_}:
-      Socket.close(rd)
+    case Fail{e}:
+      Grok.dup.failed(e, rd, pid, thread, inbox)
 
 def Grok.started.ok(started: U32 & Socket, +t: AC.AcpTurn, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
   (+pid, s) = started
@@ -4051,7 +4098,7 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         +seen : Bool = DK.Desk.seen(Clients.looks(cl), thread, now)
         Desk.tell(DK.Desk.to(Clients.looks(cl), thread, now), cl, st, thread, state)
         IO.spawn(Unit, Hub.phone(Cfg.home(cfg), st, thread, state, seen, inbox))
-        ok : Bool <- Chan.send(Msg, inbox, Rpc{0, BH.Reply.request(thread, state)})
+        Self.post(inbox, Rpc{0, BH.Reply.request(thread, state)})
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.Fs{+client, +id, +op, +path}:
       do IO<Hub>:
@@ -4534,9 +4581,11 @@ def Hub.far.replied(h: Hub, +client: U32, +id: String, +link: String, +code: Nat
     J.Json.show(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{id}}, J.KV{"ok", J.Flag{False{}}},
       J.KV{"error", J.Str{Bool.pick(String, Nat.is_eq(code, 0n), "that machine is away", "that machine did not take it: " ++ String.take(body, 120n))}}]))))
 
-def Far.fed.k(p: FR.Fh & Hub, ls: List<&2, FR.Line>, +epoch: String) -> Hub:
+# (the feed leaves the history epoch alone: Far.start installed it, and
+# the startup feed's "" would reset it)
+def Far.fed.k(p: FR.Fh & Hub, ls: List<&2, FR.Line>, epoch: String) -> Hub:
   (fh, h) = p
-  Far.with(h, FR.Fh.epoch.set(FR.Fh.feed.ready(fh, ls), epoch))
+  Far.with(h, FR.Fh.feed.ready(fh, ls))
 
 def Hub.far.fed(h: Hub, ls: List<&2, FR.Line>, +epoch: String) -> IO(Hub):
   IO.pure(Hub, Far.fed.k(Far.fh(h), ls, epoch))
@@ -4555,12 +4604,14 @@ def Far.loaded.choose(r: FR.In & Hub, disk: FR.In) -> IO(Hub):
 def Hub.far.loaded(h: Hub, +link: String, +name: String, +text: String) -> IO(Hub):
   Far.loaded.choose(Far.in.of(Far.fh(h), link, name), FR.Fr.file.read(text, link, name))
 
+# (one already online is pulled too, through the same coalesced pull: a
+# lost last push is so repaired within the minute)
 def Far.here.was.k(away: Bool, h: Hub, +link: String) -> IO(Hub):
   match away:
     case True{}:
       Far.pull.here(h, link)
     case False{}:
-      IO.pure(Hub, h)
+      Far.pull.here(h, link)
 
 def Far.here.was(r: FR.In & Hub, +link: String) -> IO(Hub):
   (i, h) = r
@@ -4915,9 +4966,7 @@ def Hub.dir.returned(h: Hub, +mc: String) -> IO(Hub):
 def Bot.dir.awake(refresh: Bool, +inbox: Chan(Msg), +peer: String) -> IO(Unit):
   match refresh:
     case True{}:
-      do IO<Unit>:
-        ok : Bool <- Chan.send(Msg, inbox, BotsRefresh{peer})
-        return Unit{}
+      Self.post(inbox, BotsRefresh{peer})
     case False{}:
       IO.pure(Unit, Unit{})
 

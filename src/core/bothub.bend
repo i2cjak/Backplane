@@ -612,7 +612,7 @@ def Bots.mentions.k(dup: Bool, +s: M.State, +now: Nat, +p: J.Json) -> B.Step:
 
 # a message sent again (a dropped connection) sets nothing off twice
 def Bots.mentions.p(+s: M.State, +now: Nat, +p: J.Json) -> B.Step:
-  Bots.mentions.k(Bool.and(Bool.not(String.is_empty(J.Json.get_str(p, "msg", ""))), B.Hub.has_msg(B.Hub.entries(s), J.Json.get_str(p, "msg", ""))), s, now, p)
+  Bots.mentions.k(B.Hub.dup(Bool.not(String.is_empty(J.Json.get_str(p, "msg", ""))), s, J.Json.get_str(p, "msg", "")), s, now, p)
 
 def Bots.hub.k(turn: Bool, +s: M.State, +now: Nat, +client: U32, +o: J.Json) -> B.Step:
   match turn:

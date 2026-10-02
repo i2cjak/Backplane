@@ -796,12 +796,15 @@ def Fr.feed.keep(go: Bool, +n: Nat, +t: String, acc: List<&2, Line>) -> List<&2,
 
 # the lines after `since`, oldest first (the feed is newest first, so they
 # are the ones before the first at or below `since`)
-def Fr.feed.after(fs: List<&2, Line>, +since: Nat, +go: Bool, acc: List<&2, Line>) -> List<&2, Line>:
-  match fs:
-    case Nil{}:
+# (it stops at the first line at or below since: law far_feed_after_stops)
+def Fr.feed.after(fs: List<&2, Line>, +since: Nat, go: Bool, acc: List<&2, Line>) -> List<&2, Line>:
+  match fs go:
+    case _ False{}:
       acc
-    case Line{+n, +t} <> r:
-      Fr.feed.after(r, since, Bool.and(go, Nat.is_gt(n, since)), Fr.feed.keep(Bool.and(go, Nat.is_gt(n, since)), n, t, acc))
+    case Nil{} True{}:
+      acc
+    case Line{+n, +t} <> r True{}:
+      Fr.feed.after(r, since, Nat.is_gt(n, since), Fr.feed.keep(Nat.is_gt(n, since), n, t, acc))
 
 # a page: the items after `since` up to about `cap` characters (one bigger
 # line goes alone), where it ends (the last item's number when there is

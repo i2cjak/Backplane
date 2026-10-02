@@ -290,7 +290,12 @@ type Did is Data:
 def One.got.k(+seen: List<&2, N.Seen>, a: U.Act) -> Did:
   match a:
     case U.Act{+u, cmds}:
-      Did{U.Act{u, cmds}, N.Note.alerts(U.Ui.threads(S.Mob.st(u)), seen, S.Mob.st(u), U.Ui.entries(S.Mob.st(u)), U.Ui.info(u, "desk"))}
+      Did{U.Act{u, cmds}, N.Note.alerts.st(U.Ui.threads(S.Mob.st(u)), seen, S.Mob.st(u), U.Ui.info(u, "desk"))}
+
+def Did.alerts(d: Did) -> List<&2, J.Json>:
+  match d:
+    case Did{_, als}:
+      als
 
 def One.got.seen(a: U.Act) -> U.Act:
   match a:
@@ -298,8 +303,17 @@ def One.got.seen(a: U.Act) -> U.Act:
       U.Act{PK.MPick.seen(S.Mob.imgs.seen(u)), cmds}
 
 # a frame from the hub, and the alerts it raised
+# (streamed text ends no turn: it raises none, and nothing is compared;
+# every other message, far ones included, is: law alerts_none_for_delta)
+def One.got.d(delta: Bool, +u: U.Ui, +o: J.Json) -> Did:
+  match delta:
+    case True{}:
+      Did{One.got.seen(U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o)), Nil{}}
+    case False{}:
+      One.got.k(N.Note.seen(U.Ui.threads(S.Mob.st(u))), One.got.seen(U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o)))
+
 def One.got(+u: U.Ui, +o: J.Json) -> Did:
-  One.got.k(N.Note.seen(U.Ui.threads(S.Mob.st(u))), One.got.seen(U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o)))
+  One.got.d(String.eq(J.Json.get_str(o, "t", ""), "delta"), u, o)
 
 def One.run(op: Op, +u: U.Ui) -> Did:
   match op:
@@ -551,6 +565,19 @@ def Hubs.shows.k(focus: Bool, +hs: Hubs, +key: String, +o: J.Json) -> Bool:
 def Hubs.shows(+hs: Hubs, +key: String, +o: J.Json) -> Bool:
   Hubs.shows.k(String.eq(key, Hubs.cur(hs)), hs, key, o)
 
+def Hubs.redraw.k(delta: Bool, +hs: Hubs, +key: String, +o: J.Json) -> Bool:
+  match delta:
+    case True{}:
+      Hubs.shows(hs, key, o)
+    case False{}:
+      True{}
+
+# whether the phone builds a screen for a frame from hub key: any message
+# from any paired hub can change the merged sidebar and the island; only
+# streamed text is held to Hubs.shows (laws hubs_redraw_*)
+def Hubs.redraw(+hs: Hubs, +key: String, +o: J.Json) -> Bool:
+  Hubs.redraw.k(String.eq(J.Json.get_str(o, "t", ""), "delta"), hs, key, o)
+
 def Hubs.list(hs: Hubs) -> List<&2, Hub>:
   match hs:
     case Hubs{_, _, _, l}:
@@ -598,12 +625,14 @@ def Hubs.name(+key: String, +u: U.Ui) -> String:
 type Shown is Data:
   Shown{key: String, name: String, j: J.Json}
 
-def Hubs.shown(hs: List<&2, Hub>) -> List<&2, Shown>:
+# (a hub out of focus builds no thread, bot or viewer: the merged screen
+# reads those from the hub in focus only)
+def Hubs.shown(hs: List<&2, Hub>, +cur: String) -> List<&2, Shown>:
   match hs:
     case Nil{}:
       Nil{}
     case Hub{+k, +u} <> t:
-      Shown{k, Hubs.name(k, u), Q.all(S.Mob.screen(u), k)} <> Hubs.shown(t)
+      Shown{k, Hubs.name(k, u), Q.all(S.Mob.screen.f(String.eq(k, cur), u), k)} <> Hubs.shown(t, cur)
 
 def Hubs.named(ss: List<&2, Shown>, +n: String) -> Nat:
   match ss:
@@ -1238,4 +1267,12 @@ def Hubs.screen.k(+ss: List<&2, Shown>, +cur: String, +list: List<&2, Hub>) -> J
 def Hubs.screen(hs: Hubs) -> J.Json:
   match hs:
     case Hubs{_, _, +cur, +list}:
-      Hubs.screen.k(Hubs.relabel(Hubs.catalog.shown(Hubs.shown(list), list)), cur, list)
+      Hubs.screen.k(Hubs.relabel(Hubs.catalog.shown(Hubs.shown(list, cur), list)), cur, list)
+
+# a running thread t1 that ran a tool, then sent a message to t2 (filed
+# under t1 too), and t2 that did something else since (for laws)
+def Island.demo() -> M.State:
+  M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n},
+    M.ThreadCreated{"t1", "p1", "x", M.Local{}, "", "", "claude", "", 1n}, M.ThreadCreated{"t2", "p1", "y", M.Local{}, "", "", "claude", "", 1n},
+    M.TurnChanged{"t1", M.Running{}, 2n}, M.ActivityLogged{"t1", "a1", "info", "tool", "ran ls", 3n},
+    M.MessagePosted{"t2", M.Link.id("t1", "m1"), M.User{}, "hello", 4n}, M.ActivityLogged{"t2", "a2", "info", "edit", "wrote", 5n}], M.State.empty())

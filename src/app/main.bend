@@ -624,15 +624,6 @@ def Shell.dirty(a: Shell) -> IO(Shell):
     case _:
       IO.pure(Shell, a)
 
-# the log's head read as usual, then the hub's read model in place of
-# the (empty) replay
-def Shell.adopt(current: Bool, a: Shell, st: M.State, +head: String) -> IO(Shell):
-  match current a:
-    case True{} Shell{n, w, _, qd, q, i, wa}:
-      Shell.later(Shell{N.Nui.adopt(n, st, Maybe.default(&2, J.Json, J.Json.parse(head), J.Null{})), w, True{}, qd, q, i, wa})
-    case False{} _:
-      IO.pure(Shell, a)
-
 def Shell.queue(a: Shell, k: Chan(ShellMsg) -> Shell -> IO(Unit)) -> IO(Unit):
   match a:
     case Shell{n, w, d, qd, +q, i, wa}:
@@ -859,6 +850,15 @@ def Shell.step.go(a: Shell, s: N.Step) -> IO(Shell):
 
 def Shell.step(a: Shell, s: N.Step) -> IO(Shell):
   Shell.step.go(Shell.remember(a), s)
+
+# the log's head read as usual, then the hub's read model in place of
+# the (empty) replay, and the outbox sent again (N.Nui.adopt.step)
+def Shell.adopt(current: Bool, a: Shell, st: M.State, +head: String) -> IO(Shell):
+  match current a:
+    case True{} Shell{+n, w, d, qd, q, i, wa}:
+      Shell.step(Shell{n, w, d, qd, q, i, wa}, N.Nui.adopt.step(n, st, Maybe.default(&2, J.Json, J.Json.parse(head), J.Null{})))
+    case False{} _:
+      IO.pure(Shell, a)
 
 # an action come due runs as a click would
 def Shell.due(a: Shell, +action: String, +value: String) -> IO(Shell):
