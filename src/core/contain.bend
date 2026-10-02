@@ -116,7 +116,7 @@ def Contain.argv(limit: String, unit: String, cmd: String, args: List<&2, String
 
 # the scope's own answer after its process ended
 def Contain.show.args(unit: String) -> List<&2, String>:
-  ["3", "systemctl", "--user", "show", "-p", "Result", "--value", unit ++ ".scope"]
+  ["3", "systemctl", "--user", "show", "-p", "Result", "-p", "MemoryMax", unit ++ ".scope"]
 
 def Contain.reset.args(unit: String) -> List<&2, String>:
   ["3", "systemctl", "--user", "reset-failed", unit ++ ".scope"]
@@ -146,3 +146,29 @@ def Contain.exit_text(code: U32, result: String, limit: String) -> String:
 def Contain.ask(+code: U32) -> Bool:
   U32.is_ge(code, 128)
 
+# a `Name=value` line's value in `systemctl show` text ("" when absent)
+def Contain.prop.pick(+acc: String, hit: Bool, +l: String, +n: Nat) -> String:
+  Bool.pick(String, Bool.not(String.is_empty(acc)), acc, Bool.pick(String, hit, String.trim(String.drop(l, n)), ""))
+
+def Contain.prop.lines(ls: List<&2, String>, +p: String, +acc: String) -> String:
+  match ls:
+    case Nil{}:
+      acc
+    case +l <> t:
+      Contain.prop.lines(t, p, Contain.prop.pick(acc, String.starts_with(l, p), l, String.length(p)))
+
+def Contain.prop(text: String, +p: String) -> String:
+  Contain.prop.lines(String.split(text, '\n'), p, "")
+
+# b is how many bytes make a MiB (1048576); laws use a small one
+def Contain.mem.b(text: String, +b: Nat) -> String:
+  Nat.show(Nat.div(Contain.num.of(Contain.prop(text, "MemoryMax=")), b)) ++ "M"
+
+# what the scope's own answer (Contain.show.args) says about an agent a
+# signal ended: the out-of-memory words with the limit the scope held, ""
+# when it was not an out-of-memory kill
+def Contain.why.b(+text: String, +code: U32, +b: Nat) -> String:
+  Bool.pick(String, Contain.oom(Contain.prop(text, "Result=")), Contain.exit_text(code, "oom-kill", Contain.mem.b(text, b)), "")
+
+def Contain.why(text: String, code: U32) -> String:
+  Contain.why.b(text, code, 1048576n)

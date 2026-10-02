@@ -94,7 +94,8 @@ type Msg is Data:
   Leave{client: U32}
   Rpc{client: U32, text: String}
   AgentLine{thread: String, line: String}
-  AgentGone{thread: String, code: U32, pid: U32}
+  # why is the scope's account of a signal's end (Ctn.why), made off the hub
+  AgentGone{thread: String, code: U32, pid: U32, why: String}
   Tick{}
   # a Codex or Grok turn's KiCad files, read off the hub: the panel opens
   # (Hub.auto) when they arrive
@@ -293,25 +294,21 @@ def Ctn.limit(+st: M.State) -> IO(String):
     r : P.Ran <- P.Proc.run("head", ["-n", "1", "/proc/meminfo"], "/")
     return CN.Contain.limit(Ctn.mem.of(r), M.Setting.get(st, "agent.memory", ""), M.Setting.get(st, "agent.memory.mb", ""))
 
-# "" unless the scope's Result was an out-of-memory kill
-def Ctn.why.text(+res: String, +code: U32, +lim: String) -> String:
-  Bool.pick(String, CN.Contain.oom(String.trim(res)), CN.Contain.exit_text(code, String.trim(res), lim), "")
-
 # why an agent that a signal ended ended: its scope says (a scope that
-# failed stays until read, then it is reset); "" when it does not say
-def Ctn.why.k(ask: Bool, +st: M.State, +thread: String, +gen: String, +code: U32) -> IO(String):
+# failed stays until read, then it is reset); "" unless it was an
+# out-of-memory kill. Runs in the process's own reader, never on the hub.
+def Ctn.why.k(ask: Bool, +thread: String, +gen: String, +code: U32) -> IO(String):
   match ask:
     case True{}:
       do IO<String>:
         r : P.Ran <- P.Proc.run("timeout", CN.Contain.show.args(CN.Contain.unit(thread, gen)), "/")
         x : P.Ran <- P.Proc.run("timeout", CN.Contain.reset.args(CN.Contain.unit(thread, gen)), "/")
-        +lim : String <- Ctn.limit(st)
-        return Ctn.why.text(Ctn.mem.of(r), code, lim)
+        return CN.Contain.why(Ctn.mem.of(r), code)
     case False{}:
       IO.pure(String, "")
 
-def Ctn.why(ask: Bool, +st: M.State, +thread: String, +gen: String, +code: U32) -> IO(String):
-  Ctn.why.k(ask, st, thread, gen, code)
+def Ctn.why(+thread: String, +gen: String, +code: U32) -> IO(String):
+  Ctn.why.k(CN.Contain.ask(code), thread, gen, code)
 
 def Ctn.spawn.k(found: Bool, limit: String, thread: String, gen: String, cmd: String, args: List<&2, String>, cwd: String) -> IO(Result<&1, &1, U32 & String, U32 & Socket>):
   match found:
@@ -758,11 +755,12 @@ def Agent.lines(ls: List<&2, String>, +thread: String, +inbox: Chan(Msg)) -> IO(
         ok : Bool <- Chan.send(Msg, inbox, AgentLine{thread, l})
         Agent.lines(t, thread, inbox)
 
-def Agent.end(s: Socket, +pid: U32, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Agent.end(s: Socket, +pid: U32, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     Socket.close(s)
-    code : U32 <- H.Proc.wait(pid)
-    ok : Bool <- Chan.send(Msg, inbox, AgentGone{thread, code, pid})
+    +code : U32 <- H.Proc.wait(pid)
+    +why : String <- Ctn.why(thread, gen, code)
+    ok : Bool <- Chan.send(Msg, inbox, AgentGone{thread, code, pid, why})
     return Unit{}
 
 def Agent.pause(streaming: Bool) -> IO(Unit):
@@ -788,30 +786,30 @@ def Agent.fed(r: U.Lines & List<&2, String>, s: Socket, +thread: String, +inbox:
 # process is not heard; the exit names the plain thread and pid)
 # the stream ended: a last line with no newline still counts (a result
 # written just before the process died), then the exit
-def Agent.last(carry: U.Lines, s: Socket, +pid: U32, +thread: String, +tag: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Agent.last(carry: U.Lines, s: Socket, +pid: U32, +thread: String, +gen: String, +tag: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     +rest : String = U.Lines.rest(carry)
     Agent.lines(Bool.pick(List<&2, String>, String.is_empty(String.trim(rest)), Nil{}, [rest]), tag, inbox)
-    Agent.end(s, pid, thread, inbox)
+    Agent.end(s, pid, thread, gen, inbox)
 
-def Agent.got(r: Socket & Result<&1, &1, U32 & String, List<&2, U32>>, carry: U.Lines, +pid: U32, +thread: String, +tag: String, +inbox: Chan(Msg),
+def Agent.got(r: Socket & Result<&1, &1, U32 & String, List<&2, U32>>, carry: U.Lines, +pid: U32, +thread: String, +gen: String, +tag: String, +inbox: Chan(Msg),
     k: Socket -> U.Lines -> IO(Unit)) -> IO(Unit):
   (s, res) = r
   match res:
     case Done{Nil{}}:
-      Agent.last(carry, s, pid, thread, tag, inbox)
+      Agent.last(carry, s, pid, thread, gen, tag, inbox)
     case Done{bs}:
       Agent.fed(U.Lines.feed(carry, bs), s, tag, inbox, k)
     case Fail{_}:
-      Agent.last(carry, s, pid, thread, tag, inbox)
+      Agent.last(carry, s, pid, thread, gen, tag, inbox)
 
-def Agent.reader(fuel: Nat, s: Socket, carry: U.Lines, +pid: U32, +thread: String, +tag: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Agent.reader(fuel: Nat, s: Socket, carry: U.Lines, +pid: U32, +thread: String, +gen: String, +tag: String, +inbox: Chan(Msg)) -> IO(Unit):
   match fuel:
     case 0n:
-      Agent.end(s, pid, thread, inbox)
+      Agent.end(s, pid, thread, gen, inbox)
     case 1n+f:
       IO.bind(Socket & Result<&1, &1, U32 & String, List<&2, U32>>, Unit, H.Sock.recv_bytes(s, 65536),
-        r => Agent.got(r, carry, pid, thread, tag, inbox, s2 => c2 => Agent.reader(f, s2, c2, pid, thread, tag, inbox)))
+        r => Agent.got(r, carry, pid, thread, gen, tag, inbox, s2 => c2 => Agent.reader(f, s2, c2, pid, thread, gen, tag, inbox)))
 
 def Agent.wrote(r: Socket & Result<&1, &1, U32 & String, Unit>, k: Socket -> IO(Unit)) -> IO(Unit):
   (s, _) = r
@@ -1347,7 +1345,7 @@ def Hub.spawned.dup(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32,
         +now : Nat <- Now.nat()
         IO.spawn(Unit, Agent.writer(Fuel.forever(), wr, input))
         rd : Socket <- IO.bind(Socket & Result<&1, &1, U32 & String, Socket>, Socket, H.Sock.dup(rd0), d => Agent.watch.start(d, pid, thread, gen, inbox))
-        IO.spawn(Unit, Agent.reader(Fuel.forever(), rd, U.Lines.new(), pid, thread, B.Tag.of(thread, pid), inbox))
+        IO.spawn(Unit, Agent.reader(Fuel.forever(), rd, U.Lines.new(), pid, thread, gen, B.Tag.of(thread, pid), inbox))
         return Hub{st, f, ls, cl, Agent{thread, input, pid, key, [ARun.new.h(gen, now)]} <> as, inbox, cfg, note}
     # the process started but its socket could not be shared: it is
     # stopped and goes through the usual exit (Agent.end, AgentGone), so
@@ -1357,7 +1355,7 @@ def Hub.spawned.dup(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32,
         +input : Chan(String) <- Chan.new(String, 1)
         Chan.close(String, input)
         Proc.kill(pid, 15)
-        IO.spawn(Unit, Agent.end(rd0, pid, thread, inbox))
+        IO.spawn(Unit, Agent.end(rd0, pid, thread, gen, inbox))
         return Hub{st, f, ls, cl, Agent{thread, input, pid, key, [ARun.new.g(gen)]} <> as, inbox, cfg, note}
 
 def Hub.spawned.ok(started: U32 & Socket, h: Hub, +thread: String, +key: String, +gen: String) -> IO(Hub):
@@ -2479,7 +2477,7 @@ def Grok.got(r: Socket & Result<&1, &1, U32 & String, List<&2, U32>>, carry: U.L
 def Grok.reader(fuel: Nat, s: Socket, carry: U.Lines, a: AC.Acp, +t: AC.AcpTurn, +pid: U32, +thread: String, +input: Chan(String), +inbox: Chan(Msg)) -> IO(Unit):
   match fuel:
     case 0n:
-      Agent.end(s, pid, thread, inbox)
+      Agent.end(s, pid, thread, "", inbox)
     case 1n+f:
       IO.bind(Socket & Result<&1, &1, U32 & String, List<&2, U32>>, Unit, H.Sock.recv_bytes(s, 65536),
         r => Grok.got(r, carry, a, t, pid, thread, input, inbox, s2 => c2 => a2 => Grok.reader(f, s2, c2, a2, t, pid, thread, input, inbox)))
@@ -5872,11 +5870,11 @@ def Claude.duped(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, +t
         IO.spawn(Unit, Agent.writer(Fuel.forever(), wr, input))
         ok : Bool <- Chan.send(Msg, inbox, ClaudePid{thread, pid, gen})
         rd : Socket <- IO.bind(Socket & Result<&1, &1, U32 & String, Socket>, Socket, H.Sock.dup(rd0), d => Agent.watch.start(d, pid, thread, gen, inbox))
-        Agent.reader(Fuel.forever(), rd, U.Lines.new(), pid, thread, B.Tag.of(thread, pid), inbox)
+        Agent.reader(Fuel.forever(), rd, U.Lines.new(), pid, thread, gen, B.Tag.of(thread, pid), inbox)
     case Fail{_}:
       do IO<Unit>:
         Proc.kill(pid, 15)
-        IO.spawn(Unit, Agent.end(rd0, pid, thread, inbox))
+        IO.spawn(Unit, Agent.end(rd0, pid, thread, gen, inbox))
         Claude.fail(thread, gen, "its output could not be shared", inbox)
 
 def Claude.started.ok(started: U32 & Socket, +thread: String, +gen: String, +input: Chan(String), +inbox: Chan(Msg)) -> IO(Unit):
@@ -6512,21 +6510,19 @@ def Hub.line(h: Hub, +thread: String, +line: String, +now: Nat) -> IO(Hub):
     case Hub{st, f, ls, cl, +as, inbox, cfg, note}:
       Hub.line.m(Agents.run(as, thread), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, line, now)
 
-def Hub.gone.k(current: Bool, h: Hub, +thread: String, +code: U32, +now: Nat) -> IO(Hub):
+def Hub.gone.k(current: Bool, h: Hub, +thread: String, +code: U32, +why: String, +now: Nat) -> IO(Hub):
   match current h:
     case True{} Hub{+st, f, ls, cl, +as, inbox, cfg, note}:
-      do IO<Hub>:
-        +why : String <- Ctn.why(CN.Contain.ask(code), st, thread, Agents.gen(as, thread), code)
-        Hub.step(Hub{st, f, ls, cl, Agents.drop(as, thread), inbox, cfg, note}, B.Hub.agent_gone.why(st, now, thread, code, why))
+      Hub.step(Hub{st, f, ls, cl, Agents.drop(as, thread), inbox, cfg, note}, B.Hub.agent_gone.why(st, now, thread, code, why))
     case False{} _:
       IO.pure(Hub, h)
 
 # a process exited; one already replaced (a restart for a new model or
 # mode) is old news
-def Hub.gone(h: Hub, +thread: String, +code: U32, +pid: U32, +now: Nat) -> IO(Hub):
+def Hub.gone(h: Hub, +thread: String, +code: U32, +pid: U32, +why: String, +now: Nat) -> IO(Hub):
   match h:
     case Hub{st, f, ls, cl, +as, inbox, cfg, note}:
-      Hub.gone.k(Agent.pid_is(Agents.get(as, thread), pid), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, code, now)
+      Hub.gone.k(Agent.pid_is(Agents.get(as, thread), pid), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, code, why, now)
 
 # each minute the hub's size goes into the gauges
 def Hub.tick(h: Hub, +now: Nat) -> IO(Hub):
@@ -7666,7 +7662,7 @@ def Msg.kind(m: Msg) -> String:
       "rpc"
     case AgentLine{_, _}:
       "agent_line"
-    case AgentGone{_, _, _}:
+    case AgentGone{_, _, _, _}:
       "agent_gone"
     case Tick{}:
       "tick"
@@ -7970,8 +7966,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.turn_done(h, tag)
     case Recover{}:
       Hub.recover(h, now)
-    case AgentGone{thread, code, pid}:
-      Hub.gone(h, thread, code, pid, now)
+    case AgentGone{thread, code, pid, why}:
+      Hub.gone(h, thread, code, pid, why, now)
     case Tick{}:
       Hub.tick(h, now)
     case Heart{}:

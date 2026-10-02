@@ -5350,6 +5350,19 @@ law contain_plain_exit:
 law contain_words_gb:
   {CTN.Contain.words.g(12n, 4n) == "3 GB" : String}
 
+# The scope's own answer (systemctl show: Result and MemoryMax) is read in
+# the process's reader, off the hub's inbox, and gives an out-of-memory end
+# its words with the limit the scope held; any other end gives "". Bytes
+# are counted in a unit of 4 to a MiB here.
+law contain_why_oom:
+  {CTN.Contain.why.b("Result=oom-kill\nMemoryMax=800\n", 137, 4n) == "agent ran out of memory (limit 200 MB)" : String}
+
+law contain_why_plain:
+  {CTN.Contain.why.b("Result=success\nMemoryMax=800\n", 137, 4n) == "" : String}
+
+law contain_why_missing:
+  {CTN.Contain.why.b("", 137, 4n) == "" : String}
+
 # systemd-run expands ${VAR} in the arguments it is given, so the scope's
 # script turns that off (and, for a systemd without the flag, writes each
 # $ as $$): a prompt's dollar text reaches the agent as it is.

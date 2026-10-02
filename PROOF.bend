@@ -7118,6 +7118,15 @@ def Laws.contain_words_gb():
 def Laws.contain_no_expand():
   {==}
 
+def Laws.contain_why_oom():
+  {==}
+
+def Laws.contain_why_plain():
+  {==}
+
+def Laws.contain_why_missing():
+  {==}
+
 def Laws.live_split_fence_safe():
   {==}
 

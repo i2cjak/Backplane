@@ -37,6 +37,10 @@ const log = join(root, "claude.log");
 mkdirSync(fake);
 writeFileSync(join(fake, "claude"), `#!/bin/sh\nexec ${process.execPath} ${resolve("test/tools/claude_standin.ts")} "$@"\n`);
 chmodSync(join(fake, "claude"), 0o755);
+// systemctl's `show` and `stop` hang while the flag file exists (a user manager that does not answer)
+const slow = join(root, "slow");
+writeFileSync(join(fake, "systemctl"), `#!/bin/sh\nif [ -e ${slow} ]; then case "$2" in show|stop|reset-failed) sleep 8;; esac; fi\nexec /usr/bin/systemctl "$@"\n`);
+chmodSync(join(fake, "systemctl"), 0o755);
 for (const n of ["codex", "grok"]) {
   writeFileSync(join(fake, n), "#!/bin/sh\nexit 1\n");
   chmodSync(join(fake, n), 0o755);
@@ -140,6 +144,23 @@ try {
   send("turn.start", { thread: ok1, text: "again", msg: "c-3" });
   await until(15000, () => turns(ok1).filter((s) => s === "completed").length >= 3 ? true : undefined);
   check(turns(ok1).filter((s) => s === "completed").length >= 3, `another thread keeps working (${turns(ok1).join(",")})`);
+
+  // the scope's account is asked off the hub's inbox: while a runaway's
+  // exit waits on a user manager that does not answer, the hub still serves
+  writeFileSync(slow, "");
+  const alloc0 = lines().filter((l) => l.startsWith("ALLOC")).length;
+  const bad2 = await made("runaway 2");
+  send("turn.start", { thread: bad2, text: "mode:oom go", msg: "c-4" });
+  await until(15000, () => lines().filter((l) => l.startsWith("ALLOC")).length > alloc0 ? true : undefined);
+  await sleep(1500);
+  const t0 = Date.now();
+  send("setting.set", { key: "probe.key", value: "x" });
+  const probe = await until(10000, () => seen.find((c) => c.$ === "SettingSet" && c.key === "probe.key"));
+  const took = Date.now() - t0;
+  check(!!probe && took < 1500, `the hub answers while an exit waits on systemctl (${took} ms)`);
+  check(turns(bad2).at(-1) !== "failed", "the runaway's account is still pending");
+  await until(20000, () => turns(bad2).at(-1) === "failed" ? true : undefined);
+  check(turns(bad2).at(-1) === "failed", `its turn fails in the end (${turns(bad2).join(",")})`);
 } finally {
   proc.kill(9);
   await proc.exited;
