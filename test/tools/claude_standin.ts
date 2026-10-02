@@ -48,6 +48,7 @@ const log = (s: string) => {
   if (logf) appendFileSync(logf, s + "\n");
 };
 log(`START ${process.pid} ${args.join(" ").slice(0, 200).replace(/\n/g, " ")}`);
+log(`ARGV ${JSON.stringify(args)}`);
 const workMs = Number(process.env.BP_WORK_MS ?? 1500);
 const bgMs = Number(process.env.BP_BG_MS ?? 2500);
 let mode = process.env.BP_STANDIN_MODE ?? "";
@@ -137,6 +138,12 @@ async function run(c: Cmd, firstOne: boolean) {
   }
   lc(c.uuid, "started");
   init();
+  if (firstOne && mode === "hold-child") {
+    // a shell or build the agent started, in the agent's scope, holding nothing open
+    const ch = spawn("sleep", ["60"], { stdio: "ignore", detached: true });
+    ch.unref();
+    log(`CHILD ${ch.pid}`);
+  }
   if (firstOne && mode === "exit-now") {
     log(`EXIT ${process.pid}`);
     process.exit(3);

@@ -5398,6 +5398,38 @@ law contain_plain_exit:
 law contain_words_gb:
   {CTN.Contain.words.g(12n, 4n) == "3 GB" : String}
 
+# The scope's own answer (systemctl show: Result and MemoryMax) is read in
+# the process's reader, off the hub's inbox, and gives an out-of-memory end
+# its words with the limit the scope held; any other end gives "". Bytes
+# are counted in a unit of 4 to a MiB here.
+law contain_why_oom:
+  {CTN.Contain.why.b("Result=oom-kill\nMemoryMax=800\n", 137, 4n) == "agent ran out of memory (limit 200 MB)" : String}
+
+law contain_why_plain:
+  {CTN.Contain.why.b("Result=success\nMemoryMax=800\n", 137, 4n) == "" : String}
+
+law contain_why_missing:
+  {CTN.Contain.why.b("", 137, 4n) == "" : String}
+
+# Retiring an agent stops its whole scope (what it started dies with it),
+# and a start stops the scopes a previous run left: the units `list-units`
+# names, whose thread (the name without "bp-agent-" and the generation's two
+# parts) is one of the log's.
+law contain_stop_scope:
+  {String.join(CTN.Contain.stop.args("bp-agent-t1-2-3-4"), " ") == "10 systemctl --user stop bp-agent-t1-2-3-4.scope" : String}
+
+law contain_stale_units:
+  {String.join(CTN.Contain.stale("bp-agent-t1-5-100-7.scope loaded active running [systemd-run] sleep\nother.scope loaded active running x\nbp-agent-t3-1-9-3.scope loaded failed failed z\n"), ",") == "bp-agent-t1-5-100-7,bp-agent-t3-1-9-3" : String}
+
+law contain_thread_of:
+  {CTN.Contain.thread.of("bp-agent-t17-5-100-7") == "t17-5" : String}
+
+# systemd-run expands ${VAR} in the arguments it is given, so the scope's
+# script turns that off (and, for a systemd without the flag, writes each
+# $ as $$): a prompt's dollar text reaches the agent as it is.
+law contain_no_expand:
+  {Bool.and(String.contains(CTN.Contain.script(), "--expand-environment=no"), String.contains(CTN.Contain.script(), "s/\\$/$$/g")) == True{} : Bool}
+
 # A streamed reply's settled prefix (client.bend's Live.head: the text up
 # to the last blank line outside a fenced block) renders, and lays out,
 # exactly as it does alone, so a window keeps it and lays out the rest.

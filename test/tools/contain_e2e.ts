@@ -37,8 +37,15 @@ const log = join(root, "claude.log");
 mkdirSync(fake);
 writeFileSync(join(fake, "claude"), `#!/bin/sh\nexec ${process.execPath} ${resolve("test/tools/claude_standin.ts")} "$@"\n`);
 chmodSync(join(fake, "claude"), 0o755);
+// systemctl's `show` and `stop` hang while the flag file exists (a user manager that does not answer)
+const slow = join(root, "slow");
+writeFileSync(join(fake, "systemctl"), `#!/bin/sh\nif [ -e ${slow} ]; then case "$2" in show|stop|reset-failed) sleep 8;; esac; fi\nexec /usr/bin/systemctl "$@"\n`);
+chmodSync(join(fake, "systemctl"), 0o755);
+// codex and grok stand-ins that run away at once when they run a turn (their stream just ends); their probes fail
+const hog = join(root, "hog.js");
+writeFileSync(hog, "const k=[];for(let i=0;i<30;i++){k.push(Buffer.alloc(20*1024*1024,1));}\nrequire('node:fs').appendFileSync(process.env.FAKE_LOG,'HOG-SURVIVED\\n');\n");
 for (const n of ["codex", "grok"]) {
-  writeFileSync(join(fake, n), "#!/bin/sh\nexit 1\n");
+  writeFileSync(join(fake, n), `#!/bin/sh\ncase "$1" in exec|agent) exec ${process.execPath} ${hog};; esac\nexit 1\n`);
   chmodSync(join(fake, n), 0o755);
 }
 const home = join(root, "home");
@@ -73,12 +80,16 @@ const check = (ok: boolean, what: string) => {
 };
 
 const port = freePort();
-const proc = Bun.spawn([resolve(bin), "--home", home, "--port", String(port), "--no-tailscale", "--foreground"], {
+const startHub = () => Bun.spawn([resolve(bin), "--home", home, "--port", String(port), "--no-tailscale", "--foreground"], {
   env: { ...process.env, DISPLAY: "", WAYLAND_DISPLAY: "", BACKPLANE_NO_UPDATE: "1", BACKPLANE_PEERS: "", BACKPLANE_GOOGLE_BAKE: "0", FAKE_LOG: log,
     BP_WORK_MS: "300", PATH: `${fake}:${process.env.PATH}` },
   stdout: "ignore",
   stderr: "ignore",
 });
+let proc = startHub();
+const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const units = (pat: string) => Bun.spawnSync(["systemctl", "--user", "list-units", "--all", "--plain", "--no-legend", pat]).stdout.toString().trim();
+const leftovers: string[] = [];
 try {
   for (let i = 0; i < 200; i++) {
     try { if ((await fetch(`http://127.0.0.1:${port}/hello`)).status === 200) break; } catch {}
@@ -115,6 +126,15 @@ try {
   const scoped = lines().some((l) => l.startsWith("START"));
   check(scoped, "the agent started");
 
+  // dollar text in an argument reaches the agent as it is (systemd-run
+  // would expand ${VAR} without --expand-environment=no)
+  const lit = "m-${BP_EXAMPLE}-$HOME-$$";
+  send("thread.modes", { thread: ok1, model: lit });
+  send("turn.start", { thread: ok1, text: "dollars", msg: "c-d" });
+  await until(15000, () => lines().some((l) => l.startsWith("ARGV") && l.includes(JSON.stringify(lit).slice(1, -1))) ? true : undefined);
+  check(lines().some((l) => l.startsWith("ARGV") && l.includes(JSON.stringify(lit).slice(1, -1))), "dollar text in an argument reaches the agent literally");
+  await until(15000, () => turns(ok1).filter((s) => s === "completed").length >= 2 ? true : undefined);
+
   const bad = await made("runaway");
   send("turn.start", { thread: bad, text: "mode:oom go", msg: "c-2" });
   await until(15000, () => turns(bad).at(-1) === "failed" ? true : undefined);
@@ -129,9 +149,75 @@ try {
   const hello = await fetch(`http://127.0.0.1:${port}/hello`).then((r) => r.status).catch(() => 0);
   check(hello === 200, `the hub answers (${hello})`);
   send("turn.start", { thread: ok1, text: "again", msg: "c-3" });
-  await until(15000, () => turns(ok1).filter((s) => s === "completed").length >= 2 ? true : undefined);
-  check(turns(ok1).filter((s) => s === "completed").length >= 2, `another thread keeps working (${turns(ok1).join(",")})`);
+  await until(15000, () => turns(ok1).filter((s) => s === "completed").length >= 3 ? true : undefined);
+  check(turns(ok1).filter((s) => s === "completed").length >= 3, `another thread keeps working (${turns(ok1).join(",")})`);
+
+  // codex and grok runaways are told as Claude's is (and their scopes reset)
+  for (const provider of ["codex", "grok"]) {
+    const n = seen.filter((x) => x.$ === "ThreadCreated").length;
+    send("thread.create", { project: pc.id, title: provider + " runaway", env: "local", provider });
+    const th = (await until(10000, () => seen.filter((x) => x.$ === "ThreadCreated")[n]))?.id as string;
+    send("turn.start", { thread: th, text: "go", msg: "c-" + provider });
+    await until(20000, () => turns(th).at(-1) === "failed" ? true : undefined);
+    await sleep(500);
+    const said = seen.some((x) => x.thread === th && /out of memory \(limit 200 MB\)/.test(JSON.stringify(x)));
+    check(turns(th).at(-1) === "failed" && said, `${provider}: the runaway's turn says it ran out of memory (${turns(th).join(",")})`);
+    const left = Bun.spawnSync(["systemctl", "--user", "list-units", "--all", "--plain", "--no-legend", `bp-agent-${th}-*`]).stdout.toString().trim();
+    check(left === "", `${provider}: no scope is left (${left.slice(0, 80)})`);
+  }
+  check(!lines().some((l) => l.startsWith("HOG-SURVIVED")), "no codex or grok allocation completed");
+
+  // the scope's account is asked off the hub's inbox: while a runaway's
+  // exit waits on a user manager that does not answer, the hub still serves
+  writeFileSync(slow, "");
+  const alloc0 = lines().filter((l) => l.startsWith("ALLOC")).length;
+  const bad2 = await made("runaway 2");
+  send("turn.start", { thread: bad2, text: "mode:oom go", msg: "c-4" });
+  await until(15000, () => lines().filter((l) => l.startsWith("ALLOC")).length > alloc0 ? true : undefined);
+  await sleep(1500);
+  const t0 = Date.now();
+  send("setting.set", { key: "probe.key", value: "x" });
+  const probe = await until(10000, () => seen.find((c) => c.$ === "SettingSet" && c.key === "probe.key"));
+  const took = Date.now() - t0;
+  check(!!probe && took < 1500, `the hub answers while an exit waits on systemctl (${took} ms)`);
+  check(turns(bad2).at(-1) !== "failed", "the runaway's account is still pending");
+  await until(20000, () => turns(bad2).at(-1) === "failed" ? true : undefined);
+  check(turns(bad2).at(-1) === "failed", `its turn fails in the end (${turns(bad2).join(",")})`);
+
+  // retiring an agent ends its whole scope: a child it started dies with it
+  const hc = await made("holds a child");
+  send("turn.start", { thread: hc, text: "mode:hold-child go", msg: "c-5" });
+  const child = await until(15000, () => lines().find((l) => l.startsWith("CHILD ")));
+  const cpid = Number(child?.split(" ")[1] ?? 0);
+  await until(15000, () => turns(hc).at(-1) === "completed" ? true : undefined);
+  check(cpid > 0 && alive(cpid), "the agent's child runs after its turn");
+  send("thread.modes", { thread: hc, model: "retired-model" });
+  send("turn.start", { thread: hc, text: "mode:plain again", msg: "c-6" });
+  await until(15000, () => !alive(cpid) ? true : undefined);
+  check(cpid > 0 && !alive(cpid), "retiring the agent ended its child");
+  check(units(`bp-agent-${hc}-*`).split("\n").filter((l) => l).length <= 1, `only the new generation's scope is left (${units(`bp-agent-${hc}-*`).slice(0, 120)})`);
+
+  // a restart stops the scopes a previous run left for threads in its log, and no one else's
+  const mine = `bp-agent-${ok1}-1-1`;
+  const other = `bp-agent-zz-not-mine-1-1`;
+  for (const u of [mine, other]) {
+    leftovers.push(u);
+    Bun.spawn(["systemd-run", "--user", "--scope", "--quiet", `--unit=${u}`, "sleep", "300"], { stdout: "ignore", stderr: "ignore" });
+  }
+  await until(10000, () => units(`${mine}.scope`) && units(`${other}.scope`) ? true : undefined);
+  check(!!units(`${mine}.scope`), "a leftover scope of a known thread exists");
+  proc.kill(9);
+  await proc.exited;
+  proc = startHub();
+  for (let i = 0; i < 200; i++) {
+    try { if ((await fetch(`http://127.0.0.1:${port}/hello`)).status === 200) break; } catch {}
+    await sleep(100);
+  }
+  await until(15000, () => !units(`${mine}.scope`) ? true : undefined);
+  check(!units(`${mine}.scope`), "recovery stopped the scope an earlier run left for a thread of the log");
+  check(!!units(`${other}.scope`), "a scope of a thread not in the log is left alone");
 } finally {
+  for (const u of leftovers) Bun.spawnSync(["systemctl", "--user", "stop", `${u}.scope`], { stdout: "ignore", stderr: "ignore" });
   proc.kill(9);
   await proc.exited;
   if (process.env.KEEP) console.log(root); else rmSync(root, { recursive: true, force: true });

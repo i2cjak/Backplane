@@ -7151,6 +7151,27 @@ def Laws.contain_plain_exit():
 def Laws.contain_words_gb():
   {==}
 
+def Laws.contain_no_expand():
+  {==}
+
+def Laws.contain_stop_scope():
+  {==}
+
+def Laws.contain_stale_units():
+  {==}
+
+def Laws.contain_thread_of():
+  {==}
+
+def Laws.contain_why_oom():
+  {==}
+
+def Laws.contain_why_plain():
+  {==}
+
+def Laws.contain_why_missing():
+  {==}
+
 def Laws.live_split_fence_safe():
   {==}
 
