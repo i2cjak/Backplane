@@ -5150,3 +5150,47 @@ law alerts_ids_raise:
   {List.length(&2, J.Json, Hb.Did.alerts(Hb.One.got(U.Ui.recv(U.Ui.init(0n), U.Seq.demo("log", [C.Change.encode(M.ThreadCreated{"t1", "p1", "a", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.ThreadCreated{"t2", "p1", "b", M.Local{}, "", "", "claude", "", 1n}),
       C.Change.encode(M.ThreadCreated{"t3", "p1", "c", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.TurnChanged{"t1", M.Running{}, 2n}), C.Change.encode(M.TurnChanged{"t2", M.Running{}, 2n}), C.Change.encode(M.TurnChanged{"t3", M.Running{}, 2n})])),
       U.Seq.demo("changes", [C.Change.encode(M.TurnChanged{"t1", M.Completed{}, 3n}), C.Change.encode(M.TurnChanged{"t3", M.Failed{}, 3n})])))) == 2n : Nat}
+
+# a push that failed gives its items back, ahead of what waited, and the
+# link holds before it goes again; one through drops them
+law far_fail_keeps_items:
+  for a: J.Json
+  for b: J.Json
+  {FR.Out.waiting(FR.Out.done(FR.Out.sent(FR.Out.add(FR.Out.new("l"), 0n, 2n, [FR.Item{1n, a}, FR.Item{2n, b}])), False{}, 2n)) == [FR.Item{1n, a}, FR.Item{2n, b}] : List<&2, FR.Item>}
+
+law far_ack_removes_batch:
+  for a: J.Json
+  {FR.Out.flight(FR.Out.done(FR.Out.sent(FR.Out.add(FR.Out.new("l"), 0n, 1n, [FR.Item{1n, a}])), True{}, 1n)) == Nil{} : List<&2, FR.Item>}
+
+law far_ack_keeps_waiting:
+  for a: J.Json
+  for b: J.Json
+  {FR.Out.waiting(FR.Out.done(FR.Out.add(FR.Out.sent(FR.Out.add(FR.Out.new("l"), 0n, 1n, [FR.Item{1n, a}])), 1n, 2n, [FR.Item{2n, b}]), True{}, 1n)) == [FR.Item{2n, b}] : List<&2, FR.Item>}
+
+# what came while the batch was out follows it again, in order, and the
+# batch is sent from where it began
+law far_retry_order:
+  for a: J.Json
+  for b: J.Json
+  {FR.Out.waiting(FR.Out.done(FR.Out.add(FR.Out.sent(FR.Out.add(FR.Out.new("l"), 4n, 5n, [FR.Item{5n, a}])), 5n, 6n, [FR.Item{6n, b}]), False{}, 5n)) == [FR.Item{5n, a}, FR.Item{6n, b}] : List<&2, FR.Item>}
+
+law far_retry_begins:
+  for a: J.Json
+  for b: J.Json
+  {FR.Out.begins(FR.Out.done(FR.Out.add(FR.Out.sent(FR.Out.add(FR.Out.new("l"), 4n, 5n, [FR.Item{5n, a}])), 5n, 6n, [FR.Item{6n, b}]), False{}, 5n)) == 4n : Nat}
+
+law far_hold_waits:
+  for a: J.Json
+  {FR.Out.due(FR.Out.done(FR.Out.sent(FR.Out.add(FR.Out.new("l"), 0n, 1n, [FR.Item{1n, a}])), False{}, 1n)) == False{} : Bool}
+
+law far_release_resends:
+  for a: J.Json
+  {FR.Out.due(FR.Out.release(FR.Out.done(FR.Out.sent(FR.Out.add(FR.Out.new("l"), 0n, 1n, [FR.Item{1n, a}])), False{}, 1n))) == True{} : Bool}
+
+law far_backoff:
+  {[FR.Out.delay(1n), FR.Out.delay(2n), FR.Out.delay(3n), FR.Out.delay(6n), FR.Out.delay(9n)] == [2n, 4n, 8n, 60n, 60n] : List<&2, Nat>}
+
+# lines the log holds that this build cannot decode give the feed a history
+# of its own, so mirrors pull it afresh
+law far_epoch_on_unknown_lines:
+  {[FR.Fr.history.body("x", 3n, 3n), FR.Fr.history.body("x", 5n, 3n)] == ["x", "x|unknown:2"] : List<&2, String>}

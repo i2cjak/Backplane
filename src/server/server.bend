@@ -150,6 +150,8 @@ type Msg is Data:
   FarLoaded{link: String, name: String, text: String}
   FarHere{answered: String}
   # a pull to try again (the other hub was still making its feed)
+  # a failed push's backoff ended
+  FarResend{link: String}
   FarRetry{link: String}
   # a bot's answer to a person elsewhere, captured at its turn's end
   # (hub.bend's BotReply): sent and logged now
@@ -5215,6 +5217,11 @@ def Far.rpc.job(+client: U32, +id: String, +link: String, +body: String, +home: 
 # this hub's shared lines, made from its log (newest first)
 def Far.feed.job(+ls: List<&2, String>, +st: M.State, +inbox: Chan(Msg)) -> IO(Unit):
   Far.send(inbox, FarFeed{FR.Fr.feed(ls, st), ""})
+# at start: lines the log holds that this build cannot decode give the
+# history a new identity (Fr.history.body)
+def Far.history.at(+ls: List<&2, String>, +seq: Nat) -> String:
+  Bool.pick(String, List.is_empty(&2, String, ls), "", SG.Sign.header("00", 0n, FR.Fr.history.body(Maybe.default(&2, String, List.last(&2, String, ls), ""), List.length(&2, String, ls), seq)))
+
 
 # a mirror kept on disk, read back
 def Far.load.job(+link: String, +name: String, +home: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -5329,10 +5336,21 @@ def Far.push(h: Hub, cs: List<&2, M.Change>, +fresh: List<&2, String>, +from: Na
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       Far.push.lines(FR.Fr.feed.add(cs, List.reverse(&2, String, fresh), from, st, Nil{}), Far.history.first(Nat.is_eq(from, 0n), Far.fh(Hub{st, f, ls, cl, as, inbox, cfg, note}), fresh), from, M.State.seq(st))
 
-def Far.pushed.go(+o: FR.Out, h: Hub, ok: Bool, +to: Nat) -> IO(Hub):
+# a failed push holds its link for a backoff on a timer of its own; the
+# timer's message lets the retained batch go again
+def Far.retry.arm(holding: Bool, +link: String, +secs: Nat, +inbox: Chan(Msg)) -> IO(Unit):
+  match holding:
+    case True{}:
+      IO.spawn(Unit, Self.post.wait(inbox, FarResend{link}, U32.from_nat(Nat.mul(secs, 1000n))))
+    case False{}:
+      IO.pure(Unit, Unit{})
+
+def Far.pushed.go(+o: FR.Out, h: Hub, +ok: Bool, +to: Nat) -> IO(Hub):
   match h:
-    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
-      Far.push.next(FR.Out.next(FR.Out.done(o, ok, to)), Hub{st, f, ls, cl, as, inbox, cfg, note}, Bot.peer.url(st, FR.Out.link(o)))
+    case Hub{+st, f, ls, cl, as, +inbox, cfg, note}:
+      do IO<Hub>:
+        Far.retry.arm(Bool.not(ok), FR.Out.link(o), FR.Out.delay(Nat.add(FR.Out.fails(o), 1n)), inbox)
+        Far.push.next(FR.Out.next(FR.Out.done(o, ok, to)), Hub{st, f, ls, cl, as, inbox, cfg, note}, Bot.peer.url(st, FR.Out.link(o)))
 
 def Far.pushed.k(r: FR.Out & Hub, ok: Bool, +to: Nat) -> IO(Hub):
   (o, h) = r
@@ -5369,6 +5387,19 @@ def Far.pull.go(busy: Bool, +fh: FR.Fh, h: Hub, +link: String, +since: Nat) -> I
       IO.pure(Hub, Far.with(h, fh))
     case False{} Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
       do IO<Hub>:
+def Far.retry.go(+o: FR.Out, h: Hub) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Far.push.next(FR.Out.next(FR.Out.release(o)), Hub{st, f, ls, cl, as, inbox, cfg, note}, Bot.peer.url(st, FR.Out.link(o)))
+
+def Far.retry.k(r: FR.Out & Hub) -> IO(Hub):
+  (o, h) = r
+  Far.retry.go(o, h)
+
+# the backoff ended: the retained batch goes again
+def Hub.far.resend(h: Hub, +link: String) -> IO(Hub):
+  Far.retry.k(Far.out.of(Far.fh(h), link))
+
         IO.spawn(Unit, Far.pull.job(link, since, FR.In.epoch(FR.Fh.in(fh, link, link)), Cfg.home(cfg), Bot.peer.url(st, link), inbox))
         return Far.with(Hub{st, f, ls, cl, as, inbox, cfg, note}, FR.Fh.pull.on(fh, link))
 
@@ -5623,9 +5654,9 @@ def Far.start.go(ps: List<&2, BO.Peer>, +home: String, +inbox: Chan(Msg)) -> IO(
         IO.spawn(Unit, Far.load.job(i, n, home, inbox))
         Far.start.go(t, home, inbox)
 
-def Far.start.epoch(p: FR.Fh & Hub, +ls: List<&2, String>) -> Hub:
+def Far.start.epoch(p: FR.Fh & Hub, +ls: List<&2, String>, +seq: Nat) -> Hub:
   (fh, h) = p
-  Far.with(h, FR.Fh.epoch.set(fh, Far.history(ls)))
+  Far.with(h, FR.Fh.epoch.set(fh, Far.history.at(ls, seq)))
 
 def Far.start(h: Hub) -> IO(Hub):
   match h:
@@ -5633,7 +5664,7 @@ def Far.start(h: Hub) -> IO(Hub):
       do IO<Hub>:
         IO.spawn(Unit, Far.feed.job(ls, st, inbox))
         Far.start.go(Far.live(BO.World.peers(M.State.bots(st))), Cfg.home(cfg), inbox)
-        return Far.start.epoch(Far.fh(Hub{st, f, ls, cl, as, inbox, cfg, note}), ls)
+        return Far.start.epoch(Far.fh(Hub{st, f, ls, cl, as, inbox, cfg, note}), ls, M.State.seq(st))
 
 def Far.mirrors(+cfg: Cfg) -> List<&2, FR.In>:
   FR.Fh.ins(BN.Bn.far(Cfg.bn(cfg)))
@@ -7433,6 +7464,8 @@ def Hub.spawn_failed.k(ok: Bool, h: Hub, +thread: String, +line: String, +now: N
     case False{} _:
       IO.pure(Hub, h)
 
+    case FarResend{_}:
+      "far_resend"
 # a turn process that could not start: heard from the current generation
 # only (law stale_spawn_fail_quiet)
 def Hub.spawn_failed(h: Hub, +thread: String, +gen: String, +line: String, +now: Nat) -> IO(Hub):
@@ -7725,6 +7758,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
 # waits behind at most that many of its lines.
 
 def Bulk.room() -> Nat:
+    case FarResend{link}:
+      Hub.far.resend(h, link)
   16n
 
 def Bulk.fill(n: Nat, +tok: Chan(Unit)) -> IO(Unit):

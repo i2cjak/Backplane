@@ -1013,6 +1013,13 @@ def Page.json(p: Page) -> String:
     case Page{h, xs, m}:
       J.Json.show(J.Json.obj([J.KV{"head", J.Json.nat(h)}, J.KV{"items", J.Json.arr(Fr.items.json(xs))}, J.KV{"more", J.Json.bool(m)}]))
 
+# What the history's identity is made of: the log's first line, and, when
+# the log holds lines this build does not decode (a newer build wrote them:
+# `len` lines against `seq` changes), how many, so the feed's numbering
+# (by changes) starts a history of its own and mirrors pull it afresh.
+def Fr.history.body(+first: String, +len: Nat, +seq: Nat) -> String:
+  Bool.pick(String, Nat.is_eq(len, seq), first, first ++ "|unknown:" ++ Nat.show(Nat.sub(len, seq)))
+
 # Pushing to a linked machine
 # ---------------------------
 # One push at a time per link. A batch says it follows the last push that
@@ -1021,15 +1028,20 @@ def Page.json(p: Page) -> String:
 # start, so the other end, missing what failed, finds the gap and pulls.
 # Batches that come while one is out wait, merged, for it to end.
 
+# A batch out is kept (`flight`, and where it began, `ffrom`) until the
+# other end answers. A failure puts it back ahead of what waited, and the
+# link holds (`hold`) for a backoff (2, 4 ... 60 s, `Out.delay`) on its
+# own timer before it goes again; an answer through drops it.
+
 type Out is Data:
-  Out{link: String, acked: Nat, clean: Bool, busy: Bool, from: Nat, to: Nat, items: List<&2, Item>}
+  Out{link: String, acked: Nat, clean: Bool, busy: Bool, from: Nat, to: Nat, items: List<&2, Item>, flight: List<&2, Item>, ffrom: Nat, hold: Bool, fails: Nat}
 
 def Out.new(+link: String) -> Out:
-  Out{link, 0n, False{}, False{}, 0n, 0n, Nil{}}
+  Out{link, 0n, False{}, False{}, 0n, 0n, Nil{}, Nil{}, 0n, False{}, 0n}
 
 def Out.link(o: Out) -> String:
   match o:
-    case Out{l, _, _, _, _, _, _}:
+    case Out{l, _, _, _, _, _, _, _, _, _, _}:
       l
 
 # a batch to send: what it follows, where it ends, its items
@@ -1038,10 +1050,10 @@ type Send is Data:
 
 def Out.add.k(empty: Bool, o: Out, +from: Nat, +to: Nat, xs: List<&2, Item>) -> Out:
   match empty o:
-    case True{} Out{l, a, c, b, f, _, ys}:
-      Out{l, a, c, b, f, to, ys}
-    case False{} Out{l, a, c, b, f, _, +ys}:
-      Out{l, a, c, b, Bool.pick(Nat, List.is_empty(&2, Item, ys), from, f), to, List.append(&2, Item, ys, xs)}
+    case True{} Out{l, a, c, b, f, _, ys, fl, ff, h, n}:
+      Out{l, a, c, b, f, to, ys, fl, ff, h, n}
+    case False{} Out{l, a, c, b, f, _, +ys, fl, ff, h, n}:
+      Out{l, a, c, b, Bool.pick(Nat, List.is_empty(&2, Item, ys), from, f), to, List.append(&2, Item, ys, xs), fl, ff, h, n}
 
 # a commit that took the log from `from` to `to`, with what it shares
 def Out.add(o: Out, +from: Nat, +to: Nat, +xs: List<&2, Item>) -> Out:
@@ -1049,24 +1061,96 @@ def Out.add(o: Out, +from: Nat, +to: Nat, +xs: List<&2, Item>) -> Out:
 
 def Out.next.k(go: Bool, o: Out) -> Maybe<&2, Send> & Out:
   match go o:
-    case True{} Out{+l, +a, +c, _, +f, +t, xs}:
-      (Some{Send{l, Bool.pick(Nat, c, a, f), t, xs}}, Out{l, a, c, True{}, f, t, Nil{}})
+    case True{} Out{+l, +a, +c, _, +f, +t, +xs, _, _, h, n}:
+      (Some{Send{l, Bool.pick(Nat, c, a, f), t, xs}}, Out{l, a, c, True{}, f, t, Nil{}, xs, f, h, n})
     case False{} _:
       (None{}, o)
 
-# the push to start now, if one is due (none out, something waiting)
+# the push to start now, if one is due (none out, not holding, something waiting)
 def Out.next(o: Out) -> Maybe<&2, Send> & Out:
   match o:
-    case Out{l, a, c, +b, f, t, +xs}:
-      Out.next.k(Bool.and(Bool.not(b), Bool.not(List.is_empty(&2, Item, xs))), Out{l, a, c, b, f, t, xs})
+    case Out{l, a, c, +b, f, t, +xs, fl, ff, +h, n}:
+      Out.next.k(Bool.and(Bool.and(Bool.not(b), Bool.not(h)), Bool.not(List.is_empty(&2, Item, xs))), Out{l, a, c, b, f, t, xs, fl, ff, h, n})
 
-# the push out ended: through (up to `to`), or not
+# the push out ended: through (up to `to`), or not (its items go back first)
 def Out.done(o: Out, ok: Bool, +to: Nat) -> Out:
   match o ok:
-    case Out{l, _, _, _, f, t, xs} True{}:
-      Out{l, to, True{}, False{}, f, t, xs}
-    case Out{l, a, _, _, f, t, xs} False{}:
-      Out{l, a, False{}, False{}, f, t, xs}
+    case Out{l, _, _, _, f, t, xs, +_fl, _, _, _} True{}:
+      Out{l, to, True{}, False{}, f, t, xs, Nil{}, 0n, False{}, 0n}
+    case Out{l, a, _, _, f, t, xs, fl, ff, _, n} False{}:
+      Out{l, a, False{}, False{}, Bool.pick(Nat, List.is_empty(&2, Item, fl), f, ff), t, List.append(&2, Item, fl, xs), Nil{}, 0n, True{}, 1n+n}
+
+# the state after the push due now was started (what the laws read)
+def Out.sent.k(m: Maybe<&2, Send>, p: Out) -> Out:
+  match m:
+    case Some{_}:
+      p
+    case None{}:
+      p
+
+def Out.sent.p(r: Maybe<&2, Send> & Out) -> Out:
+  (m, p) = r
+  Out.sent.k(m, p)
+
+def Out.sent(o: Out) -> Out:
+  Out.sent.p(Out.next(o))
+
+# a push is due now
+def Out.due.k(m: Maybe<&2, Send>, p: Out) -> Bool:
+  match m p:
+    case Some{_} _:
+      True{}
+    case None{} _:
+      False{}
+
+def Out.due.p(r: Maybe<&2, Send> & Out) -> Bool:
+  (m, p) = r
+  Out.due.k(m, p)
+
+def Out.due(o: Out) -> Bool:
+  Out.due.p(Out.next(o))
+
+# the hold ended (its timer fired)
+def Out.release(o: Out) -> Out:
+  match o:
+    case Out{l, a, c, b, f, t, xs, fl, ff, _, n}:
+      Out{l, a, c, b, f, t, xs, fl, ff, False{}, n}
+
+def Out.holding(o: Out) -> Bool:
+  match o:
+    case Out{_, _, _, _, _, _, _, _, _, +h, _}:
+      h
+
+def Out.waiting(o: Out) -> List<&2, Item>:
+  match o:
+    case Out{_, _, _, _, _, _, +xs, _, _, _, _}:
+      xs
+
+def Out.flight(o: Out) -> List<&2, Item>:
+  match o:
+    case Out{_, _, _, _, _, _, _, +fl, _, _, _}:
+      fl
+
+def Out.fails(o: Out) -> Nat:
+  match o:
+    case Out{_, _, _, _, _, _, _, _, _, _, +n}:
+      n
+
+def Out.begins(o: Out) -> Nat:
+  match o:
+    case Out{_, _, _, _, +f, _, _, _, _, _, _}:
+      f
+
+# seconds to hold after `n` failures in a row: 2, 4, 8 ... 60
+def Out.delay.go(n: Nat, +d: Nat) -> Nat:
+  match n:
+    case 0n:
+      d
+    case 1n+k:
+      Out.delay.go(k, Bool.pick(Nat, Nat.is_ge(d, 32n), 60n, (d * 2n : Nat)))
+
+def Out.delay(+n: Nat) -> Nat:
+  Out.delay.go(Nat.sub(n, 1n), 2n)
 
 def Outs.get(os: List<&2, Out>, +link: String) -> Out:
   match os:

@@ -327,6 +327,11 @@ try {
 
   // A late old push is only a hint to pull the current authority. It
   // cannot put the old history back, or advance the new mirror to 999.
+  // (a push only counts from a machine this hub lists as the owner's, and
+  // that list is probed every 2 minutes: wait for the replacement owner, or
+  // the hub rightly refuses the push and the check sees a 403, not the epoch)
+  const listed = await until(150000, () => String(cb4.info?.machines ?? "").includes(`127.0.0.1:${pa}`));
+  check("the replacement owner is listed again", !!listed, cb4.info?.machines);
   const secret = JSON.parse(readFileSync(join(a.home, "secrets", "peers", link), "utf8")).secret;
   const delayed = JSON.stringify({ name: "alpha", epoch: oldEpoch, since: 0, head: 999, items: [{ n: 999, c: { $: "BotSet", id: miso.bot, name: "stale-history", thread: th, look: 1, at: resetAt } }] });
   const ts = Math.floor(Date.now() / 1000);

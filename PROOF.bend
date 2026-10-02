@@ -6989,3 +6989,30 @@ def Laws.alerts_ids_same():
 
 def Laws.alerts_ids_raise():
   {==}
+
+def Laws.far_fail_keeps_items(a, b):
+  {==}
+
+def Laws.far_ack_removes_batch(a):
+  {==}
+
+def Laws.far_ack_keeps_waiting(a, b):
+  {==}
+
+def Laws.far_retry_order(a, b):
+  {==}
+
+def Laws.far_retry_begins(a, b):
+  {==}
+
+def Laws.far_hold_waits(a):
+  {==}
+
+def Laws.far_release_resends(a):
+  {==}
+
+def Laws.far_backoff():
+  {==}
+
+def Laws.far_epoch_on_unknown_lines():
+  {==}
