@@ -396,7 +396,7 @@ def Ui.reset(u: Ui, +o: J.Json) -> Ui:
   match u:
     case Ui{st, sel, dr, live, op, _, now, ad, pa, _, rid, w, er, note, +nf, ob, tr}:
       Ui.fold.items(J.Json.elems(J.Json.get_obj(o, "items")),
-        Ui{Ui.base(Nat.is_gt(J.Json.get_nat(o, "since", 0n), 0n), st), sel, dr, live, op, True{}, now, ad, pa, J.Json.get_str(o, "version", ""), rid, w, er, note,
+        Ui{Ui.base(Nat.is_gt(J.Json.get_nat(o, "since", 0n), 0n), st), sel, Map.set(&2, String, dr, "@sync", "1"), live, op, True{}, now, ad, pa, J.Json.get_str(o, "version", ""), rid, w, er, note,
           Machines.home(Ui.reset.keep(String.eq(J.Json.get_str(o, "origin", ""), Str.get(nf, "origin")), nf,
             Local.keep(nf, Map.set(&2, String, Map.set(&2, String, Info.of(J.Json.get_obj(o, "info")), "cid", Str.get(nf, "cid")), "origin", J.Json.get_str(o, "origin", ""))))), ob, tr})
 
@@ -664,7 +664,7 @@ def Ui.pending(u: Ui, +thread: String) -> List<&2, String>:
 def Ui.online(u: Ui, b: Bool) -> Ui:
   match u:
     case Ui{st, sel, dr, live, op, _, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
-      Ui{st, sel, Map.set(&2, String, Map.set(&2, String, Map.set(&2, String, dr, "@mech.at", ""), "@solid.at", ""), "@desk", ""), live, op, b, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
+      Ui{st, sel, Map.set(&2, String, Map.set(&2, String, Map.set(&2, String, Map.set(&2, String, dr, "@mech.at", ""), "@solid.at", ""), "@desk", ""), "@sync", ""), live, op, b, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
 
 # the clock goes in the info map too, where a thread's folded turns read
 # it ("5m ago", FO.Fold.roles)
@@ -6330,34 +6330,67 @@ def Emb.act(+u: Ui, +action: String, +value: String) -> Act:
   Emb.act.k(C.Codec.pos(["emb-key", "emb-paste", "emb-restart", "emb-pin"], action), u, value)
 
 # The first-run tour (core/onboard.bend): the step on screen is the
-# scratch "@tour" ("" until the person moves); the hub keeps only that it
+# scratch "@tour" ("" and digits when it came up by itself, "m" and digits
+# when Settings' "Show the tour" asked for it); the hub keeps only that it
 # was finished or skipped, the setting "onboard.done", so every client of
-# a hub agrees. It waits until the hub's state has arrived (a sequence
-# above 0), so it never flashes for a hub that has finished it. Actions
-# "ob-next", "ob-back", "ob-skip" and "ob-open" (Settings' "Show the
-# tour", which shuts Settings: the tour is shown over the usual screen).
+# a hub agrees. A tour that came up by itself waits until this connection's
+# log has arrived ("@sync", set by Ui.reset, cleared when the connection
+# changes: a cached state is not current) and ends when the hub says it is
+# done, even from another client. Actions "ob-next", "ob-back", "ob-skip"
+# and "ob-open" (which shuts Settings: the tour shows over the usual
+# screen). Leaving puts the keyboard back where it makes sense (the
+# composer of an open thread, else nowhere), so no hidden field keeps it.
 def Tour.done(+st: M.State) -> Bool:
   String.eq(M.Setting.get(st, "onboard.done", ""), "1")
 
+def Tour.ready(+u: Ui) -> Bool:
+  Bool.and(Nat.is_gt(Ui.seq(u), 0n), String.eq(Ui.scratch(u, "@sync"), "1"))
+
 def Tour.at(+u: Ui) -> Nat:
-  OB.Ob.at(Nat.is_gt(Ui.seq(u), 0n), Tour.done(Ui.state(u)), Ui.scratch(u, "@tour"))
+  OB.Ob.at(Tour.ready(u), Tour.done(Ui.state(u)), Ui.scratch(u, "@tour"))
 
 def Tour.on(+u: Ui) -> Bool:
   OB.Ob.live(Tour.at(u))
 
-def Tour.finish(u: Ui) -> Act:
-  Ui.setting(Ui.scratch_set(u, "@tour", ""), "onboard.done=1")
+# Scratch's lifetime in days (the "scratch.days" setting)
+def Tour.days(+u: Ui) -> String:
+  Nat.show(Nat.div(M.Scratch.window(Ui.state(u)), 86400n))
 
-# to step i, or (past the last) the end
-def Tour.go.k(live: Bool, +i: Nat, u: Ui) -> Act:
+# the step's words for a kind of client (0 window, 1 web, 2 phone)
+def Tour.body(+k: Nat, +u: Ui) -> String:
+  OB.Ob.body(k, Tour.days(u), Tour.at(u))
+
+def Tour.target.k(+g: String, open: Bool) -> String:
+  Bool.pick(String, Bool.and(String.eq(g, "head"), Bool.not(open)), "", g)
+
+# what the step points at: an open thread's buttons only when one is open
+def Tour.target(+k: Nat, +u: Ui) -> String:
+  Tour.target.k(OB.Ob.target(k, Tour.at(u)), Bool.not(String.is_empty(Ui.sel(u))))
+
+def Tour.leave.k(thread: Bool) -> Cmd:
+  Bool.pick(Cmd, thread, Focus{"composer"}, Focus{""})
+
+def Tour.leave(a: Act, +thread: Bool) -> Act:
+  match a:
+    case Act{u, cs}:
+      Act{u, Tour.leave.k(thread) <> cs}
+
+def Tour.finish(+u: Ui) -> Act:
+  Tour.leave(Ui.setting(Ui.scratch_set(u, "@tour", ""), "onboard.done=1"), Bool.not(String.is_empty(Ui.sel(u))))
+
+# to step i (by hand or not as the tour was), or (past the last) the end
+def Tour.go.k(live: Bool, +i: Nat, +u: Ui) -> Act:
   match live:
     case True{}:
-      Act{Ui.scratch_set(u, "@tour", OB.Ob.raw(i)), Nil{}}
+      Act{Ui.scratch_set(u, "@tour", OB.Ob.raw(OB.Ob.manual(Ui.scratch(u, "@tour")), i)), Nil{}}
     case False{}:
       Tour.finish(u)
 
-def Tour.go(+i: Nat, u: Ui) -> Act:
+def Tour.go(+i: Nat, +u: Ui) -> Act:
   Tour.go.k(OB.Ob.live(i), i, u)
+
+def Tour.open(+u: Ui) -> Act:
+  Tour.leave(Act{Ui.scratch_set(Ui.flag_off(u, "settings"), "@tour", OB.Ob.raw(True{}, 0n)), Nil{}}, Bool.not(String.is_empty(Ui.sel(u))))
 
 def Tour.act.k(i: Nat, +u: Ui) -> Act:
   match i:
@@ -6368,7 +6401,7 @@ def Tour.act.k(i: Nat, +u: Ui) -> Act:
     case 2n:
       Tour.finish(u)
     case 3n:
-      Act{Ui.scratch_set(Ui.flag_off(u, "settings"), "@tour", OB.Ob.raw(0n)), Nil{}}
+      Tour.open(u)
     case _:
       Act{u, Nil{}}
 

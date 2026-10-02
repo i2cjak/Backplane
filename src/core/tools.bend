@@ -97,6 +97,13 @@ def Tools.head(h: Head, sa: String, sv: String, ta: String, tv: String) -> List<
         [Tools.fork()], Tools.back(forked),
         [Tools.term(term, ta, tv), Tools.panel(panel)]])
 
+# a button said in a sentence for the first-run tour: "Settle. Done for
+# now: it leaves the active threads." (one source for the words)
+def Tools.said(t: Tool) -> String:
+  match t:
+    case Tool{_, +l, +tip, _, _, _, _, _} :
+      l ++ ". " ++ tip ++ "."
+
 def Tools.icons(ts: List<&2, Tool>) -> List<&2, String>:
   match ts:
     case Nil{}:

@@ -4995,12 +4995,12 @@ def Tour.x(+g: String, +ww: U32, +cw: U32) -> U32:
   Bool.pick(U32, Bool.or(Bool.or(String.eq(g, "sidebar"), String.eq(g, "add")), String.eq(g, "settings")),
     U32.min(288, U32.dim(ww, (cw + 12 : U32))), U32.shr(U32.dim(ww, cw)))
 
-def Tour.lines(ls: List<&2, String>, +ty: Ty, +x: U32, +y: U32) -> List<&2, R.Op>:
+def Tour.lines(ls: List<&2, String>, +ty: Ty, +k: Nat, +lh: U32, +c: U32, +x: U32, +y: U32) -> List<&2, R.Op>:
   match ls:
     case Nil{}:
       Nil{}
     case l <> t:
-      List.append(&2, R.Op, Ty.text(ty, 0n, l, D.Clip.all(), x, y, 22, T.Th.dim()), Tour.lines(t, ty, x, (y + 22 : U32)))
+      List.append(&2, R.Op, Ty.text(ty, k, l, D.Clip.all(), x, y, lh, c), Tour.lines(t, ty, k, lh, c, x, (y + lh : U32)))
 
 def Tour.back(on: Bool, +ty: Ty, +x: U32, +y: U32) -> Out:
   match on:
@@ -5009,13 +5009,33 @@ def Tour.back(on: Bool, +ty: Ty, +x: U32, +y: U32) -> Out:
     case False{}:
       Out.none()
 
+# the body's lines that fit above the buttons, the last cut short with an
+# ellipsis when some are left out
+def Tour.clip.k(cut: Bool, +ls: List<&2, String>, +ty: Ty, +fit: Nat, +px: U32) -> List<&2, String>:
+  match cut:
+    case True{}:
+      List.append(&2, String, List.take(&2, String, ls, Nat.sub(fit, 1n)), [Ty.fit(ty, 0n, Maybe.default(&2, String, List.get(&2, String, ls, Nat.sub(fit, 1n)), "") ++ " ...", px)])
+    case False{}:
+      ls
+
+def Tour.clip(+ls: List<&2, String>, +ty: Ty, +fit: Nat, +px: U32) -> List<&2, String>:
+  Tour.clip.k(Nat.is_gt(List.length(&2, String, ls), fit), ls, ty, fit, px)
+
 def Lay.tour(+ty: Ty, +n: S.Nui, +ww: U32, +hh: U32) -> Out:
-  +i = U.Tour.at(S.Nui.ui(n))
-  +g = OB.Ob.target(i)
-  +cw = {U32.min(440, U32.dim(ww, 24)) : U32}
+  +u = S.Nui.ui(n)
+  +i = U.Tour.at(u)
+  +g = U.Tour.target(0n, u)
+  +body = U.Tour.body(0n, u)
+  +title = OB.Ob.title(i)
+  +cw0 = {U32.min(440, U32.dim(ww, 24)) : U32}
+  +cw = {Bool.pick(U32, U32.is_gt((U32.from_nat(List.length(&2, String, Ty.wrap(ty, 0n, body, U32.dim(cw0, 32)))) * 22 + 130 : U32), hh), U32.min(680, U32.dim(ww, 24)), cw0) : U32}
   +cx = Tour.x(g, ww, cw)
-  +ls = Ty.wrap(ty, 0n, OB.Ob.body(i), U32.dim(cw, 32))
-  +ch = {(122 + U32.from_nat(List.length(&2, String, ls)) * 22 : U32) : U32}
+  +tl = Ty.wrap(ty, 1n, title, U32.dim(cw, 32))
+  +th = {(U32.from_nat(List.length(&2, String, tl)) * 28 : U32) : U32}
+  +f0 = {(U32.dim(hh, (24 + 98 + th : U32)) / 22 : U32) : U32}
+  +fit = Nat.max(U32.to_nat(f0), 1n)
+  +ls = Tour.clip(Ty.wrap(ty, 0n, body, U32.dim(cw, 32)), ty, fit, U32.dim(cw, 32))
+  +ch = {(98 + th + U32.from_nat(List.length(&2, String, ls)) * 22 : U32) : U32}
   +cy = {U32.min(96, U32.dim(hh, (ch + 12 : U32))) : U32}
   +by = {(cy + ch - 44 : U32) : U32}
   +nb = OB.Ob.forward(i)
@@ -5024,8 +5044,8 @@ def Lay.tour(+ty: Ty, +n: S.Nui, +ww: U32, +hh: U32) -> Out:
     Out{Tour.dim(Tour.rect(g, hh, Lay.x1(n)), ww, hh), [Lay.hit(0, 0, ww, hh, "", "")]},
     Out{Lay.box(D.Clip.all(), cx, cy, cw, ch, 0, T.Th.panel(), T.Th.line()), [Lay.hit(cx, cy, cw, ch, "", "")]},
     Out.ops(List.concat(&2, R.Op, [Ty.text(ty, 2n, OB.Ob.counter(i), D.Clip.all(), (cx + 16 : U32), (cy + 8 : U32), 20, T.Th.faint()),
-      Ty.text(ty, 1n, OB.Ob.title(i), D.Clip.all(), (cx + 16 : U32), (cy + 30 : U32), 32, T.Th.text()),
-      Tour.lines(ls, ty, (cx + 16 : U32), (cy + 68 : U32))])),
+      Tour.lines(tl, ty, 1n, 28, T.Th.text(), (cx + 16 : U32), (cy + 30 : U32)),
+      Tour.lines(ls, ty, 0n, 22, T.Th.dim(), (cx + 16 : U32), (cy + 38 + th : U32))])),
     Lay.button(ty, D.Clip.all(), (cx + 16 : U32), by, "Skip", T.Th.soft(), "ob-skip", ""),
     Tour.back(Nat.is_gt(i, 0n), ty, (nx - 6 - Lay.button.w(ty, "Back") : U32), by),
     Lay.button(ty, D.Clip.all(), nx, by, nb, T.Th.accent(), "ob-next", "")])

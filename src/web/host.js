@@ -237,6 +237,7 @@ function render() {
     document.getElementById(focus)?.focus();
     focus = null;
   }
+  tourSync();
 }
 
 function later() {
@@ -576,18 +577,74 @@ document.addEventListener("keydown", (e) => {
   dispatch(alt || el.getAttribute("data-enter"), valueOf(el));
 });
 
-// The first-run tour (view.bend's View.tour) while its card is on the page:
-// Enter and the right arrow go on, the left arrow back, Esc ends it; no
-// other key reaches the page under it
+// The first-run tour (view.bend's View.tour) is modal while its dialog is on
+// the page: the page behind is inert, focus stays in the dialog (Tab goes
+// round its buttons), the keys that mean something go through app.bend's
+// tour_key (a repeat does nothing), every other key, ctrl/meta combination,
+// paste and drop is stopped, and a focused button does its own action. The
+// key that ended it is eaten until it is let go, so holding Enter through
+// Done never reaches the composer behind.
+let tourFocus = null; // where the keyboard was when the dialog came up
+let tourOn = false;
+const tourEaten = new Set();
+function tourSync() {
+  const tour = document.querySelector(".tour");
+  const app = document.querySelector(".app");
+  if (tour && !tourOn) {
+    tourOn = true;
+    tourFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  }
+  if (app) {
+    for (const el of app.children) {
+      if (tour && !el.classList.contains("tour") && !el.classList.contains("tour-back")) el.setAttribute("inert", "");
+      else el.removeAttribute("inert");
+    }
+  }
+  if (tour) {
+    if (!tour.contains(document.activeElement)) (tour.querySelector("button.primary") || tour.querySelector("button"))?.focus();
+  } else if (tourOn) {
+    tourOn = false;
+    // back where it was, unless that went away (Settings shut): the composer
+    const back = tourFocus && tourFocus !== document.body && tourFocus.isConnected ? tourFocus : document.getElementById("composer");
+    back?.focus?.();
+    tourFocus = null;
+  }
+}
 document.addEventListener("keydown", (e) => {
-  if (e.isComposing || !document.querySelector(".tour")) return;
-  const act = e.key === "Enter" || e.key === "ArrowRight" ? "ob-next" : e.key === "ArrowLeft" ? "ob-back" : e.key === "Escape" ? "ob-skip" : "";
-  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const tour = document.querySelector(".tour");
+  if (!tour) {
+    // the key that closed it, still held
+    if (tourEaten.has(e.key)) { e.preventDefault(); e.stopImmediatePropagation(); }
+    return;
+  }
+  if (e.isComposing) return;
   e.stopImmediatePropagation();
-  if (!act) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) { e.preventDefault(); return; }
+  if (e.key === "Tab") {
+    e.preventDefault();
+    const bs = [...tour.querySelectorAll("button")];
+    const at = bs.indexOf(document.activeElement);
+    bs[(at + (e.shiftKey ? bs.length - 1 : 1)) % bs.length]?.focus();
+    return;
+  }
+  const act = App.tour_key(e.key);
+  const onButton = document.activeElement instanceof HTMLButtonElement && tour.contains(document.activeElement);
+  // Enter or Space on a focused button is that button's (the click does it)
+  if (onButton && (e.key === "Enter" || e.key === " ")) {
+    tourEaten.add(e.key);
+    if (e.repeat) e.preventDefault();
+    return;
+  }
   e.preventDefault();
+  if (!act || e.repeat) return;
+  tourEaten.add(e.key);
   dispatch(act, "");
 }, true);
+document.addEventListener("keyup", (e) => { tourEaten.delete(e.key); }, true);
+window.addEventListener("blur", () => tourEaten.clear());
+for (const ev of ["paste", "drop", "dragover", "beforeinput", "cut"]) {
+  document.addEventListener(ev, (e) => { if (document.querySelector(".tour")) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+}
 
 // Lightbox
 // --------

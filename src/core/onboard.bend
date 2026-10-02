@@ -1,91 +1,205 @@
 import Base
+import ./tools.bend as TO
 
 # The first-run tour, for every client (the window, the web, the phones):
-# a short list of steps (a title, a few sentences, and the part of the
-# screen it is about), and the moves between them. Pure: the client keeps
-# which step is on screen as text ("" until the person moves, then the
-# step's number) and the hub keeps the one fact that outlives it, the
-# setting "onboard.done" (client.bend's Tour.*). The tour is up when the
-# client has heard from its hub, the hub has no "onboard.done" and nobody
-# has moved it yet (step 0), or when the person asked for it again.
+# a short list of steps, each a title, a few sentences and the part of the
+# screen it is about, and the moves between them. Pure: the text depends on
+# the client's kind (`k`: 0 window, 1 web, 2 phone, where the controls
+# differ) and on the hub's Scratch lifetime in days.
+#
+# The client keeps which step is on screen as text (client.bend's Tour.*):
+# "" (the tour came up by itself, at the first step), digits (it came up by
+# itself and the person moved on), or "m" and digits (the person asked for
+# it again, from Settings). The hub keeps the one fact that outlives it,
+# the setting "onboard.done". A tour that came up by itself closes the
+# moment the hub says it is done, wherever that was decided; one asked for
+# by hand stays until it is ended.
 #
 # `target` names what a client may point at: "" (nothing), "sidebar",
-# "add" (the sidebar's + button), "head" (the thread's buttons),
-# "settings" (the sidebar's Settings button).
-type Step is Data:
-  Step{title: String, body: String, target: String}
+# "add" (the sidebar's + button), "head" (an open thread's buttons),
+# "settings" (the sidebar's Settings button). Phones point at nothing.
 
-def Ob.steps() -> List<&2, Step>:
-  [Step{"Welcome to Backplane", "An agent next to your KiCad work, with viewers for the board, schematic and 3D model. This tour takes a minute. Esc skips it; Settings brings it back.", ""},
-   Step{"Projects", "A project is a folder, usually a KiCad project. Add one with + at the top of the sidebar. Conversations that belong to no project go under Scratch.", "add"},
-   Step{"Threads", "A thread is a conversation with an agent working in a project's folder. Long runs of tool calls fold into one row, and delegated work shows in the Subagents panel above the thread.", "sidebar"},
-   Step{"The thread's buttons", "Along the top: stop a turn, pin, settle, snooze, archive or delete a thread, fork it, open a terminal in its folder, and Viewer. Viewer opens Board, Schematic, 3D, Mech, Files, Diff and Browser beside the thread.", "head"},
-   Step{"Bots", "A bot is a persistent agent with a cat for a face, memory, routines and rooms. In a message, @bot, >thread, %project and #room refer to them; /give hands the conversation to a thread, project or bot.", "sidebar"},
-   Step{"Your agents", "Claude Code, Codex and Grok run as the programs already installed and logged in on this machine; Backplane starts them as they are. Pick the provider and model from the composer or in Settings.", "settings"},
-   Step{"Keys and voice", "API keys for other services are kept on this machine under Settings; agents use them without ever reading them. Voice dictation uses an OpenAI key, kept there too.", "settings"},
-   Step{"Your machines", "Each machine runs one hub. Other machines on your tailnet show up in the sidebar, with a machine switch beside Settings, and their threads open here. Pair a phone by scanning the code in Settings, and open this hub's web address from other devices.", "settings"}]
-
-# how many steps there are
 def Ob.count() -> Nat:
-  8n
-
-def Ob.step(i: Nat) -> Step:
-  Maybe.default(&2, Step, List.get(&2, Step, Ob.steps(), i), Step{"", "", ""})
-
-def Ob.title.of(s: Step) -> String:
-  match s:
-    case Step{t, _, _}:
-      t
-
-def Ob.body.of(s: Step) -> String:
-  match s:
-    case Step{_, b, _}:
-      b
-
-def Ob.target.of(s: Step) -> String:
-  match s:
-    case Step{_, _, g}:
-      g
+  9n
 
 def Ob.title(i: Nat) -> String:
-  Ob.title.of(Ob.step(i))
+  match i:
+    case 0n:
+      "Welcome to Backplane"
+    case 1n:
+      "Projects"
+    case 2n:
+      "Threads"
+    case 3n:
+      "The thread's buttons"
+    case 4n:
+      "Bots"
+    case 5n:
+      "Your agents"
+    case 6n:
+      "Keys and voice"
+    case 7n:
+      "Other machines"
+    case 8n:
+      "Phones and browsers"
+    case _:
+      ""
 
-def Ob.body(i: Nat) -> String:
-  Ob.body.of(Ob.step(i))
+# what a desktop client may point at; phones point at nothing
+def Ob.target.d(i: Nat) -> String:
+  match i:
+    case 0n:
+      ""
+    case 1n:
+      "add"
+    case 2n:
+      "sidebar"
+    case 3n:
+      "head"
+    case 4n:
+      "sidebar"
+    case 5n:
+      "settings"
+    case 6n:
+      "settings"
+    case 7n:
+      "settings"
+    case 8n:
+      "settings"
+    case _:
+      ""
 
-# what a client may point at (see the top)
-def Ob.target(i: Nat) -> String:
-  Ob.target.of(Ob.step(i))
+def Ob.target(+k: Nat, +i: Nat) -> String:
+  match k:
+    case 2n:
+      ""
+    case _:
+      Ob.target.d(i)
 
-# a step's number read back from the client's text (digits only; anything
-# else counts as 0)
+def Ob.known(+g: String) -> Bool:
+  Bool.or(Bool.or(String.is_empty(g), String.eq(g, "sidebar")), Bool.or(Bool.or(String.eq(g, "add"), String.eq(g, "head")), String.eq(g, "settings")))
+
+def Ob.phone(+k: Nat) -> Bool:
+  Nat.is_eq(k, 2n)
+
+# the words of a step. Every claim here is checked against the code (see
+# docs in AGENTS.md): Scratch's lifetime is the "scratch.days" setting;
+# threads in a git project get their own worktree; Settings shows whether
+# each agent program is found, not whether it is signed in; the API keys'
+# file is the hub user's, and agents are only told not to print it;
+# Tailscale is looked for when Backplane starts.
+def Ob.body.0(+k: Nat) -> String:
+  Bool.pick(String, Ob.phone(k), "A short tour of what is where. Skip it any time; More, Settings shows it again.",
+    "A short tour of what is where. Enter goes on, Esc skips it, and Settings shows it again.")
+
+def Ob.body.1(+k: Nat, +d: String) -> String:
+  "A project is a folder, usually a KiCad project. Add one with " ++ Bool.pick(String, Ob.phone(k), "the folder-plus button on the project list", "+ at the top of the sidebar")
+    ++ ". Scratch is for chats with no project: it is temporary, and a thread left alone for " ++ d ++ " days is deleted with its folder, unless it is pinned."
+
+def Ob.body.2() -> String:
+  "A thread is a conversation with an agent working on a project. In a git project each thread works in its own worktree, so threads do not overwrite each other; without git it works in the project's folder. Long runs of tool calls fold into one row, and delegated work shows in the Subagents panel."
+
+def Ob.body.3(+k: Nat) -> String:
+  Bool.pick(String, Ob.phone(k), "A thread's toolbar menu has: ", "An open thread's header has: ")
+    ++ TO.Tools.said(TO.Tools.settle(False{})) ++ " " ++ TO.Tools.said(TO.Tools.snooze(False{}, "", "")) ++ " " ++ TO.Tools.said(TO.Tools.fork()) ++ " "
+    ++ Bool.pick(String, Ob.phone(k), "The viewer shows the board, schematic, 3D model, files and diff.", TO.Tools.said(TO.Tools.panel(False{})))
+    ++ " Pin, archive and delete are there too."
+
+def Ob.body.4(+k: Nat) -> String:
+  "A bot is an agent that stays around between chats, with its own name, a cat and a memory. Add one under Bots in the " ++ Bool.pick(String, Ob.phone(k), "list", "sidebar")
+    ++ ", then mention it in any message, for example: @scout look at the BOM."
+
+def Ob.body.5() -> String:
+  "Backplane runs the Claude Code, Codex or Grok command-line program, so install one and sign in to it on the machine that runs this hub. Settings shows whether each is found and its version; it cannot tell whether you are signed in. Pick the provider and model from a thread's composer, or in Settings for new threads."
+
+def Ob.body.6(+k: Nat) -> String:
+  Bool.pick(String, Ob.phone(k),
+    "API keys for other services are kept on the hub's machine, in a file agents running there could read. They are told to use the keys without printing them; nothing enforces it. Voice dictation's OpenAI key is set in Settings on a computer or the web page.",
+    "API keys for other services are kept on the hub's machine, in a file agents running there could read. They are told to use the keys without printing them; nothing enforces it. Voice dictation needs an OpenAI key, set under Voice in Settings.")
+
+def Ob.body.7(+k: Nat) -> String:
+  Bool.pick(String, Ob.phone(k),
+    "Each home folder runs one hub. The Hubs button lists the hubs this phone is paired with and other hubs of yours it found. A hub is reachable only if Tailscale was installed and signed in on its machine when Backplane started; its Settings say \"Tailscale: off\" otherwise.",
+    "Each home folder runs one hub. If Tailscale is installed and signed in when Backplane starts, it also listens on your tailnet and lists your other Backplane hubs in the sidebar, with a machine switch beside Settings. If Settings says \"Tailscale: off\", sign in and restart Backplane.")
+
+def Ob.body.8(+k: Nat) -> String:
+  Bool.pick(String, Ob.phone(k),
+    "On the hub's computer open Settings, Pairing link, QR code. Here, Hubs, Scan QR code pairs another hub. A browser can open a hub's web address too.",
+    "To pair a phone, open Settings, Pairing link, QR code and scan it with the Backplane app or the phone's camera; the link appears once Backplane listens on your tailnet. Other devices can open this hub's web address in a browser.")
+
+def Ob.body(+k: Nat, +d: String, i: Nat) -> String:
+  match i:
+    case 0n:
+      Ob.body.0(k)
+    case 1n:
+      Ob.body.1(k, d)
+    case 2n:
+      Ob.body.2()
+    case 3n:
+      Ob.body.3(k)
+    case 4n:
+      Ob.body.4(k)
+    case 5n:
+      Ob.body.5()
+    case 6n:
+      Ob.body.6(k)
+    case 7n:
+      Ob.body.7(k)
+    case 8n:
+      Ob.body.8(k)
+    case _:
+      ""
+
+# digits in a client's text (anything else, the "m", is skipped)
 def Ob.num(s: String, +acc: Nat) -> Nat:
   match s:
     case SNil{}:
       acc
     case SCon{Chr{+c}, t}:
-      Ob.num(t, Nat.add(Nat.mul(acc, 10n), U32.to_nat((c - 48 : U32))))
+      Ob.num(t, Bool.pick(Nat, Bool.and(U32.is_ge(c, 48), U32.is_le(c, 57)), Nat.add(Nat.mul(acc, 10n), U32.to_nat((c - 48 : U32))), acc))
+
+# asked for by hand: "m" first
+def Ob.manual(+raw: String) -> Bool:
+  String.starts_with(raw, "m")
 
 # a step number kept in range; `count` stands for the tour being over
 def Ob.clamp(+i: Nat) -> Nat:
   Bool.pick(Nat, Nat.is_lt(i, Ob.count()), i, Ob.count())
 
-# The step on screen, `count` when none: nothing until the client has
-# heard from its hub (`ready`); with no move yet, the first step unless the
-# hub says it is done; else the step the person moved to.
+def Ob.at.auto(done: Bool, +raw: String) -> Nat:
+  match done:
+    case True{}:
+      Ob.count()
+    case False{}:
+      Ob.clamp(Ob.num(raw, 0n))
+
 def Ob.at.k(fresh: Bool, done: Bool, +raw: String) -> Nat:
   match fresh:
     case True{}:
       Bool.pick(Nat, done, Ob.count(), 0n)
     case False{}:
-      Ob.clamp(Ob.num(raw, 0n))
+      Ob.at.auto(done, raw)
 
-def Ob.at(ready: Bool, done: Bool, +raw: String) -> Nat:
+def Ob.at.up(ready: Bool, done: Bool, +raw: String) -> Nat:
   match ready:
     case False{}:
       Ob.count()
     case True{}:
       Ob.at.k(String.is_empty(raw), done, raw)
+
+# The step on screen, `count` when none. One asked for by hand shows
+# whatever the hub says (it works offline). One that comes up by itself
+# waits until the client holds this connection's state (`ready`), starts at
+# the first step and ends the moment the hub says it is done.
+def Ob.at.m(manual: Bool, ready: Bool, done: Bool, +raw: String) -> Nat:
+  match manual:
+    case True{}:
+      Ob.clamp(Ob.num(raw, 0n))
+    case False{}:
+      Ob.at.up(ready, done, raw)
+
+def Ob.at(ready: Bool, done: Bool, +raw: String) -> Nat:
+  Ob.at.m(Ob.manual(raw), ready, done, raw)
 
 # is a step on screen
 def Ob.live(i: Nat) -> Bool:
@@ -102,8 +216,8 @@ def Ob.skip() -> Nat:
   Ob.count()
 
 # the client's text for a step
-def Ob.raw(i: Nat) -> String:
-  Nat.show(i)
+def Ob.raw(manual: Bool, i: Nat) -> String:
+  Bool.pick(String, manual, "m", "") ++ Nat.show(i)
 
 # the last step's forward button reads Done
 def Ob.last(i: Nat) -> Bool:
@@ -112,14 +226,47 @@ def Ob.last(i: Nat) -> Bool:
 def Ob.forward(i: Nat) -> String:
   Bool.pick(String, Ob.last(i), "Done", "Next")
 
-# "3 of 8"
+# "3 of 9"
 def Ob.counter(i: Nat) -> String:
   Nat.show(1n+i) ++ " of " ++ Nat.show(Ob.count())
 
-# every step has a title, a body and a known target
-def Ob.sound(xs: List<&2, Step>) -> Bool:
-  match xs:
-    case Nil{}:
+# The keys, one policy for every client: a browser's key name, or an X
+# keysym (the window), to the tour's action ("" for any other key).
+def Ob.dom(+key: String) -> String:
+  Bool.pick(String, Bool.or(String.eq(key, "Enter"), String.eq(key, "ArrowRight")), "ob-next",
+    Bool.pick(String, String.eq(key, "ArrowLeft"), "ob-back", Bool.pick(String, String.eq(key, "Escape"), "ob-skip", "")))
+
+def Ob.sym(+code: U32) -> String:
+  Bool.pick(String, Bool.or(Bool.or(U32.is_eq(code, 65293), U32.is_eq(code, 65421)), U32.is_eq(code, 65363)), "ob-next",
+    Bool.pick(String, U32.is_eq(code, 65361), "ob-back", Bool.pick(String, U32.is_eq(code, 65307), "ob-skip", "")))
+
+# Every step has a title, a known target and words for every kind of
+# client (checked for the first n steps, counting down)
+def Ob.sound.i(+i: Nat) -> Bool:
+  Bool.and(Bool.and(Bool.not(String.is_empty(Ob.title(i))), Ob.known(Ob.target.d(i))),
+    Bool.and(Bool.and(Bool.not(String.is_empty(Ob.body(0n, "7", i))), Bool.not(String.is_empty(Ob.body(1n, "7", i)))), Bool.not(String.is_empty(Ob.body(2n, "7", i)))))
+
+def Ob.sound.go(+n: Nat) -> Bool:
+  match n:
+    case 0n:
       True{}
-    case Step{+t, +b, _} <> r:
-      Bool.and(Bool.and(Bool.not(String.is_empty(t)), Bool.not(String.is_empty(b))), Ob.sound(r))
+    case 1n+m:
+      Bool.and(Ob.sound.i(m), Ob.sound.go(m))
+
+def Ob.sound() -> Bool:
+  Ob.sound.go(Ob.count())
+
+# the moves keep to the steps, for every number from 0 to n (past the end
+# they clamp): next and back stay within 0..count, a step on screen has a
+# next that goes forward and (past the first) a back that goes back
+def Ob.nav.i(+i: Nat) -> Bool:
+  Bool.and(Bool.and(Nat.is_le(Ob.next(i), Ob.count()), Nat.is_lt(Ob.back(i), Ob.count())),
+    Bool.and(Bool.or(Bool.not(Ob.live(i)), Nat.is_gt(Ob.next(i), i)),
+      Bool.or(Bool.or(Bool.not(Ob.live(i)), Nat.is_eq(i, 0n)), Nat.is_lt(Ob.back(i), i))))
+
+def Ob.nav(+n: Nat) -> Bool:
+  match n:
+    case 0n:
+      Ob.nav.i(0n)
+    case 1n+m:
+      Bool.and(Ob.nav.i(1n+m), Ob.nav(m))

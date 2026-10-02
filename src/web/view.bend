@@ -1624,42 +1624,44 @@ def View.aside.if(open: Bool, +kind: String, +u: U.Ui) -> List<&2, D.Node>:
     case False{}:
       Nil{}
 
-# The first-run tour (core/onboard.bend): a dimmed page and a card with the
-# step, Skip, Back and Next. The page's class names what the step points at
-# ("tour-sidebar", "tour-add", "tour-head", "tour-settings"), and style.css
-# lifts that part of the page over the dimming. host.js sends Enter and the
-# right arrow as ob-next, the left arrow as ob-back, Esc as ob-skip.
-def View.tour.card(+i: Nat) -> List<&2, D.Node>:
+# The first-run tour (core/onboard.bend): a dimmed page and a dialog with
+# the step, Skip, Back and Next. The page's class names what the step
+# points at ("tour-sidebar", "tour-add", "tour-head", "tour-settings"; the
+# head only with a thread open), and style.css lifts that part of the page
+# over the dimming. host.js makes it modal: the page behind is inert, focus
+# stays in the dialog, and the keys go through app.bend's tour_key (Enter
+# and the right arrow next, the left arrow back, Esc skip).
+def View.tour.card(+i: Nat, +body: String) -> List<&2, D.Node>:
   [D.El{"div", "", [D.At{"class", "tour-back"}], Nil{}},
-    D.El{"div", "tour", [D.At{"class", "tour"}, D.At{"role", "dialog"}], [
+    D.El{"div", "tour", [D.At{"class", "tour"}, D.At{"role", "dialog"}, D.At{"aria-modal", "true"}, D.At{"aria-labelledby", "tour-title"}], [
       D.Dom.span("count", OB.Ob.counter(i)),
-      D.El{"div", "", [D.At{"class", "tour-title"}], [D.Txt{OB.Ob.title(i)}]},
-      D.El{"p", "", [D.At{"class", "tour-body"}], [D.Txt{OB.Ob.body(i)}]},
+      D.El{"div", "tour-title", [D.At{"class", "tour-title"}, D.At{"id", "tour-title"}], [D.Txt{OB.Ob.title(i)}]},
+      D.El{"p", "", [D.At{"class", "tour-body"}], [D.Txt{body}]},
       D.El{"div", "", [D.At{"class", "tour-btns"}], [
         D.Dom.button("", "ob-skip", "", "End the tour (Esc)", "Skip"),
         D.Dom.span("gap", ""),
         D.Dom.button("", "ob-back", "", "The step before (left arrow)", "Back"),
         D.Dom.button("primary", "ob-next", "", "Next step (Enter or right arrow)", OB.Ob.forward(i))]}]}]
 
-def View.tour.k(on: Bool, +i: Nat) -> List<&2, D.Node>:
+def View.tour.k(on: Bool, +i: Nat, +u: U.Ui) -> List<&2, D.Node>:
   match on:
     case True{}:
-      View.tour.card(i)
+      View.tour.card(i, U.Tour.body(1n, u))
     case False{}:
       Nil{}
 
 def View.tour(+u: U.Ui) -> List<&2, D.Node>:
-  View.tour.k(U.Tour.on(u), U.Tour.at(u))
+  View.tour.k(U.Tour.on(u), U.Tour.at(u), u)
 
-def View.tour.cls.k(on: Bool, +i: Nat) -> String:
+def View.tour.cls.k(on: Bool, +g: String) -> String:
   match on:
     case True{}:
-      Bool.pick(String, String.is_empty(OB.Ob.target(i)), " tour-on", " tour-on tour-" ++ OB.Ob.target(i))
+      Bool.pick(String, String.is_empty(g), " tour-on", " tour-on tour-" ++ g)
     case False{}:
       ""
 
 def View.tour.cls(+u: U.Ui) -> String:
-  View.tour.cls.k(U.Tour.on(u), U.Tour.at(u))
+  View.tour.cls.k(U.Tour.on(u), U.Tour.target(1n, u))
 
 # the whole page
 def View.page.b(+bv: BI.View, u: U.Ui) -> D.Node:

@@ -7,6 +7,7 @@ import ../core/cbor.bend as C
 import ../core/attach.bend as AT
 import ../core/lightbox.bend as LB
 import ./cat.bend as WC
+import ../core/onboard.bend as OB
 
 # What host.js calls. Everything the page decides happens behind these.
 
@@ -178,3 +179,7 @@ def lb_busy(lb: LB.Lb, now: Nat) -> Bool:
 
 def lb_css(lb: LB.Lb, b: LB.LbBox, now: Nat) -> String:
   LB.Lb.css(lb, b, now)
+
+# the tour's action for a key while its dialog is up ("" for any other)
+def tour_key(key: String) -> String:
+  OB.Ob.dom(key)

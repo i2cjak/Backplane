@@ -906,11 +906,11 @@ def Shell.tagged(a: Shell, m: ShellMsg) -> IO(Shell):
 
 def Shell.pasted(r: Window & String, +n: N.Nui, d: Bool, qd: Bool, +q: Chan(ShellMsg), +i: Chan(S.Msg), wa: Aux) -> IO(Shell):
   (w, text) = r
-  Shell.step(Shell{n, w, d, qd, q, i, wa}, N.Nui.paste(n, text))
+  Shell.step(Shell{n, w, d, qd, q, i, wa}, N.Nui.paste.m(U.Tour.on(N.Nui.ui(n)), n, text))
 
 def Shell.dropped(r: Window & String, +n: N.Nui, d: Bool, qd: Bool, +q: Chan(ShellMsg), +i: Chan(S.Msg), wa: Aux) -> IO(Shell):
   (w, text) = r
-  Shell.step(Shell{n, w, d, qd, q, i, wa}, N.Nui.drop(n, text))
+  Shell.step(Shell{n, w, d, qd, q, i, wa}, N.Nui.drop.m(U.Tour.on(N.Nui.ui(n)), n, text))
 
 def Shell.event(a: Shell, e: W.WinEv) -> IO(Shell):
   match a e:

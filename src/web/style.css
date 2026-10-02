@@ -615,11 +615,12 @@ button.mic.starting, button.mic.stopping { border-color: var(--bad); color: var(
 
 /* the first-run tour (view.bend's View.tour): the page dims, the part it points at is lifted over the dimming */
 .tour-back { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 30; }
-.tour { position: fixed; z-index: 32; top: 12vh; left: 50%; transform: translateX(-50%); width: min(440px, calc(100vw - 24px)); background: var(--raise); border: 1px solid var(--line); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.tour { position: fixed; z-index: 32; top: 12vh; left: 50%; transform: translateX(-50%); width: min(440px, calc(100vw - 24px)); max-height: calc(100vh - 12vh - 12px); overflow-y: auto; background: var(--raise); border: 1px solid var(--line); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
 .tour .count { color: var(--faint); font-size: 12px; }
 .tour-title { font-weight: 600; }
 .tour-body { margin: 0; color: var(--dim); line-height: 1.5; }
-.tour-btns { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.tour-btns { display: flex; align-items: center; gap: 6px; margin-top: 4px; position: sticky; bottom: -14px; padding: 8px 0 0; background: var(--raise); }
+.tour button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .tour-btns .gap { flex: 1; }
 .app.tour-sidebar .sidebar, .app.tour-add .sidebar .brand .icon, .app.tour-head .thread-head, .app.tour-settings .sidebar .foot { position: relative; z-index: 31; outline: 2px solid var(--accent); outline-offset: -2px; background: var(--panel); }
 .app.tour-add .sidebar .brand .icon { background: var(--raise); }

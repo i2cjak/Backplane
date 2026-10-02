@@ -882,20 +882,20 @@ def Mob.renaming(+u: U.Ui) -> J.Json:
 # the first-run tour (core/onboard.bend), while a step is on screen: its
 # number, count and counter, its title and text, and the buttons (actions
 # "ob-back", "ob-next", "ob-skip", sent with no value to the hub in focus)
-def Mob.tour.k(+i: Nat) -> J.Json:
+def Mob.tour.k(+i: Nat, +u: U.Ui) -> J.Json:
   J.Json.obj([J.KV{"step", J.Json.nat(i)}, J.KV{"count", J.Json.nat(OB.Ob.count())}, J.KV{"counter", J.Json.str(OB.Ob.counter(i))},
-    J.KV{"title", J.Json.str(OB.Ob.title(i))}, J.KV{"body", J.Json.str(OB.Ob.body(i))}, J.KV{"first", J.Json.bool(Nat.is_eq(i, 0n))},
+    J.KV{"title", J.Json.str(OB.Ob.title(i))}, J.KV{"body", J.Json.str(U.Tour.body(2n, u))}, J.KV{"first", J.Json.bool(Nat.is_eq(i, 0n))},
     J.KV{"next", J.Json.str(OB.Ob.forward(i))}, J.KV{"back", J.Json.str("Back")}, J.KV{"skip", J.Json.str("Skip")}])
 
-def Mob.tour.at(live: Bool, +i: Nat) -> J.Json:
+def Mob.tour.at(live: Bool, +i: Nat, +u: U.Ui) -> J.Json:
   match live:
     case True{}:
-      Mob.tour.k(i)
+      Mob.tour.k(i, u)
     case False{}:
       J.Null{}
 
 def Mob.tour(+u: U.Ui) -> J.Json:
-  Mob.tour.at(U.Tour.on(u), U.Tour.at(u))
+  Mob.tour.at(U.Tour.on(u), U.Tour.at(u), u)
 
 def Mob.deleting(+u: U.Ui) -> J.Json:
   Mob.deleting.k(String.is_empty(U.Ui.row_deleting(u)), Mob.st(u), U.Ui.row_deleting(u))

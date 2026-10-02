@@ -4528,16 +4528,17 @@ law qr_link_none:
 # no pairing link, no code
 law pair_qr_none:
   {U.Pair.qr.ready(Map.new(&2, String)) == False{} : Bool}
-# The first-run tour (core/onboard.bend). Every step has a title and a
-# body, and the list is as long as the count the moves use.
+# The first-run tour (core/onboard.bend). Every step has a title, a known
+# target and words for the window, the web and the phones.
 law onboard_steps_sound:
-  {OBD.Ob.sound(OBD.Ob.steps()) == True{} : Bool}
+  {OBD.Ob.sound() == True{} : Bool}
 
-law onboard_count:
-  {List.length(&2, OBD.Step, OBD.Ob.steps()) == OBD.Ob.count() : Nat}
+# next and back stay within the steps for every number from 0 to 14 (past
+# the end they clamp), a step on screen goes forward by next and (past the
+# first) back by back
+law onboard_nav_every_step:
+  {OBD.Ob.nav(14n) == True{} : Bool}
 
-# next and back stay in range: back stops at the first step, next from the
-# last ends the tour, and the end stays the end
 law onboard_back_floor:
   {OBD.Ob.back(0n) == 0n : Nat}
 
@@ -4547,8 +4548,9 @@ law onboard_next_step:
 law onboard_back_step:
   {OBD.Ob.back(3n) == 2n : Nat}
 
+# next from the last step ends it, and the end stays the end
 law onboard_next_ends:
-  {OBD.Ob.live(OBD.Ob.next(7n)) == False{} : Bool}
+  {OBD.Ob.live(OBD.Ob.next(8n)) == False{} : Bool}
 
 law onboard_end_stays:
   {OBD.Ob.next(OBD.Ob.count()) == OBD.Ob.count() : Nat}
@@ -4557,26 +4559,75 @@ law onboard_end_stays:
 law onboard_skip_ends:
   {OBD.Ob.live(OBD.Ob.skip()) == False{} : Bool}
 
-# nothing shows before the hub's state has arrived
+# a tour that came up by itself waits for this connection's state
 law onboard_waits:
   for done: Bool
-  for raw: String
-  {OBD.Ob.at(False{}, done, raw) == OBD.Ob.count() : Nat}
+  {OBD.Ob.at(False{}, done, "") == OBD.Ob.count() : Nat}
 
-# a first run shows the first step; once done it never shows by itself,
-# only when asked for again; a step the client holds is read back, and a
-# wild one ends the tour
+# a first run shows the first step; once done it never shows by itself
 law onboard_fresh_first:
   {OBD.Ob.at(True{}, False{}, "") == 0n : Nat}
 
 law onboard_done_quiet:
   {OBD.Ob.at(True{}, True{}, "") == OBD.Ob.count() : Nat}
 
-law onboard_reopen:
-  {OBD.Ob.at(True{}, True{}, OBD.Ob.raw(0n)) == 0n : Nat}
+# one that came up by itself and was moved on keeps its step, and closes
+# when the hub says it is done (from another client too)
+law onboard_auto_moved:
+  {OBD.Ob.at(True{}, False{}, OBD.Ob.raw(False{}, 4n)) == 4n : Nat}
 
-law onboard_raw_round:
-  {OBD.Ob.at(True{}, True{}, OBD.Ob.raw(5n)) == 5n : Nat}
+law onboard_done_closes_auto:
+  {OBD.Ob.at(True{}, True{}, OBD.Ob.raw(False{}, 5n)) == OBD.Ob.count() : Nat}
+
+# one asked for by hand shows whatever the hub says, offline too
+law onboard_hand_stays:
+  {OBD.Ob.at(True{}, True{}, OBD.Ob.raw(True{}, 5n)) == 5n : Nat}
+
+law onboard_hand_offline:
+  {OBD.Ob.at(False{}, False{}, OBD.Ob.raw(True{}, 2n)) == 2n : Nat}
 
 law onboard_wild_ends:
   {OBD.Ob.at(True{}, False{}, "99") == OBD.Ob.count() : Nat}
+
+# phones point at nothing
+law onboard_phone_no_target:
+  {OBD.Ob.target(2n, 3n) == "" : String}
+
+# one policy for the keys, in the window and the web
+law onboard_keys:
+  {OBD.Ob.dom("Enter") ++ OBD.Ob.dom("ArrowLeft") ++ OBD.Ob.dom("Escape") ++ OBD.Ob.dom("a") == "ob-nextob-backob-skip" : String}
+
+law onboard_syms:
+  {OBD.Ob.sym(65293) ++ OBD.Ob.sym(65361) ++ OBD.Ob.sym(65307) ++ OBD.Ob.sym(97) == "ob-nextob-backob-skip" : String}
+
+# the client: a state not yet current shows nothing; skipping sets the
+# hub's setting; a done from elsewhere closes a tour that was moved on;
+# the Settings button shows it again after it was done
+def OnbUi.log() -> M.State:
+  M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}], M.State.empty())
+
+def OnbUi.done() -> M.State:
+  M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.SettingSet{"onboard.done", "1", 2n}], M.State.empty())
+
+def OnbUi.synced(st: M.State) -> U.Ui:
+  U.Ui.scratch_set(U.Ui.adopt.raw(U.Ui.init(1n), st), "@sync", "1")
+
+def OnbUi.after(a: U.Act) -> U.Ui:
+  match a:
+    case U.Act{u, _}:
+      u
+
+law onboard_unsynced_hidden:
+  {U.Tour.at(U.Ui.adopt.raw(U.Ui.init(1n), OnbUi.log())) == OBD.Ob.count() : Nat}
+
+law onboard_synced_shows:
+  {U.Tour.at(OnbUi.synced(OnbUi.log())) == 0n : Nat}
+
+law onboard_finish_sets_done:
+  {U.Tour.done(U.Ui.state(OnbUi.after(U.Ui.act(OnbUi.synced(OnbUi.log()), "ob-skip", "")))) == True{} : Bool}
+
+law onboard_elsewhere_closes:
+  {U.Tour.at(U.Ui.adopt.raw(OnbUi.after(U.Ui.act(OnbUi.synced(OnbUi.log()), "ob-next", "")), OnbUi.done())) == OBD.Ob.count() : Nat}
+
+law onboard_reopen:
+  {U.Tour.at(OnbUi.after(U.Ui.act(OnbUi.synced(OnbUi.done()), "ob-open", ""))) == 0n : Nat}

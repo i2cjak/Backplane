@@ -52,6 +52,10 @@
 #define WIN_PTR(name, ret, args) static ret (*x_##name) args;
 WIN_FNS(WIN_PTR)
 
+// a key held down sends presses with no releases between (so a repeat can
+// be told from a new press); older servers just go on as before
+static Bool (*x_detect_repeat)(Display*, Bool, Bool*);
+
 static int win_load(void) {
   static int state = 0;
   if (state != 0) {
@@ -65,6 +69,7 @@ static int win_load(void) {
 #define WIN_SYM(name, ret, args) \
   if ((x_##name = (ret (*) args)dlsym(lib, #name)) == NULL) { return 0; }
   WIN_FNS(WIN_SYM)
+  x_detect_repeat = (Bool (*)(Display*, Bool, Bool*))dlsym(lib, "XkbSetDetectableAutoRepeat");
   state = 1;
   return 1;
 }
@@ -586,6 +591,10 @@ Term win_open_run(Env e, Term* f, IoWork* w) {
     x_XChangeProperty(dpy, a->win, a->dnd_aware, XA_ATOM, 32, PropModeReplace,
       (unsigned char*)&xdnd_version, 1);
     x_XStoreName(dpy, a->win, title);
+    if (x_detect_repeat != NULL) {
+      Bool got = False;
+      x_detect_repeat(dpy, True, &got);
+    }
     win_icon(dpy, a->win);
     x_XSelectInput(dpy, a->win, KeyPressMask | KeyReleaseMask | ButtonPressMask
       | ButtonReleaseMask | PointerMotionMask | StructureNotifyMask | ExposureMask

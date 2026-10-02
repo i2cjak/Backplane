@@ -220,17 +220,18 @@ fun App(m: AppModel) {
         },
         dismissButton = { TextButton(onClick = { removed = true; m.act("proj-keep") }) { Text(r.no) } },
     )
-    // the first-run tour (core/onboard.bend): Skip and Done end it for every client of the hub
+    // the first-run tour (core/onboard.bend): the same as iOS, dismissing it
+    // (Back, a tap outside) is Skip; it waits while Settings' sheet is up
     s.tour?.let { t ->
-        AlertDialog(
-            onDismissRequest = {},
+        if (s.settings == null) AlertDialog(
+            onDismissRequest = { m.act("ob-skip") },
             title = {
                 Column {
                     Text(t.counter, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(t.title)
                 }
             },
-            text = { Text(t.body) },
+            text = { Column(Modifier.verticalScroll(rememberScrollState())) { Text(t.body) } },
             confirmButton = { TextButton(onClick = { m.act("ob-next") }) { Text(t.next) } },
             dismissButton = {
                 Row {

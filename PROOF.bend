@@ -6518,10 +6518,12 @@ def Laws.qr_link_escapes():
 def Laws.qr_link_none():
   {==}
 def Laws.pair_qr_none():
+  {==}
+
 def Laws.onboard_steps_sound():
   {==}
 
-def Laws.onboard_count():
+def Laws.onboard_nav_every_step():
   {==}
 
 def Laws.onboard_back_floor():
@@ -6548,14 +6550,44 @@ def Laws.onboard_fresh_first():
 def Laws.onboard_done_quiet():
   {==}
 
-def Laws.onboard_reopen():
+def Laws.onboard_auto_moved():
   {==}
 
-def Laws.onboard_raw_round():
+def Laws.onboard_done_closes_auto():
+  {==}
+
+def Laws.onboard_hand_stays():
+  {==}
+
+def Laws.onboard_hand_offline():
   {==}
 
 def Laws.onboard_wild_ends():
   {==}
 
-def Laws.onboard_waits(done, raw):
+def Laws.onboard_phone_no_target():
+  {==}
+
+def Laws.onboard_keys():
+  {==}
+
+def Laws.onboard_syms():
+  {==}
+
+def Laws.onboard_unsynced_hidden():
+  {==}
+
+def Laws.onboard_synced_shows():
+  {==}
+
+def Laws.onboard_finish_sets_done():
+  {==}
+
+def Laws.onboard_elsewhere_closes():
+  {==}
+
+def Laws.onboard_reopen():
+  {==}
+
+def Laws.onboard_waits(done):
   {==}

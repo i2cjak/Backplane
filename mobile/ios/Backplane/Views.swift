@@ -8,15 +8,18 @@ struct RootView: View {
     @State private var removed = ""
     @State private var renamed = ""
     @State private var newTitle = ""
+    // Settings' sheet is up or still going away: the tour waits for it (onDismiss)
+    @State private var settingsUp = false
 
     var body: some View {
         if model.links.isEmpty {
             NavigationStack { PairView(link: "") { model.pair($0) } }
         } else if let s = model.screen {
             asked(s)
-                .sheet(isPresented: settingsShown) {
+                .sheet(isPresented: settingsShown, onDismiss: { settingsUp = false }) {
                     if let st = model.screen?.settings { SettingsSheet(model: model, settings: st, version: model.screen?.version ?? "") }
                 }
+                .onChange(of: model.screen?.settings != nil) { _, up in if up { settingsUp = true } }
                 .sheet(isPresented: tourShown) {
                     if let t = model.screen?.tour { TourSheet(model: model, tour: t) }
                 }
@@ -39,9 +42,12 @@ struct RootView: View {
         Binding(get: { model.screen?.settings != nil }, set: { if !$0, model.screen?.settings != nil { model.act("flag", "settings") } })
     }
 
-    // the first-run tour (core/onboard.bend): up while the screen carries a step
+    // the first-run tour (core/onboard.bend): up while the screen carries a
+    // step, once Settings' sheet (which "Show the tour" shuts) is gone; the
+    // same as Android: dismissing it (swipe down) is Skip
     private var tourShown: Binding<Bool> {
-        Binding(get: { model.screen?.tour != nil }, set: { _ in })
+        Binding(get: { model.screen?.tour != nil && !settingsUp && model.screen?.settings == nil },
+                set: { if !$0, model.screen?.tour != nil { model.act("ob-skip") } })
     }
 
     private var findShown: Binding<Bool> {
@@ -993,10 +999,14 @@ struct TourSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(tour.counter).font(.caption).foregroundStyle(.secondary)
-            Text(tour.title).font(.title3.weight(.semibold))
-            Text(tour.body).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(tour.counter).font(.caption).foregroundStyle(.secondary)
+                    Text(tour.title).font(.title3.weight(.semibold))
+                    Text(tour.body).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
             HStack {
                 Button(tour.skip) { model.act("ob-skip") }
                 Spacer()
@@ -1005,7 +1015,6 @@ struct TourSheet: View {
             }
         }
         .padding(20)
-        .presentationDetents([.medium])
-        .interactiveDismissDisabled()
+        .presentationDetents([.medium, .large])
     }
 }
