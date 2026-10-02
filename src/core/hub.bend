@@ -29,6 +29,11 @@ type Out is Data:
   Watch{client: U32, kind: String, root: String, path: String}
   # install the latest release and restart
   Upgrade{}
+  # the same, asked on purpose (update.now) or after the wait ran out: its
+  # restart does not wait for work
+  UpgradeForce{}
+  # the install is ready: end the hub's process into it now
+  Restart{}
   KiCadInstall{}
   # run one Codex turn (a process per turn; `session` resumes)
   CodexTurn{thread: String, cwd: String, model: String, session: String, runtime: M.RuntimeMode, text: String}
@@ -2927,23 +2932,53 @@ def Update.ask(busy: Bool, +now: Nat, +client: U32, +id: String) -> Step:
     case False{}:
       Step.outs([Reply.ok(client, id), Upgrade{}])
 
-def Update.due.k(go: Bool, +now: Nat) -> Step:
+def Update.due.k(go: Bool, force: Bool, +now: Nat) -> Step:
   match go:
     case True{}:
-      Step{[M.SettingSet{"update.wait", "", now}], [Upgrade{}]}
+      Step{[M.SettingSet{"update.wait", "", now}], [Bool.pick(Out, force, UpgradeForce{}, Upgrade{})]}
     case False{}:
       Step.none()
+
+def Update.late(+since: String, +now: Nat) -> Bool:
+  Nat.is_ge(now, Nat.add(M.Switch.num(since, 0n), Update.limit()))
 
 def Update.due.w(waiting: Bool, +s: M.State, +now: Nat) -> Step:
   match waiting:
     case True{}:
-      Update.due.k(Bool.or(Nat.is_eq(M.Work.threads(s), 0n), Nat.is_ge(now, Nat.add(M.Switch.num(M.Setting.get(s, "update.wait", "0"), 0n), Update.limit()))), now)
+      Update.due.k(Bool.or(Nat.is_eq(M.Work.threads(s), 0n), Update.late(M.Setting.get(s, "update.wait", "0"), now)),
+        Update.late(M.Setting.get(s, "update.wait", "0"), now), now)
     case False{}:
       Step.none()
 
 # the tick's check of a waiting update
 def Update.due(+s: M.State, +now: Nat) -> Step:
   Update.due.w(Bool.not(String.is_empty(M.Setting.get(s, "update.wait", ""))), s, now)
+
+# An install is ready to restart into. The busy check is made now, not
+# when the update was asked: threads that started during the download hold
+# the restart (the private setting update.restart, the time it was held)
+# until they are done or the wait is up; a forced update goes at once.
+def Update.ready.k(go: Bool, +held: String, +now: Nat) -> Step:
+  match go:
+    case True{}:
+      Step{[M.SettingSet{"update.restart", "", now}], [Restart{}]}
+    case False{}:
+      Step{[M.SettingSet{"update.restart", Bool.pick(String, String.is_empty(held), Nat.show(now), held), now}], []}
+
+def Update.ready(+s: M.State, force: Bool, +now: Nat) -> Step:
+  Update.ready.k(Bool.or(force, Nat.is_eq(M.Work.threads(s), 0n)), M.Setting.get(s, "update.restart", ""), now)
+
+def Update.held.w(waiting: Bool, +s: M.State, +now: Nat) -> Step:
+  match waiting:
+    case True{}:
+      Update.ready.k(Bool.or(Nat.is_eq(M.Work.threads(s), 0n), Update.late(M.Setting.get(s, "update.restart", "0"), now)), M.Setting.get(s, "update.restart", ""), now)
+    case False{}:
+      Step.none()
+
+# the tick's check of a held restart
+def Update.held(+s: M.State, +now: Nat) -> Step:
+  Update.held.w(Bool.not(String.is_empty(M.Setting.get(s, "update.restart", ""))), s, now)
+
 
 def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json, +m: String) -> Step:
   match i:
@@ -3011,7 +3046,7 @@ def Hub.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p:
     case 29n:
       Hub.switch(s, now, client, id, J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "provider", ""))
     case 30n:
-      Step{[M.SettingSet{"update.wait", "", now}], [Reply.ok(client, id), Upgrade{}]}
+      Step{[M.SettingSet{"update.wait", "", now}], [Reply.ok(client, id), UpgradeForce{}]}
     # the person stops watched work or a delegated task from its row
     case 31n:
       Step.before(Nil{}, [Reply.ok(client, id)], Watch.cancel(s, now, J.Json.get_str(p, "thread", ""), J.Json.get_str(p, "id", "")))
@@ -3293,7 +3328,7 @@ def Hub.tick.k(+s: M.State, +now: Nat, +kids: Map<&2, Nat>) -> Step:
         Step.join(Wt.stale(Map.values(&2, M.Thread, ts), s, now), Scratch.sweep(Map.values(&2, M.Thread, ts), kids, s, now, M.Scratch.window(s))))
 
 def Hub.tick(+s: M.State, +now: Nat) -> Step:
-  Step.join(Hub.tick.k(s, now, M.Work.kids.map(s)), Update.due(s, now))
+  Step.join(Step.join(Hub.tick.k(s, now, M.Work.kids.map(s)), Update.due(s, now)), Update.held(s, now))
 
 # Asks keep their thread busy
 # ---------------------------
@@ -3871,11 +3906,31 @@ def Lost.taken(cs: List<&2, M.Change>) -> Bool:
     case _ <> t:
       Lost.taken(t)
 
+def Lost.forced(os: List<&2, Out>) -> Nat:
+  match os:
+    case Nil{}:
+      0n
+    case UpgradeForce{} <> t:
+      1n+Lost.forced(t)
+    case _ <> t:
+      Lost.forced(t)
+
+def Lost.restarts(os: List<&2, Out>) -> Nat:
+  match os:
+    case Nil{}:
+      0n
+    case Restart{} <> t:
+      1n+Lost.restarts(t)
+    case _ <> t:
+      Lost.restarts(t)
+
 def Lost.upgrades(os: List<&2, Out>) -> Nat:
   match os:
     case Nil{}:
       0n
     case Upgrade{} <> t:
+      1n+Lost.upgrades(t)
+    case UpgradeForce{} <> t:
       1n+Lost.upgrades(t)
     case _ <> t:
       Lost.upgrades(t)

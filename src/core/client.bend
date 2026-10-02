@@ -669,7 +669,7 @@ def Update.line(+nf: Map<&2, String>, +note: String) -> String:
 # an update the hub holds back while threads work (hub.bend's Update.*):
 # how many it waits for (0: none, or not waiting)
 def Update.waits(+st: M.State) -> Nat:
-  Bool.pick(Nat, String.is_empty(M.Setting.get(st, "update.wait", "")), 0n, M.Work.threads(st))
+  Bool.pick(Nat, Bool.and(String.is_empty(M.Setting.get(st, "update.wait", "")), String.is_empty(M.Setting.get(st, "update.restart", ""))), 0n, M.Work.threads(st))
 
 def Update.waits.line(+n: Nat, +nf: Map<&2, String>, +note: String) -> String:
   Bool.pick(String, Nat.is_eq(n, 0n), Update.line(nf, note), "Update waits for " ++ Nat.show(n) ++ Bool.pick(String, Nat.is_eq(n, 1n), " thread", " threads") ++ " to finish their work.")

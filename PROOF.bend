@@ -6815,6 +6815,27 @@ def Laws.update_wait_goes_when_done():
 def Laws.update_wait_holds_while_busy():
   {==}
 
+def Laws.update_ready_holds_busy(now):
+  {==}
+
+def Laws.update_ready_idle_restarts(now):
+  {==}
+
+def Laws.update_ready_forced_restarts(now):
+  {==}
+
+def Laws.update_held_goes_when_done():
+  {==}
+
+def Laws.update_held_waits_while_busy():
+  {==}
+
+def Laws.update_wait_late_forces():
+  {==}
+
+def Laws.update_wait_early_not_forced():
+  {==}
+
 def Laws.lost_text_not_carry_text(ls):
   {==}
 

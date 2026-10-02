@@ -115,6 +115,9 @@ type Msg is Data:
   AgentWrite{thread: String, line: String, gen: String}
   # time to look for a release on the update channel
   UpdateCheck{}
+  # an update is installed: the hub decides, as it is now, whether to restart
+  # (force: the person asked, or the wait ran out)
+  UpdateReady{force: Bool}
   ModelsFound{models: String, text: String}
   MachinesFound{machines: String}
   # the tailnet listener is up: the pairing link clients show in Settings
@@ -2828,42 +2831,49 @@ def Names.copy(xs: List<String>) -> List<&2, String>:
     case x <> t:
       x <> Names.copy(t)
 
-def Upgrade.done.k(ok: Bool, +err: String, +inbox: Chan(Msg)) -> IO(Unit):
+# the install is done: the hub is asked, and restarts only if nothing has
+# started work since the update began (Hub.update_ready, Restart{})
+def Upgrade.restart(+inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    Upgrade.say(inbox, Upgrade.note([J.KV{"state", J.Str{"restarting"}}]))
+    path : String <- H.Sys.exe_path()
+    args : List<String> <- IO.args()
+    r : Result<&1, &1, U32 & String, Unit> <- H.Sys.exec(path, Names.copy(args))
+    Upgrade.exec(r, inbox)
+
+def Upgrade.done.k(ok: Bool, force: Bool, +err: String, +inbox: Chan(Msg)) -> IO(Unit):
   match ok:
     case True{}:
       do IO<Unit>:
-        Upgrade.say(inbox, Upgrade.note([J.KV{"state", J.Str{"restarting"}}]))
-        path : String <- H.Sys.exe_path()
-        args : List<String> <- IO.args()
-        r : Result<&1, &1, U32 & String, Unit> <- H.Sys.exec(path, Names.copy(args))
-        Upgrade.exec(r, inbox)
+        sent : Bool <- Chan.send(Msg, inbox, UpdateReady{force})
+        return Unit{}
     case False{}:
       Upgrade.say(inbox, Upgrade.note([J.KV{"error", J.Str{err}}]))
 
-def Upgrade.done(+err: String, +inbox: Chan(Msg)) -> IO(Unit):
-  Upgrade.done.k(String.is_empty(err), err, inbox)
+def Upgrade.done(force: Bool, +err: String, +inbox: Chan(Msg)) -> IO(Unit):
+  Upgrade.done.k(String.is_empty(err), force, err, inbox)
 
 # install Backplane KiCad beside our data and restart to pick it up
 def Install.go(+home: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     Upgrade.say(inbox, Upgrade.note([J.KV{"state", J.Str{"installing Backplane KiCad"}}]))
     err : String <- K.KiCad.install(home)
-    Upgrade.done(err, inbox)
+    Upgrade.done(False{}, err, inbox)
 
 # install the channel's newest release and restart into it
-def Upgrade.go.k(+home: String, +channel: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Upgrade.go.k(force: Bool, +home: String, +channel: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     Upgrade.say(inbox, Upgrade.note([J.KV{"state", J.Str{"updating"}}]))
     exe : String <- H.Sys.exe_dir()
     err : String <- UP.Update.apply(channel, exe, home)
-    Upgrade.done(err, inbox)
+    Upgrade.done(force, err, inbox)
 
-def Upgrade.go(managed: Bool, +home: String, +channel: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Upgrade.go(managed: Bool, force: Bool, +home: String, +channel: String, +inbox: Chan(Msg)) -> IO(Unit):
   match managed:
     case True{}:
       Upgrade.say(inbox, Upgrade.note([J.KV{"error", J.Str{"this install updates through its package"}}]))
     case False{}:
-      Upgrade.go.k(home, channel, inbox)
+      Upgrade.go.k(force, home, channel, inbox)
 
 def Agent.pid_is(m: Maybe<&2, Agent>, +pid: U32) -> Bool:
   match m:
@@ -6116,9 +6126,17 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
       do IO<Hub>:
         Park.put(Cfg.pk(cfg), PK.PAnswer{ask, answer})
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.UpgradeForce{}:
+      do IO<Hub>:
+        IO.spawn(Unit, Upgrade.go(Net.managed(Cfg.net(cfg)), True{}, Cfg.home(cfg), M.Setting.get(st, "update.channel", "stable"), inbox))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.Restart{}:
+      do IO<Hub>:
+        IO.spawn(Unit, Upgrade.restart(inbox))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.Upgrade{}:
       do IO<Hub>:
-        IO.spawn(Unit, Upgrade.go(Net.managed(Cfg.net(cfg)), Cfg.home(cfg), M.Setting.get(st, "update.channel", "stable"), inbox))
+        IO.spawn(Unit, Upgrade.go(Net.managed(Cfg.net(cfg)), False{}, Cfg.home(cfg), M.Setting.get(st, "update.channel", "stable"), inbox))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.BotFx{+kind, +a, +b, +c}:
       do IO<Hub>:
@@ -7646,6 +7664,8 @@ def Msg.kind(m: Msg) -> String:
       "agent_write"
     case UpdateCheck{}:
       "update_check"
+    case UpdateReady{_}:
+      "update_ready"
     case Mcp{_, _, _}:
       "mcp"
     case Announce{_}:
@@ -7938,12 +7958,21 @@ def Hub.replied(p: M.State & Hub, +thread: String, +to: String, +text: String, +
   (st, h) = p
   Hub.step(h, BH.Reply.send(st, now, thread, to, text))
 
+def Hub.update_ready.k(p: M.State & Hub, force: Bool, +now: Nat) -> IO(Hub):
+  (st, h) = p
+  Hub.step(h, B.Update.ready(st, force, now))
+
+def Hub.update_ready(h: Hub, force: Bool, +now: Nat) -> IO(Hub):
+  Hub.update_ready.k(Hub.state(h), force, now)
+
 def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
   match m:
     case AgentWrite{thread, line, gen}:
       Hub.agent_write(h, thread, line, gen)
     case UpdateCheck{}:
       Hub.update_check(h)
+    case UpdateReady{force}:
+      Hub.update_ready(h, force, now)
     case Mcp{thread, body, reply}:
       Hub.mcp.g(h, B.Tag.thread(thread), body, reply, now)
     case Announce{text}:

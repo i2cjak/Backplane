@@ -4919,6 +4919,34 @@ law update_wait_goes_when_done:
 law update_wait_holds_while_busy:
   {H.Lost.upgrades(H.Step.outs_of(H.Update.due(M.State.replay([M.SettingSet{"update.wait", "5", 5n}], H.Answer.demo(True{})), 9n))) == 0n : Nat}
 
+# An install that finished asks the hub whether to restart (Update.ready):
+# the busy check is made then, not when the update was asked; work that
+# started during the download holds the restart (update.restart) until it
+# is done or the wait is up, and a forced update goes at once.
+law update_ready_holds_busy:
+  for +now: Nat
+  {H.Lost.restarts(H.Step.outs_of(H.Update.ready(H.Answer.demo(True{}), False{}, now))) == 0n : Nat}
+
+law update_ready_idle_restarts:
+  for +now: Nat
+  {H.Lost.restarts(H.Step.outs_of(H.Update.ready(H.Answer.demo(False{}), False{}, now))) == 1n : Nat}
+
+law update_ready_forced_restarts:
+  for +now: Nat
+  {H.Lost.restarts(H.Step.outs_of(H.Update.ready(H.Answer.demo(True{}), True{}, now))) == 1n : Nat}
+
+law update_held_goes_when_done:
+  {H.Lost.restarts(H.Step.outs_of(H.Update.held(M.State.replay([M.SettingSet{"update.restart", "5", 5n}], H.Answer.demo(False{})), 9n))) == 1n : Nat}
+
+law update_held_waits_while_busy:
+  {H.Lost.restarts(H.Step.outs_of(H.Update.held(M.State.replay([M.SettingSet{"update.restart", "5", 5n}], H.Answer.demo(True{})), 9n))) == 0n : Nat}
+
+law update_wait_late_forces:
+  {H.Lost.forced(H.Step.outs_of(H.Update.due(M.State.replay([M.SettingSet{"update.wait", "5", 5n}], H.Answer.demo(True{})), 1805n))) == 1n : Nat}
+
+law update_wait_early_not_forced:
+  {H.Lost.forced(H.Step.outs_of(H.Update.due(M.State.replay([M.SettingSet{"update.wait", "5", 5n}], H.Answer.demo(False{})), 9n))) == 0n : Nat}
+
 # Spawn generations (hub.bend's Gen.*): only the generation a thread waits
 # for adopts its pid or reports its failure; a stale process's MCP call may
 # read, never change; a message prepared for an earlier process, or
