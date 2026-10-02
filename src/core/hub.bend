@@ -199,19 +199,35 @@ def Step.before(cs: List<&2, M.Change>, os: List<&2, Out>, st: Step) -> Step:
     case Step{c2, o2}:
       Step{List.append(&2, M.Change, cs, c2), List.append(&2, Out, os, o2)}
 
-def Hub.has_msg(es: List<&2, M.Entry>, +id: String) -> Bool:
-  match es:
-    case Nil{}:
+# whether a message with this id is in the entries: a tail walk that stops
+# at the first hit
+def Hub.has_msg.go(es: List<&2, M.Entry>, +id: String, found: Bool) -> Bool:
+  match es found:
+    case _ True{}:
+      True{}
+    case Nil{} False{}:
       False{}
-    case M.Msg{i, _, _, _, _} <> t:
-      Bool.or(String.eq(i, id), Hub.has_msg(t, id))
-    case M.Act{_, _, _, _, _, _} <> t:
-      Hub.has_msg(t, id)
+    case M.Msg{i, _, _, _, _} <> t False{}:
+      Hub.has_msg.go(t, id, String.eq(i, id))
+    case M.Act{_, _, _, _, _, _} <> t False{}:
+      Hub.has_msg.go(t, id, False{})
+
+def Hub.has_msg(es: List<&2, M.Entry>, +id: String) -> Bool:
+  Hub.has_msg.go(es, id, False{})
 
 def Hub.entries(s: M.State) -> List<&2, M.Entry>:
   match s:
     case M.State{_, _, es, _, _, _, _, _, _, _, _}:
       es
+
+# a message the client named and the hub already stored: only a named one
+# looks anything up
+def Hub.dup(named: Bool, +s: M.State, +msg: String) -> Bool:
+  match named:
+    case True{}:
+      Hub.has_msg(Hub.entries(s), msg)
+    case False{}:
+      False{}
 
 # a thread works in its own worktree unless asked for the project folder
 # ("local"): "auto" (the default) and "worktree" both ask the server for
@@ -1447,7 +1463,7 @@ def Hub.turn.k(dup: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +th
       Hub.turn.go(s, Hub.thread(s, thread), now, client, id, thread, msg, text)
 
 def Hub.turn.m(+s: M.State, +now: Nat, +client: U32, +id: String, +thread: String, +text: String, +msg: String, named: Bool) -> Step:
-  Hub.turn.k(Bool.and(named, Hub.has_msg(Hub.entries(s), msg)), s, now, client, id, thread, msg, text)
+  Hub.turn.k(Hub.dup(named, s, msg), s, now, client, id, thread, msg, text)
 
 # a user message. The client names it (msg), so a message resent after a
 # dropped connection is stored once; the hub names it otherwise
@@ -1519,7 +1535,7 @@ def Hub.turnx.k(dup: Bool, +mode: String, +s: M.State, +now: Nat, +client: U32, 
 
 # a user message with an explicit follow-up mode (Hub.turn is "auto")
 def Hub.turnx(+mode: String, +s: M.State, +now: Nat, +client: U32, +id: String, +thread: String, +text: String, +msg: String) -> Step:
-  Hub.turnx.k(Bool.and(Bool.not(String.is_empty(msg)), Hub.has_msg(Hub.entries(s), msg)), mode, s, now, client, id, thread,
+  Hub.turnx.k(Hub.dup(Bool.not(String.is_empty(msg)), s, msg), mode, s, now, client, id, thread,
     Bool.pick(String, String.is_empty(msg), Hub.id("m", now, Hub.seq(s)), msg), text)
 
 def Hub.turn.mode(auto: Bool, +mode: String, +s: M.State, +now: Nat, +client: U32, +id: String, +thread: String, +text: String, +msg: String) -> Step:
@@ -2138,10 +2154,12 @@ def Task.last.go(es: List<&2, M.Entry>, hit: Bool, +th: String) -> String:
     case _ _:
       ""
 
-def Task.last(s: M.State, +th: String) -> String:
-  match s:
-    case M.State{_, _, +es, _, _, _, _, _, _, _, _}:
-      Task.last.go(es, Task.last.hit(es, th), th)
+def Task.last.of(+es: List<&2, M.Entry>, +th: String) -> String:
+  Task.last.go(es, Task.last.hit(es, th), th)
+
+# read from the thread's own entries (M.State.mine), never the whole log
+def Task.last(+s: M.State, +th: String) -> String:
+  Task.last.of(M.State.mine(s, th), th)
 
 # the turn outcome a step reports for a thread, if it ended one
 type Ended is Data:
@@ -2199,10 +2217,21 @@ def Task.finish.k(e: Ended, m: Maybe<&2, M.Task>, +s: M.State, +now: Nat, +threa
 
 # when a child thread's turn ends, its task ends and the result goes to the
 # parent once (the pending check makes delivery exactly-once)
+# (the task is looked up only once the step is known to end a turn: every
+# agent line comes through here)
+def Task.finish.e(e: Ended, +s: M.State, +now: Nat, +thread: String, cs: List<&2, M.Change>, os: List<&2, Out>) -> Step:
+  match e:
+    case NotEnded{}:
+      Step{cs, os}
+    case EndedOk{}:
+      Task.finish.k(EndedOk{}, Task.of_child(s, thread), s, now, thread, cs, os)
+    case EndedBad{}:
+      Task.finish.k(EndedBad{}, Task.of_child(s, thread), s, now, thread, cs, os)
+
 def Task.finish(+s: M.State, +now: Nat, +thread: String, st: Step) -> Step:
   match st:
     case Step{+cs, os}:
-      Task.finish.k(Task.ended(cs), Task.of_child(s, thread), s, now, thread, cs, os)
+      Task.finish.e(Task.ended(cs), s, now, thread, cs, os)
 
 # one line of an agent's stdout
 def Hub.agent_line(+s: M.State, +now: Nat, +thread: String, line: String) -> Step:

@@ -417,20 +417,29 @@ def Mcp.update.k(ok: Bool, regen: Bool, +s: M.State, +now: Nat, +target: String,
 def Mcp.update(+s: M.State, +now: Nat, +thread: String, +target: String, +title: String) -> Res:
   Mcp.update.k(Mcp.same_project(s, thread, target), String.is_empty(String.trim(title)), s, now, target, String.trim(title))
 
-def Mcp.last.k(e: M.Entry, +th: String, rest: String) -> String:
-  match e:
-    case M.Msg{_, +t, M.Assistant{}, +text, _}:
-      Bool.pick(String, String.eq(t, th), text, rest)
-    case _:
-      rest
+def Mcp.pick(hit: Bool, +text: String, +acc: String) -> String:
+  match hit:
+    case True{}:
+      text
+    case False{}:
+      acc
 
-# a thread's last assistant message (entries newest first: the first seen)
+def Mcp.last.go(es: List<&2, M.Entry>, +th: String, done: Bool, +acc: String) -> String:
+  match es done:
+    case _ True{}:
+      acc
+    case Nil{} False{}:
+      acc
+    case M.Msg{_, +t, M.Assistant{}, +text, _} <> r False{}:
+      Mcp.last.go(r, th, String.eq(t, th), Mcp.pick(String.eq(t, th), text, acc))
+    case _ <> r False{}:
+      Mcp.last.go(r, th, False{}, acc)
+
+# a thread's last assistant message (entries newest first: the first seen,
+# where the walk stops). Given the thread's own entries (M.State.mine),
+# which also hold what it sent to others, so the thread is checked
 def Mcp.last(es: List<&2, M.Entry>, +th: String) -> String:
-  match es:
-    case Nil{}:
-      ""
-    case e <> t:
-      Mcp.last.k(e, th, Mcp.last(t, th))
+  Mcp.last.go(es, th, False{}, "")
 
 # whether a thread is done: no turn running and nothing queued to run
 def Mcp.done(+s: M.State, +th: String) -> Bool:
@@ -442,7 +451,7 @@ def Mcp.wait.k(ok: Bool, +s: M.State, +target: String) -> Res:
   match ok:
     case True{}:
       Res.ok(J.Json.obj([J.KV{"threadId", J.Str{target}}, J.KV{"turn", J.Str{C.Turn.name(M.Thread.turn(B.Hub.thread(s, target)))}},
-        J.KV{"done", J.Flag{Mcp.done(s, target)}}, J.KV{"lastReply", J.Str{String.take(Mcp.last(B.Hub.entries(s), target), 8000n)}}]))
+        J.KV{"done", J.Flag{Mcp.done(s, target)}}, J.KV{"lastReply", J.Str{String.take(Mcp.last(M.State.mine(s, target), target), 8000n)}}]))
     case False{}:
       Res.fail("that thread is not in this project")
 

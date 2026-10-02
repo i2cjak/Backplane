@@ -552,6 +552,28 @@ law resend_stored_once:
   for h2: {H.Hub.has_msg(H.Hub.entries(s), msg) == True{} : Bool}
   {H.Queue.changes(H.Hub.turn(s, now, client, id, th, text, msg)) == [] : List<&2, M.Change>}
 
+# an unnamed message is never taken for one already stored: only a named
+# one is looked up
+law has_msg_unnamed_skips:
+  for s: M.State
+  for msg: String
+  {H.Hub.dup(False{}, s, msg) == False{} : Bool}
+
+# a thread's last reply is its newest assistant message, read from its own
+# entries; what it sent another thread is not its reply
+law mcp_last_newest:
+  {MC.Mcp.last(M.State.mine(M.State.replay([M.MessagePosted{"t1", "m1", M.Assistant{}, "first", 3n}, M.MessagePosted{"t1", "m2", M.Assistant{}, "second", 4n}, M.MessagePosted{"t2", M.Link.id("t1", "x"), M.Assistant{}, "to t2", 5n}], H.Demo.state("claude", M.Completed{})), "t1"), "t1") == "second" : String}
+
+# a step that ends no turn finishes no task: it comes back as it was
+law task_finish_not_ended_same:
+  for +s: M.State
+  for +now: Nat
+  for +thread: String
+  for +cs: List<&2, M.Change>
+  for os: List<&2, H.Out>
+  for h: {H.Task.ended(cs) == H.NotEnded{} : H.Ended}
+  {H.Task.finish(s, now, thread, H.Step{cs, os}) == H.Step{cs, os} : H.Step}
+
 # a message from another thread never interrupts the target's running turn,
 # whatever its provider: it waits in the target's inbox
 law inbox_never_interrupts:
