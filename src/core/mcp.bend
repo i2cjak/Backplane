@@ -19,6 +19,11 @@ import ./utf8.bend as U8
 type McpOut is Data:
   McpOut{reply: String, step: B.Step, park: String}
 
+def McpOut.reply(o: McpOut) -> String:
+  match o:
+    case McpOut{r, _, _}:
+      r
+
 def Mcp.result(+id: J.Json, r: J.Json) -> String:
   J.Json.show(J.Json.obj([J.KV{"jsonrpc", J.Str{"2.0"}}, J.KV{"id", id}, J.KV{"result", r}]))
 

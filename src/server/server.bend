@@ -87,7 +87,7 @@ type Msg is Data:
   # a chat terminal's snapshot for a client (TM.Et.all(): every client)
   TermTo{client: U32, key: String, cols: U32, rows: U32, data: List<&2, U32>}
   # a line for a thread's agent built off the hub (a message with images)
-  AgentWrite{thread: String, line: String}
+  AgentWrite{thread: String, line: String, gen: String}
   # time to look for a release on the update channel
   UpdateCheck{}
   ModelsFound{models: String, text: String}
@@ -96,7 +96,7 @@ type Msg is Data:
   LinkFound{link: String}
   # a Codex or Grok turn's process started: the one the hub now hears (and
   # stops) for the thread; its lines come tagged (B.Tag)
-  TurnPid{thread: String, pid: U32, input: Chan(String)}
+  TurnPid{thread: String, pid: U32, input: Chan(String), gen: String}
   # a turn's process exited (tagged)
   TurnDone{tag: String}
   # the hub just started from its log (B.Hub.recover)
@@ -143,6 +143,9 @@ type Msg is Data:
   # time to start the threads a restart left marked (B.Rec.release): after
   # each turn's end and each minute
   Release{}
+  # a Codex or Grok turn's process could not start: its failure line, heard
+  # only from the thread's current generation (B.Gen.*)
+  SpawnFailed{thread: String, gen: String, line: String}
 
 # remote access: also listen on the tailnet, serve HTTPS through
 # `tailscale serve`, and the token remote clients must present
@@ -169,6 +172,23 @@ type Agent is Data:
 
 def ARun.new() -> ARun:
   ARun{CM.Cmds.new(), Nil{}, Nil{}, 0n, "", False{}}
+
+# a Claude process of generation gen (B.Gen.*)
+def ARun.new.g(+gen: String) -> ARun:
+  ARun{CM.Cmds.new(), Nil{}, Nil{}, 0n, gen, False{}}
+
+def Proc.kill.k(ok: Bool, +pid: U32, +sig: U32) -> IO(Unit):
+  match ok:
+    case True{}:
+      H.Proc.kill(pid, sig)
+    case False{}:
+      IO.pure(Unit, Unit{})
+
+# a signal to a process; never to pid 0 or 1 (B.Proc.kill.ok): an agent
+# not started yet is a placeholder with pid 0, and kill(0) would stop the
+# hub's own process group
+def Proc.kill(+pid: U32, +sig: U32) -> IO(Unit):
+  Proc.kill.k(B.Proc.kill.ok(pid), pid, sig)
 
 def Fuel.forever() -> Nat:
   U32.to_nat(4294967295)
@@ -326,6 +346,19 @@ def Agents.run.k(m: Maybe<&2, Agent>) -> Maybe<&2, ARun>:
 # a Claude process's run (None: none, or a Codex or Grok turn's)
 def Agents.run(+as: List<&2, Agent>, +th: String) -> Maybe<&2, ARun>:
   Agents.run.k(Agents.get(as, th))
+
+def Agents.gen.k(m: Maybe<&2, Agent>) -> String:
+  match m:
+    case Some{Agent{_, _, _, _, ARun{_, _, _, _, g, _} <> _}}:
+      g
+    case Some{Agent{_, _, _, +k, Nil{}}}:
+      B.Gen.of(k)
+    case None{}:
+      ""
+
+# the generation of the thread's agent ("" for none)
+def Agents.gen(+as: List<&2, Agent>, +th: String) -> String:
+  Agents.gen.k(Agents.get(as, th))
 
 def Agents.with.k(same: Bool, a: Agent, +r: ARun) -> Agent:
   match same a:
@@ -834,6 +867,10 @@ def Hub.commit.r(r: Hub & Wrote, fresh: List<&2, String>) -> Hub & List<&2, Stri
 def Hub.commit(+cs: List<&2, M.Change>, h: Hub, fresh: List<&2, String>) -> IO(Hub & List<&2, String>):
   IO.bind(Hub & Wrote, Hub & List<&2, String>, Hub.commit.w(cs, h), r => IO.pure(Hub & List<&2, String>, Hub.commit.r(r, fresh)))
 
+# a generation's name: when it started and the log's length then
+def Hub.gen(+st: M.State, +now: Nat) -> String:
+  Nat.show(now) ++ "-" ++ Nat.show(M.State.seq(st))
+
 def Hub.spawned.fail(e: U32 & String, h: Hub, +thread: String) -> IO(Hub):
   (_, +msg) = e
   do IO<Hub>:
@@ -842,7 +879,7 @@ def Hub.spawned.fail(e: U32 & String, h: Hub, +thread: String) -> IO(Hub):
     r : Hub & List<&2, String> <- Hub.commit([M.ActivityLogged{thread, "spawn-" ++ Nat.show(now), "error", "spawn", "could not start claude: " ++ msg, now}, M.TurnChanged{thread, M.Failed{}, now}], h, Nil{})
     Hub.announce(r)
 
-def Hub.spawned.dup(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, h: Hub, +thread: String, +key: String) -> IO(Hub):
+def Hub.spawned.dup(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, h: Hub, +thread: String, +key: String, +gen: String) -> IO(Hub):
   (rd, res) = r
   match res h:
     case Done{wr} Hub{st, f, ls, cl, as, +inbox, cfg, note}:
@@ -850,7 +887,7 @@ def Hub.spawned.dup(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32,
         +input : Chan(String) <- Chan.new(String, 256)
         IO.spawn(Unit, Agent.writer(Fuel.forever(), wr, input))
         IO.spawn(Unit, Agent.reader(Fuel.forever(), rd, U.Lines.new(), pid, thread, B.Tag.of(thread, pid), inbox))
-        return Hub{st, f, ls, cl, Agent{thread, input, pid, key, [ARun.new()]} <> as, inbox, cfg, note}
+        return Hub{st, f, ls, cl, Agent{thread, input, pid, key, [ARun.new.g(gen)]} <> as, inbox, cfg, note}
     # the process started but its socket could not be shared: it is
     # stopped and goes through the usual exit (Agent.end, AgentGone), so
     # its turn fails, its asks close and its task ends
@@ -858,20 +895,20 @@ def Hub.spawned.dup(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32,
       do IO<Hub>:
         +input : Chan(String) <- Chan.new(String, 1)
         Chan.close(String, input)
-        H.Proc.kill(pid, 15)
+        Proc.kill(pid, 15)
         IO.spawn(Unit, Agent.end(rd, pid, thread, inbox))
-        return Hub{st, f, ls, cl, Agent{thread, input, pid, key, [ARun.new()]} <> as, inbox, cfg, note}
+        return Hub{st, f, ls, cl, Agent{thread, input, pid, key, [ARun.new.g(gen)]} <> as, inbox, cfg, note}
 
-def Hub.spawned.ok(started: U32 & Socket, h: Hub, +thread: String, +key: String) -> IO(Hub):
+def Hub.spawned.ok(started: U32 & Socket, h: Hub, +thread: String, +key: String, +gen: String) -> IO(Hub):
   (pid, s) = started
   do IO<Hub>:
     r : Socket & Result<&1, &1, U32 & String, Socket> <- H.Sock.dup(s)
-    Hub.spawned.dup(r, pid, h, thread, key)
+    Hub.spawned.dup(r, pid, h, thread, key, gen)
 
-def Hub.spawned(r: Result<&1, &1, U32 & String, U32 & Socket>, h: Hub, +thread: String, +key: String) -> IO(Hub):
+def Hub.spawned(r: Result<&1, &1, U32 & String, U32 & Socket>, h: Hub, +thread: String, +key: String, +gen: String) -> IO(Hub):
   match r h:
     case Done{started} Hub{st, f, ls, cl, as, +inbox, cfg, note}:
-      Hub.spawned.ok(started, Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, key)
+      Hub.spawned.ok(started, Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, key, gen)
     case Fail{e} _:
       Hub.spawned.fail(e, h, thread)
 
@@ -889,7 +926,7 @@ def Hub.agent_stop(m: Maybe<&2, Agent>) -> IO(Unit):
     case Some{Agent{_, input, pid, _, _}}:
       do IO<Unit>:
         Chan.close(String, input)
-        H.Proc.kill(pid, 15)
+        Proc.kill(pid, 15)
     case None{}:
       IO.pure(Unit, Unit{})
 
@@ -1031,10 +1068,10 @@ def Cfg.prompt(c: Cfg) -> String:
     case Cfg{_, _, _, _, pr, _, _, _}:
       pr
 
-def Codex.failed(e: U32 & String, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Codex.failed(e: U32 & String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   (_, msg) = e
   do IO<Unit>:
-    ok : Bool <- Chan.send(Msg, inbox, AgentLine{thread, "{\"type\":\"turn.failed\",\"message\":" ++ J.Json.show(J.Str{"could not start codex: " ++ msg}) ++ "}"})
+    ok : Bool <- Chan.send(Msg, inbox, SpawnFailed{thread, gen, "{\"type\":\"turn.failed\",\"message\":" ++ J.Json.show(J.Str{"could not start codex: " ++ msg}) ++ "}"})
     return Unit{}
 
 # whether a Codex event line ends the turn
@@ -1853,27 +1890,27 @@ def Codex.reader(fuel: Nat, s: Socket, carry: U.Lines, +ended: Bool, +pid: U32, 
       IO.bind(Socket & Result<&1, &1, U32 & String, List<&2, U32>>, Unit, H.Sock.recv_bytes(s, 65536),
         r => Codex.got(r, carry, ended, pid, thread, inbox, s2 => c2 => e2 => Codex.reader(f, s2, c2, e2, pid, thread, inbox)))
 
-def Codex.read(started: U32 & Socket, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Codex.read(started: U32 & Socket, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   (+pid, s) = started
   do IO<Unit>:
     s2 : Socket <- H.Sock.shutdown(s)
     +input : Chan(String) <- Chan.new(String, 1)
-    ok : Bool <- Chan.send(Msg, inbox, TurnPid{thread, pid, input})
+    ok : Bool <- Chan.send(Msg, inbox, TurnPid{thread, pid, input, gen})
     Codex.reader(Fuel.forever(), s2, U.Lines.new(), False{}, pid, B.Tag.of(thread, pid), inbox)
 
-def Codex.started(r: Result<&1, &1, U32 & String, U32 & Socket>, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Codex.started(r: Result<&1, &1, U32 & String, U32 & Socket>, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   match r:
     case Done{started}:
-      Codex.read(started, thread, inbox)
+      Codex.read(started, thread, gen, inbox)
     case Fail{e}:
-      Codex.failed(e, thread, inbox)
+      Codex.failed(e, thread, gen, inbox)
 
-def Codex.run(+args: List<&2, String>, +cwd: String, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
-  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn("codex", args, cwd, 0), r => Codex.started(r, thread, inbox))
+def Codex.run(+args: List<&2, String>, +cwd: String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
+  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn("codex", args, cwd, 0), r => Codex.started(r, thread, gen, inbox))
 
 def Grok.stop(s: Socket, +pid: U32, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
-    H.Proc.kill(pid, 15)
+    Proc.kill(pid, 15)
     Turn.end(s, pid, thread, inbox)
 
 def Grok.next(done: Bool, s: Socket, carry: U.Lines, a: AC.Acp, +pid: U32, +thread: String, +inbox: Chan(Msg), k: Socket -> U.Lines -> AC.Acp -> IO(Unit)) -> IO(Unit):
@@ -1918,43 +1955,46 @@ def Grok.reader(fuel: Nat, s: Socket, carry: U.Lines, a: AC.Acp, +t: AC.AcpTurn,
 
 # a Grok process whose socket could not be shared is stopped and its turn
 # fails as one that could not start
-def Grok.dup.failed(e: U32 & String, rd: Socket, +pid: U32, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Grok.dup.failed(e: U32 & String, rd: Socket, +pid: U32, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   (_, msg) = e
   do IO<Unit>:
     Socket.close(rd)
-    H.Proc.kill(pid, 15)
-    Grok.report([AC.Acp.failed("could not start grok: " ++ msg)], thread, inbox)
+    Proc.kill(pid, 15)
+    ok : Bool <- Chan.send(Msg, inbox, SpawnFailed{thread, gen, AC.Acp.failed("could not start grok: " ++ msg)})
+    return Unit{}
 
-def Grok.duped(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, +t: AC.AcpTurn, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Grok.duped(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, +t: AC.AcpTurn, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   (rd, res) = r
   match res:
     case Done{wr}:
       do IO<Unit>:
         +input : Chan(String) <- Chan.new(String, 64)
         IO.spawn(Unit, Agent.writer(Fuel.forever(), wr, input))
-        ok : Bool <- Chan.send(Msg, inbox, TurnPid{thread, pid, input})
+        ok : Bool <- Chan.send(Msg, inbox, TurnPid{thread, pid, input, gen})
         ok2 : Bool <- Chan.send(String, input, AC.Acp.init())
         Grok.reader(Fuel.forever(), rd, U.Lines.new(), AC.Acp.new(), t, pid, B.Tag.of(thread, pid), input, inbox)
     case Fail{e}:
-      Grok.dup.failed(e, rd, pid, thread, inbox)
+      Grok.dup.failed(e, rd, pid, thread, gen, inbox)
 
-def Grok.started.ok(started: U32 & Socket, +t: AC.AcpTurn, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Grok.started.ok(started: U32 & Socket, +t: AC.AcpTurn, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   (+pid, s) = started
-  IO.bind(Socket & Result<&1, &1, U32 & String, Socket>, Unit, H.Sock.dup(s), r => Grok.duped(r, pid, t, thread, inbox))
+  IO.bind(Socket & Result<&1, &1, U32 & String, Socket>, Unit, H.Sock.dup(s), r => Grok.duped(r, pid, t, thread, gen, inbox))
 
-def Grok.failed(e: U32 & String, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Grok.failed(e: U32 & String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   (_, msg) = e
-  Grok.report([AC.Acp.failed("could not start grok: " ++ msg ++ ". Install Grok Build with `curl -fsSL https://x.ai/cli/install.sh | bash`, then `grok login`.")], thread, inbox)
+  do IO<Unit>:
+    ok : Bool <- Chan.send(Msg, inbox, SpawnFailed{thread, gen, AC.Acp.failed("could not start grok: " ++ msg ++ ". Install Grok Build with `curl -fsSL https://x.ai/cli/install.sh | bash`, then `grok login`.")})
+    return Unit{}
 
-def Grok.started(r: Result<&1, &1, U32 & String, U32 & Socket>, +t: AC.AcpTurn, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Grok.started(r: Result<&1, &1, U32 & String, U32 & Socket>, +t: AC.AcpTurn, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   match r:
     case Done{started}:
-      Grok.started.ok(started, t, thread, inbox)
+      Grok.started.ok(started, t, thread, gen, inbox)
     case Fail{e}:
-      Grok.failed(e, thread, inbox)
+      Grok.failed(e, thread, gen, inbox)
 
-def Grok.run(+args: List<&2, String>, +t: AC.AcpTurn, +cwd: String, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
-  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn("grok", args, cwd, 0), r => Grok.started(r, t, thread, inbox))
+def Grok.run(+args: List<&2, String>, +t: AC.AcpTurn, +cwd: String, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
+  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, Unit, H.Proc.spawn("grok", args, cwd, 0), r => Grok.started(r, t, thread, gen, inbox))
 
 # Updates
 # -------
@@ -2041,6 +2081,11 @@ def Net.managed(n: Net) -> Bool:
 
 # the MCP endpoint of one thread's agent (token included, so the tailnet
 # rules never lock an agent out)
+# (gen: the process's generation, B.Gen.mcp: a call from a process that is
+# no longer the thread's may only read)
+def Hub.mcp_url.g(+cfg: Cfg, +thread: String, +gen: String) -> String:
+  "http://127.0.0.1:" ++ U32.show(Cfg.port(cfg)) ++ "/mcp/" ++ B.Gen.mcp(thread, gen) ++ "?token=" ++ Net.token(Cfg.net(cfg))
+
 def Hub.mcp_url(+cfg: Cfg, +thread: String) -> String:
   "http://127.0.0.1:" ++ U32.show(Cfg.port(cfg)) ++ "/mcp/" ++ thread ++ "?token=" ++ Net.token(Cfg.net(cfg))
 
@@ -2073,11 +2118,11 @@ def Hub.prompt(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, fs: K.Fil
     Hub.prompt.files(cwd, fs),
     Q.Prompt.orchestration(M.Task.may_delegate(B.Task.depth(st, thread)), Cfg.mtext(cfg)), Q.Prompt.background()], "\n\n") ++ Bool.pick(String, String.is_empty(keys), "", "\n\n" ++ keys) ++ BH.Bots.prompt(st, thread, Cfg.home(cfg))
 
-def Hub.agent_args(+cfg: Cfg, +thread: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, prompt: String, +effort: String) -> List<&2, String>:
+def Hub.agent_args(+cfg: Cfg, +thread: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, prompt: String, +effort: String, +gen: String) -> List<&2, String>:
   match cfg:
     case Cfg{+home, _, _, _, _, +dirs, _, _}:
       List.append(&2, String, Q.Claude.args(model, session, r, i, prompt, List.append(&2, String, dirs, [home ++ "/attachments"])), List.append(&2, String, AG.Effort.args("claude", effort), List.append(&2, String, Q.Claude.plugins(dirs),
-        ["--mcp-config", "{\"mcpServers\":{\"backplane\":{\"type\":\"http\",\"url\":\"" ++ Hub.mcp_url(cfg, thread) ++ "\"}}}"])))
+        ["--mcp-config", "{\"mcpServers\":{\"backplane\":{\"type\":\"http\",\"url\":\"" ++ Hub.mcp_url.g(cfg, thread, gen) ++ "\"}}}"])))
 
 # what a Claude process was started with; a turn asking for something else
 # (another model, mode or effort) restarts it
@@ -2116,7 +2161,7 @@ def Agent.is(m: Maybe<&2, Agent>) -> Bool:
     case None{}:
       False{}
 
-def Hub.start.spawn(m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, +effort: String) -> IO(Hub):
+def Hub.start.spawn(m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, +effort: String, +gen: String) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, +cl, +as, inbox, +cfg, note}:
       do IO<Hub>:
@@ -2124,11 +2169,11 @@ def Hub.start.spawn(m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd: String, 
         +fs : K.Files <- K.Files.read(cwd)
         Hub.auto(cl, thread, fs)
         +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
-        res : Result<&1, &1, U32 & String, U32 & Socket> <- H.Proc.spawn("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort), cwd, 0)
-        Hub.spawned(res, Hub{st, f, ls, cl, Agents.drop(as, thread), inbox, cfg, note}, thread, Agent.key(model, r, i, effort))
+        res : Result<&1, &1, U32 & String, U32 & Socket> <- H.Proc.spawn("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen), cwd, 0)
+        Hub.spawned(res, Hub{st, f, ls, cl, Agents.drop(as, thread), inbox, cfg, note}, thread, Agent.key(model, r, i, effort), gen)
 
-def Hub.start.r(r: Hub & List<&2, String>, m: Maybe<&2, Agent>, +thread: String, +cwd: String, +model: String, +session: String, +rt: M.RuntimeMode, +i: M.InteractionMode, +effort: String) -> IO(Hub):
-  IO.bind(Hub, Hub, Hub.announce(r), h => Hub.start.spawn(m, h, thread, cwd, model, session, rt, i, effort))
+def Hub.start.r(r: Hub & List<&2, String>, m: Maybe<&2, Agent>, +thread: String, +cwd: String, +model: String, +session: String, +rt: M.RuntimeMode, +i: M.InteractionMode, +effort: String, +gen: String) -> IO(Hub):
+  IO.bind(Hub, Hub, Hub.announce(r), h => Hub.start.spawn(m, h, thread, cwd, model, session, rt, i, effort, gen))
 
 def Hub.start.go(same: Bool, +m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, +effort: String) -> IO(Hub):
   match same h:
@@ -2138,16 +2183,16 @@ def Hub.start.go(same: Bool, +m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd
       do IO<Hub>:
         +now : Nat <- Now.nat()
         cr : Hub & List<&2, String> <- Hub.commit(Hub.replaced(Agent.is(m), st, now, thread), Hub{st, f, ls, cl, as, inbox, cfg, note}, Nil{})
-        Hub.start.r(cr, m, thread, cwd, model, session, r, i, effort)
+        Hub.start.r(cr, m, thread, cwd, model, session, r, i, effort, Hub.gen(st, now))
 
 def Hub.start.k(+m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, +effort: String) -> IO(Hub):
   Hub.start.go(Agent.same(m, Agent.key(model, r, i, effort)), m, h, thread, cwd, model, session, r, i, effort)
 
 # `codex exec` for one turn, with this thread's MCP endpoint and the
 # Backplane instructions (the same runtime block Claude gets)
-def Codex.args(+cfg: Cfg, +thread: String, +model: String, +session: String, r: M.RuntimeMode, +text: String, prompt: String, +effort: String) -> List<&2, String>:
+def Codex.args(+cfg: Cfg, +thread: String, +model: String, +session: String, r: M.RuntimeMode, +text: String, prompt: String, +effort: String, +gen: String) -> List<&2, String>:
   List.concat(&2, String, [Codex.head.k(String.is_empty(session), session), Codex.sandbox(r), Codex.opt("-m", model), AG.Effort.args("codex", effort), AT.Att.codex(text),
-    ["-c", "mcp_servers.backplane.url=\"" ++ Hub.mcp_url(cfg, thread) ++ "\"",
+    ["-c", "mcp_servers.backplane.url=\"" ++ Hub.mcp_url.g(cfg, thread, gen) ++ "\"",
      "-c", "developer_instructions=" ++ J.Json.show(J.Str{prompt}), text]])
 
 # what a tailscale command printed ("" when it failed)
@@ -2645,31 +2690,38 @@ def Claude.put(h: Hub, +thread: String, +line: String) -> IO(Hub):
     case Hub{st, f, ls, cl, +as, inbox, cfg, note}:
       Claude.put.r(Agents.run(as, thread), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, line)
 
-def Claude.ready.k(held: Bool, +r: ARun, h: Hub, +thread: String, +u: String, +line: String) -> IO(Hub):
-  match held:
+def ARun.gen(r: ARun) -> String:
+  match r:
+    case ARun{_, _, _, _, g, _}:
+      g
+
+# (a message prepared for an earlier process, or stopped while its images
+# were read, is dropped: B.Gen.write)
+def Claude.ready.k(ok: Bool, +r: ARun, h: Hub, +thread: String, +u: String, +line: String) -> IO(Hub):
+  match ok:
     case True{}:
       Claude.flush(ARun.put(r, ARun.cmds(r), CM.Held.ready(ARun.held(r), u, line)), h, thread)
-    # (the process that took it was replaced while its images were read:
-    # the new one takes it as a new command)
     case False{}:
-      Claude.put.k(1n, r, h, thread, line)
+      do IO<Hub>:
+        Log.info("dropped a prepared message for " ++ thread ++ ": its process is gone or it was stopped")
+        Claude.flush(r, h, thread)
 
-def Claude.ready.r(m: Maybe<&2, ARun>, h: Hub, +thread: String, +u: String, +line: String) -> IO(Hub):
+def Claude.ready.r(m: Maybe<&2, ARun>, h: Hub, +thread: String, +u: String, +line: String, +gen: String) -> IO(Hub):
   match m:
     case Some{+r}:
-      Claude.ready.k(CM.Cmds.has(ARun.cmds(r), u), r, h, thread, u, line)
+      Claude.ready.k(B.Gen.write(gen, ARun.gen(r), CM.Cmds.state(ARun.cmds(r), u)), r, h, thread, u, line)
     case None{}:
-      Claude.raw(h, thread, line)
+      IO.pure(Hub, h)
 
-def Claude.ready.u(empty: Bool, h: Hub, +thread: String, +u: String, +line: String) -> IO(Hub):
+def Claude.ready.u(empty: Bool, h: Hub, +thread: String, +u: String, +line: String, +gen: String) -> IO(Hub):
   match empty h:
     case True{} _:
       Claude.raw(h, thread, line)
     case False{} Hub{st, f, ls, cl, +as, inbox, cfg, note}:
-      Claude.ready.r(Agents.run(as, thread), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, u, line)
+      Claude.ready.r(Agents.run(as, thread), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, u, line, gen)
 
-def Claude.ready(h: Hub, +thread: String, +line: String) -> IO(Hub):
-  Claude.ready.u(String.is_empty(B.Claude.uuid.of(line)), h, thread, B.Claude.uuid.of(line), line)
+def Claude.ready(h: Hub, +thread: String, +line: String, +gen: String) -> IO(Hub):
+  Claude.ready.u(String.is_empty(B.Claude.uuid.of(line)), h, thread, B.Claude.uuid.of(line), line, gen)
 
 def Claude.prep.r(m: Maybe<&2, ARun>, h: Hub, +thread: String, +u: String) -> Hub:
   match m h:
@@ -2688,18 +2740,18 @@ def Claude.prep(on: Bool, h: Hub, +thread: String, +u: String) -> Hub:
 
 # one Codex turn: the thread's skills join its instructions and its
 # `$skill` mentions become instructions to read them
-def Codex.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, r: M.RuntimeMode, +text: String, fs: K.Files, +inbox: Chan(Msg)) -> IO(Unit):
+def Codex.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, r: M.RuntimeMode, +text: String, fs: K.Files, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
     +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
-    Codex.run(Codex.args(cfg, thread, model, session, r, AG.Mention.expand("codex", text, ss), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), Hub.effort_of(st, thread)), cwd, thread, inbox)
+    Codex.run(Codex.args(cfg, thread, model, session, r, AG.Mention.expand("codex", text, ss), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), Hub.effort_of(st, thread), gen), cwd, thread, gen, inbox)
 
-def Grok.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +text: String, fs: K.Files, +inbox: Chan(Msg)) -> IO(Unit):
+def Grok.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +text: String, fs: K.Files, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
     +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
     Grok.run(Grok.args(r, model, Hub.effort_of(st, thread)),
-      AC.AcpTurn{cwd, Hub.mcp_url(cfg, thread), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), AG.Mention.expand("grok", text, ss), session, Grok.asks(r)}, cwd, thread, inbox)
+      AC.AcpTurn{cwd, Hub.mcp_url.g(cfg, thread, gen), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), AG.Mention.expand("grok", text, ss), session, Grok.asks(r)}, cwd, thread, gen, inbox)
 
 def Term.nums(bs: List<&2, U32>) -> List<&2, String>:
   match bs:
@@ -3686,30 +3738,30 @@ def Media.check(managed: Bool, +channel: String, +inbox: Chan(Msg), +client: U32
 # a Claude message with images: read them, then hand the stream-json line
 # (image blocks, then the text) to the thread's agent
 # (uuid: the command's, kept on the line: core/cmds.bend)
-def Media.claude(+inbox: Chan(Msg), +thread: String, +cwd: String, +text: String, +uuid: String) -> IO(Unit):
+def Media.claude(+inbox: Chan(Msg), +thread: String, +cwd: String, +text: String, +uuid: String, +gen: String) -> IO(Unit):
   do IO<Unit>:
     ims : List<&2, AT.Img> <- Media.imgs(AT.Att.images(text), Nil{})
     +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
-    ok : Bool <- Chan.send(Msg, inbox, AgentWrite{thread, B.Claude.tag(AT.Att.claude(AG.Mention.expand("claude", text, ss), ims), uuid)})
+    ok : Bool <- Chan.send(Msg, inbox, AgentWrite{thread, B.Claude.tag(AT.Att.claude(AG.Mention.expand("claude", text, ss), ims), uuid), gen})
     return Unit{}
 
 # a Git out: the media jobs here (an upload piece runs on the hub, so the
 # pieces of a file land in order), git jobs off the hub
-def Media.run.k(i: Nat, +tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +a: String, +b: String, +home: String, +managed: Bool) -> IO(Unit):
+def Media.run.k(i: Nat, +tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +a: String, +b: String, +home: String, +managed: Bool, +gen: String) -> IO(Unit):
   match i:
     case 0n:
       Media.put(inbox, client, id, thread, a, b, home)
     case 1n:
       IO.spawn(Unit, Media.file(inbox, client, id, thread, a, b, home))
     case 2n:
-      IO.spawn(Unit, Media.claude(inbox, thread, cwd, a, b))
+      IO.spawn(Unit, Media.claude(inbox, thread, cwd, a, b, gen))
     case 3n:
       IO.spawn(Unit, Media.check(managed, a, inbox, client, id))
     case _:
       IO.spawn(Unit, Jobs.run(tx, job, inbox, client, id, thread, cwd, a, b, home))
 
-def Media.run(+tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +a: String, +b: String, +home: String, +managed: Bool) -> IO(Unit):
-  Media.run.k(C.Codec.pos(["attach.put", "attach.file", "attach.claude", "update.check"], job), tx, job, inbox, client, id, thread, cwd, a, b, home, managed)
+def Media.run(+tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +a: String, +b: String, +home: String, +managed: Bool, +gen: String) -> IO(Unit):
+  Media.run.k(C.Codec.pos(["attach.put", "attach.file", "attach.claude", "update.check"], job), tx, job, inbox, client, id, thread, cwd, a, b, home, managed, gen)
 
 # thread_wait: the check (MC.Wait.now) goes through the hub each second,
 # off the hub, until the thread is done or the time is up; its last answer
@@ -3741,8 +3793,8 @@ def Wait.loop(+fuel: Nat, +thread: String, +check: String, +reply: Chan(String),
 
 # a message's line, its images read: it goes once every message the hub
 # took before it has gone (Claude.ready)
-def Hub.agent_write(h: Hub, +thread: String, +line: String) -> IO(Hub):
-  Claude.ready(h, thread, line)
+def Hub.agent_write(h: Hub, +thread: String, +line: String, +gen: String) -> IO(Hub):
+  Claude.ready(h, thread, line, gen)
 
 def Hub.update_check(h: Hub) -> IO(Hub):
   match h:
@@ -3758,24 +3810,42 @@ def Agent.pid_of(m: Maybe<&2, Agent>) -> Maybe<&2, U32>:
     case None{}:
       None{}
 
-def Hub.turn_pid.k(run: Bool, h: Hub, +thread: String, +pid: U32, input: Chan(String)) -> IO(Hub):
-  match run h:
+def Agent.key.of(m: Maybe<&2, Agent>) -> String:
+  match m:
+    case Some{Agent{_, _, _, k, _}}:
+      k
+    case None{}:
+      ""
+
+# the thread's agent until its process reports: a placeholder of the
+# generation being started (pid 0, never signalled: Proc.kill)
+def Hub.placeholder(h: Hub, +thread: String, +gen: String) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, +as, inbox, cfg, note}:
+      do IO<Hub>:
+        Hub.agent_stop(Agents.get(as, thread))
+        c : Chan(String) <- Chan.new(String, 1)
+        return Hub{st, f, ls, cl, Agent{thread, c, 0, B.Gen.key(gen), Nil{}} <> Agents.drop(as, thread), inbox, cfg, note}
+
+def Hub.turn_pid.k(ok: Bool, h: Hub, +thread: String, +pid: U32, input: Chan(String), +gen: String) -> IO(Hub):
+  match ok h:
     case True{} Hub{st, f, ls, cl, +as, inbox, cfg, note}:
       do IO<Hub>:
         Hub.agent_stop(Agents.get(as, thread))
-        return Hub{st, f, ls, cl, Agent{thread, input, pid, "turn", Nil{}} <> Agents.drop(as, thread), inbox, cfg, note}
+        return Hub{st, f, ls, cl, Agent{thread, input, pid, B.Gen.turn(gen), Nil{}} <> Agents.drop(as, thread), inbox, cfg, note}
     case False{} _:
       do IO<Hub>:
         Chan.close(String, input)
-        H.Proc.kill(pid, 15)
+        Proc.kill(pid, 15)
         return h
 
-# a turn process started: it replaces whatever ran for the thread before;
-# one whose turn was stopped before it came up is stopped at once
-def Hub.turn_pid(h: Hub, +thread: String, +pid: U32, input: Chan(String)) -> IO(Hub):
+# a turn process started: it is the thread's only if the thread's agent is
+# the placeholder of its generation (B.Gen.accepts); any other (its turn
+# stopped, or a later one started) is stopped at once
+def Hub.turn_pid(h: Hub, +thread: String, +pid: U32, input: Chan(String), +gen: String) -> IO(Hub):
   match h:
-    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
-      Hub.turn_pid.k(B.Hub.running(B.Hub.thread(st, thread)), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, pid, input)
+    case Hub{st, f, ls, cl, +as, inbox, cfg, note}:
+      Hub.turn_pid.k(B.Gen.accepts(Agent.key.of(Agents.get(as, thread)), gen), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, pid, input, gen)
 
 def Hub.turn_done.k(same: Bool, h: Hub, +thread: String) -> Hub:
   match same h:
@@ -4479,8 +4549,9 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         Hub.auto(cl, thread, fs)
         +now : Nat <- Now.nat()
         +t2 : String = BH.Bots.turn(st, now, thread, text)
-        IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Codex.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, fs, inbox)))
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+        +g : String = Hub.gen(st, now)
+        IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Codex.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, fs, g, inbox)))
+        Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
     case Hub{st, f, ls, cl, as, +inbox, +cfg, note} B.KiCadInstall{}:
       do IO<Hub>:
         IO.spawn(Unit, Install.go(Cfg.home(cfg), inbox))
@@ -4491,8 +4562,9 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         Hub.auto(cl, thread, fs)
         +now : Nat <- Now.nat()
         +t2 : String = BH.Bots.turn(st, now, thread, text)
-        IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Grok.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, fs, inbox)))
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+        +g : String = Hub.gen(st, now)
+        IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Grok.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, fs, g, inbox)))
+        Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
     case Hub{st, f, ls, cl, as, inbox, cfg, note} B.DeskLook{+client, +thread, +focused}:
       Hub.desk(Hub{st, f, ls, cl, as, inbox, cfg, note}, client, thread, focused)
     case Hub{+st, f, ls, +cl, as, +inbox, +cfg, note} B.TurnEnded{+thread, +state}:
@@ -4529,10 +4601,10 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
       do IO<Hub>:
         Term.put(Cfg.tm(cfg), TM.TKill{key})
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.Git{+client, +id, +job, +thread, +cwd, +a, +b}:
+    case Hub{+st, f, ls, cl, +as, +inbox, +cfg, note} B.Git{+client, +id, +job, +thread, +cwd, +a, +b}:
       do IO<Hub>:
         +now : Nat <- Now.nat()
-        Media.run(AG.Text.of(st), job, inbox, client, id, thread, cwd, Bot.attach(String.eq(job, "attach.claude"), st, now, thread, a), b, Cfg.home(cfg), Net.managed(Cfg.net(cfg)))
+        Media.run(AG.Text.of(st), job, inbox, client, id, thread, cwd, Bot.attach(String.eq(job, "attach.claude"), st, now, thread, a), b, Cfg.home(cfg), Net.managed(Cfg.net(cfg)), Agents.gen(as, thread))
         return Claude.prep(Bool.and(String.eq(job, "attach.claude"), Bool.not(String.is_empty(b))), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, b)
     case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.AskAnswered{+ask, +answer}:
       do IO<Hub>:
@@ -6364,7 +6436,7 @@ def Hub.mcp(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: 
 
 def Msg.kind(m: Msg) -> String:
   match m:
-    case AgentWrite{_, _}:
+    case AgentWrite{_, _, _}:
       "agent_write"
     case UpdateCheck{}:
       "update_check"
@@ -6400,7 +6472,7 @@ def Msg.kind(m: Msg) -> String:
       "machines"
     case LinkFound{_}:
       "link"
-    case TurnPid{_, _, _}:
+    case TurnPid{_, _, _, _}:
       "turn_pid"
     case TurnDone{_}:
       "turn_done"
@@ -6442,6 +6514,44 @@ def Msg.kind(m: Msg) -> String:
       "replied"
     case Release{}:
       "release"
+    case SpawnFailed{_, _, _}:
+      "spawn_failed"
+
+def Hub.spawn_failed.k(ok: Bool, h: Hub, +thread: String, +line: String, +now: Nat) -> IO(Hub):
+  match ok h:
+    case True{} Hub{st, f, ls, cl, +as, inbox, cfg, note}:
+      Hub.line(Hub{st, f, ls, cl, Agents.drop(as, thread), inbox, cfg, note}, thread, line, now)
+    case False{} _:
+      IO.pure(Hub, h)
+
+# a turn process that could not start: heard from the current generation
+# only (law stale_spawn_fail_quiet)
+def Hub.spawn_failed(h: Hub, +thread: String, +gen: String, +line: String, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, +as, inbox, cfg, note}:
+      Hub.spawn_failed.k(B.Gen.accepts(Agent.key.of(Agents.get(as, thread)), gen), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, line, now)
+
+def Hub.mcp.stale(+body: String) -> String:
+  MC.McpOut.reply(MC.Mcp.reply(Maybe.default(&2, J.Json, J.Json.get(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), "id"), J.Null{}),
+    MC.Res.fail("stale process: this agent process is no longer the thread's, so it may read but not change anything")))
+
+def Hub.mcp.gate(refused: Bool, h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match refused:
+    case True{}:
+      do IO<Hub>:
+        ok : Bool <- Chan.send(String, reply, Hub.mcp.stale(body))
+        return h
+    case False{}:
+      Hub.mcp(h, thread, body, reply, now)
+
+# an MCP call names its thread and the process's generation
+# ("<thread>.<gen>", B.Gen.*): one from a process the thread no longer
+# runs may read, never change anything (law mcp_stale_gen_refused)
+def Hub.mcp.g(h: Hub, +tag: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, +as, inbox, cfg, note}:
+      Hub.mcp.gate(B.Gen.refused(B.Gen.tag(tag), Agents.gen(as, B.Gen.thread(tag)), Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{})),
+        Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Gen.thread(tag), body, reply, now)
 
 def Hub.release(p: M.State & Hub, +now: Nat) -> IO(Hub):
   (+st, h) = p
@@ -6455,12 +6565,12 @@ def Hub.replied(p: M.State & Hub, +thread: String, +to: String, +text: String, +
 
 def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
   match m:
-    case AgentWrite{thread, line}:
-      Hub.agent_write(h, thread, line)
+    case AgentWrite{thread, line, gen}:
+      Hub.agent_write(h, thread, line, gen)
     case UpdateCheck{}:
       Hub.update_check(h)
     case Mcp{thread, body, reply}:
-      Hub.mcp(h, B.Tag.thread(thread), body, reply, now)
+      Hub.mcp.g(h, B.Tag.thread(thread), body, reply, now)
     case Announce{text}:
       Hub.note(h, text)
     case Join{client, out, since, origin}:
@@ -6473,8 +6583,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.rpc(h, client, text, now)
     case AgentLine{tag, line}:
       Hub.tagged(h, tag, line, now)
-    case TurnPid{thread, pid, input}:
-      Hub.turn_pid(h, thread, pid, input)
+    case TurnPid{thread, pid, input, gen}:
+      Hub.turn_pid(h, thread, pid, input, gen)
     case TurnDone{tag}:
       Hub.turn_done(h, tag)
     case Recover{}:
@@ -6533,6 +6643,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.replied(Hub.state(h), thread, to, text, now)
     case Release{}:
       Hub.release(Hub.state(h), now)
+    case SpawnFailed{thread, gen, line}:
+      Hub.spawn_failed(h, thread, gen, line, now)
 
 # each message's handling is timed as hub.<kind> (docs/perf.md)
 def Hub.got(m: Maybe<&1, Msg>, h: Hub, k: Hub -> IO(Unit)) -> IO(Unit):

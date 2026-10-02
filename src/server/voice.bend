@@ -343,7 +343,7 @@ def Vo.stop.k(none: Bool, +pid: U32) -> IO(Bool):
         return True{}
 
 def Vo.stop.p(+pid: U32) -> IO(Bool):
-  Vo.stop.k(U32.is_eq(pid, 0), pid)
+  Vo.stop.k(U32.is_le(pid, 1), pid)
 
 # stop the live session: it sends what it heard, then idle (False when
 # none was running)

@@ -3520,6 +3520,86 @@ def Tag.pid.k(ps: List<&2, String>) -> Maybe<&2, U32>:
 def Tag.pid(+tag: String) -> Maybe<&2, U32>:
   Tag.pid.k(String.split(tag, '\t'))
 
+# Spawn generations
+# -----------------
+# Every agent process the hub starts is a generation (a Claude process; a
+# Codex or Grok turn's process), named when the server starts it. Until its
+# pid is known the thread's agent is a placeholder keyed Gen.key(gen); the
+# pid is adopted only by that generation's report, any other is a process
+# no one wants and is stopped; a failure to start is heard only from the
+# current generation. A message whose images were read for one generation
+# is written only to it, and a tool call over MCP from a process that is
+# no longer the thread's may read but not change anything (its URL carries
+# "<thread>.<gen>"). A pid of 0 or 1 is never signalled: kill(0) would
+# stop the hub's own process group (laws spawn_gen_*, kill_never_low_pid,
+# mcp_stale_gen_refused, prep_stale_dropped).
+
+def Gen.key(+gen: String) -> String:
+  "spawn:" ++ gen
+
+# the key of an adopted turn process
+def Gen.turn(+gen: String) -> String:
+  "turn:" ++ gen
+
+# whether a generation's report is the one the thread's agent waits for
+def Gen.accepts(+key: String, +gen: String) -> Bool:
+  String.eq(key, Gen.key(gen))
+
+def Gen.after(ps: List<&2, String>) -> String:
+  match ps:
+    case _ <> +g <> _:
+      g
+    case _:
+      ""
+
+# the generation a key names ("" for none)
+def Gen.of(+key: String) -> String:
+  Bool.pick(String, Bool.or(String.starts_with(key, "spawn:"), String.starts_with(key, "turn:")), Gen.after(String.split(key, ':')), "")
+
+def Gen.first(ps: List<&2, String>) -> String:
+  match ps:
+    case +t <> _:
+      t
+    case Nil{}:
+      ""
+
+# an MCP path's thread and generation ("<thread>.<gen>"; no generation: "")
+def Gen.thread(+tag: String) -> String:
+  Gen.first(String.split(tag, '.'))
+
+def Gen.tag(+tag: String) -> String:
+  Gen.after(String.split(tag, '.'))
+
+def Gen.mcp(+thread: String, +gen: String) -> String:
+  Bool.pick(String, String.is_empty(gen), thread, thread ++ "." ++ gen)
+
+# a call named with a generation that is not the thread's current one
+def Gen.stale(+tagged: String, +current: String) -> Bool:
+  Bool.and(Bool.not(String.is_empty(tagged)), Bool.not(String.eq(tagged, current)))
+
+# the tools that only read
+def Gen.reads(+tool: String) -> Bool:
+  Nat.is_lt(C.Codec.pos(["orchestrator_capabilities", "task_status", "thread_list", "thread_read", "thread_wait", "thread_wait_now", "work_list", "project_list"], tool), 8n)
+
+# an MCP request that changes something: a tools/call of any tool that does
+# not only read (initialize, tools/list and the like change nothing)
+def Gen.changes(+o: J.Json) -> Bool:
+  Bool.and(String.eq(J.Json.get_str(o, "method", ""), "tools/call"), Bool.not(Gen.reads(J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""))))
+
+# whether a request from this MCP path is refused: a stale generation's
+# change
+def Gen.refused(+tagged: String, +current: String, +o: J.Json) -> Bool:
+  Bool.and(Gen.stale(tagged, current), Gen.changes(o))
+
+# whether a prepared message may be written: its generation is the agent's
+# and its command is not a tomb (core/cmds.bend's st 4)
+def Gen.write(+gen: String, +current: String, +st: Nat) -> Bool:
+  Bool.and(String.eq(gen, current), Nat.is_lt(st, 4n))
+
+# whether a pid may be signalled
+def Proc.kill.ok(+pid: U32) -> Bool:
+  U32.is_gt(pid, 1)
+
 # whether a line from this tag is heard, given the pid the hub runs for
 # its thread (None: none)
 def Tag.heard(m: Maybe<&2, U32>, run: Maybe<&2, U32>) -> Bool:

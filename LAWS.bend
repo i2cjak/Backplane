@@ -4860,3 +4860,35 @@ law update_wait_goes_when_done:
 
 law update_wait_holds_while_busy:
   {H.Lost.upgrades(H.Step.outs_of(H.Update.due(M.State.replay([M.SettingSet{"update.wait", "5", 5n}], H.Answer.demo(True{})), 9n))) == 0n : Nat}
+
+# Spawn generations (hub.bend's Gen.*): only the generation a thread waits
+# for adopts its pid or reports its failure; a stale process's MCP call may
+# read, never change; a message prepared for an earlier process, or
+# stopped, is not written; pid 0 and 1 are never signalled
+law kill_never_low_pid:
+  {Bool.show(H.Proc.kill.ok(0)) ++ Bool.show(H.Proc.kill.ok(1)) ++ Bool.show(H.Proc.kill.ok(4242)) == "FalseFalseTrue" : String}
+
+law spawn_gen_accepts_current:
+  {H.Gen.accepts(H.Gen.key("1790-7"), "1790-7") == True{} : Bool}
+
+law spawn_gen_drops_stale:
+  {Bool.or(H.Gen.accepts(H.Gen.key("1790-7"), "1789-3"), H.Gen.accepts(H.Gen.turn("1790-7"), "1790-7")) == False{} : Bool}
+
+# a thread stopped while its process came up has no placeholder left
+law stale_spawn_fail_quiet:
+  for +gen: String
+  {H.Gen.accepts("", gen) == False{} : Bool}
+
+law mcp_stale_gen_refused:
+  {H.Gen.refused("g1", "g2", CM.Cmds.o("{\"method\":\"tools/call\",\"params\":{\"name\":\"thread_send\"}}")) == True{} : Bool}
+
+law mcp_stale_gen_reads:
+  {Bool.or(H.Gen.refused("g1", "g2", CM.Cmds.o("{\"method\":\"tools/call\",\"params\":{\"name\":\"thread_read\"}}")),
+    Bool.or(H.Gen.refused("g2", "g2", CM.Cmds.o("{\"method\":\"tools/call\",\"params\":{\"name\":\"thread_send\"}}")),
+      H.Gen.refused("", "g2", CM.Cmds.o("{\"method\":\"tools/call\",\"params\":{\"name\":\"thread_send\"}}")))) == False{} : Bool}
+
+law prep_stale_dropped:
+  {Bool.show(H.Gen.write("g1", "g2", 1n)) ++ Bool.show(H.Gen.write("g1", "g1", 4n)) ++ Bool.show(H.Gen.write("g1", "g1", 1n)) == "FalseFalseTrue" : String}
+
+law gen_mcp_path:
+  {H.Gen.thread(H.Gen.mcp("t17-3", "1790-7")) ++ "|" ++ H.Gen.tag(H.Gen.mcp("t17-3", "1790-7")) ++ "|" ++ H.Gen.tag("t17-3") == "t17-3|1790-7|" : String}

@@ -49,6 +49,7 @@ const mcpAt = args.indexOf("--mcp-config");
 const mcpUrl = (() => {
   try { return JSON.parse(args[mcpAt + 1]).mcpServers.backplane.url as string; } catch { return ""; }
 })();
+if (mcpUrl) log(`MCP ${process.pid} ${mcpUrl}`);
 
 const emit = (o: object) => process.stdout.write(JSON.stringify(o) + "\n");
 const lc = (u: string, state: string) => {

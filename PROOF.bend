@@ -6774,3 +6774,27 @@ def Laws.update_wait_holds_while_busy():
 
 def Laws.lost_text_not_carry_text(ls):
   {==}
+
+def Laws.kill_never_low_pid():
+  {==}
+
+def Laws.spawn_gen_accepts_current():
+  {==}
+
+def Laws.spawn_gen_drops_stale():
+  {==}
+
+def Laws.stale_spawn_fail_quiet(gen):
+  {==}
+
+def Laws.mcp_stale_gen_refused():
+  {==}
+
+def Laws.mcp_stale_gen_reads():
+  {==}
+
+def Laws.prep_stale_dropped():
+  {==}
+
+def Laws.gen_mcp_path():
+  {==}
