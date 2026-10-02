@@ -6007,12 +6007,29 @@ def Boot.end(ends: Bool, u: Ui) -> Ui:
     case False{}:
       u
 
+# a changes frame with "boot": true starts (or goes on with) a catch-up:
+# a live client that fell behind takes its log's changes this way, with
+# no "log" frame saying "more" before them
+def Boot.begins(m: Maybe<&2, J.Json>) -> Bool:
+  match m:
+    case Some{J.Flag{True{}}}:
+      True{}
+    case _:
+      False{}
+
+def Boot.begin(begins: Bool, u: Ui) -> Ui:
+  match begins:
+    case True{}:
+      Ui.scratch_set(u, "@boot", "1")
+    case False{}:
+      u
+
 def Boot.mark(i: Nat, u: Ui, +o: J.Json) -> Ui:
   match i:
     case 0n:
       Ui.scratch_set(u, "@boot", Bool.pick(String, J.Json.get_bool(o, "more", False{}), "1", ""))
     case 1n:
-      Boot.end(Boot.ends(J.Json.get(o, "boot")), u)
+      Boot.begin(Boot.begins(J.Json.get(o, "boot")), Boot.end(Boot.ends(J.Json.get(o, "boot")), u))
     case _:
       u
 
