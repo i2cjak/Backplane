@@ -12,6 +12,8 @@
 // (data-fam, core/hist.bend's family: the view stays put) fades in only
 // what changed; otherwise a frame is drawn only when something changed.
 
+import { wheelKind } from "./solid.js";
+
 // varints (7 bits a byte, low first) and zigzag, as the hub writes them
 function reader(bytes) {
   let i = 0;
@@ -150,9 +152,16 @@ class View {
       e.preventDefault();
       const b = canvas.getBoundingClientRect();
       const mx = e.clientX - b.left, my = e.clientY - b.top;
-      const f = Math.exp(-e.deltaY * 0.0015);
-      this.ox = mx - (mx - this.ox) * f; this.oy = my - (my - this.oy) * f;
-      this.scale *= f;
+      // a touchpad's two fingers move the plot; a pinch or a wheel zooms at the pointer
+      const kind = wheelKind(e, this.wheelLast);
+      this.wheelLast = { kind, t: e.timeStamp };
+      const px = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? canvas.clientHeight : 1;
+      if (kind === "pad") { this.ox -= e.deltaX * px; this.oy -= e.deltaY * px; }
+      else {
+        const f = Math.exp(-e.deltaY * px * (kind === "pinch" ? 0.01 : 0.0015));
+        this.ox = mx - (mx - this.ox) * f; this.oy = my - (my - this.oy) * f;
+        this.scale *= f;
+      }
       this.touched = true;
       this.later();
     }, { passive: false });
