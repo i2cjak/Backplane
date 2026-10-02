@@ -41,11 +41,11 @@ chmodSync(join(fake, "claude"), 0o755);
 const slow = join(root, "slow");
 writeFileSync(join(fake, "systemctl"), `#!/bin/sh\nif [ -e ${slow} ]; then case "$2" in show|stop|reset-failed) sleep 8;; esac; fi\nexec /usr/bin/systemctl "$@"\n`);
 chmodSync(join(fake, "systemctl"), 0o755);
-// codex and grok stand-ins that run away at once (their stream just ends)
+// codex and grok stand-ins that run away at once when they run a turn (their stream just ends); their probes fail
 const hog = join(root, "hog.js");
 writeFileSync(hog, "const k=[];for(let i=0;i<30;i++){k.push(Buffer.alloc(20*1024*1024,1));}\nrequire('node:fs').appendFileSync(process.env.FAKE_LOG,'HOG-SURVIVED\\n');\n");
 for (const n of ["codex", "grok"]) {
-  writeFileSync(join(fake, n), `#!/bin/sh\nexec ${process.execPath} ${hog}\n`);
+  writeFileSync(join(fake, n), `#!/bin/sh\ncase "$1" in exec|agent) exec ${process.execPath} ${hog};; esac\nexit 1\n`);
   chmodSync(join(fake, n), 0o755);
 }
 const home = join(root, "home");
