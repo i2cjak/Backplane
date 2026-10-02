@@ -625,8 +625,16 @@ def Hubs.redraw.k(delta: Bool, +hs: Hubs, +key: String, +o: J.Json) -> Bool:
 # whether the phone builds a screen for a frame from hub key: any message
 # from any paired hub can change the merged sidebar and the island; only
 # streamed text is held to Hubs.shows (laws hubs_redraw_*)
+def Hubs.redraw.t(beat: Bool, +hs: Hubs, +key: String, +o: J.Json) -> Bool:
+  match beat:
+    case True{}:
+      False{}
+    case False{}:
+      Hubs.redraw.k(String.eq(J.Json.get_str(o, "t", ""), "delta"), hs, key, o)
+
+# (a heartbeat builds none: law hubs_redraw_hb)
 def Hubs.redraw(+hs: Hubs, +key: String, +o: J.Json) -> Bool:
-  Hubs.redraw.k(String.eq(J.Json.get_str(o, "t", ""), "delta"), hs, key, o)
+  Hubs.redraw.t(String.eq(J.Json.get_str(o, "t", ""), "hb"), hs, key, o)
 
 def Hubs.list(hs: Hubs) -> List<&2, Hub>:
   match hs:

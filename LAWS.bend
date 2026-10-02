@@ -5194,3 +5194,20 @@ law far_backoff:
 # of its own, so mirrors pull it afresh
 law far_epoch_on_unknown_lines:
   {[FR.Fr.history.body("x", 3n, 3n), FR.Fr.history.body("x", 5n, 3n)] == ["x", "x|unknown:2"] : List<&2, String>}
+
+# the hub's heartbeat draws nothing and changes nothing; a link silent for
+# longer than the limit is dead, one heard within it is not
+law hb_shows_nothing:
+  for u: U.Ui
+  {U.Ui.shows(u, J.Json.obj([J.KV{"t", J.Str{"hb"}}])) == False{} : Bool}
+
+law hubs_redraw_hb:
+  for +hs: Hb.Hubs
+  for +key: String
+  {Hb.Hubs.redraw(hs, key, J.Json.obj([J.KV{"t", J.Str{"hb"}}])) == False{} : Bool}
+
+law hb_ignored_by_fold:
+  {U.Ui.state(U.Ui.recv(U.Ui.init(0n), J.Json.obj([J.KV{"t", J.Str{"hb"}}]))) == U.Ui.state(U.Ui.init(0n)) : M.State}
+
+law alive_due:
+  {[DK.Alive.due(1000n, 41000n), DK.Alive.due(1000n, 41001n), DK.Alive.due(5n, 5n), DK.Alive.due(9n, 3n)] == [False{}, True{}, False{}, False{}] : List<&2, Bool>}

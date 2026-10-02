@@ -7016,3 +7016,15 @@ def Laws.far_backoff():
 
 def Laws.far_epoch_on_unknown_lines():
   {==}
+
+def Laws.hb_shows_nothing(u):
+  {==}
+
+def Laws.hubs_redraw_hb(hs, key):
+  {==}
+
+def Laws.hb_ignored_by_fold():
+  {==}
+
+def Laws.alive_due():
+  {==}

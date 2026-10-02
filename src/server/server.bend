@@ -94,6 +94,8 @@ type Msg is Data:
   AgentLine{thread: String, line: String}
   AgentGone{thread: String, code: U32, pid: U32}
   Tick{}
+  # every 15 s: a heartbeat for every client (Alive.due)
+  Beat{}
   Push{client: U32, text: String}
   # a message for one client, already CBOR
   PushBin{client: U32, cbor: List<&2, U32>}
@@ -2006,6 +2008,18 @@ def Beat.loop(fuel: Nat, +inbox: Chan(Msg)) -> IO(Unit):
 # snooze until 9:00 tomorrow here: the hub hears the time as thread.snooze
 def Snooze.tomorrow(+inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +now: String) -> IO(Unit):
   do IO<Unit>:
+# a heartbeat every Alive.every() ms: the clients that hear nothing for
+# longer than Alive.limit() take the link for dead and reconnect
+def Beat.loop(fuel: Nat, +inbox: Chan(Msg)) -> IO(Unit):
+  match fuel:
+    case 0n:
+      IO.pure(Unit, Unit{})
+    case 1n+f:
+      do IO<Unit>:
+        IO.sleep(U32.from_nat(DK.Alive.every()))
+        ok : Bool <- Chan.send(Msg, inbox, Beat{})
+        Beat.loop(f, inbox)
+
     r : P.Ran <- P.Proc.run("date", ["+%z"], "/")
     GitJob.say(inbox, "thread.snooze", [J.KV{"thread", J.Str{thread}}, J.KV{"until", J.Num{Nat.show(M.Snooze.tomorrow(Maybe.default(&2, Nat, Nat.read(now), 0n), Snooze.tz(r)))}}])
     GitJob.reply(inbox, client, id, True{}, J.Json.obj([J.KV{"thread", J.Str{thread}}]))
@@ -7402,6 +7416,8 @@ def Msg.kind(m: Msg) -> String:
       "turn_pid"
     case TurnDone{_}:
       "turn_done"
+    case Beat{}:
+      "beat"
     case Recover{}:
       "recover"
     case Commit{_}:
@@ -7700,6 +7716,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.bot_tick(h, tz, now)
     case BotsFound{peer, url, result}:
       Hub.bots_found(h, peer, url, result)
+    case Beat{}:
+      Hub.broadcast(h, DK.Alive.frame())
     case BotsRefresh{peer}:
       Hub.dir.refresh(h, peer)
     case BotHttp{kind, arg, peer, ts, sig, gh, dl, body, ct, raw, reply}:
@@ -7880,6 +7898,7 @@ def Main.listened(r: Result<&1, &1, U32 & String, Listener>, h: Hub, +web: Strin
       do IO<Unit>:
         IO.print("Backplane listening on http://" ++ addr)
         Main.serve(l, h, web, inbox, cfg, tok, front)
+    IO.spawn(Unit, Beat.loop(Fuel.forever(), inbox))
     case Fail{e} True{}:
       Main.failed(e, h, addr)
     case Fail{_} False{}:
@@ -7890,6 +7909,7 @@ def Main.listened(r: Result<&1, &1, U32 & String, Listener>, h: Hub, +web: Strin
 
 # One hub per home
 # ----------------
+    IO.spawn(Unit, Beat.loop(Fuel.forever(), inbox))
 # Two hubs on one home (a window opened while `--headless` ran for the same
 # folder) each kept a state of their own over the same log: a message sent
 # in the window never reached the web or the phones, and theirs never the

@@ -73,6 +73,13 @@ final class Hub {
     private var backoff: Double = 0.25
     private var stopped = false
     private var generation = 0
+    // When a frame (a heartbeat included) last arrived. The hub sends one
+    // every 15 s (core/desk.bend's Alive.every); a link silent for more
+    // than Alive.limit (40 s) is dead, whatever TCP says, and is dropped
+    // and reconnected from the client's sequence.
+    private static let aliveLimit: TimeInterval = 40
+    private var heard = Date()
+    private var watch: Timer?
 
     init(url: @escaping () async -> URL?, onConnecting: @escaping () -> Void, onOpen: @escaping () -> Void, onMessage: @escaping (Data) -> Void,
          onClose: @escaping () -> Void) {
@@ -85,11 +92,24 @@ final class Hub {
 
     func start() {
         stopped = false
+        heard = Date()
+        watch?.invalidate()
+        watch = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.check() }
+        }
         connect()
+    }
+
+    private func check() {
+        guard !stopped, let t = task, Date().timeIntervalSince(heard) > Hub.aliveLimit else { return }
+        t.cancel(with: .goingAway, reason: nil)
+        lost()
     }
 
     func stop() {
         stopped = true
+        watch?.invalidate()
+        watch = nil
         generation += 1
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
@@ -112,6 +132,7 @@ final class Hub {
             // past the 1 MB default every receive fails and it reconnects forever
             t.maximumMessageSize = 64 << 20
             task = t
+            heard = Date()
             t.resume()
             // the first message proves the socket is up (the hub greets at once)
             read(t, gen, first: true)
@@ -124,6 +145,7 @@ final class Hub {
                 guard let self, gen == self.generation else { return }
                 switch r {
                 case .success(let m):
+                    self.heard = Date()
                     if first {
                         self.backoff = 0.25
                         self.onOpen()

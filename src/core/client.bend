@@ -795,6 +795,15 @@ def Ui.also(a: Act, more: List<&2, Cmd>) -> Act:
 def Ui.msg_id(+cid: String, +now: Nat, +rid: Nat) -> String:
   "c" ++ cid ++ Nat.show(now) ++ "-" ++ Nat.show(rid)
 
+# a kept request that names itself (`msg`, as a sent message does): the
+# outbox sends it again after a dropped link, and the hub, seeing the
+# same id, stores and does it once (bots.say, bots.post, bots.tell)
+def Ui.rpc.keep.msg(u: Ui, +m: String, +p: List<&2, J.KV>) -> Act:
+  match u:
+    case Ui{st, sel, dr, live, op, on, +now, ad, pa, v, +rid, w, er, note, +nf, ob, tr}:
+      Ui.rpc.keep(Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}, m,
+        List.append(&2, J.KV, p, [J.KV{"msg", J.Str{Ui.msg_id(Str.get(nf, "cid"), now, rid)}}]))
+
 # Follow-ups
 # ----------
 # While a turn runs, a message either waits in the queue or steers the
@@ -4533,7 +4542,7 @@ def Bots.say.clear(u: Ui) -> Ui:
       Ui{st, sel, Map.set(&2, String, Map.set(&2, String, dr, sel, ""), "@att:" ++ sel, ""), live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
 
 def Bots.say(u: Ui, +bot: String, text: String) -> Act:
-  Ui.also(Ui.rpc.keep(Bots.say.clear(u), "bots.say", [J.KV{"bot", J.Str{bot}}, J.KV{"text", J.Str{text}}]), [Scroll{}])
+  Ui.also(Ui.rpc.keep.msg(Bots.say.clear(u), "bots.say", [J.KV{"bot", J.Str{bot}}, J.KV{"text", J.Str{text}}]), [Scroll{}])
 
 def Ui.send.b(empty: Bool, b: Maybe<&2, BT.Bot>, u: Ui, text: String, +mode: String) -> Act:
   match empty b:
@@ -4760,7 +4769,7 @@ def Bots.room.post.k(empty: Bool, +u: Ui) -> Act:
     case True{}:
       Act{u, Nil{}}
     case False{}:
-      Ui.also(Ui.rpc.keep(Ui.scratch_set(u, "@f.rpost", ""), "bots.post", [J.KV{"room", J.Str{Ui.scratch(u, "@room")}}, J.KV{"text", J.Str{Bots.field(u, "rpost")}}]), [Scroll{}])
+      Ui.also(Ui.rpc.keep.msg(Ui.scratch_set(u, "@f.rpost", ""), "bots.post", [J.KV{"room", J.Str{Ui.scratch(u, "@room")}}, J.KV{"text", J.Str{Bots.field(u, "rpost")}}]), [Scroll{}])
 
 def Bots.room.post(+u: Ui) -> Act:
   Bots.room.post.k(String.is_empty(String.trim(Bots.field(u, "rpost"))), u)
@@ -4770,7 +4779,7 @@ def Bots.remote.send.k(empty: Bool, +u: Ui) -> Act:
     case True{}:
       Act{u, Nil{}}
     case False{}:
-      Ui.also(Ui.rpc.keep(Ui.scratch_set(u, "@f.rtext", ""), "bots.tell", [J.KV{"to", J.Str{Ui.scratch(u, "@remote")}}, J.KV{"text", J.Str{Bots.field(u, "rtext")}}]), [Scroll{}])
+      Ui.also(Ui.rpc.keep.msg(Ui.scratch_set(u, "@f.rtext", ""), "bots.tell", [J.KV{"to", J.Str{Ui.scratch(u, "@remote")}}, J.KV{"text", J.Str{Bots.field(u, "rtext")}}]), [Scroll{}])
 
 def Bots.remote.send(+u: Ui) -> Act:
   Bots.remote.send.k(String.is_empty(String.trim(Bots.field(u, "rtext"))), u)
@@ -6156,8 +6165,16 @@ def Ui.shows.k(delta: Bool, +sel: String, +o: J.Json) -> Bool:
 # another thread's delta asks for no frame (with fifty agents streaming,
 # a frame per delta kept the window drawing all the time; laws
 # shows_other_delta, shows_own_delta, shows_changes)
+def Ui.shows.t(beat: Bool, +u: Ui, +o: J.Json) -> Bool:
+  match beat:
+    case True{}:
+      False{}
+    case False{}:
+      Ui.shows.k(String.eq(J.Json.get_str(o, "t", ""), "delta"), Ui.sel(u), o)
+
+# (a heartbeat, {"t":"hb"}, draws nothing: law hb_shows_nothing)
 def Ui.shows(+u: Ui, +o: J.Json) -> Bool:
-  Ui.shows.k(String.eq(J.Json.get_str(o, "t", ""), "delta"), Ui.sel(u), o)
+  Ui.shows.t(String.eq(J.Json.get_str(o, "t", ""), "hb"), u, o)
 
 # a message from the server, with what to send: a (re)connection (the
 # server's log arrives first on each) sends the outbox again, so nothing

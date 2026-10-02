@@ -4,6 +4,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
+import android.os.SystemClock
 import android.system.Os
 import android.system.OsConstants
 import android.util.Log
@@ -99,6 +100,9 @@ private object LiveSockets : SocketFactory() {
         LiveSocket().apply { bind(InetSocketAddress(local, localPort)); connect(InetSocketAddress(host, port)) }
 }
 
+// Alive.limit in core/desk.bend, in ms
+private const val ALIVE_LIMIT_MS = 40_000L
+
 // The socket to the hub, reconnecting with backoff like host.js. The
 // address is asked for afresh on every attempt, so each reconnect resumes
 // from what the client already holds.
@@ -115,13 +119,34 @@ class Hub(
     private var backoff = 250L
     private var stopped = false
 
+    // When a frame (a heartbeat included) last arrived. The hub sends one
+    // every 15 s (core/desk.bend's Alive.every); a link silent for more
+    // than Alive.limit (40 s) is dead, whatever TCP says, and is dropped
+    // and reconnected from the client's sequence.
+    private var heard = SystemClock.elapsedRealtime()
+    private val watch = object : Runnable {
+        override fun run() {
+            if (stopped) return
+            val ws = socket
+            if (ws != null && SystemClock.elapsedRealtime() - heard > ALIVE_LIMIT_MS) {
+                Log.w("Backplane", "hub silent for ${ALIVE_LIMIT_MS / 1000} s: reconnecting")
+                ws.cancel() // onFailure follows and reconnects
+            }
+            main.postDelayed(this, 5000)
+        }
+    }
+
     fun start() {
         stopped = false
+        heard = SystemClock.elapsedRealtime()
+        main.removeCallbacks(watch)
+        main.postDelayed(watch, 5000)
         connect()
     }
 
     fun stop() {
         stopped = true
+        main.removeCallbacks(watch)
         socket?.close(1000, null)
         socket = null
     }
@@ -146,6 +171,7 @@ class Hub(
                         ws.close(1000, null)
                     } else {
                         socket = ws
+                        heard = SystemClock.elapsedRealtime()
                         backoff = 250
                         onOpen()
                     }
@@ -155,7 +181,12 @@ class Hub(
             // every frame is binary CBOR, both ways
             override fun onMessage(ws: WebSocket, bytes: ByteString) {
                 val b = bytes.toByteArray()
-                main.post { if (!stopped && socket === ws) onMessage(b) }
+                main.post {
+                    if (!stopped && socket === ws) {
+                        heard = SystemClock.elapsedRealtime()
+                        onMessage(b)
+                    }
+                }
             }
 
             override fun onClosed(ws: WebSocket, code: Int, reason: String) = lost(ws)

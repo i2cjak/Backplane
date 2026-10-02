@@ -852,12 +852,14 @@ function connect() {
   s.binaryType = "arraybuffer";
   s.onopen = () => {
     socket = s;
+    heard = BigInt(Date.now());
     backoff = 250;
     ui = App.online(ui, true);
     deskCheck();
     later();
   };
   s.onmessage = (e) => {
+    heard = BigInt(Date.now());
     // the hub sends only binary CBOR frames
     if (typeof e.data === "string") return;
     // plots go straight to the viewers, not through Bend: a 3D model
@@ -888,7 +890,10 @@ function connect() {
     run(r.cmds);
     if (vis || acts) later();
   };
-  s.onclose = () => {
+  let lost = false;
+  const gone = () => {
+    if (lost) return;
+    lost = true;
     if (socket === s) socket = null;
     // a new connection holds no plots
     Plot2d.reset();
@@ -898,7 +903,21 @@ function connect() {
     setTimeout(connect, backoff);
     backoff = Math.min(backoff * 2, 5000);
   };
+  s.onclose = gone;
+  // a half-open link shows no close: the hub's heartbeat (every 15 s) not
+  // arriving for 40 s ends it here (Alive.due)
+  s.dead = () => {
+    s.onmessage = null;
+    try { s.close(); } catch {}
+    gone();
+  };
 }
+
+// when a frame (a heartbeat included) last arrived, in ms
+let heard = BigInt(Date.now());
+setInterval(() => {
+  if (socket && App.alive_due(heard, BigInt(Date.now()))) socket.dead();
+}, 5000);
 
 setInterval(() => {
   ui = App.tick(ui, now());
