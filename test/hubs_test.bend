@@ -83,6 +83,15 @@ def alerts(a: H.HAct) -> Nat:
     case H.HAct{_, _, als}:
       List.length(&2, J.Json, als)
 
+# a chunk of a join: a log saying more, then changes, the last boot false
+def chunk(+t: String, +more: Bool, +boot: Bool, cs: List<&2, M.Change>) -> J.Json:
+  J.Json.obj([J.KV{"t", J.Json.str(t)}, J.KV{"more", J.Json.bool(more)}, J.KV{"boot", J.Json.bool(boot)}, J.KV{"items", J.Json.arr(items(cs))}])
+
+# box joins in chunks: its first chunk has t2 at work, the next its end
+def split() -> H.Hubs:
+  H.Hubs.after(H.Hubs.recv(H.Hubs.set(H.Hubs.init(0n, "c"), ["box:3787"]), "box:3787",
+    chunk("log", True{}, True{}, [M.ProjectCreated{"p2", "Box", "/box", 50n}, M.ThreadCreated{"t2", "p2", "Two", M.Local{}, "", "", "claude", "", 100n}, M.TurnChanged{"t2", M.Running{}, 200n}])))
+
 # t2 on the hub out of focus is at work
 def busy() -> H.Hubs:
   H.Hubs.after(H.Hubs.recv(two(), "box:3787", changes([M.TurnChanged{"t2", M.Running{}, 200n}])))
@@ -90,6 +99,12 @@ def busy() -> H.Hubs:
 def main() -> IO(Unit):
   do IO<Unit>:
     C.Check.str("first hub is current", H.Hubs.cur(two()), "100.1.1.1:3787")
+    # a log arriving in chunks is history: no alert from a chunk or the
+    # last one; after it, a turn's end alerts again
+    C.Check.str("a split join's chunk raises no alert", Nat.show(alerts(H.Hubs.recv(split(), "box:3787", chunk("changes", False{}, True{}, [M.TurnChanged{"t2", M.Completed{}, 300n}])))), "0")
+    C.Check.str("a split join's last chunk raises no alert", Nat.show(alerts(H.Hubs.recv(split(), "box:3787", chunk("changes", False{}, False{}, [M.TurnChanged{"t2", M.Completed{}, 300n}])))), "0")
+    C.Check.str("after a split join a turn's end alerts", Nat.show(alerts(H.Hubs.recv(H.Hubs.after(H.Hubs.recv(split(), "box:3787", chunk("changes", False{}, False{}, Nil{}))), "box:3787", changes([M.TurnChanged{"t2", M.Completed{}, 300n}])))), "1")
+    C.Check.str("a split join holds what one log holds", Nat.show(U.Ui.seq(H.Hubs.ui(H.Hubs.after(H.Hubs.recv(split(), "box:3787", chunk("changes", False{}, False{}, [M.TurnChanged{"t2", M.Completed{}, 300n}]))), "box:3787"))), "4")
     # every paired hub's messages redraw the merged screen; streamed text
     # only for the thread open on the hub in focus
     C.Check.str("an unfocused completion redraws", yes(A.shows(busy(), "box:3787", changes([M.TurnChanged{"t2", M.Completed{}, 300n}]))), "yes")

@@ -559,6 +559,63 @@ static void __attribute__((constructor)) sock_shut_read_use(void) {
 
 #endif
 
+#ifdef CID_SOCK_RAW
+
+// A raw descriptor on the same socket (a dup, close-on-exec), for the hub
+// to shut a client's connection at once from outside its writer
+// (Fd.shut); 0 when none could be made.
+Term sock_raw_run(Env e, Term* f, IoWork* w) {
+  int fd  = (int)io_hand_v(f[0]);
+  int got = dup(fd);
+  if (got >= 0) {
+    fcntl(got, F_SETFD, FD_CLOEXEC);
+  }
+  return io_tup(e, io_hand(fd), (Term)(uint32_t)(got < 3 ? 0 : got));
+}
+
+static void __attribute__((constructor)) sock_raw_use(void) {
+  io_eff(CID_SOCK_RAW, sock_raw_run, 0);
+}
+
+#endif
+
+#ifdef CID_FD_SHUT
+
+// Shuts the socket under a raw descriptor both ways (every handle on it:
+// a writer blocked on it fails, its reader reads the end) and closes the
+// descriptor. Never 0, 1 or 2.
+Term fd_shut_run(Env e, Term* f, IoWork* w) {
+  int fd = (int)(uint32_t)f[0];
+  if (fd > 2) {
+    shutdown(fd, SHUT_RDWR);
+    close(fd);
+  }
+  return host_unit();
+}
+
+static void __attribute__((constructor)) fd_shut_use(void) {
+  io_eff(CID_FD_SHUT, fd_shut_run, 0);
+}
+
+#endif
+
+#ifdef CID_FD_CLOSE
+
+// Closes a raw descriptor (never 0, 1 or 2); the socket stays as it is.
+Term fd_close_run(Env e, Term* f, IoWork* w) {
+  int fd = (int)(uint32_t)f[0];
+  if (fd > 2) {
+    close(fd);
+  }
+  return host_unit();
+}
+
+static void __attribute__((constructor)) fd_close_use(void) {
+  io_eff(CID_FD_CLOSE, fd_close_run, 0);
+}
+
+#endif
+
 #ifdef CID_PROC_KILL
 
 Term proc_kill_run(Env e, Term* f, IoWork* w) {

@@ -197,13 +197,24 @@ def Ws.body.fit(ok: Bool, fin: Bool, +op: U32, +key: List<&2, U32>, +len: Nat, +
     case False{}:
       None{}
 
+# whether bs holds at least n bytes, looking at no more than n of them (a
+# buffer of many small frames is read in one pass, not one per frame)
+def Ws.has(n: Nat, bs: List<&2, U32>) -> Bool:
+  match n bs:
+    case 0n _:
+      True{}
+    case 1n+k _ <> t:
+      Ws.has(k, t)
+    case 1n+k Nil{}:
+      False{}
+
 # after the length: the mask key (when masked) and the payload
 def Ws.body(fin: Bool, +op: U32, masked: Bool, +len: Nat, +bs: List<&2, U32>) -> Maybe<&2, Got>:
   match masked:
     case True{}:
-      Ws.body.fit(Nat.is_ge(List.length(&2, U32, bs), Nat.add(4n, len)), fin, op, List.take(&2, U32, bs, 4n), len, List.drop(&2, U32, bs, 4n))
+      Ws.body.fit(Ws.has(Nat.add(4n, len), bs), fin, op, List.take(&2, U32, bs, 4n), len, List.drop(&2, U32, bs, 4n))
     case False{}:
-      Ws.body.fit(Nat.is_ge(List.length(&2, U32, bs), len), fin, op, [0, 0, 0, 0], len, bs)
+      Ws.body.fit(Ws.has(len, bs), fin, op, [0, 0, 0, 0], len, bs)
 
 def Ws.len.k(short: Bool, mid: Bool, fin: Bool, +op: U32, masked: Bool, +n: U32, +bs: List<&2, U32>) -> Maybe<&2, Got>:
   match short mid:

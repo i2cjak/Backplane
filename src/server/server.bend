@@ -52,6 +52,7 @@ import ../core/notice.bend as NO
 import ../core/hist.bend as HI
 import ../core/emb.bend as EM
 import ../core/cmds.bend as CM
+import ../core/outbox.bend as OB
 
 # The server. One hub computation owns the read model and the event log;
 # every connection and agent process is its own computation and talks to
@@ -68,13 +69,25 @@ type Wire is Data:
   # the hub's own window: the read model itself, with the log message's
   # head (no items), in place of the log as text
   WState{st: M.State, head: String}
+  # a message made of a log's lines: head, the lines joined by ",", tail;
+  # put together by the writer, off the hub (a join's chunk)
+  WItems{head: String, items: List<&2, String>, tail: String}
 
 type Msg is Data:
   Announce{text: String}
   Mcp{thread: String, body: String, reply: Chan(String)}
-  Join{client: U32, out: Chan(Wire), since: Nat, origin: String}
+  # gen: the connection's generation (a socket's id; the window's client 0
+  # joins again under a new one); sock: a raw descriptor on its socket (0
+  # for none), shut at once when it falls too far behind (core/outbox.bend)
+  Join{client: U32, out: Chan(Wire), since: Nat, origin: String, gen: U32, sock: U32}
   # the window in this process: it takes the read model, not the log
-  JoinHere{client: U32, out: Chan(Wire)}
+  JoinHere{client: U32, out: Chan(Wire), gen: U32}
+  # a client's writer has put n frames (bytes bytes) out in all
+  Drained{client: U32, gen: U32, n: Nat, bytes: Nat}
+  # the next chunk of a joining client's log (OB.Cr: boot)
+  JoinMore{client: U32, gen: U32}
+  # a client pinged (its reader passes on at most one a second)
+  Ping{client: U32, payload: List<&2, U32>}
   Leave{client: U32}
   Rpc{client: U32, text: String}
   AgentLine{thread: String, line: String}
@@ -155,6 +168,9 @@ type Msg is Data:
   WatchLaunched{thread: String, id: String}
   WatchIdent{thread: String, id: String, ident: String}
   WatchEnded{thread: String, id: String, status: String, detail: String}
+  # a message from the hub's own inbox (agents' lines, jobs, its own
+  # posts), passed on by Bulk.fwd behind a token (Bulk.*)
+  Bulk{m: Msg}
 
 # remote access: also listen on the tailnet, serve HTTPS through
 # `tailscale serve`, and the token remote clients must present
@@ -165,8 +181,10 @@ type Cfg is Data:
   Cfg{home: String, web: String, host: String, port: U32, prompt: String, dirs: List<&2, String>, version: String, net: Net}
 
 type Client is Data:
-  # look: what the client last said it shows (desk.look; core/desk.bend)
-  Client{id: U32, out: Chan(Wire), look: DK.Look}
+  # look: what the client last said it shows (desk.look; core/desk.bend);
+  # cr: what it was offered and has taken, and whether it still takes its
+  # log (core/outbox.bend); sock: a raw descriptor on its socket (0: none)
+  Client{id: U32, out: Chan(Wire), look: DK.Look, cr: OB.Cr, sock: U32}
 
 # what the hub keeps about a Claude process's work (a one-element list; a
 # Codex or Grok turn's process has none): its command ledger
@@ -263,21 +281,21 @@ def Store.path(+home: String) -> String:
 
 def Clients.hit(cs: List<&2, Client>, +id: U32) -> Bool:
   match cs:
-    case Client{i, _, _} <> _:
+    case Client{i, _, _, _, _} <> _:
       U32.is_eq(i, id)
     case Nil{}:
       False{}
 
-def Clients.find(cs: List<&2, Client>, hit: Bool, +id: U32) -> Maybe<&2, Chan(Wire)>:
+def Clients.find(cs: List<&2, Client>, hit: Bool, +id: U32) -> Maybe<&2, Client>:
   match cs hit:
-    case Client{_, o, _} <> _ True{}:
-      Some{o}
+    case c <> _ True{}:
+      Some{c}
     case _ <> +t False{}:
       Clients.find(t, Clients.hit(t, id), id)
     case _ _:
       None{}
 
-def Clients.get(+cs: List<&2, Client>, +id: U32) -> Maybe<&2, Chan(Wire)>:
+def Clients.get(+cs: List<&2, Client>, +id: U32) -> Maybe<&2, Client>:
   Clients.find(cs, Clients.hit(cs, id), id)
 
 def Clients.drop.k(same: Bool, c: Client, rest: List<&2, Client>) -> List<&2, Client>:
@@ -291,30 +309,64 @@ def Clients.drop(cs: List<&2, Client>, +id: U32) -> List<&2, Client>:
   match cs:
     case Nil{}:
       Nil{}
-    case Client{+i, o, l} <> t:
-      Clients.drop.k(U32.is_eq(i, id), Client{i, o, l}, Clients.drop(t, id))
+    case Client{+i, o, l, r, k} <> t:
+      Clients.drop.k(U32.is_eq(i, id), Client{i, o, l, r, k}, Clients.drop(t, id))
 
-def Clients.look.k(same: Bool, +i: U32, o: Chan(Wire), l: DK.Look, +look: DK.Look) -> Client:
-  match same:
-    case True{}:
-      Client{i, o, look}
-    case False{}:
-      Client{i, o, l}
+def Clients.look.k(same: Bool, c: Client, +look: DK.Look) -> Client:
+  match same c:
+    case True{} Client{i, o, _, r, k}:
+      Client{i, o, look, r, k}
+    case False{} _:
+      c
 
 # a client's new look
 def Clients.look(cs: List<&2, Client>, +id: U32, +look: DK.Look) -> List<&2, Client>:
   match cs:
     case Nil{}:
       Nil{}
-    case Client{+i, o, l} <> t:
-      Clients.look.k(U32.is_eq(i, id), i, o, l, look) <> Clients.look(t, id, look)
+    case Client{+i, o, l, r, k} <> t:
+      Clients.look.k(U32.is_eq(i, id), Client{i, o, l, r, k}, look) <> Clients.look(t, id, look)
 
 def Clients.looks(cs: List<&2, Client>) -> List<&2, DK.At>:
   match cs:
     case Nil{}:
       Nil{}
-    case Client{i, _, l} <> t:
+    case Client{i, _, l, _, _} <> t:
       DK.At{i, l} <> Clients.looks(t)
+
+def Clients.cr.k(same: Bool, c: Client, +gen: U32, +n: Nat, +b: Nat) -> Client:
+  match same c:
+    case True{} Client{i, o, l, r, k}:
+      Client{i, o, l, OB.Cr.drained(r, gen, n, b), k}
+    case False{} _:
+      c
+
+# a writer's report on a client's credit (OB.Cr.drained)
+def Clients.cr(cs: List<&2, Client>, +id: U32, +gen: U32, +n: Nat, +b: Nat) -> List<&2, Client>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case Client{+i, o, l, r, k} <> t:
+      Clients.cr.k(U32.is_eq(i, id), Client{i, o, l, r, k}, gen, n, b) <> Clients.cr(t, id, gen, n, b)
+
+def Clients.sockets(cs: List<&2, Client>) -> Nat:
+  match cs:
+    case Nil{}:
+      0n
+    case Client{_, _, _, r, _} <> t:
+      Nat.add(Bool.pick(Nat, OB.Cr.native(r), 0n, 1n), Clients.sockets(t))
+
+# whether a broadcast is worth encoding once on the hub (two or more
+# socket clients; a single one's writer encodes it, off the hub)
+def Clients.socket(cs: List<&2, Client>) -> Bool:
+  Nat.is_ge(Clients.sockets(cs), 2n)
+
+def Clients.add(m: Maybe<&2, Client>, cs: List<&2, Client>) -> List<&2, Client>:
+  match m:
+    case Some{c}:
+      c <> cs
+    case None{}:
+      cs
 
 def Agents.hit(as: List<&2, Agent>, +th: String) -> Bool:
   match as:
@@ -388,23 +440,142 @@ def Agents.with(as: List<&2, Agent>, +th: String, +r: ARun) -> List<&2, Agent>:
     case Agent{+t, i, p, k, rs} <> rest:
       Agents.with.k(String.eq(t, th), Agent{t, i, p, k, rs}, r) <> Agents.with(rest, th, r)
 
-def Wire.send(m: Maybe<&2, Chan(Wire)>, w: Wire) -> IO(Unit):
+# Offering frames
+# ---------------
+# Every frame for a client goes through Wire.offer: it is counted, and a
+# client too far behind (OB.Cr.over) is dropped at once (its socket shut
+# through the raw descriptor, so its writer stops; its channel closed), so
+# the channel never fills and no send of the hub's waits on a client.
+# Socket clients get a message as CBOR (encoded once for all of them),
+# the window in this process as text.
+
+def Wire.cut(c: Client) -> IO(Unit):
+  match c:
+    case Client{i, o, _, _, k}:
+      do IO<Unit>:
+        PS.Perf.add("hub.client_drop", 1)
+        Log.info("client " ++ U32.show(i) ++ " fell too far behind: dropped (it reconnects from its sequence)")
+        H.Fd.shut(k)
+        Chan.close(Wire, o)
+
+def Wire.kept(over: Bool, c: Client) -> IO(Maybe<&2, Client>):
+  match over:
+    case True{}:
+      IO.bind(Unit, Maybe<&2, Client>, Wire.cut(c), _ => IO.pure(Maybe<&2, Client>, None{}))
+    case False{}:
+      IO.pure(Maybe<&2, Client>, Some{c})
+
+def Wire.offer.k(c: Client, w: Wire, +n: Nat) -> IO(Maybe<&2, Client>):
+  match c:
+    case Client{i, +o, l, +r, k}:
+      do IO<Maybe<&2, Client>>:
+        ok : Bool <- Chan.send(Wire, o, w)
+        +r2 : OB.Cr = OB.Cr.offer(r, Bool.pick(Nat, OB.Cr.native(r), 0n, n))
+        Wire.kept(OB.Cr.over(r2), Client{i, o, l, r2, k})
+
+# one frame of n bytes for a client: kept, or None when it was dropped
+def Wire.offer(c: Client, w: Wire, +n: Nat) -> IO(Maybe<&2, Client>):
+  Wire.offer.k(c, w, n)
+
+def Wire.native(c: Client) -> Bool:
+  match c:
+    case Client{_, _, _, r, _}:
+      OB.Cr.native(r)
+
+def Wire.offer.bs(c: Client, +bs: List<&2, U32>) -> IO(Maybe<&2, Client>):
+  Wire.offer(c, WBin{bs}, List.length(&2, U32, bs))
+
+# (a message for one client is encoded by its writer, off the hub)
+def Wire.text.k(native: Bool, c: Client, +text: String) -> IO(Maybe<&2, Client>):
+  match native:
+    case True{}:
+      Wire.offer(c, WText{text}, 0n)
+    case False{}:
+      Wire.offer(c, WText{text}, String.length(text))
+
+# a message (JSON text) for one client
+def Wire.text(+c: Client, +text: String) -> IO(Maybe<&2, Client>):
+  Wire.text.k(Wire.native(c), c, text)
+
+def Wire.text.m(m: Maybe<&2, Client>, +text: String) -> IO(Maybe<&2, Client>):
   match m:
     case Some{c}:
-      do IO<Unit>:
-        ok : Bool <- Chan.send(Wire, c, w)
-        return Unit{}
+      Wire.text(c, text)
     case None{}:
-      IO.pure(Unit, Unit{})
+      IO.pure(Maybe<&2, Client>, None{})
 
-def Wire.all(cs: List<&2, Client>, +text: String) -> IO(Unit):
+# the same, skipped when empty
+def Wire.text.if(empty: Bool, m: Maybe<&2, Client>, +text: String) -> IO(Maybe<&2, Client>):
+  match empty:
+    case True{}:
+      IO.pure(Maybe<&2, Client>, m)
+    case False{}:
+      Wire.text.m(m, text)
+
+def Client.is(c: Client, +id: U32) -> Bool:
+  match c:
+    case Client{i, _, _, _, _}:
+      U32.is_eq(i, id)
+
+def Wire.to.one(hit: Bool, text: Bool, c: Client, w: Wire, +n: Nat, +t: String) -> IO(Maybe<&2, Client>):
+  match hit text:
+    case True{} True{}:
+      Wire.text(c, t)
+    case True{} False{}:
+      Wire.offer(c, w, n)
+    case False{} _:
+      IO.pure(Maybe<&2, Client>, Some{c})
+
+def Wire.to.go(cs: List<&2, Client>, +id: U32, +w: Wire, +n: Nat, +text: Bool, +t: String) -> IO(List<&2, Client>):
   match cs:
     case Nil{}:
-      IO.pure(Unit, Unit{})
-    case Client{_, o, _} <> t:
-      do IO<Unit>:
-        ok : Bool <- Chan.send(Wire, o, WText{text})
-        Wire.all(t, text)
+      IO.pure(List<&2, Client>, Nil{})
+    case +c <> rest:
+      do IO<List<&2, Client>>:
+        m : Maybe<&2, Client> <- Wire.to.one(Client.is(c, id), text, c, w, n, t)
+        r : List<&2, Client> <- Wire.to.go(rest, id, w, n, text, t)
+        return Clients.add(m, r)
+
+# a message (JSON text) for the client with this id
+def Wire.to(+cs: List<&2, Client>, +id: U32, +text: String) -> IO(List<&2, Client>):
+  Wire.to.go(cs, id, WClose{}, 0n, True{}, text)
+
+# a frame as it is (a plot's CBOR, a pong) for the client with this id
+def Wire.to.raw(+cs: List<&2, Client>, +id: U32, w: Wire, +n: Nat) -> IO(List<&2, Client>):
+  Wire.to.go(cs, id, w, n, False{}, "")
+
+def Wire.all.bin(once: Bool, c: Client, +text: String, +bs: List<&2, U32>, +n: Nat) -> IO(Maybe<&2, Client>):
+  match once:
+    case True{}:
+      Wire.offer(c, WBin{bs}, n)
+    case False{}:
+      Wire.offer(c, WText{text}, String.length(text))
+
+# (n = 0: the message was not encoded, as for a single socket client: its
+# writer encodes it)
+def Wire.all.as(native: Bool, c: Client, +text: String, +bs: List<&2, U32>, +n: Nat) -> IO(Maybe<&2, Client>):
+  match native:
+    case True{}:
+      Wire.offer(c, WText{text}, 0n)
+    case False{}:
+      Wire.all.bin(Nat.is_gt(n, 0n), c, text, bs, n)
+
+def Wire.booting(c: Client) -> Bool:
+  match c:
+    case Client{_, _, _, r, _}:
+      OB.Cr.boot(r)
+
+def Wire.behind(c: Client) -> Bool:
+  match c:
+    case Client{_, _, _, r, _}:
+      OB.Cr.behind(r)
+
+# how a message goes to every client: kind 0 to all; 1 log changes (a
+# client taking its log gets them with the rest of it, and one too far
+# behind goes back to taking it, from `at`, Cr.catch); 2 streamed text
+# (none for a client taking its log: the live text comes with its end)
+type All is Data:
+  All{kind: Nat, at: Nat, fl: Nat, inbox: List<&2, Chan(Msg)>}
 
 # A message the hub sends itself. The hub fiber is the inbox's only
 # reader, so a send into a full inbox (4096 slots) would park it for good:
@@ -416,6 +587,93 @@ def Self.post.go(+inbox: Chan(Msg), m: Msg) -> IO(Unit):
 
 def Self.post(+inbox: Chan(Msg), m: Msg) -> IO(Unit):
   IO.spawn(Unit, Self.post.go(inbox, m))
+
+def Self.post.wait(+inbox: Chan(Msg), m: Msg, +ms: U32) -> IO(Unit):
+  do IO<Unit>:
+    IO.sleep(ms)
+    Self.post.go(inbox, m)
+
+# the same a moment later: the next chunk of a join waits a couple of
+# milliseconds, so the event loop polls the sockets between chunks and a
+# request is read while a long log goes out
+def Self.post.later(+inbox: Chan(Msg), m: Msg) -> IO(Unit):
+  IO.spawn(Unit, Self.post.wait(inbox, m, 2))
+
+def Wire.post(qs: List<&2, Chan(Msg)>, +m: Msg) -> IO(Unit):
+  match qs:
+    case Nil{}:
+      IO.pure(Unit, Unit{})
+    case +q <> t:
+      do IO<Unit>:
+        Self.post(q, m)
+        Wire.post(t, m)
+
+def Wire.catch(c: Client, +a: All) -> IO(Maybe<&2, Client>):
+  match c a:
+    case Client{+i, o, l, +r, k} All{_, +at, +fl, +qs}:
+      do IO<Maybe<&2, Client>>:
+        Wire.post(qs, JoinMore{i, OB.Cr.gen(r)})
+        return Some{Client{i, o, l, OB.Cr.wait.set(OB.Cr.catch(r, at, fl), True{}), k}}
+
+def Wire.all.k3(behind: Bool, +c: Client, +a: All, +text: String, +bs: List<&2, U32>, +n: Nat) -> IO(Maybe<&2, Client>):
+  match behind:
+    case True{}:
+      Wire.catch(c, a)
+    case False{}:
+      Wire.all.as(Wire.native(c), c, text, bs, n)
+
+def Wire.all.k2(kind: Nat, booting: Bool, +c: Client, +a: All, +text: String, +bs: List<&2, U32>, +n: Nat) -> IO(Maybe<&2, Client>):
+  match kind booting:
+    case 0n _:
+      Wire.all.as(Wire.native(c), c, text, bs, n)
+    case _ True{}:
+      IO.pure(Maybe<&2, Client>, Some{c})
+    case 1n False{}:
+      Wire.all.k3(Wire.behind(c), c, a, text, bs, n)
+    case _ False{}:
+      Wire.all.as(Wire.native(c), c, text, bs, n)
+
+def All.kind(+a: All) -> Nat:
+  match a:
+    case All{k, _, _, _}:
+      k
+
+def Wire.all.go(cs: List<&2, Client>, +text: String, +bs: List<&2, U32>, +n: Nat, +a: All) -> IO(List<&2, Client>):
+  match cs:
+    case Nil{}:
+      IO.pure(List<&2, Client>, Nil{})
+    case +c <> t:
+      do IO<List<&2, Client>>:
+        m : Maybe<&2, Client> <- Wire.all.k2(All.kind(a), Wire.booting(c), c, a, text, bs, n)
+        rest : List<&2, Client> <- Wire.all.go(t, text, bs, n, a)
+        return Clients.add(m, rest)
+
+def Wire.all.bs(cs: List<&2, Client>, +text: String, +bs: List<&2, U32>, +a: All) -> IO(List<&2, Client>):
+  Wire.all.go(cs, text, bs, List.length(&2, U32, bs), a)
+
+def Wire.all.k(sock: Bool, cs: List<&2, Client>, +text: String, +a: All) -> IO(List<&2, Client>):
+  match sock:
+    case True{}:
+      Wire.all.bs(cs, text, W.Ws.cbor.bytes(text), a)
+    case False{}:
+      Wire.all.go(cs, text, Nil{}, 0n, a)
+
+# a message for every client (encoded once); the clients still there
+def Wire.all.of(+cs: List<&2, Client>, +text: String, +a: All) -> IO(List<&2, Client>):
+  Wire.all.k(Clients.socket(cs), cs, text, a)
+
+def Wire.all(+cs: List<&2, Client>, +text: String) -> IO(List<&2, Client>):
+  Wire.all.of(cs, text, All{0n, 0n, 0n, Nil{}})
+
+# streamed text: none for a client taking its log
+def Wire.delta(+cs: List<&2, Client>, +text: String) -> IO(List<&2, Client>):
+  Wire.all.of(cs, text, All{2n, 0n, 0n, Nil{}})
+
+# log changes: every client but those taking their log (they get them with
+# the rest of it); one too far behind goes back to taking it from item at
+# (the log's length before these changes), the far mirrors left out
+def Wire.changes(+cs: List<&2, Client>, +text: String, +at: Nat, +fl: Nat, +inbox: Chan(Msg)) -> IO(List<&2, Client>):
+  Wire.all.of(cs, text, All{1n, at, fl, [inbox]})
 
 # Agent processes
 # ---------------
@@ -565,28 +823,52 @@ def Conn.sent.k(r: Socket & Result<&1, &1, U32 & String, Unit>, +out: Chan(Wire)
 def Conn.out(s: Socket, bs: List<&2, U32>, +out: Chan(Wire), k: Socket -> IO(Unit)) -> IO(Unit):
   IO.bind(Socket & Result<&1, &1, U32 & String, Unit>, Unit, H.Sock.send_until(s, bs, Conn.deadline()), r => Conn.sent.k(r, out, k))
 
-def Conn.write(m: Maybe<&1, Wire>, s: Socket, +out: Chan(Wire), k: Socket -> IO(Unit)) -> IO(Unit):
+# a frame out, then k with its size in bytes
+def Conn.put(s: Socket, +bs: List<&2, U32>, +out: Chan(Wire), k: Socket -> Nat -> IO(Unit)) -> IO(Unit):
+  Conn.out(s, bs, out, s2 => k(s2, List.length(&2, U32, bs)))
+
+def Conn.write(m: Maybe<&1, Wire>, s: Socket, +out: Chan(Wire), k: Socket -> Nat -> IO(Unit)) -> IO(Unit):
   match m:
     case Some{WText{t}}:
-      Conn.out(s, Conn.frame.out(t), out, k)
+      Conn.put(s, Conn.frame.out(t), out, k)
     case Some{WPong{p}}:
-      Conn.out(s, W.Ws.encode(10, p), out, k)
+      Conn.put(s, W.Ws.encode(10, p), out, k)
     case Some{WBin{bs}}:
-      Conn.out(s, W.Ws.encode(2, bs), out, k)
+      Conn.put(s, W.Ws.encode(2, bs), out, k)
     case Some{WClose{}}:
       Conn.finish(s, W.Ws.encode(8, Nil{}))
     case Some{WState{_, _}}:
-      k(s)
+      k(s, 0n)
+    case Some{WItems{hd, xs, tl}}:
+      Conn.put(s, Conn.frame.out(hd ++ String.join(xs, ",") ++ tl), out, k)
     case None{}:
       Socket.close(s)
 
+# what the writer has put out, told to the hub every 32 frames or 256 KB
+# (OB.Wr.due), so it knows how far behind the client is
+def Conn.told(due: Bool, +w: OB.Wr, +id: U32, +gen: U32, +inbox: Chan(Msg)) -> IO(OB.Wr):
+  match due:
+    case True{}:
+      do IO<OB.Wr>:
+        ok : Bool <- Chan.send(Msg, inbox, Drained{id, gen, OB.Wr.n(w), OB.Wr.b(w)})
+        return OB.Wr.said(w)
+    case False{}:
+      IO.pure(OB.Wr, w)
+
+def Conn.wrote(s: Socket, +n: Nat, w: OB.Wr, +id: U32, +gen: U32, +inbox: Chan(Msg), k: Socket -> OB.Wr -> IO(Unit)) -> IO(Unit):
+  do IO<Unit>:
+    +w2 : OB.Wr = OB.Wr.put(w, n)
+    w3 : OB.Wr <- Conn.told(OB.Wr.due(w2), w2, id, gen, inbox)
+    k(s, w3)
+
 # frames from the hub, until it closes our channel
-def Conn.writer(fuel: Nat, s: Socket, +out: Chan(Wire)) -> IO(Unit):
+def Conn.writer(fuel: Nat, s: Socket, +out: Chan(Wire), w: OB.Wr, +id: U32, +gen: U32, +inbox: Chan(Msg)) -> IO(Unit):
   match fuel:
     case 0n:
       Socket.close(s)
     case 1n+f:
-      IO.bind(Maybe<&1, Wire>, Unit, Chan.recv(Wire, out), m => Conn.write(m, s, out, s2 => Conn.writer(f, s2, out)))
+      IO.bind(Maybe<&1, Wire>, Unit, Chan.recv(Wire, out),
+        m => Conn.write(m, s, out, s2 => n => Conn.wrote(s2, n, w, id, gen, inbox, s3 => w2 => Conn.writer(f, s3, out, w2, id, gen, inbox))))
 
 def Conn.leave(s: Socket, +id: U32, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
@@ -602,73 +884,127 @@ def Conn.cbor.json(m: Maybe<&2, J.Json>) -> String:
     case None{}:
       ""
 
-def Conn.frame.k(bin: Bool, close: Bool, ping: Bool, p: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +out: Chan(Wire)) -> IO(Bool):
+# Reading a client
+# ----------------
+# Frames are scanned without IO (Conn.scan): pings that are not due (at
+# most one a second goes to the hub, which answers through the client's
+# credit: OB.Pong.due), text frames and pongs are passed over in one
+# pure walk, so a flood of them costs a pass over the bytes, not an
+# effect each. The clock is read once per read from the socket.
+
+type Scan is Data:
+  # fr: the next frame that needs the hub (None: more bytes are needed,
+  # rest is then the whole unread buffer); done: the walk stopped
+  Scan{fr: Maybe<&2, W.Frame>, rest: List<&2, U32>, done: Bool}
+
+def Conn.quiet.k(+op: U32, +last: Nat, +now: Nat) -> Bool:
+  Bool.or(Bool.and(U32.is_eq(op, 9), Bool.not(OB.Pong.due(last, now))), Bool.or(U32.is_eq(op, 1), Bool.or(U32.is_eq(op, 10), U32.is_eq(op, 0))))
+
+def Conn.quiet(fr: W.Frame, +last: Nat, +now: Nat) -> Bool:
+  match fr:
+    case W.Frame{_, +op, _}:
+      Conn.quiet.k(op, last, now)
+
+def Conn.step.q(quiet: Bool, fr: W.Frame, rest: List<&2, U32>) -> Scan:
+  match quiet:
+    case True{}:
+      Scan{None{}, rest, False{}}
+    case False{}:
+      Scan{Some{fr}, rest, True{}}
+
+def Conn.step(m: Maybe<&2, W.Got>, buf: List<&2, U32>, +last: Nat, +now: Nat) -> Scan:
+  match m:
+    case Some{W.Got{+fr, rest}}:
+      Conn.step.q(Conn.quiet(fr, last, now), fr, rest)
+    case None{}:
+      Scan{None{}, buf, True{}}
+
+def Conn.scan(fuel: Nat, st: Scan, +last: Nat, +now: Nat) -> Scan:
+  match fuel st:
+    case 0n Scan{m, r, d}:
+      Scan{m, r, d}
+    case 1n+f Scan{m, r, True{}}:
+      Scan{m, r, True{}}
+    case 1n+f Scan{_, +r, False{}}:
+      Conn.scan(f, Conn.step(W.Ws.decode(r), r, last, now), last, now)
+
+# a ping passed on to the hub
+def Conn.ping(p: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +now: Nat) -> IO(Maybe<&2, Nat>):
+  do IO<Maybe<&2, Nat>>:
+    ok : Bool <- Chan.send(Msg, inbox, Ping{id, p})
+    return Some{now}
+
+# what a frame the hub must hear does: None ends the connection, else the
+# last pong's time
+def Conn.frame.k(bin: Bool, close: Bool, ping: Bool, p: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +last: Nat, +now: Nat) -> IO(Maybe<&2, Nat>):
   match bin close ping:
     case True{} _ _:
-      do IO<Bool>:
+      do IO<Maybe<&2, Nat>>:
         ok : Bool <- Chan.send(Msg, inbox, Rpc{id, Conn.cbor.json(CB.Cbor.decode(p))})
-        return True{}
+        return Some{last}
     case False{} True{} _:
-      IO.pure(Bool, False{})
+      IO.pure(Maybe<&2, Nat>, None{})
     case False{} False{} True{}:
-      do IO<Bool>:
-        ok : Bool <- Chan.send(Wire, out, WPong{p})
-        return True{}
+      Conn.ping(p, id, inbox, now)
     case False{} False{} False{}:
-      IO.pure(Bool, True{})
+      IO.pure(Maybe<&2, Nat>, Some{last})
 
 # a frame from a client: a binary frame is a request (CBOR, read here as
-# JSON text for the hub); close ends; ping pongs; text frames are ignored
-def Conn.frame(fr: W.Frame, +id: U32, +inbox: Chan(Msg), +out: Chan(Wire)) -> IO(Bool):
+# JSON text for the hub); close ends; a due ping pongs
+def Conn.frame(fr: W.Frame, +id: U32, +inbox: Chan(Msg), +last: Nat, +now: Nat) -> IO(Maybe<&2, Nat>):
   match fr:
     case W.Frame{_, +op, p}:
-      Conn.frame.k(U32.is_eq(op, 2), U32.is_eq(op, 8), U32.is_eq(op, 9), p, id, inbox, out)
+      Conn.frame.k(U32.is_eq(op, 2), U32.is_eq(op, 8), U32.is_eq(op, 9), p, id, inbox, last, now)
 
-def Conn.more(r: Socket & Result<&1, &1, U32 & String, List<&2, U32>>, buf: List<&2, U32>, +id: U32, +inbox: Chan(Msg),
-    k: Socket -> List<&2, U32> -> IO(Unit)) -> IO(Unit):
+def Conn.more(r: Socket & Result<&1, &1, U32 & String, List<&2, U32>>, buf: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +last: Nat,
+    k: Socket -> List<&2, U32> -> Nat -> Nat -> IO(Unit)) -> IO(Unit):
   (s, res) = r
   match res:
     case Done{Nil{}}:
       Conn.leave(s, id, inbox)
     case Done{bs}:
-      k(s, List.append(&2, U32, buf, bs))
+      IO.bind(Nat, Unit, IO.now(), now => k(s, List.append(&2, U32, buf, bs), last, now))
     case Fail{_}:
       Conn.leave(s, id, inbox)
 
-def Conn.after(go: Bool, s: Socket, rest: List<&2, U32>, +id: U32, +inbox: Chan(Msg), k: Socket -> List<&2, U32> -> IO(Unit)) -> IO(Unit):
-  match go:
-    case True{}:
-      k(s, rest)
-    case False{}:
+def Conn.after(m: Maybe<&2, Nat>, s: Socket, rest: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +now: Nat, k: Socket -> List<&2, U32> -> Nat -> Nat -> IO(Unit)) -> IO(Unit):
+  match m:
+    case Some{last}:
+      k(s, rest, last, now)
+    case None{}:
       Conn.leave(s, id, inbox)
 
-def Conn.decoded(m: Maybe<&2, W.Got>, s: Socket, +buf: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +out: Chan(Wire),
-    k: Socket -> List<&2, U32> -> IO(Unit)) -> IO(Unit):
-  match m:
-    case Some{W.Got{fr, rest}}:
-      IO.bind(Bool, Unit, Conn.frame(fr, id, inbox, out), go => Conn.after(go, s, rest, id, inbox, k))
-    case None{}:
+def Conn.scanned(sc: Scan, s: Socket, +id: U32, +inbox: Chan(Msg), +last: Nat, +now: Nat,
+    k: Socket -> List<&2, U32> -> Nat -> Nat -> IO(Unit)) -> IO(Unit):
+  match sc:
+    case Scan{Some{fr}, rest, _}:
+      IO.bind(Maybe<&2, Nat>, Unit, Conn.frame(fr, id, inbox, last, now), go => Conn.after(go, s, rest, id, inbox, now, k))
+    case Scan{None{}, rest, _}:
       IO.bind(Socket & Result<&1, &1, U32 & String, List<&2, U32>>, Unit, H.Sock.recv_bytes(s, 65536),
-        r => Conn.more(r, buf, id, inbox, k))
+        r => Conn.more(r, rest, id, inbox, last, k))
 
-# decode frames from buf; read more when a frame is incomplete
-def Conn.reader(fuel: Nat, s: Socket, +buf: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +out: Chan(Wire)) -> IO(Unit):
+# the frames in buf; more read when they run out
+def Conn.reader(fuel: Nat, s: Socket, buf: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +last: Nat, +now: Nat) -> IO(Unit):
   match fuel:
     case 0n:
       Conn.leave(s, id, inbox)
     case 1n+f:
-      Conn.decoded(W.Ws.decode(buf), s, buf, id, inbox, out,
-        s2 => b2 => Conn.reader(f, s2, b2, id, inbox, out))
+      Conn.scanned(Conn.scan(65536n, Scan{None{}, buf, False{}}, last, now), s, id, inbox, last, now,
+        s2 => b2 => l2 => n2 => Conn.reader(f, s2, b2, id, inbox, l2, n2))
+
+def Conn.raw(r: Socket & U32, rd: Socket, rest: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +since: Nat, +origin: String) -> IO(Unit):
+  (wr, +fd) = r
+  do IO<Unit>:
+    +out : Chan(Wire) <- Chan.new(Wire, 1024)
+    IO.spawn(Unit, Conn.writer(Fuel.forever(), wr, out, OB.Wr.new(), id, id, inbox))
+    ok : Bool <- Chan.send(Msg, inbox, Join{id, out, since, origin, id, fd})
+    Conn.reader(Fuel.forever(), rd, rest, id, inbox, 0n, 0n)
 
 def Conn.ws.dup(r: Socket & Result<&1, &1, U32 & String, Socket>, rest: List<&2, U32>, +id: U32, +inbox: Chan(Msg), +since: Nat, +origin: String) -> IO(Unit):
   (rd, res) = r
   match res:
     case Done{wr}:
-      do IO<Unit>:
-        +out : Chan(Wire) <- Chan.new(Wire, 1024)
-        IO.spawn(Unit, Conn.writer(Fuel.forever(), wr, out))
-        ok : Bool <- Chan.send(Msg, inbox, Join{id, out, since, origin})
-        Conn.reader(Fuel.forever(), rd, rest, id, inbox, out)
+      IO.bind(Socket & U32, Unit, H.Sock.raw(wr), x => Conn.raw(x, rd, rest, id, inbox, since, origin))
     case Fail{_}:
       Socket.close(rd)
 
@@ -816,16 +1152,6 @@ def Bot.dir.changed(c: M.Change, +inbox: Chan(Msg)) -> IO(Unit):
     case _:
       IO.pure(Unit, Unit{})
 
-def Hub.announce(r: Hub & List<&2, String>) -> IO(Hub):
-  (h, fresh) = r
-  match h fresh:
-    case _ Nil{}:
-      IO.pure(Hub, h)
-    case Hub{st, f, ls, +cl, as, inbox, cfg, note} l <> t:
-      do IO<Hub>:
-        Wire.all(cl, Hub.changes_msg(List.reverse(&2, String, l <> t)))
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
-
 # One write per step
 # -----------------
 # A step's changes go to the log in one write (ST.Store.text), and only once
@@ -910,14 +1236,6 @@ def Hub.commit(+cs: List<&2, M.Change>, h: Hub, fresh: List<&2, String>) -> IO(H
 def Hub.gen(+st: M.State, +now: Nat) -> String:
   Nat.show(now) ++ "-" ++ Nat.show(M.State.seq(st))
 
-def Hub.spawned.fail(e: U32 & String, h: Hub, +thread: String) -> IO(Hub):
-  (_, +msg) = e
-  do IO<Hub>:
-    +now : Nat <- Now.nat()
-    Log.info("could not start agent: " ++ msg)
-    r : Hub & List<&2, String> <- Hub.commit([M.ActivityLogged{thread, "spawn-" ++ Nat.show(now), "error", "spawn", "could not start claude: " ++ msg, now}, M.TurnChanged{thread, M.Failed{}, now}], h, Nil{})
-    Hub.announce(r)
-
 # An agent's watcher: each second it asks whether the process exited (not
 # reaping it: the reader's Agent.end does). When it has, the hub hears so
 # and, if the reader has not reached end of stream 2 s later (a child of
@@ -988,13 +1306,6 @@ def Hub.spawned.ok(started: U32 & Socket, h: Hub, +thread: String, +key: String,
     r : Socket & Result<&1, &1, U32 & String, Socket> <- H.Sock.dup(s)
     Hub.spawned.dup(r, pid, h, thread, key, gen)
 
-def Hub.spawned(r: Result<&1, &1, U32 & String, U32 & Socket>, h: Hub, +thread: String, +key: String, +gen: String) -> IO(Hub):
-  match r h:
-    case Done{started} Hub{st, f, ls, cl, as, +inbox, cfg, note}:
-      Hub.spawned.ok(started, Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, key, gen)
-    case Fail{e} _:
-      Hub.spawned.fail(e, h, thread)
-
 def Hub.agent_send(m: Maybe<&2, Agent>, line: String) -> IO(Unit):
   match m:
     case Some{Agent{_, input, _, _, _}}:
@@ -1038,17 +1349,25 @@ def Hub.log_msg.k(+n: Nat, +ls: List<&2, String>, +cfg: Cfg, +since: Nat) -> Str
 def Hub.log_msg(+ls: List<&2, String>, +cfg: Cfg, +since: Nat) -> String:
   Hub.log_msg.k(List.length(&2, String, ls), ls, cfg, Bool.pick(Nat, Nat.is_le(since, List.length(&2, String, ls)), since, 0n))
 
-def Hub.join.note.k(empty: Bool, +out: Chan(Wire), +note: String) -> IO(Unit):
-  match empty:
-    case True{}:
-      IO.pure(Unit, Unit{})
-    case False{}:
-      do IO<Unit>:
-        ok : Bool <- Chan.send(Wire, out, WText{note})
-        return Unit{}
+# the first frame of a join: the log message with the first chunk of what
+# the client lacks; "more": the rest follows a chunk at a time
+# (core/outbox.bend's Join.*), the last one with "boot": false
+def Hub.log_msg.c(+origin: String, +cfg: Cfg, +since: Nat, xs: List<&2, String>, more: Bool) -> String:
+  "{\"t\":\"log\",\"since\":" ++ Nat.show(since) ++ ",\"origin\":\"" ++ origin ++ "\",\"version\":" ++ J.Json.show(J.Str{Cfg.version(cfg)}) ++ ",\"info\":" ++ J.Json.show(Hub.info(cfg))
+    ++ Bool.pick(String, more, ",\"more\":true", "") ++ ",\"items\":[" ++ String.join(xs, ",") ++ "]}"
 
-def Hub.join.note(+out: Chan(Wire), +note: String) -> IO(Unit):
-  Hub.join.note.k(String.is_empty(note), out, note)
+# a later chunk of a join; the last says "boot": false
+def Hub.boot_msg(xs: List<&2, String>, last: Bool) -> String:
+  "{\"t\":\"changes\",\"boot\":" ++ Bool.pick(String, last, "false", "true") ++ ",\"items\":[" ++ String.join(xs, ",") ++ "]}"
+
+# the same, put together by the writer
+def Hub.boot_items(xs: List<&2, String>) -> Wire:
+  WItems{"{\"t\":\"changes\",\"boot\":true,\"items\":[", xs, "]}"}
+
+# a join's first frame, put together by the writer
+def Hub.log_items(+origin: String, +cfg: Cfg, +since: Nat, xs: List<&2, String>, more: Bool) -> Wire:
+  WItems{"{\"t\":\"log\",\"since\":" ++ Nat.show(since) ++ ",\"origin\":\"" ++ origin ++ "\",\"version\":" ++ J.Json.show(J.Str{Cfg.version(cfg)}) ++ ",\"info\":" ++ J.Json.show(Hub.info(cfg))
+    ++ Bool.pick(String, more, ",\"more\":true", "") ++ ",\"items\":[", xs, "]}"}
 
 # Desks
 # -----
@@ -1058,14 +1377,14 @@ def Hub.join.note(+out: Chan(Wire), +note: String) -> IO(Unit):
 def Desk.join(+text: String) -> String:
   Bool.pick(String, String.is_empty(text), "", DK.Desk.info(text))
 
-def Desk.say.k(same: Bool, +cl: List<&2, Client>, +text: String) -> IO(Unit):
+def Desk.say.k(same: Bool, +cl: List<&2, Client>, +text: String) -> IO(List<&2, Client>):
   match same:
     case True{}:
-      IO.pure(Unit, Unit{})
+      IO.pure(List<&2, Client>, cl)
     case False{}:
       Wire.all(cl, DK.Desk.info(text))
 
-def Desk.say(+before: String, +cl: List<&2, Client>, +now: Nat) -> IO(Unit):
+def Desk.say(+before: String, +cl: List<&2, Client>, +now: Nat) -> IO(List<&2, Client>):
   Desk.say.k(String.eq(before, DK.Desk.text(Clients.looks(cl), now)), cl, DK.Desk.text(Clients.looks(cl), now))
 
 # a desk said what it shows
@@ -1075,36 +1394,46 @@ def Hub.desk(h: Hub, +client: U32, +thread: String, +focused: Bool) -> IO(Hub):
       do IO<Hub>:
         +now : Nat <- Now.nat()
         +cl2 : List<&2, Client> = Clients.look(cl, client, DK.Look{True{}, thread, focused, now})
-        Desk.say(DK.Desk.text(Clients.looks(cl), now), cl2, now)
-        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
+        cl3 : List<&2, Client> <- Desk.say(DK.Desk.text(Clients.looks(cl), now), cl2, now)
+        return Hub{st, f, ls, cl3, as, inbox, cfg, note}
 
-def Hub.leave.close(m: Maybe<&2, Chan(Wire)>) -> IO(Unit):
+def Hub.leave.close(m: Maybe<&2, Client>) -> IO(Unit):
   match m:
-    case Some{c}:
-      Chan.close(Wire, c)
+    case Some{Client{_, c, _, _, k}}:
+      do IO<Unit>:
+        Chan.close(Wire, c)
+        H.Fd.close(k)
     case None{}:
       IO.pure(Unit, Unit{})
 
-def Hub.push(h: Hub, +client: U32, text: String) -> IO(Hub):
+def Hub.push(h: Hub, +client: U32, +text: String) -> IO(Hub):
   match h:
-    case Hub{st, f, ls, +cl, as, inbox, cfg, note}:
+    case Hub{st, f, ls, cl, as, inbox, cfg, note}:
       do IO<Hub>:
-        Wire.send(Clients.get(cl, client), WText{text})
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+        cl2 : List<&2, Client> <- Wire.to(cl, client, text)
+        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
 
-def Hub.push.bin(h: Hub, +client: U32, bs: List<&2, U32>) -> IO(Hub):
+def Hub.push.bin(h: Hub, +client: U32, +bs: List<&2, U32>) -> IO(Hub):
   match h:
-    case Hub{st, f, ls, +cl, as, inbox, cfg, note}:
+    case Hub{st, f, ls, cl, as, inbox, cfg, note}:
       do IO<Hub>:
-        Wire.send(Clients.get(cl, client), WBin{bs})
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+        cl2 : List<&2, Client> <- Wire.to.raw(cl, client, WBin{bs}, List.length(&2, U32, bs))
+        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
+
+# a ping answered through the client's credit
+def Hub.pong(h: Hub, +client: U32, +p: List<&2, U32>) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, cfg, note}:
+      do IO<Hub>:
+        cl2 : List<&2, Client> <- Wire.to.raw(cl, client, WPong{p}, List.length(&2, U32, p))
+        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
 
 def Hub.note(h: Hub, +text: String) -> IO(Hub):
   match h:
-    case Hub{st, f, ls, +cl, as, inbox, cfg, _}:
+    case Hub{st, f, ls, cl, as, inbox, cfg, _}:
       do IO<Hub>:
-        Wire.all(cl, text)
-        return Hub{st, f, ls, cl, as, inbox, cfg, text}
+        cl2 : List<&2, Client> <- Wire.all(cl, text)
+        return Hub{st, f, ls, cl2, as, inbox, cfg, text}
 
 def Hub.close(h: Hub) -> IO(Unit):
   match h:
@@ -2222,10 +2551,17 @@ def Agent.same(m: Maybe<&2, Agent>, +key: String) -> Bool:
 # an agent starting in a KiCad project opens its thread's panel on the
 # board, unless the person has opened or shut it by hand (core's Auto.view,
 # client.bend's Viewer.auto)
-def Hub.auto(+cl: List<&2, Client>, +thread: String, fs: K.Files) -> IO(Unit):
+def Hub.auto.k(empty: Bool, +cl: List<&2, Client>, +text: String) -> IO(List<&2, Client>):
+  match empty:
+    case True{}:
+      IO.pure(List<&2, Client>, cl)
+    case False{}:
+      Wire.all(cl, text)
+
+def Hub.auto(+cl: List<&2, Client>, +thread: String, fs: K.Files) -> IO(List<&2, Client>):
   match fs:
     case K.Files{_, +pcb, +sch, _}:
-      Bool.pick(IO(Unit), String.is_empty(B.Auto.view(thread, pcb, sch)), IO.pure(Unit, Unit{}), Wire.all(cl, B.Auto.view(thread, pcb, sch)))
+      Hub.auto.k(String.is_empty(B.Auto.view(thread, pcb, sch)), cl, B.Auto.view(thread, pcb, sch))
 
 # the process a thread's agent replaces: its background work is told lost
 # first, synchronously, so the new process's rows are never touched (law
@@ -2243,33 +2579,6 @@ def Agent.is(m: Maybe<&2, Agent>) -> Bool:
       True{}
     case None{}:
       False{}
-
-def Hub.start.spawn(m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, +effort: String, +gen: String) -> IO(Hub):
-  match h:
-    case Hub{+st, f, ls, +cl, +as, inbox, +cfg, note}:
-      do IO<Hub>:
-        Hub.agent_stop(m)
-        +fs : K.Files <- K.Files.read(cwd)
-        Hub.auto(cl, thread, fs)
-        +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
-        res : Result<&1, &1, U32 & String, U32 & Socket> <- H.Proc.spawn("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen), cwd, 0)
-        Hub.spawned(res, Hub{st, f, ls, cl, Agents.drop(as, thread), inbox, cfg, note}, thread, Agent.key(model, r, i, effort), gen)
-
-def Hub.start.r(r: Hub & List<&2, String>, m: Maybe<&2, Agent>, +thread: String, +cwd: String, +model: String, +session: String, +rt: M.RuntimeMode, +i: M.InteractionMode, +effort: String, +gen: String) -> IO(Hub):
-  IO.bind(Hub, Hub, Hub.announce(r), h => Hub.start.spawn(m, h, thread, cwd, model, session, rt, i, effort, gen))
-
-def Hub.start.go(same: Bool, +m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, +effort: String) -> IO(Hub):
-  match same h:
-    case True{} _:
-      IO.pure(Hub, h)
-    case False{} Hub{+st, f, ls, +cl, +as, inbox, +cfg, note}:
-      do IO<Hub>:
-        +now : Nat <- Now.nat()
-        cr : Hub & List<&2, String> <- Hub.commit(Hub.replaced(Agent.is(m), st, now, thread), Hub{st, f, ls, cl, as, inbox, cfg, note}, Nil{})
-        Hub.start.r(cr, m, thread, cwd, model, session, r, i, effort, Hub.gen(st, now))
-
-def Hub.start.k(+m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, +effort: String) -> IO(Hub):
-  Hub.start.go(Agent.same(m, Agent.key(model, r, i, effort)), m, h, thread, cwd, model, session, r, i, effort)
 
 # `codex exec` for one turn, with this thread's MCP endpoint and the
 # Backplane instructions (the same runtime block Claude gets)
@@ -2474,19 +2783,25 @@ def Hub.drop_dead(ts: List<&2, String>, +inbox: Chan(Msg)) -> IO(Unit):
 def Hub.phone(+home: String, st: M.State, +thread: String, +state: String, seen: Bool, +inbox: Chan(Msg)) -> IO(Unit):
   IO.bind(List<&2, String>, Unit, PU.Push.turn_ended.dead(home, st, thread, state, seen), ds => Hub.drop_dead(ds, inbox))
 
-def Desk.tell.k(+n: NO.Notice, +cl: List<&2, Client>, +c: U32, +st: M.State, +thread: String, +state: String) -> IO(Unit):
-  Bool.pick(IO(Unit), String.is_empty(NO.Notice.kind(n)), IO.pure(Unit, Unit{}),
-    Wire.send(Clients.get(cl, c), WText{DK.Desk.notify(thread, PU.Push.title(B.Hub.thread(st, thread)),
-      PU.Push.body(String.eq(state, "failed"), PU.Push.first(B.Task.last(st, thread))), NO.Notice.kind(n), NO.Notice.key(n))}))
+def Desk.tell.go(quiet: Bool, +n: NO.Notice, +cl: List<&2, Client>, +c: U32, +st: M.State, +thread: String, +state: String) -> IO(List<&2, Client>):
+  match quiet:
+    case True{}:
+      IO.pure(List<&2, Client>, cl)
+    case False{}:
+      Wire.to(cl, c, DK.Desk.notify(thread, PU.Push.title(B.Hub.thread(st, thread)),
+        PU.Push.body(String.eq(state, "failed"), PU.Push.first(B.Task.last(st, thread))), NO.Notice.kind(n), NO.Notice.key(n)))
+
+def Desk.tell.k(+n: NO.Notice, +cl: List<&2, Client>, +c: U32, +st: M.State, +thread: String, +state: String) -> IO(List<&2, Client>):
+  Desk.tell.go(String.is_empty(NO.Notice.kind(n)), n, cl, c, st, thread, state)
 
 # a turn's end as a desktop notification, on the desk used last, when it
 # is news (core/notice.bend, as for phones) and no desk watches the thread
-def Desk.tell(m: Maybe<&2, U32>, +cl: List<&2, Client>, +st: M.State, +thread: String, +state: String) -> IO(Unit):
+def Desk.tell(m: Maybe<&2, U32>, +cl: List<&2, Client>, +st: M.State, +thread: String, +state: String) -> IO(List<&2, Client>):
   match m:
     case Some{+c}:
       Desk.tell.k(NO.Notice.of(st, thread, String.eq(state, "failed"), True{}), cl, c, st, thread, state)
     case None{}:
-      IO.pure(Unit, Unit{})
+      IO.pure(List<&2, Client>, cl)
 
 # the reply now, or (for a request that waits on the user) parked until
 # the ask it opened is answered
@@ -2594,8 +2909,8 @@ def Hub.leave(h: Hub, +client: U32, +now: Nat) -> IO(Hub):
         Hub.leave.close(Clients.get(cl, client))
         Plot.put(Cfg.pv(cfg), PV.PStop{client})
         +cl2 : List<&2, Client> = Clients.drop(cl, client)
-        Desk.say(DK.Desk.text(Clients.looks(cl), now), cl2, now)
-        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
+        cl3 : List<&2, Client> <- Desk.say(DK.Desk.text(Clients.looks(cl), now), cl2, now)
+        return Hub{st, f, ls, cl3, as, inbox, cfg, note}
 
 # kicad.watch: kind "board", "schematic", "3d", "3d-bare" or "3d-full"
 # shows it, anything else stops
@@ -2935,28 +3250,28 @@ def Preview.shows(+o: J.Json) -> Bool:
 # a shell's output goes to every client (each keeps its own screen)
 def Hub.term_out(h: Hub, +thread: String, data: List<&2, U32>) -> IO(Hub):
   match h:
-    case Hub{st, f, ls, +cl, as, inbox, cfg, note}:
+    case Hub{st, f, ls, cl, as, inbox, cfg, note}:
       do IO<Hub>:
-        Wire.all(cl, Term.json(thread, data))
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+        cl2 : List<&2, Client> <- Wire.all(cl, Term.json(thread, data))
+        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
 
 # a chat terminal from the start: a blank cols x rows screen, then bytes
 def Term.json.reset(+key: String, +cols: U32, +rows: U32, bs: List<&2, U32>) -> String:
   "{\"t\":\"term\",\"thread\":" ++ J.Json.show(J.Str{key}) ++ ",\"b\":[" ++ String.join(Term.nums(bs), ",") ++ "],\"reset\":[" ++ U32.show(cols) ++ "," ++ U32.show(rows) ++ "]}"
 
-def Hub.term_to.k(all: Bool, +cl: List<&2, Client>, +client: U32, +text: String) -> IO(Unit):
+def Hub.term_to.k(all: Bool, +cl: List<&2, Client>, +client: U32, +text: String) -> IO(List<&2, Client>):
   match all:
     case True{}:
       Wire.all(cl, text)
     case False{}:
-      Wire.send(Clients.get(cl, client), WText{text})
+      Wire.to(cl, client, text)
 
 def Hub.term_to(h: Hub, +client: U32, +key: String, +cols: U32, +rows: U32, data: List<&2, U32>) -> IO(Hub):
   match h:
-    case Hub{st, f, ls, +cl, as, inbox, cfg, note}:
+    case Hub{st, f, ls, cl, as, inbox, cfg, note}:
       do IO<Hub>:
-        Hub.term_to.k(U32.is_eq(client, TM.Et.all()), cl, client, Term.json.reset(key, cols, rows, data))
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+        cl2 : List<&2, Client> <- Hub.term_to.k(U32.is_eq(client, TM.Et.all()), cl, client, Term.json.reset(key, cols, rows, data))
+        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
 
 def Cfg.with_models(c: Cfg, +ms: String, +mt: String) -> Cfg:
   match c:
@@ -2965,10 +3280,10 @@ def Cfg.with_models(c: Cfg, +ms: String, +mt: String) -> Cfg:
 
 def Hub.models.k(h: Hub) -> IO(Hub):
   match h:
-    case Hub{st, f, ls, +cl, as, inbox, +cfg, note}:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
       do IO<Hub>:
-        Wire.all(cl, "{\"t\":\"info\",\"info\":" ++ J.Json.show(Hub.info(cfg)) ++ "}")
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+        cl2 : List<&2, Client> <- Wire.all(cl, "{\"t\":\"info\",\"info\":" ++ J.Json.show(Hub.info(cfg)) ++ "}")
+        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
 
 def Cfg.with_machines(c: Cfg, +mc: String) -> Cfg:
   match c:
@@ -3983,10 +4298,10 @@ def Cfg.tailnet(c: Cfg) -> Bool:
 
 def Hub.broadcast(h: Hub, +text: String) -> IO(Hub):
   match h:
-    case Hub{st, f, ls, +cl, as, inbox, cfg, note}:
+    case Hub{st, f, ls, cl, as, inbox, cfg, note}:
       do IO<Hub>:
-        Wire.all(cl, text)
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+        cl2 : List<&2, Client> <- Wire.all(cl, text)
+        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
 
 # a thread's browser page: a bot's is named by the bot, any other
 # thread's by the thread (BO.World.page)
@@ -4007,11 +4322,11 @@ def Preview.view(+thread: String) -> String:
 
 def Hub.preview(h: Hub, +thread: String, +o: J.Json, +reply: Chan(String)) -> IO(Hub):
   match h:
-    case Hub{+st, f, ls, +cl, as, inbox, +cfg, note}:
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       do IO<Hub>:
         IO.spawn(Unit, Preview.run(cfg, Bot.page(st, thread), o, reply))
-        Bool.pick(IO(Unit), Bool.and(Bool.not(Bot.is_bot(BO.World.of_thread(M.State.bots(st), thread))), Preview.shows(o)), Wire.all(cl, Preview.view(thread)), IO.pure(Unit, Unit{}))
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+        cl2 : List<&2, Client> <- Hub.auto.k(Bool.not(Bool.and(Bool.not(Bot.is_bot(BO.World.of_thread(M.State.bots(st), thread))), Preview.shows(o))), cl, Preview.view(thread))
+        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
 
 # requests: "bots.*" to the bots' decider, the rest to the hub's
 def Bot.request.k(bots: Bool, +o: J.Json, +st: M.State, +now: Nat, +client: U32) -> B.Step:
@@ -4748,128 +5063,6 @@ def Watch.stop.job(+home: String, +id: String, +kind: String, +target: String, +
     r : P.Ran <- P.Proc.run("sh", ["-c", Watch.stop.sh(), "sh", kind, target, ident, Watch.dir(home, id), Watch.unit(id)], "/")
     return Unit{}
 
-def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
-  match h o:
-    case Hub{st, f, ls, +cl, as, inbox, cfg, note} B.Send{+client, text}:
-      do IO<Hub>:
-        Wire.send(Clients.get(cl, client), WText{text})
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{st, f, ls, +cl, as, inbox, cfg, note} B.Broadcast{+text}:
-      do IO<Hub>:
-        Wire.all(cl, text)
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{+st, f, ls, cl, +as, inbox, cfg, note} B.AgentStart{+thread, +cwd, _, +model, +session, r, i}:
-      Hub.start.k(Agents.get(as, thread), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, cwd, model, session, r, i, Hub.effort_of(st, thread))
-    case Hub{+st, f, ls, cl, as, inbox, +cfg, note} B.AgentSend{+thread, +line}:
-      do IO<Hub>:
-        +now : Nat <- Now.nat()
-        +l1 : String = Bot.line(Bool.or(BO.World.is_bot_thread(M.State.bots(st), thread), RF.Refs.maybe(line)), st, now, thread, line)
-        +l2 : String <- EmbNote.claude(EmbNote.user(l1), cfg, st, thread, l1)
-        l3 : String <- Agent.line.final(String.contains(l2, "$"), l2, B.Hub.cwd(st, B.Hub.thread(st, thread)))
-        Claude.put(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, l3)
-    case Hub{st, f, ls, cl, +as, inbox, cfg, note} B.AgentStop{+thread}:
-      do IO<Hub>:
-        Hub.agent_stop(Agents.get(as, thread))
-        return Hub{st, f, ls, cl, Agents.drop(as, thread), inbox, cfg, note}
-    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.PlotInfo{+client, +id, +key, +at, +idx}:
-      do IO<Hub>:
-        Plot.put(Cfg.pv(cfg), PV.PInfo{client, id, key, at, idx})
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.Watch{+client, +kind, +root, +path}:
-      do IO<Hub>:
-        Plot.put(Cfg.pv(cfg), Plot.watch(client, kind, root, path))
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{+st, f, ls, +cl, as, +inbox, +cfg, note} B.CodexTurn{+thread, +cwd, +model, +session, r, text}:
-      do IO<Hub>:
-        +fs : K.Files <- K.Files.read(cwd)
-        Hub.auto(cl, thread, fs)
-        +now : Nat <- Now.nat()
-        +t2 : String = BH.Bots.turn(st, now, thread, text)
-        +g : String = Hub.gen(st, now)
-        IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Codex.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, fs, g, inbox)))
-        Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
-    case Hub{st, f, ls, cl, as, +inbox, +cfg, note} B.KiCadInstall{}:
-      do IO<Hub>:
-        IO.spawn(Unit, Install.go(Cfg.home(cfg), inbox))
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{+st, f, ls, +cl, as, +inbox, +cfg, note} B.GrokTurn{+thread, +cwd, +model, +session, r, +text}:
-      do IO<Hub>:
-        +fs : K.Files <- K.Files.read(cwd)
-        Hub.auto(cl, thread, fs)
-        +now : Nat <- Now.nat()
-        +t2 : String = BH.Bots.turn(st, now, thread, text)
-        +g : String = Hub.gen(st, now)
-        IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Grok.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, fs, g, inbox)))
-        Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
-    case Hub{st, f, ls, cl, as, +inbox, +cfg, note} B.Await{+thread, +id, +kind, +target, +ident, +deadline, +cwd}:
-      do IO<Hub>:
-        IO.spawn(Unit, Watch.job(Cfg.home(cfg), thread, id, kind, target, ident, deadline, cwd, inbox))
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.WatchStop{_, +id, +kind, +target, +ident}:
-      do IO<Hub>:
-        IO.spawn(Unit, Watch.stop.job(Cfg.home(cfg), id, kind, target, ident))
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{st, f, ls, cl, as, inbox, cfg, note} B.DeskLook{+client, +thread, +focused}:
-      Hub.desk(Hub{st, f, ls, cl, as, inbox, cfg, note}, client, thread, focused)
-    case Hub{+st, f, ls, +cl, as, +inbox, +cfg, note} B.TurnEnded{+thread, +state}:
-      do IO<Hub>:
-        +now : Nat <- Now.nat()
-        +seen : Bool = DK.Desk.seen(Clients.looks(cl), thread, now)
-        Desk.tell(DK.Desk.to(Clients.looks(cl), thread, now), cl, st, thread, state)
-        IO.spawn(Unit, Hub.phone(Cfg.home(cfg), st, thread, state, seen, inbox))
-        Self.post(inbox, Release{})
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    # a bot's answer to a person elsewhere, captured by the step that left
-    # its thread ready (hub.bend's Answer.out)
-    case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.BotReply{+thread, +to, +text, _}:
-      do IO<Hub>:
-        Self.post(inbox, Replied{thread, to, text})
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.Fs{+client, +id, +op, +path}:
-      do IO<Hub>:
-        IO.spawn(Unit, FsJob.run(op, inbox, client, id, path))
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.TermOp{+op, +thread, +cwd, data, +cols, +rows}:
-      do IO<Hub>:
-        Term.put(Cfg.tm(cfg), Term.msg(op, thread, cwd, data, cols, rows))
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.TermRun{key, ti, cwd, cmd, c, r, again}:
-      do IO<Hub>:
-        Term.put(Cfg.tm(cfg), TM.TRun{key, ti, cwd, cmd, c, r, again})
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.TermSnap{c, key}:
-      do IO<Hub>:
-        Term.put(Cfg.tm(cfg), TM.TSnap{c, key})
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.TermKill{key}:
-      do IO<Hub>:
-        Term.put(Cfg.tm(cfg), TM.TKill{key})
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{+st, f, ls, cl, +as, +inbox, +cfg, note} B.Git{+client, +id, +job, +thread, +cwd, +a, +b}:
-      do IO<Hub>:
-        +now : Nat <- Now.nat()
-        Media.run(AG.Text.of(st), job, inbox, client, id, thread, cwd, Bot.attach(String.eq(job, "attach.claude"), st, now, thread, a), b, Cfg.home(cfg), Net.managed(Cfg.net(cfg)), Agents.gen(as, thread))
-        return Claude.prep(Bool.and(String.eq(job, "attach.claude"), Bool.not(String.is_empty(b))), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, b)
-    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.AskAnswered{+ask, +answer}:
-      do IO<Hub>:
-        Park.put(Cfg.pk(cfg), PK.PAnswer{ask, answer})
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.Upgrade{}:
-      do IO<Hub>:
-        IO.spawn(Unit, Upgrade.go(Net.managed(Cfg.net(cfg)), Cfg.home(cfg), M.Setting.get(st, "update.channel", "stable"), inbox))
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
-    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.BotFx{+kind, +a, +b, +c}:
-      do IO<Hub>:
-        Bot.fx(C.Codec.pos(["home", "gone", "hook", "unhook", "send", "invite", "join", "unpeer", "google", "token", "retoken", "untoken", "voice", "scratch", "scratch-gone"], kind), st, inbox, cfg, a, b, c)
-        return Hub{st, f, ls, cl, as, inbox, cfg, note}
-
-def Hub.outs(os: List<&2, B.Out>, h: Hub) -> IO(Hub):
-  match os:
-    case Nil{}:
-      IO.pure(Hub, h)
-    case o <> t:
-      IO.bind(Hub, Hub, Hub.out(h, o), h2 => Hub.outs(t, h2))
-
 # Threads elsewhere (far.bend, docs/bots.md)
 # ------------------------------------------
 # This hub shares its bots and their threads with the owner's other
@@ -5405,40 +5598,412 @@ def Far.start(h: Hub) -> IO(Hub):
         Far.start.go(Far.live(BO.World.peers(M.State.bots(st))), Cfg.home(cfg), inbox)
         return Far.start.epoch(Far.fh(Hub{st, f, ls, cl, as, inbox, cfg, note}), ls)
 
-# A client joined: every mirror, whole
-def Far.join.go(ms: List<&2, FR.In>, +out: Chan(Wire)) -> IO(Unit):
+def Far.mirrors(+cfg: Cfg) -> List<&2, FR.In>:
+  FR.Fh.ins(BN.Bn.far(Cfg.bn(cfg)))
+
+def Hub.announce(r: Hub & List<&2, String>) -> IO(Hub):
+  (h, fresh) = r
+  match h fresh:
+    case _ Nil{}:
+      IO.pure(Hub, h)
+    case Hub{st, f, +ls, cl, as, +inbox, +cfg, note} +l <> +t:
+      do IO<Hub>:
+        cl2 : List<&2, Client> <- Wire.changes(cl, Hub.changes_msg(List.reverse(&2, String, l <> t)), Nat.sub(List.length(&2, String, ls), List.length(&2, String, l <> t)),
+          List.length(&2, FR.In, Far.mirrors(cfg)), inbox)
+        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
+
+def Hub.spawned.fail(e: U32 & String, h: Hub, +thread: String) -> IO(Hub):
+  (_, +msg) = e
+  do IO<Hub>:
+    +now : Nat <- Now.nat()
+    Log.info("could not start agent: " ++ msg)
+    r : Hub & List<&2, String> <- Hub.commit([M.ActivityLogged{thread, "spawn-" ++ Nat.show(now), "error", "spawn", "could not start claude: " ++ msg, now}, M.TurnChanged{thread, M.Failed{}, now}], h, Nil{})
+    Hub.announce(r)
+
+def Hub.spawned(r: Result<&1, &1, U32 & String, U32 & Socket>, h: Hub, +thread: String, +key: String, +gen: String) -> IO(Hub):
+  match r h:
+    case Done{started} Hub{st, f, ls, cl, as, +inbox, cfg, note}:
+      Hub.spawned.ok(started, Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, key, gen)
+    case Fail{e} _:
+      Hub.spawned.fail(e, h, thread)
+
+def Hub.start.spawn(m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, +effort: String, +gen: String) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl0, +as, inbox, +cfg, note}:
+      do IO<Hub>:
+        Hub.agent_stop(m)
+        +fs : K.Files <- K.Files.read(cwd)
+        cl : List<&2, Client> <- Hub.auto(cl0, thread, fs)
+        +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
+        res : Result<&1, &1, U32 & String, U32 & Socket> <- H.Proc.spawn("env", "MCP_TOOL_TIMEOUT=86400000" <> "CLAUDE_CODE_ENABLE_TODO_TOOLS=1" <> "claude" <> Hub.agent_args(cfg, thread, model, session, r, i, Hub.prompt(cfg, st, thread, cwd, fs, keys), effort, gen), cwd, 0)
+        Hub.spawned(res, Hub{st, f, ls, cl, Agents.drop(as, thread), inbox, cfg, note}, thread, Agent.key(model, r, i, effort), gen)
+
+def Hub.start.r(r: Hub & List<&2, String>, m: Maybe<&2, Agent>, +thread: String, +cwd: String, +model: String, +session: String, +rt: M.RuntimeMode, +i: M.InteractionMode, +effort: String, +gen: String) -> IO(Hub):
+  IO.bind(Hub, Hub, Hub.announce(r), h => Hub.start.spawn(m, h, thread, cwd, model, session, rt, i, effort, gen))
+
+def Hub.start.go(same: Bool, +m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, +effort: String) -> IO(Hub):
+  match same h:
+    case True{} _:
+      IO.pure(Hub, h)
+    case False{} Hub{+st, f, ls, +cl, +as, inbox, +cfg, note}:
+      do IO<Hub>:
+        +now : Nat <- Now.nat()
+        cr : Hub & List<&2, String> <- Hub.commit(Hub.replaced(Agent.is(m), st, now, thread), Hub{st, f, ls, cl, as, inbox, cfg, note}, Nil{})
+        Hub.start.r(cr, m, thread, cwd, model, session, r, i, effort, Hub.gen(st, now))
+
+def Hub.start.k(+m: Maybe<&2, Agent>, h: Hub, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, +effort: String) -> IO(Hub):
+  Hub.start.go(Agent.same(m, Agent.key(model, r, i, effort)), m, h, thread, cwd, model, session, r, i, effort)
+
+def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
+  match h o:
+    case Hub{st, f, ls, cl, as, inbox, cfg, note} B.Send{+client, +text}:
+      do IO<Hub>:
+        cl2 : List<&2, Client> <- Wire.to(cl, client, text)
+        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
+    case Hub{st, f, ls, cl, as, inbox, cfg, note} B.Broadcast{+text}:
+      do IO<Hub>:
+        cl2 : List<&2, Client> <- Wire.all.of(cl, text, All{Bool.pick(Nat, String.starts_with(text, "{\"t\":\"delta"), 2n, 0n), 0n, 0n, Nil{}})
+        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
+    case Hub{+st, f, ls, cl, +as, inbox, cfg, note} B.AgentStart{+thread, +cwd, _, +model, +session, r, i}:
+      Hub.start.k(Agents.get(as, thread), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, cwd, model, session, r, i, Hub.effort_of(st, thread))
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note} B.AgentSend{+thread, +line}:
+      do IO<Hub>:
+        +now : Nat <- Now.nat()
+        +l1 : String = Bot.line(Bool.or(BO.World.is_bot_thread(M.State.bots(st), thread), RF.Refs.maybe(line)), st, now, thread, line)
+        +l2 : String <- EmbNote.claude(EmbNote.user(l1), cfg, st, thread, l1)
+        l3 : String <- Agent.line.final(String.contains(l2, "$"), l2, B.Hub.cwd(st, B.Hub.thread(st, thread)))
+        Claude.put(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, l3)
+    case Hub{st, f, ls, cl, +as, inbox, cfg, note} B.AgentStop{+thread}:
+      do IO<Hub>:
+        Hub.agent_stop(Agents.get(as, thread))
+        return Hub{st, f, ls, cl, Agents.drop(as, thread), inbox, cfg, note}
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.PlotInfo{+client, +id, +key, +at, +idx}:
+      do IO<Hub>:
+        Plot.put(Cfg.pv(cfg), PV.PInfo{client, id, key, at, idx})
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.Watch{+client, +kind, +root, +path}:
+      do IO<Hub>:
+        Plot.put(Cfg.pv(cfg), Plot.watch(client, kind, root, path))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{+st, f, ls, cl0, as, +inbox, +cfg, note} B.CodexTurn{+thread, +cwd, +model, +session, r, text}:
+      do IO<Hub>:
+        +fs : K.Files <- K.Files.read(cwd)
+        cl : List<&2, Client> <- Hub.auto(cl0, thread, fs)
+        +now : Nat <- Now.nat()
+        +t2 : String = BH.Bots.turn(st, now, thread, text)
+        +g : String = Hub.gen(st, now)
+        IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Codex.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, fs, g, inbox)))
+        Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
+    case Hub{st, f, ls, cl, as, +inbox, +cfg, note} B.KiCadInstall{}:
+      do IO<Hub>:
+        IO.spawn(Unit, Install.go(Cfg.home(cfg), inbox))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{+st, f, ls, cl0, as, +inbox, +cfg, note} B.GrokTurn{+thread, +cwd, +model, +session, r, +text}:
+      do IO<Hub>:
+        +fs : K.Files <- K.Files.read(cwd)
+        cl : List<&2, Client> <- Hub.auto(cl0, thread, fs)
+        +now : Nat <- Now.nat()
+        +t2 : String = BH.Bots.turn(st, now, thread, text)
+        +g : String = Hub.gen(st, now)
+        IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Grok.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, fs, g, inbox)))
+        Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
+    case Hub{st, f, ls, cl, as, +inbox, +cfg, note} B.Await{+thread, +id, +kind, +target, +ident, +deadline, +cwd}:
+      do IO<Hub>:
+        IO.spawn(Unit, Watch.job(Cfg.home(cfg), thread, id, kind, target, ident, deadline, cwd, inbox))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.WatchStop{_, +id, +kind, +target, +ident}:
+      do IO<Hub>:
+        IO.spawn(Unit, Watch.stop.job(Cfg.home(cfg), id, kind, target, ident))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{st, f, ls, cl, as, inbox, cfg, note} B.DeskLook{+client, +thread, +focused}:
+      Hub.desk(Hub{st, f, ls, cl, as, inbox, cfg, note}, client, thread, focused)
+    case Hub{+st, f, ls, +cl, as, +inbox, +cfg, note} B.TurnEnded{+thread, +state}:
+      do IO<Hub>:
+        +now : Nat <- Now.nat()
+        +seen : Bool = DK.Desk.seen(Clients.looks(cl), thread, now)
+        cl2 : List<&2, Client> <- Desk.tell(DK.Desk.to(Clients.looks(cl), thread, now), cl, st, thread, state)
+        IO.spawn(Unit, Hub.phone(Cfg.home(cfg), st, thread, state, seen, inbox))
+        Self.post(inbox, Release{})
+        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
+    # a bot's answer to a person elsewhere, captured by the step that left
+    # its thread ready (hub.bend's Answer.out)
+    case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.BotReply{+thread, +to, +text, _}:
+      do IO<Hub>:
+        Self.post(inbox, Replied{thread, to, text})
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.Fs{+client, +id, +op, +path}:
+      do IO<Hub>:
+        IO.spawn(Unit, FsJob.run(op, inbox, client, id, path))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.TermOp{+op, +thread, +cwd, data, +cols, +rows}:
+      do IO<Hub>:
+        Term.put(Cfg.tm(cfg), Term.msg(op, thread, cwd, data, cols, rows))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.TermRun{key, ti, cwd, cmd, c, r, again}:
+      do IO<Hub>:
+        Term.put(Cfg.tm(cfg), TM.TRun{key, ti, cwd, cmd, c, r, again})
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.TermSnap{c, key}:
+      do IO<Hub>:
+        Term.put(Cfg.tm(cfg), TM.TSnap{c, key})
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.TermKill{key}:
+      do IO<Hub>:
+        Term.put(Cfg.tm(cfg), TM.TKill{key})
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{+st, f, ls, cl, +as, +inbox, +cfg, note} B.Git{+client, +id, +job, +thread, +cwd, +a, +b}:
+      do IO<Hub>:
+        +now : Nat <- Now.nat()
+        Media.run(AG.Text.of(st), job, inbox, client, id, thread, cwd, Bot.attach(String.eq(job, "attach.claude"), st, now, thread, a), b, Cfg.home(cfg), Net.managed(Cfg.net(cfg)), Agents.gen(as, thread))
+        return Claude.prep(Bool.and(String.eq(job, "attach.claude"), Bool.not(String.is_empty(b))), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, b)
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.AskAnswered{+ask, +answer}:
+      do IO<Hub>:
+        Park.put(Cfg.pk(cfg), PK.PAnswer{ask, answer})
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.Upgrade{}:
+      do IO<Hub>:
+        IO.spawn(Unit, Upgrade.go(Net.managed(Cfg.net(cfg)), Cfg.home(cfg), M.Setting.get(st, "update.channel", "stable"), inbox))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.BotFx{+kind, +a, +b, +c}:
+      do IO<Hub>:
+        Bot.fx(C.Codec.pos(["home", "gone", "hook", "unhook", "send", "invite", "join", "unpeer", "google", "token", "retoken", "untoken", "voice", "scratch", "scratch-gone"], kind), st, inbox, cfg, a, b, c)
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+
+def Hub.outs(os: List<&2, B.Out>, h: Hub) -> IO(Hub):
+  match os:
+    case Nil{}:
+      IO.pure(Hub, h)
+    case o <> t:
+      IO.bind(Hub, Hub, Hub.out(h, o), h2 => Hub.outs(t, h2))
+
+# the window in this process: every mirror, whole
+def Far.join.here(ms: List<&2, FR.In>, m: Maybe<&2, Client>) -> IO(Maybe<&2, Client>):
   match ms:
     case Nil{}:
-      IO.pure(Unit, Unit{})
+      IO.pure(Maybe<&2, Client>, m)
     case +i <> t:
-      do IO<Unit>:
-        ok : Bool <- Chan.send(Wire, out, WText{FR.In.msg(i)})
-        Far.join.go(t, out)
+      IO.bind(Maybe<&2, Client>, Maybe<&2, Client>, Wire.text.m(m, FR.In.msg(i)), m2 => Far.join.here(t, m2))
 
-def Far.join(+cfg: Cfg, +out: Chan(Wire)) -> IO(Unit):
-  Far.join.go(FR.Fh.ins(BN.Bn.far(Cfg.bn(cfg))), out)
+def Hub.join.notes(m: Maybe<&2, Client>, +note: String, +desk: String) -> IO(Maybe<&2, Client>):
+  IO.bind(Maybe<&2, Client>, Maybe<&2, Client>, Wire.text.if(String.is_empty(note), m, note), m2 => Wire.text.if(String.is_empty(desk), m2, desk))
+
+def Hub.join.state(c: Client, w: Wire) -> IO(Maybe<&2, Client>):
+  Wire.offer(c, w, 0n)
 
 # the window in this process: the read model (devices left out, as the
 # wire leaves them) and the log message with no items
-def Hub.join.here(h: Hub, +client: U32, +out: Chan(Wire), +now: Nat) -> IO(Hub):
+def Hub.join.here(h: Hub, +client: U32, +out: Chan(Wire), +gen: U32, +now: Nat) -> IO(Hub):
   match h:
     case Hub{+st, f, +ls, +cl, as, inbox, +cfg, +note}:
       do IO<Hub>:
-        ok : Bool <- Chan.send(Wire, out, WState{M.State.private(st), Hub.log_msg.k(0n, ls, cfg, 0n)})
-        Far.join(cfg, out)
-        Hub.join.note(out, note)
-        Hub.join.note(out, Desk.join(DK.Desk.text(Clients.looks(cl), now)))
-        return Hub{st, f, ls, Client{client, out, DK.Look.none()} <> cl, as, inbox, cfg, note}
+        m : Maybe<&2, Client> <- Hub.join.state(Client{client, out, DK.Look.none(), OB.Cr.new(gen, True{}, False{}, 0n), 0}, WState{M.State.private(st), Hub.log_msg.k(0n, ls, cfg, 0n)})
+        m2 : Maybe<&2, Client> <- Far.join.here(Far.mirrors(cfg), m)
+        m3 : Maybe<&2, Client> <- Hub.join.notes(m2, note, Desk.join(DK.Desk.text(Clients.looks(cl), now)))
+        return Hub{st, f, ls, Clients.add(m3, cl), as, inbox, cfg, note}
 
-def Hub.join(h: Hub, +client: U32, +out: Chan(Wire), +since: Nat, +origin: String, +now: Nat) -> IO(Hub):
+def Hub.join.more(more: Bool, +inbox: Chan(Msg), +client: U32, +gen: U32) -> IO(Unit):
+  match more:
+    case True{}:
+      Self.post.later(inbox, JoinMore{client, gen})
+    case False{}:
+      IO.pure(Unit, Unit{})
+
+def Hub.join.k(+n: Nat, +s0: Nat, +xs: List<&2, String>, h: Hub, +client: U32, +out: Chan(Wire), +origin: String, +gen: U32, +sock: U32, +now: Nat) -> IO(Hub):
   match h:
-    case Hub{st, f, +ls, +cl, as, inbox, +cfg, +note}:
+    case Hub{st, f, +ls, +cl, as, +inbox, +cfg, +note}:
+      +k = List.length(&2, String, OB.Join.next(xs))
+      +more = Bool.or(Nat.is_lt(Nat.add(s0, k), n), Bool.not(List.is_empty(&2, FR.In, Far.mirrors(cfg))))
       do IO<Hub>:
-        ok : Bool <- Chan.send(Wire, out, WText{Hub.log_msg(ls, cfg, Bool.pick(Nat, String.eq(origin, Hub.origin(ls)), since, 0n))})
-        Far.join(cfg, out)
-        Hub.join.note(out, note)
-        Hub.join.note(out, Desk.join(DK.Desk.text(Clients.looks(cl), now)))
-        return Hub{st, f, ls, Client{client, out, DK.Look.none()} <> cl, as, inbox, cfg, note}
+        m : Maybe<&2, Client> <- Wire.offer(Client{client, out, DK.Look.none(), OB.Cr.rest.set(OB.Cr.wait.set(OB.Cr.new(gen, U32.is_eq(client, 0), more, Nat.add(s0, k)), more), OB.Join.from(ls, n, Nat.add(s0, k))), sock},
+          Hub.log_items(origin, cfg, s0, List.take(&2, String, xs, k), more), 0n)
+        m2 : Maybe<&2, Client> <- Hub.join.notes(m, note, Desk.join(DK.Desk.text(Clients.looks(cl), now)))
+        Hub.join.more(more, inbox, client, gen)
+        return Hub{st, f, ls, Clients.add(m2, cl), as, inbox, cfg, note}
+
+# a client joined: the log from what it has (`since`, if it came from this
+# log), its first chunk now and the rest a chunk at a time (Hub.boot); the
+# origin and the log's length are found once
+def Hub.join(h: Hub, +client: U32, +out: Chan(Wire), +since: Nat, +origin: String, +gen: U32, +sock: U32, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{st, f, +ls, cl, as, inbox, cfg, note}:
+      +n = List.length(&2, String, ls)
+      +o = Hub.origin(ls)
+      +s0 = Bool.pick(Nat, Bool.and(String.eq(origin, o), Nat.is_le(since, n)), since, 0n)
+      Hub.join.k(n, s0, OB.Join.window(ls, n, s0), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, out, o, gen, sock, now)
+
+# Joining, a chunk at a time
+# --------------------------
+# While a client takes its log it gets no live changes (Wire.changes);
+# each JoinMore (and each report from its writer) sends the next chunk if
+# it has room (OB.Cr.room): the rest of the log, then each far mirror in
+# chunks (FR.In.chunk), then a last frame with "boot": false that makes it
+# live. Changes made meanwhile are part of the log by then, so nothing is
+# missed or sent twice, and the hub's inbox is read between chunks.
+
+def Clients.swap.k(same: Bool, c: Client, +m: Maybe<&2, Client>) -> Maybe<&2, Client>:
+  match same:
+    case True{}:
+      m
+    case False{}:
+      Some{c}
+
+# the client with this id replaced by m (dropped for None)
+def Clients.swap(cs: List<&2, Client>, +id: U32, +m: Maybe<&2, Client>) -> List<&2, Client>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case +c <> t:
+      Clients.add(Clients.swap.k(Client.is(c, id), c, m), Clients.swap(t, id, m))
+
+def Boot.due(c: Client, +gen: U32) -> Bool:
+  match c:
+    case Client{_, _, _, +r, _}:
+      Bool.and(Bool.and(OB.Cr.boot(r), U32.is_eq(OB.Cr.gen(r), gen)), OB.Cr.room(r))
+
+def Boot.cr(c: Client, +r: OB.Cr) -> Client:
+  match c:
+    case Client{i, o, l, _, k}:
+      Client{i, o, l, r, k}
+
+def Boot.r(c: Client) -> OB.Cr:
+  match c:
+    case Client{_, _, _, r, _}:
+      r
+
+def Boot.next(more: Bool, h: Hub, k: Hub -> IO(Hub)) -> IO(Hub):
+  match more:
+    case True{}:
+      k(h)
+    case False{}:
+      IO.pure(Hub, h)
+
+# the next JoinMore for a joining client, when it has room and none is
+# on its way already: one at a time, so the hub sends one chunk per
+# message it reads and anything else waits behind at most a few
+def Kick.k(go: Bool, c: Client, +inbox: Chan(Msg)) -> IO(Client):
+  match go c:
+    case True{} Client{+i, o, l, +r, k}:
+      do IO<Client>:
+        Self.post.later(inbox, JoinMore{i, OB.Cr.gen(r)})
+        return Client{i, o, l, OB.Cr.wait.set(r, True{}), k}
+    case False{} _:
+      IO.pure(Client, c)
+
+def Kick.due(+r: OB.Cr) -> Bool:
+  Bool.and(Bool.and(OB.Cr.boot(r), Bool.not(OB.Cr.wait(r))), OB.Cr.room(r))
+
+def Kick.one(+c: Client, +id: U32, +inbox: Chan(Msg)) -> IO(Client):
+  Kick.k(Bool.and(Client.is(c, id), Kick.due(Boot.r(c))), c, inbox)
+
+def Kick.go(cs: List<&2, Client>, +id: U32, +inbox: Chan(Msg)) -> IO(List<&2, Client>):
+  match cs:
+    case Nil{}:
+      IO.pure(List<&2, Client>, Nil{})
+    case +c <> t:
+      do IO<List<&2, Client>>:
+        c2 : Client <- Kick.one(c, id, inbox)
+        t2 : List<&2, Client> <- Kick.go(t, id, inbox)
+        return c2 <> t2
+
+def Hub.kick(h: Hub, +id: U32) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, +inbox, cfg, note}:
+      do IO<Hub>:
+        cl2 : List<&2, Client> <- Kick.go(cl, id, inbox)
+        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
+
+# a chunk out, then the next one asked for (Hub.kick)
+def Boot.send(h: Hub, c: Client, w: Wire, +n: Nat, +id: U32) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, cfg, note}:
+      do IO<Hub>:
+        m : Maybe<&2, Client> <- Wire.offer(c, w, n)
+        Hub.kick(Hub{st, f, ls, Clients.swap(cl, id, m), as, inbox, cfg, note}, id)
+
+def Boot.text(+text: String) -> Wire:
+  WText{text}
+
+def Boot.far.c(fc: FR.FC, h: Hub, +c: Client, +id: U32) -> IO(Hub):
+  match fc:
+    case FR.FC{+text, +next, True{}}:
+      Boot.send(h, Boot.cr(c, OB.Cr.far.set(Boot.r(c), 1n+OB.Cr.fl(Boot.r(c)), 0n)), Boot.text(text), String.length(text), id)
+    case FR.FC{+text, +next, False{}}:
+      Boot.send(h, Boot.cr(c, OB.Cr.far.set(Boot.r(c), OB.Cr.fl(Boot.r(c)), next)), Boot.text(text), String.length(text), id)
+
+# the log is all out, then the far mirrors; the last frame makes it live
+def Boot.far.k(m: Maybe<&2, FR.In>, h: Hub, +c: Client, +id: U32) -> IO(Hub):
+  match m:
+    case Some{+i}:
+      Boot.far.c(FR.In.chunk(i, OB.Cr.fseq(Boot.r(c))), h, c, id)
+    case None{}:
+      Boot.send(h, Boot.cr(c, OB.Cr.live(Boot.r(c))), Boot.text(Hub.boot_msg(Nil{}, True{})), 0n, id)
+
+# what the next chunk comes from: what was left when the client joined
+# (or caught up), else the changes made since
+def Boot.src(rs: List<&2, String>, +ls: List<&2, String>, +n: Nat, +at: Nat) -> List<&2, String>:
+  match rs:
+    case Nil{}:
+      OB.Join.window(ls, n, at)
+    case +x <> t:
+      x <> t
+
+def Boot.go(log: Bool, +c: Client, h: Hub, +n: Nat, +id: U32) -> IO(Hub):
+  match log h:
+    case True{} Hub{st, f, +ls, cl, as, inbox, cfg, note}:
+      +xs = Boot.src(OB.Cr.rest(Boot.r(c)), ls, n, OB.Cr.at(Boot.r(c)))
+      +ch = OB.Join.next(xs)
+      Boot.send(Hub{st, f, ls, cl, as, inbox, cfg, note},
+        Boot.cr(c, OB.Cr.rest.set(OB.Cr.at.set(Boot.r(c), Nat.add(OB.Cr.at(Boot.r(c)), List.length(&2, String, ch))), List.drop(&2, String, xs, List.length(&2, String, ch)))),
+        Hub.boot_items(ch), 0n, id)
+    case False{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      Boot.far.k(List.get(&2, FR.In, Far.mirrors(cfg), OB.Cr.fl(Boot.r(c))), Hub{st, f, ls, cl, as, inbox, cfg, note}, c, id)
+
+def Boot.k(due: Bool, +c: Client, h: Hub, +id: U32) -> IO(Hub):
+  match due h:
+    case True{} Hub{st, f, +ls, cl, as, inbox, cfg, note}:
+      Boot.go(Nat.is_lt(OB.Cr.at(Boot.r(c)), List.length(&2, String, ls)), c, Hub{st, f, ls, cl, as, inbox, cfg, note}, List.length(&2, String, ls), id)
+    case False{} _:
+      IO.pure(Hub, h)
+
+def Boot.m(m: Maybe<&2, Client>, h: Hub, +id: U32, +gen: U32) -> IO(Hub):
+  match m:
+    case Some{+c}:
+      Boot.k(Boot.due(c, gen), c, h, id)
+    case None{}:
+      IO.pure(Hub, h)
+
+def Boot.unwait.k(same: Bool, c: Client) -> Client:
+  match same c:
+    case True{} Client{i, o, l, r, k}:
+      Client{i, o, l, OB.Cr.wait.set(r, False{}), k}
+    case False{} _:
+      c
+
+def Boot.unwait(cs: List<&2, Client>, +id: U32, +gen: U32) -> List<&2, Client>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case +c <> t:
+      Boot.unwait.k(Bool.and(Client.is(c, id), U32.is_eq(OB.Cr.gen(Boot.r(c)), gen)), c) <> Boot.unwait(t, id, gen)
+
+def Hub.boot.c(h: Hub, +client: U32, +gen: U32) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, +cl, as, inbox, cfg, note}:
+      Boot.m(Clients.get(cl, client), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, gen)
+
+# a JoinMore: the next chunk of a joining client's log, if it still joins
+# under this generation and has room; then the one after is asked for
+def Hub.boot(h: Hub, +client: U32, +gen: U32) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.boot.c(Hub{st, f, ls, Boot.unwait(cl, client, gen), as, inbox, cfg, note}, client, gen)
+
+# a writer's report: the client's credit, then its next chunk asked for
+# if it joins (Hub.kick)
+def Hub.drained(h: Hub, +client: U32, +gen: U32, +n: Nat, +b: Nat) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.kick(Hub{st, f, ls, Clients.cr(cl, client, gen, n, b), as, inbox, cfg, note}, client)
 
 def Far.rpc.may(ok: Bool, h: Hub, +client: U32, +id: String, +link: String, +body: String, +now: Nat) -> IO(Hub):
   match ok h:
@@ -5570,9 +6135,9 @@ def Hub.gone(h: Hub, +thread: String, +code: U32, +pid: U32, +now: Nat) -> IO(Hu
 # each minute the hub's size goes into the gauges
 def Hub.tick(h: Hub, +now: Nat) -> IO(Hub):
   match h:
-    case Hub{+st, f, +ls, +cl, +as, +inbox, cfg, note}:
+    case Hub{+st, f, +ls, +cl0, +as, +inbox, cfg, note}:
       do IO<Hub>:
-        Desk.say(DK.Desk.text(Clients.looks(cl), Nat.sub(now, 60n)), cl, now)
+        +cl : List<&2, Client> <- Desk.say(DK.Desk.text(Clients.looks(cl0), Nat.sub(now, 60n)), cl0, now)
         PS.Perf.set("hub.clients", U32.from_nat(List.length(&2, Client, cl)))
         PS.Perf.set("hub.agents", U32.from_nat(List.length(&2, Agent, as)))
         PS.Perf.set("hub.changes", U32.from_nat(List.length(&2, String, ls)))
@@ -6689,10 +7254,16 @@ def Msg.kind(m: Msg) -> String:
       "mcp"
     case Announce{_}:
       "announce"
-    case Join{_, _, _, _}:
+    case Join{_, _, _, _, _, _}:
       "join"
-    case JoinHere{_, _}:
+    case JoinHere{_, _, _}:
       "join_here"
+    case Drained{_, _, _, _}:
+      "drained"
+    case JoinMore{_, _}:
+      "join_more"
+    case Ping{_, _}:
+      "ping"
     case Leave{_}:
       "leave"
     case Rpc{_, _}:
@@ -6771,6 +7342,8 @@ def Msg.kind(m: Msg) -> String:
       "watch_ident"
     case WatchEnded{_, _, _, _}:
       "watch_ended"
+    case Bulk{_}:
+      "bulk"
 
 def Hub.spawn_failed.k(ok: Bool, h: Hub, +thread: String, +line: String, +now: Nat) -> IO(Hub):
   match ok h:
@@ -6920,10 +7493,16 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.mcp.g(h, B.Tag.thread(thread), body, reply, now)
     case Announce{text}:
       Hub.note(h, text)
-    case Join{client, out, since, origin}:
-      Hub.join(h, client, out, since, origin, now)
-    case JoinHere{client, out}:
-      Hub.join.here(h, client, out, now)
+    case Join{client, out, since, origin, gen, sock}:
+      Hub.join(h, client, out, since, origin, gen, sock, now)
+    case JoinHere{client, out, gen}:
+      Hub.join.here(h, client, out, gen, now)
+    case Drained{client, gen, n, b}:
+      Hub.drained(h, client, gen, n, b)
+    case JoinMore{client, gen}:
+      Hub.boot(h, client, gen)
+    case Ping{client, p}:
+      Hub.pong(h, client, p)
     case Leave{client}:
       Hub.leave(h, client, now)
     case Rpc{client, text}:
@@ -7002,27 +7581,83 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.watched(Hub.state(h), 1n, thread, id, ident, "", now)
     case WatchEnded{thread, id, status, detail}:
       Hub.watched(Hub.state(h), 2n, thread, id, status, detail, now)
+    # unwrapped by Hub.got, never nested
+    case Bulk{_}:
+      IO.pure(Hub, h)
+
+# Two inboxes
+# ------------
+# The hub reads one channel (pri): clients' requests, joins and writers'
+# reports, MCP calls and ticks come straight in. Everything else (agents'
+# lines, jobs, the hub's own posts) goes to the hub's inbox, and Bulk.fwd
+# passes it on only while it holds one of Bulk.room() tokens, one given
+# back as each is handled: however fast an agent floods, a request (Stop)
+# waits behind at most that many of its lines.
+
+def Bulk.room() -> Nat:
+  16n
+
+def Bulk.fill(n: Nat, +tok: Chan(Unit)) -> IO(Unit):
+  match n:
+    case 0n:
+      IO.pure(Unit, Unit{})
+    case 1n+k:
+      do IO<Unit>:
+        ok : Bool <- Chan.send(Unit, tok, Unit{})
+        Bulk.fill(k, tok)
+
+def Bulk.moved(m: Maybe<&1, Msg>, +pri: Chan(Msg), k: Unit -> IO(Unit)) -> IO(Unit):
+  match m:
+    case Some{msg}:
+      do IO<Unit>:
+        ok : Bool <- Chan.send(Msg, pri, Bulk{msg})
+        k(Unit{})
+    case None{}:
+      IO.pure(Unit, Unit{})
+
+def Bulk.took(t: Maybe<&1, Unit>, +inbox: Chan(Msg), +pri: Chan(Msg), k: Unit -> IO(Unit)) -> IO(Unit):
+  match t:
+    case Some{_}:
+      IO.bind(Maybe<&1, Msg>, Unit, Chan.recv(Msg, inbox), m => Bulk.moved(m, pri, k))
+    case None{}:
+      IO.pure(Unit, Unit{})
+
+def Bulk.fwd(fuel: Nat, +inbox: Chan(Msg), +pri: Chan(Msg), +tok: Chan(Unit)) -> IO(Unit):
+  match fuel:
+    case 0n:
+      IO.pure(Unit, Unit{})
+    case 1n+f:
+      IO.bind(Maybe<&1, Unit>, Unit, Chan.recv(Unit, tok), t => Bulk.took(t, inbox, pri, u => Bulk.fwd(f, inbox, pri, tok)))
+
+def Bulk.back(+tok: Chan(Unit), h: Hub, k: Hub -> IO(Unit)) -> IO(Unit):
+  do IO<Unit>:
+    ok : Bool <- Chan.send(Unit, tok, Unit{})
+    k(h)
 
 # each message's handling is timed as hub.<kind> (docs/perf.md)
-def Hub.got(m: Maybe<&1, Msg>, h: Hub, k: Hub -> IO(Unit)) -> IO(Unit):
+def Hub.got.one(+msg: Msg, h: Hub, k: Hub -> IO(Unit)) -> IO(Unit):
+  do IO<Unit>:
+    now : Nat <- Now.nat()
+    t0 : U32 <- PS.Perf.us()
+    h2 : Hub <- Hub.handle(h, msg, now)
+    t1 : U32 <- PS.Perf.lap("hub." ++ Msg.kind(msg), t0)
+    k(h2)
+
+def Hub.got(m: Maybe<&1, Msg>, h: Hub, +tok: Chan(Unit), k: Hub -> IO(Unit)) -> IO(Unit):
   match m:
+    case Some{Bulk{+msg}}:
+      Hub.got.one(msg, h, h2 => Bulk.back(tok, h2, k))
     case Some{+msg}:
-      do IO<Unit>:
-        now : Nat <- Now.nat()
-        t0 : U32 <- PS.Perf.us()
-        h2 : Hub <- Hub.handle(h, msg, now)
-        t1 : U32 <- PS.Perf.lap("hub." ++ Msg.kind(msg), t0)
-        k(h2)
+      Hub.got.one(msg, h, k)
     case None{}:
       Hub.close(h)
 
-def Hub.loop(fuel: Nat, h: Hub) -> IO(Unit):
+def Hub.loop(fuel: Nat, h: Hub, +pri: Chan(Msg), +tok: Chan(Unit)) -> IO(Unit):
   match fuel:
     case 0n:
       Hub.close(h)
     case 1n+f:
-      Hub.inbox(h, inbox => h2 =>
-        IO.bind(Maybe<&1, Msg>, Unit, Chan.recv(Msg, inbox), m => Hub.got(m, h2, h3 => Hub.loop(f, h3))))
+      IO.bind(Maybe<&1, Msg>, Unit, Chan.recv(Msg, pri), m => Hub.got(m, h, tok, h3 => Hub.loop(f, h3, pri, tok)))
 
 # The web port was taken at start (often only for a moment, by the process
 # this one replaces): try it again every few seconds, and once it is ours,
@@ -7053,38 +7688,38 @@ def Listen.retry(fuel: Nat, +web: String, +inbox: Chan(Msg), +cfg: Cfg, +addr: S
         Listen.got(l, web, inbox, cfg, addr, _ => Listen.retry(f, web, inbox, cfg, addr))
 
 # without the web server (its port was taken): hub and ticker only
-def Main.headless(h: Hub, +inbox: Chan(Msg), +cfg: Cfg, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
+def Main.headless(h: Hub, +inbox: Chan(Msg), +cfg: Cfg, +tok: Chan(Unit), front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
   do IO<Unit>:
     IO.spawn(Unit, Ticker.loop(Fuel.forever(), inbox))
     Refresh.start(inbox, cfg)
-    IO.spawn(Unit, Hub.loop(Fuel.forever(), h))
+    IO.spawn(Unit, Hub.loop(Fuel.forever(), h, inbox, tok))
     Upgrade.start(cfg, inbox)
     front(inbox)
 
-def Main.serve(l: Listener, h: Hub, +web: String, +inbox: Chan(Msg), +cfg: Cfg, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
+def Main.serve(l: Listener, h: Hub, +web: String, +inbox: Chan(Msg), +cfg: Cfg, +tok: Chan(Unit), front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
   do IO<Unit>:
     IO.spawn(Unit, Accept.loop(Fuel.forever(), l, 1, web, inbox, True{}, Net.token(Cfg.net(cfg)), ""))
     Tailnet.start(Cfg.net(cfg), Cfg.port(cfg), web, inbox)
     IO.spawn(Unit, Ticker.loop(Fuel.forever(), inbox))
     Refresh.start(inbox, cfg)
     Machines.start(inbox, Cfg.port(cfg))
-    IO.spawn(Unit, Hub.loop(Fuel.forever(), h))
+    IO.spawn(Unit, Hub.loop(Fuel.forever(), h, inbox, tok))
     Upgrade.start(cfg, inbox)
     front(inbox)
 
-def Main.listened(r: Result<&1, &1, U32 & String, Listener>, h: Hub, +web: String, +inbox: Chan(Msg), +addr: String, need: Bool, +cfg: Cfg, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
+def Main.listened(r: Result<&1, &1, U32 & String, Listener>, h: Hub, +web: String, +inbox: Chan(Msg), +addr: String, need: Bool, +cfg: Cfg, +tok: Chan(Unit), front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
   match r need:
     case Done{l} _:
       do IO<Unit>:
         IO.print("Backplane listening on http://" ++ addr)
-        Main.serve(l, h, web, inbox, cfg, front)
+        Main.serve(l, h, web, inbox, cfg, tok, front)
     case Fail{e} True{}:
       Main.failed(e, h, addr)
     case Fail{_} False{}:
       do IO<Unit>:
         Log.info("web server off: " ++ addr ++ " is taken; trying again every 2 s")
         IO.spawn(Unit, Listen.retry(Fuel.forever(), web, inbox, cfg, addr))
-        Main.headless(h, inbox, cfg, front)
+        Main.headless(h, inbox, cfg, tok, front)
 
 # One hub per home
 # ----------------
@@ -7148,6 +7783,10 @@ def Main.opened(r: Result<&1, &1, U32 & String, File>, st: M.State, ls: List<&2,
       do IO<Unit>:
         Lock.write(home, port)
         +inbox : Chan(Msg) <- Chan.new(Msg, 4096)
+        +pri : Chan(Msg) <- Chan.new(Msg, 4096)
+        +tok : Chan(Unit) <- Chan.new(Unit, 32)
+        Bulk.fill(Bulk.room(), tok)
+        IO.spawn(Unit, Bulk.fwd(Fuel.forever(), inbox, pri, tok))
         rc : Bool <- Chan.send(Msg, inbox, Recover{})
         +bq : Chan(BR.BMsg) <- Chan.new(BR.BMsg, 256)
         bexe : String <- Browser.exe()
@@ -7168,7 +7807,7 @@ def Main.opened(r: Result<&1, &1, U32 & String, File>, st: M.State, ls: List<&2,
         IO.spawn(Unit, Plot.fwd(Fuel.forever(), vo, inbox))
         +nt : Net = Net.with_pv(Net.with_tm(Net.with_pk(Net.with_br(nt0, bq), pq), tq), vq)
         l : Result<&1, &1, U32 & String, Listener> <- H.Net.listen(host, port)
-        Main.listened(l, Hub{st, f, ls, Nil{}, Nil{}, inbox, Cfg{home, web, host, port, pr, ds, v, nt}, ""}, web, inbox, host ++ ":" ++ U32.show(port), need, Cfg{home, web, host, port, pr, ds, v, nt}, front)
+        Main.listened(l, Hub{st, f, ls, Nil{}, Nil{}, inbox, Cfg{home, web, host, port, pr, ds, v, nt}, ""}, web, pri, host ++ ":" ++ U32.show(port), need, Cfg{home, web, host, port, pr, ds, v, nt}, tok, front)
     case Fail{e} _:
       Main.nolog(e)
 

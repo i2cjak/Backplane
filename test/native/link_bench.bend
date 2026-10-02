@@ -79,7 +79,7 @@ def main() -> IO(Unit):
     +t0 : Nat <- IO.now()
     +inbox : Chan(S.Msg) <- LK.Link.start(to)
     +out : Chan(S.Wire) <- Chan.new(S.Wire, 8192)
-    ok : Bool <- Chan.send(S.Msg, inbox, S.Join{0, out, 0n, ""})
+    ok : Bool <- Chan.send(S.Msg, inbox, S.Join{0, out, 0n, "", 1, 0})
     +m : Maybe<&2, String> <- wait(64n, out, t0)
     +t1 : Nat <- IO.now()
     seen(0n, "link: connect, fetch and decode the log", t0, t1)

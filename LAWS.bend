@@ -78,6 +78,7 @@ import ./src/core/voice.bend as VO
 import ./src/core/once.bend as ON
 import ./src/core/desk.bend as DK
 import ./src/core/emb.bend as EMB
+import ./src/core/outbox.bend as OB
 
 # Backplane's rules, stated over the real code. `bend PROOF.bend` proves each
 # one. Humans own this file: an agent may add laws, never weaken or delete
@@ -4963,3 +4964,78 @@ law mirror_never_awaits:
 
 law prompt_background_work_b:
   {Bool.and(String.contains(PM.Prompt.background(), "work_run"), Bool.and(String.contains(PM.Prompt.background(), "work_watch"), String.contains(PM.Prompt.background(), "Never poll"))) == True{} : Bool}
+
+# Transport (core/outbox.bend, server.bend's Wire.*/Hub.boot): every frame
+# for a client is counted and one too far behind is dropped, a writer's
+# report from an older connection changes nothing, a log goes out in
+# chunks that cover it in order, a client still taking one raises no
+# alerts and ends with the same read model as from one message, pongs are
+# rate-bounded, and a message encoded once for all sockets is the frame
+# each writer would have made
+law credit_drop_over_margin:
+  {Bool.show(OB.Cr.over(OB.Cr.offer(OB.Cr{1, 768n, 0n, 0n, 0n, False{}, False{}, 0n, 0n, 0n, False{}, []}, 0n))) ++ Bool.show(OB.Cr.over(OB.Cr{1, 768n, 0n, 0n, 0n, False{}, False{}, 0n, 0n, 0n, False{}, []}))
+    ++ Bool.show(OB.Cr.over(OB.Cr.offer(OB.Cr{1, 900n, 200n, 0n, 0n, False{}, False{}, 0n, 0n, 0n, False{}, []}, 0n))) ++ Bool.show(OB.Cr.over(OB.Cr.offer(OB.Cr.new(1, False{}, False{}, 0n), Nat.add(OB.Cr.cap(), 1n)))) == "TrueFalseFalseTrue" : String}
+
+# a live client far behind takes the log's changes as a join does, in
+# chunks, instead of being dropped for a burst
+law credit_behind_catches:
+  {Bool.show(OB.Cr.behind(OB.Cr{1, 97n, 0n, 0n, 0n, False{}, False{}, 0n, 0n, 0n, False{}, []})) ++ Bool.show(OB.Cr.behind(OB.Cr{1, 96n, 0n, 0n, 0n, False{}, False{}, 0n, 0n, 0n, False{}, []}))
+    ++ Bool.show(OB.Cr.boot(OB.Cr.catch(OB.Cr.new(1, False{}, False{}, 0n), 50n, 2n))) ++ Nat.show(OB.Cr.at(OB.Cr.catch(OB.Cr.new(1, False{}, False{}, 0n), 50n, 2n))) == "TrueFalseTrue50" : String}
+
+law credit_stale_gen_quiet:
+  for +n: Nat
+  for +b: Nat
+  {OB.Cr.drained(OB.Cr.new(2, False{}, True{}, 5n), 1, n, b) == OB.Cr.new(2, False{}, True{}, 5n) : OB.Cr}
+
+law credit_drained_counts:
+  {OB.Cr.drained(OB.Cr{2, 40n, 0n, 900n, 0n, False{}, False{}, 0n, 0n, 0n, False{}, []}, 2, 32n, 800n) == OB.Cr{2, 40n, 32n, 900n, 800n, False{}, False{}, 0n, 0n, 0n, False{}, []} : OB.Cr}
+
+law credit_drained_never_back:
+  {OB.Cr.drained(OB.Cr{2, 40n, 32n, 900n, 800n, False{}, False{}, 0n, 0n, 0n, False{}, []}, 2, 3n, 9n) == OB.Cr{2, 40n, 32n, 900n, 800n, False{}, False{}, 0n, 0n, 0n, False{}, []} : OB.Cr}
+
+law boot_room_after_drain:
+  {Bool.show(OB.Cr.room(OB.Cr{2, 80n, 64n, 2000000n, 1900000n, False{}, True{}, 0n, 0n, 0n, False{}, []})) ++ Bool.show(OB.Cr.room(OB.Cr{2, 80n, 0n, 0n, 0n, False{}, True{}, 0n, 0n, 0n, False{}, []})) == "TrueFalse" : String}
+
+# a log goes oldest first from where the client was, chunk after chunk
+law outbox_fifo:
+  {OB.Join.from(["d", "c", "b", "a"], 4n, 1n) == ["b", "c", "d"] : List<&2, String>}
+
+law join_window_same:
+  {OB.Join.window(["e", "d", "c", "b", "a"], 5n, 1n) == OB.Join.from(["e", "d", "c", "b", "a"], 5n, 1n) : List<&2, String>}
+
+law join_chunks_cover:
+  {OB.Join.chunks.at(10n, ["a", "bb", "ccc", "d", "ee"], 2n, 4n) == [["a", "bb"], ["ccc", "d"], ["ee"]] : List<&2, List<&2, String>>}
+
+law join_chunks_flat:
+  {OB.Join.flat(OB.Join.chunks.at(10n, ["a", "bb", "ccc", "d", "ee"], 2n, 4n)) == ["a", "bb", "ccc", "d", "ee"] : List<&2, String>}
+
+law join_oversized_alone:
+  {OB.Join.chunks.at(10n, ["toolong", "a", "b"], 5n, 3n) == [["toolong"], ["a", "b"]] : List<&2, List<&2, String>>}
+
+law ui_chunked_join_equals_whole:
+  {U.Ui.state(U.Ui.recv(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", True{}, True{}, [C.Change.encode(M.SettingSet{"a", "1", 1n})])),
+      U.Boot.demo("changes", False{}, True{}, [C.Change.encode(M.SettingSet{"b", "2", 2n})])), U.Boot.demo("changes", False{}, False{}, [])))
+    == U.Ui.state(U.Ui.recv(U.Ui.init(0n), U.Seq.demo("log", [C.Change.encode(M.SettingSet{"a", "1", 1n}), C.Change.encode(M.SettingSet{"b", "2", 2n})]))) : M.State}
+
+law boot_on_until_last:
+  {Bool.show(U.Boot.on(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", True{}, True{}, [])))) ++ Bool.show(U.Boot.on(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", True{}, True{}, [])), U.Boot.demo("changes", False{}, False{}, []))))
+    ++ Bool.show(U.Boot.on(U.Ui.recv(U.Ui.init(0n), U.Seq.demo("log", [])))) == "TrueFalseFalse" : String}
+
+# a turn's end folded while the log still arrives (and with its last
+# chunk) is history: no alert; the same frame on a live client alerts
+law boot_no_alerts:
+  {List.append(&2, J.Json, Hb.Did.alerts(Hb.One.got(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", True{}, True{}, [C.Change.encode(M.ThreadCreated{"t1", "p1", "hi", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.TurnChanged{"t1", M.Running{}, 2n})])),
+      U.Boot.demo("changes", False{}, True{}, [C.Change.encode(M.TurnChanged{"t1", M.Completed{}, 3n})]))),
+    Hb.Did.alerts(Hb.One.got(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", True{}, True{}, [C.Change.encode(M.ThreadCreated{"t1", "p1", "hi", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.TurnChanged{"t1", M.Running{}, 2n})])),
+      U.Boot.demo("changes", False{}, False{}, [C.Change.encode(M.TurnChanged{"t1", M.Completed{}, 3n})])))) == [] : List<&2, J.Json>}
+
+law boot_done_alerts:
+  {List.length(&2, J.Json, Hb.Did.alerts(Hb.One.got(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", False{}, False{}, [C.Change.encode(M.ThreadCreated{"t1", "p1", "hi", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.TurnChanged{"t1", M.Running{}, 2n})])),
+      U.Boot.demo("changes", False{}, True{}, [C.Change.encode(M.TurnChanged{"t1", M.Completed{}, 3n})])))) == 1n : Nat}
+
+law pong_rate_bounded:
+  {Bool.show(OB.Pong.due(1000n, 1999n)) ++ Bool.show(OB.Pong.due(1000n, 2000n)) ++ Bool.show(OB.Pong.due(0n, 999n)) == "FalseTrueFalse" : String}
+
+law wire_all_bin_eq:
+  for t: String
+  {WS.Ws.encode(2, WS.Ws.cbor.bytes(t)) == WS.Ws.cbor(t) : List<&2, U32>}

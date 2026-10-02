@@ -305,12 +305,29 @@ def One.got.seen(a: U.Act) -> U.Act:
 # a frame from the hub, and the alerts it raised
 # (streamed text ends no turn: it raises none, and nothing is compared;
 # every other message, far ones included, is: law alerts_none_for_delta)
+def One.got.b2(booting: Bool, +seen: List<&2, N.Seen>, a: U.Act) -> Did:
+  match booting:
+    case True{}:
+      Did{a, Nil{}}
+    case False{}:
+      One.got.k(seen, a)
+
+# a frame of a log still arriving in chunks (or its last) is history: it
+# raises no alert; the next frame compares against all of it (law
+# boot_no_alerts)
+def One.got.b(booting: Bool, +seen: List<&2, N.Seen>, +a: U.Act) -> Did:
+  match booting:
+    case True{}:
+      Did{a, Nil{}}
+    case False{}:
+      One.got.b2(U.Boot.on(U.Act.ui(a)), seen, a)
+
 def One.got.d(delta: Bool, +u: U.Ui, +o: J.Json) -> Did:
   match delta:
     case True{}:
       Did{One.got.seen(U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o)), Nil{}}
     case False{}:
-      One.got.k(N.Note.seen(U.Ui.threads(S.Mob.st(u))), One.got.seen(U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o)))
+      One.got.b(U.Boot.on(u), N.Note.seen(U.Ui.threads(S.Mob.st(u))), One.got.seen(U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o)))
 
 def One.got(+u: U.Ui, +o: J.Json) -> Did:
   One.got.d(String.eq(J.Json.get_str(o, "t", ""), "delta"), u, o)

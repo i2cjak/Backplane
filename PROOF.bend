@@ -6853,3 +6853,54 @@ def Laws.mirror_never_awaits():
 
 def Laws.prompt_background_work_b():
   {==}
+
+def Laws.credit_drop_over_margin():
+  {==}
+
+def Laws.credit_stale_gen_quiet(n, b):
+  {==}
+
+def Laws.credit_drained_counts():
+  {==}
+
+def Laws.credit_drained_never_back():
+  {==}
+
+def Laws.boot_room_after_drain():
+  {==}
+
+def Laws.outbox_fifo():
+  {==}
+
+def Laws.join_chunks_cover():
+  {==}
+
+def Laws.join_chunks_flat():
+  {==}
+
+def Laws.join_oversized_alone():
+  {==}
+
+def Laws.ui_chunked_join_equals_whole():
+  {==}
+
+def Laws.boot_on_until_last():
+  {==}
+
+def Laws.boot_no_alerts():
+  {==}
+
+def Laws.boot_done_alerts():
+  {==}
+
+def Laws.pong_rate_bounded():
+  {==}
+
+def Laws.wire_all_bin_eq(t):
+  {==}
+
+def Laws.credit_behind_catches():
+  {==}
+
+def Laws.join_window_same():
+  {==}

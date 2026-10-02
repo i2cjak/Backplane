@@ -10,6 +10,7 @@ function host_libc() {
     globalThis.BACKPLANE_LIBC = ffi.dlopen(mac ? "libSystem.dylib" : "libc.so.6", {
       dup: { args: ["i32"], returns: "i32" },
       shutdown: { args: ["i32", "i32"], returns: "i32" },
+      close: { args: ["i32"], returns: "i32" },
     }).symbols;
   }
   return globalThis.BACKPLANE_LIBC;
@@ -189,6 +190,26 @@ function proc_exited(pid) {
 function sock_shut_read(socket) {
   host_libc().shutdown(socket, 0);
   return socket;
+}
+
+function sock_raw(socket) {
+  const got = host_libc().dup(socket);
+  return io_tup(socket, got < 3 ? 0 : got);
+}
+
+function fd_shut(fd) {
+  if (Number(fd) > 2) {
+    host_libc().shutdown(Number(fd), 2);
+    host_libc().close(Number(fd));
+  }
+  return { $: "Unit" };
+}
+
+function fd_close(fd) {
+  if (Number(fd) > 2) {
+    host_libc().close(Number(fd));
+  }
+  return { $: "Unit" };
 }
 
 function proc_kill(pid, sig) {

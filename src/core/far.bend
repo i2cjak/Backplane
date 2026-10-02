@@ -602,6 +602,44 @@ def In.msg(i: In) -> String:
     case In{+l, +n, +h, xs, a, +e}:
       Fr.msg.epoch(l, n, a, 0n, h, xs, e)
 
+# A mirror for a client that is joining goes a chunk at a time (at most
+# In.most() items, after its item `after`): each says the range it covers
+# by sequence (since = the last chunk's end, to = its own; the last one
+# ends at the mirror's head), so a client folds each once, in order, and a
+# live batch that came first is never undone (core/outbox.bend)
+type FC is Data:
+  FC{text: String, next: Nat, done: Bool}
+
+def In.most() -> Nat:
+  500n
+
+def FC.last(xs: List<&2, Item>, +d: Nat) -> Nat:
+  match xs:
+    case Nil{}:
+      d
+    case Item{n, _} <> Nil{}:
+      n
+    case _ <> t:
+      FC.last(t, d)
+
+def FC.of(done: Bool, +l: String, +nm: String, a: Bool, +h: Nat, +after: Nat, +xs: List<&2, Item>, +e: String) -> FC:
+  match done:
+    case True{}:
+      FC{Fr.msg.epoch(l, nm, a, after, h, xs, e), h, True{}}
+    case False{}:
+      FC{Fr.msg.epoch(l, nm, a, after, FC.last(xs, h), xs, e), FC.last(xs, h), False{}}
+
+def In.chunk.k(i: In, +after: Nat, +ys: List<&2, Item>) -> FC:
+  match i:
+    case In{+l, +nm, +h, _, a, +e}:
+      FC.of(Nat.is_le(List.length(&2, Item, ys), In.most()), l, nm, a, h, after, List.take(&2, Item, ys, In.most()), e)
+
+# the next chunk of a mirror, after its item `after`
+def In.chunk(+i: In, +after: Nat) -> FC:
+  match i:
+    case In{_, _, _, xs, _, _}:
+      In.chunk.k(i, after, Fr.fresh(xs, after))
+
 # Mirrors by link
 # ---------------
 

@@ -5731,9 +5731,49 @@ def Ui.join(log: Bool, u: Ui) -> Ui:
     case False{}:
       u
 
+# Joining in chunks: a hub sends a long log a chunk at a time, the first
+# ("log") saying "more", the last ("changes") "boot": false. Until then
+# the client is still catching up ("@boot" in the scratch): what it folds
+# is history, so nothing compares it for alerts (mobile/hubs.bend's
+# One.got) (laws boot_no_alerts, ui_chunked_join_equals_whole)
+def Boot.ends(m: Maybe<&2, J.Json>) -> Bool:
+  match m:
+    case Some{J.Flag{False{}}}:
+      True{}
+    case _:
+      False{}
+
+def Boot.end(ends: Bool, u: Ui) -> Ui:
+  match ends:
+    case True{}:
+      Ui.scratch_set(u, "@boot", "")
+    case False{}:
+      u
+
+def Boot.mark(i: Nat, u: Ui, +o: J.Json) -> Ui:
+  match i:
+    case 0n:
+      Ui.scratch_set(u, "@boot", Bool.pick(String, J.Json.get_bool(o, "more", False{}), "1", ""))
+    case 1n:
+      Boot.end(Boot.ends(J.Json.get(o, "boot")), u)
+    case _:
+      u
+
+# a chunk of a join (for laws): a log saying more, a changes with boot
+def Boot.demo(+t: String, +more: Bool, +boot: Bool, xs: List<&2, J.Json>) -> J.Json:
+  J.Json.obj([J.KV{"t", J.Str{t}}, J.KV{"more", J.Json.bool(more)}, J.KV{"boot", J.Json.bool(boot)}, J.KV{"items", J.Json.arr(xs)}])
+
+# whether the client is still taking a log in chunks
+def Boot.on(+u: Ui) -> Bool:
+  String.eq(Ui.scratch(u, "@boot"), "1")
+
+# a message folded in, and the join's progress noted
+def Ui.recv.b(+i: Nat, u: Ui, +o: J.Json) -> Ui:
+  Boot.mark(i, Ui.recv.k(i, u, o), o)
+
 # A message can resolve a want only against the installed destination.
 def Ui.recv(+u: Ui, +o: J.Json) -> Ui:
-  Ui.reselect(Ui.sel(u), Bots.wanted(Ui.join(String.eq(J.Json.get_str(o, "t", ""), "log"), Ui.recv.k(C.Codec.pos(["log", "changes", "delta", "reply", "update", "view", "term", "info", "voice", "far"], J.Json.get_str(o, "t", "")), u, o))))
+  Ui.reselect(Ui.sel(u), Bots.wanted(Ui.join(String.eq(J.Json.get_str(o, "t", ""), "log"), Ui.recv.b(C.Codec.pos(["log", "changes", "delta", "reply", "update", "view", "term", "info", "voice", "far"], J.Json.get_str(o, "t", "")), u, o))))
 
 # The cache contains home and at most one linked hub; each slot keeps its
 # read model and machine info (including the log origin) together.
