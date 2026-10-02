@@ -161,9 +161,22 @@ def Subs.agg.row(a: SubAgg, +info: Map<&2, String>, +kind: String, +title: Strin
       SubRow{call, True{}, Subs.named(kd, Subs.or(Subs.or(title, ti), "Subagent")), Subs.or(kd, "subagent"), Bool.pick(String, live, "running", Subs.ended(en)),
         doing, live, open, n, Subs.steps(open, ss)}
 
-# a subagent at work (a line of the thread's Bg)
+# what an ended row (M.Bg.ended: finished, its outcome not yet handed to
+# the agent) shows in place of what it does
+def Subs.reporting() -> String:
+  "finished, reporting"
+
+def Subs.word.k(ended: Bool, r: SubRow) -> SubRow:
+  match ended r:
+    case True{} SubRow{k, a, ti, who, _, _, live, o, n, ss}:
+      SubRow{k, a, ti, who, "reporting", Subs.reporting(), live, o, n, ss}
+    case False{} _:
+      r
+
+# a subagent at work (a line of the thread's Bg); an ended one still
+# counts, "reporting"
 def Subs.bg.row(+l: String, +as: List<&2, SubAgg>, +info: Map<&2, String>) -> SubRow:
-  Subs.agg.row(Agg.find(as, Subs.or(M.Bg.call(l), M.Bg.field(l, 0n))), info, M.Bg.kind.of(l), M.Bg.title(l), M.Bg.doing(l), True{})
+  Subs.word.k(M.Bg.ended(l), Subs.agg.row(Agg.find(as, Subs.or(M.Bg.call(l), M.Bg.field(l, 0n))), info, M.Bg.kind.of(l), M.Bg.title(l), M.Bg.doing(l), True{}))
 
 def Subs.bg.rows(ls: List<&2, String>, +as: List<&2, SubAgg>, +info: Map<&2, String>) -> List<&2, SubRow>:
   match ls:

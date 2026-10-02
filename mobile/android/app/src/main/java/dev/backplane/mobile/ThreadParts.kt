@@ -367,7 +367,7 @@ fun EntryRow(m: AppModel, e: Entry, show: (String) -> Unit) {
 
 private fun subColor(state: String) = when (state) {
     "running" -> PhaseColor.accent
-    "done" -> PhaseColor.ok
+    "done", "reporting" -> PhaseColor.ok
     "queued" -> Color.Gray
     "cancelled" -> PhaseColor.warn
     else -> PhaseColor.bad

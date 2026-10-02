@@ -111,6 +111,12 @@ def doings(ls: List<&2, String>) -> List<&2, String>:
 def doing(+es: List<&2, M.Change>) -> String:
   String.join(doings(M.Bg.of(state(es), "t100-1")), "|")
 
+def updated() -> List<&2, M.Change>:
+  after(progressed(), 105n, "{\"type\":\"system\",\"subtype\":\"task_updated\",\"task_id\":\"a847\",\"patch\":{\"status\":\"completed\"}}")
+
+def head(ls: List<&2, String>) -> String:
+  Maybe.default(&2, String, List.head(&2, String, ls), "")
+
 def main() -> IO(Unit):
   do IO<Unit>:
     C.Check.str("started", doing(started()), "Run bash command and report output")
@@ -143,10 +149,17 @@ def main() -> IO(Unit):
     C.Check.str("the shell ends: ready", status(after(shell.done(), 105n, "{\"type\":\"system\",\"subtype\":\"task_notification\",\"task_id\":\"b3\",\"status\":\"completed\"}")), "ready")
     C.Check.str("a shell moved to the background past its timeout is listed", doing(moved()), "Background shell")
     C.Check.str("moved, the turn over: monitoring", phase(List.append(&2, M.Change, moved(), [M.TurnChanged{"t100-1", M.Completed{}, 104n}])), "Monitoring 1 task")
-    C.Check.str("moved, then done", doing(after(moved(), 105n, "{\"type\":\"system\",\"subtype\":\"task_updated\",\"task_id\":\"b5\",\"patch\":{\"status\":\"completed\",\"end_time\":1}}")), "")
+    C.Check.str("moved, then done: ended, its outcome owed", M.Bg.status(head(M.Bg.of(state(after(moved(), 105n, "{\"type\":\"system\",\"subtype\":\"task_updated\",\"task_id\":\"b5\",\"patch\":{\"status\":\"completed\",\"end_time\":1}}")), "t100-1"))), "completed")
     C.Check.str("a monitor is listed", doing(after(made(), 102n, "{\"type\":\"system\",\"subtype\":\"task_started\",\"task_id\":\"b4\",\"description\":\"CI\",\"task_type\":\"monitor_mcp\"}")), "CI")
     C.Check.str("ended", doing(ended()), "")
     C.Check.str("ready after", status(ended()), "ready")
-    C.Check.str("updated to completed ends it", doing(after(progressed(), 105n, "{\"type\":\"system\",\"subtype\":\"task_updated\",\"task_id\":\"a847\",\"patch\":{\"status\":\"completed\"}}")), "")
+    C.Check.str("updated to completed ends it", M.Bg.status(head(M.Bg.of(state(updated()), "t100-1"))), "completed")
+    C.Check.str("an ended row shows finished, reporting", rows(updated()), "toolu_1|Run bash command and report output|reporting|finished, reporting|open|0|0;")
+    C.Check.str("an ended row is still work", phase(updated()), "Monitoring 1 task")
+    C.Check.str("progress leaves an ended row", M.Bg.status(head(M.Bg.of(state(after(updated(), 106n, "{\"type\":\"system\",\"subtype\":\"task_progress\",\"task_id\":\"a847\",\"description\":\"late\"}")), "t100-1"))), "completed")
+    C.Check.str("its notification takes it", doing(after(updated(), 106n, "{\"type\":\"system\",\"subtype\":\"task_notification\",\"task_id\":\"a847\",\"tool_use_id\":\"toolu_1\",\"status\":\"completed\"}")), "")
+    C.Check.str("gone from the open list: ended", M.Bg.status(head(M.Bg.of(state(after(progressed(), 105n, "{\"type\":\"system\",\"subtype\":\"background_tasks_changed\",\"tasks\":[{\"task_id\":\"zz\"}]}")), "t100-1"))), "done")
+    C.Check.str("still on the open list: at work", doing(after(progressed(), 105n, "{\"type\":\"system\",\"subtype\":\"background_tasks_changed\",\"tasks\":[{\"task_id\":\"a847\"}]}")), "Running Sleep for 20 seconds")
+    C.Check.str("the open list adds nothing", doing(after(made(), 105n, "{\"type\":\"system\",\"subtype\":\"background_tasks_changed\",\"tasks\":[{\"task_id\":\"a847\"}]}")), "")
     C.Check.str("exit clears", doing(List.append(&2, M.Change, progressed(), H.Queue.changes(H.Hub.agent_gone(state(progressed()), 107n, "t100-1", 0)))), "")
     C.Check.str("restart clears", doing(List.append(&2, M.Change, progressed(), H.Queue.changes(H.Hub.recover(state(progressed()), 107n)))), "")

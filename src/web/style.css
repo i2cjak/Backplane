@@ -195,7 +195,7 @@ button.fold span { overflow: hidden; text-overflow: ellipsis; white-space: nowra
 .sub-row:hover { background: var(--raise); }
 .sub .state-dot { width: 6px; height: 6px; background: var(--faint); flex: none; }
 .sub.running .state-dot { background: var(--accent); width: 8px; height: 8px; }
-.sub.done .state-dot { background: var(--ok); }
+.sub.done .state-dot, .sub.reporting .state-dot { background: var(--ok); }
 .sub.failed .state-dot, .sub.stopped .state-dot, .sub.killed .state-dot { background: var(--bad); } .sub.cancelled .state-dot { background: var(--warn); }
 .sub .who { color: var(--dim); font-size: 12px; flex: none; }
 .sub .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

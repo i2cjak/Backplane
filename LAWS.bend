@@ -4577,3 +4577,65 @@ law cmds_legacy_same:
 # a wake is told once: a notification while the wake runs starts nothing
 law wake_act_once:
   {CM.Cmds.verdict(CM.Cmds{[], 1n, True{}}, True{}, CM.Cmds.o(CM.Cmds.l.note())) == 2n : Nat}
+
+# Background work (model.bend's Bg ended rows, hub.bend's Bg.sync and
+# Bg.settle, the WorkSet change): a finished task stays as work until its
+# outcome reaches the agent (its notification, or the next turn's end);
+# Claude's open list ends what it no longer lists and adds nothing; the
+# rows travel to the owner's other machines as WorkSet, never as a setting
+law bg_sync_ends_absent:
+  {M.Bg.show(M.Bg.sync(M.Bg.lines("a\tx\nb\ty"), ["b"])) == M.Bg.line("a", M.Bg.ended.mark() ++ "done") ++ "\nb\ty" : String}
+
+law bg_sync_never_adds:
+  for ls: List<&2, String>
+  for +open: List<&2, String>
+  {List.length(&2, String, M.Bg.sync(ls, open)) == List.length(&2, String, ls) : Nat}
+
+law bg_updated_ends_not_drops:
+  {M.Bg.show(M.Bg.of(M.State.replay(H.Bg.system(H.Bg.demo(), "t1", 2n, CM.Cmds.o("{\"type\":\"system\",\"subtype\":\"task_updated\",\"task_id\":\"a\",\"patch\":{\"status\":\"completed\"}}")), H.Bg.demo()), "t1"))
+    == M.Bg.line("a", M.Bg.ended.mark() ++ "completed") ++ "\tc1\tsleep 8\tshell" : String}
+
+law bg_notification_drops:
+  {M.Bg.live(M.Bg.of(M.State.replay(H.Bg.system(H.Bg.demo(), "t1", 2n, CM.Cmds.o("{\"type\":\"system\",\"subtype\":\"task_notification\",\"task_id\":\"a\",\"status\":\"completed\"}")), H.Bg.demo()), "t1")) == 0n : Nat}
+
+# Claude's empty open list ends the row, but its outcome is still owed
+law bg_empty_snapshot_keeps_pending:
+  {Nat.show(M.Bg.live(M.Bg.of(M.State.replay(H.Bg.system(H.Bg.demo(), "t1", 2n, CM.Cmds.o("{\"type\":\"system\",\"subtype\":\"background_tasks_changed\",\"tasks\":[]}")), H.Bg.demo()), "t1")))
+    ++ "/" ++ Nat.show(M.Bg.running(M.Bg.of(M.State.replay(H.Bg.system(H.Bg.demo(), "t1", 2n, CM.Cmds.o("{\"type\":\"system\",\"subtype\":\"background_tasks_changed\",\"tasks\":[]}")), H.Bg.demo()), "t1"))) == "1/0" : String}
+
+law bg_turn_end_settles_ended:
+  {M.Bg.live(M.Bg.of(M.State.replay(H.Bg.settle(M.State.replay([M.WorkSet{"t1", "bg", M.Bg.line("a", M.Bg.ended.mark() ++ "done") ++ "\nb\ty", 1n}], M.State.empty()), "t1", 2n),
+    M.State.replay([M.WorkSet{"t1", "bg", M.Bg.line("a", M.Bg.ended.mark() ++ "done") ++ "\nb\ty", 1n}], M.State.empty())), "t1")) == 1n : Nat}
+
+law workset_fold_same_as_setting:
+  for s: M.State
+  for +th: String
+  for +kind: String
+  for rows: String
+  for at: Nat
+  {M.State.apply(s, M.WorkSet{th, kind, rows, at}) == M.State.apply(s, M.SettingSet{kind ++ "." ++ th, rows, at}) : M.State}
+
+# (stored with every field; the decode back is test/claude_cmds_test.bend's:
+# normalizing Change.decode's 57 arms is too slow for a law)
+law store_workset_encoded:
+  {J.Json.get_str(C.Change.encode(M.WorkSet{"t1", "bg", "a\tx", 7n}), "$", "") ++ "|" ++ J.Json.get_str(C.Change.encode(M.WorkSet{"t1", "bg", "a\tx", 7n}), "thread", "")
+    ++ "|" ++ J.Json.get_str(C.Change.encode(M.WorkSet{"t1", "bg", "a\tx", 7n}), "kind", "") ++ "|" ++ J.Json.get_str(C.Change.encode(M.WorkSet{"t1", "bg", "a\tx", 7n}), "rows", "") == "WorkSet|t1|bg|a\tx" : String}
+
+law far_workset_shared:
+  {FR.Fr.shared(H.Bg.demo(), M.WorkSet{"t1", "bg", "a\tx", 7n}) == True{} : Bool}
+
+law far_workset_mapped:
+  for +l: String
+  for +th: String
+  for +kind: String
+  for +rows: String
+  for +at: Nat
+  {FR.Fr.change(l, M.WorkSet{th, kind, rows, at}) == Some{M.WorkSet{FR.Fr.id(l, th), kind, rows, at}} : Maybe<&2, M.Change>}
+
+# a link's history starting over takes its threads' work with it
+law far_forget_drops_work:
+  {M.Setting.get(FR.Fr.forget(M.State.replay([M.WorkSet{"p1~t1", "bg", "a\tx", 1n}, M.WorkSet{"t2", "bg", "b\ty", 1n}], M.State.empty()), "p1"), "bg.p1~t1", "")
+    ++ "|" ++ M.Setting.get(FR.Fr.forget(M.State.replay([M.WorkSet{"p1~t1", "bg", "a\tx", 1n}, M.WorkSet{"t2", "bg", "b\ty", 1n}], M.State.empty()), "p1"), "bg.t2", "") == "|b\ty" : String}
+
+law prompt_background_work:
+  {Bool.and(String.contains(PM.Prompt.background(), "wakes you"), Bool.and(String.contains(PM.Prompt.background(), "poll"), String.contains(PM.Prompt.background(), "restart"))) == True{} : Bool}

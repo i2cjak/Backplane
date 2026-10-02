@@ -239,6 +239,13 @@ type Change is Data:
   BotWoke{bot: String, hop: Nat, at: Nat}
   # a bot's space as a web page ("" takes it away)
   SpacePageSet{bot: String, html: String, at: Nat}
+  # the work a thread has out of hand (kind "bg": an agent's subagents,
+  # background shells and monitors, Bg below; "watch": work Backplane
+  # watches for it), its rows as text; folded as the setting
+  # "<kind>.<thread>", the same state a SettingSet of it gives (old logs
+  # say bg.<thread> that way). Unlike a setting, it goes to the owner's
+  # other machines with its thread (far.bend's Fr.shared)
+  WorkSet{thread: String, kind: String, rows: String, at: Nat}
 
 # the later of two times. Base's Nat.max recurses once per unit and
 # overflows at epoch scale; Nat.is_ge compiles to a machine comparison.
@@ -1516,6 +1523,8 @@ def State.apply.go(s: State, e: Change) -> State:
       State.woke(s, bot, hop)
     case SpacePageSet{bot, html, at}:
       State.world((w => BT.World.spage_set(w, bot, html, at)), s)
+    case WorkSet{+th, +kind, rows, _}:
+      State.setting(s, kind ++ "." ++ th, rows)
     case TodosSet{+th, todos, _}:
       State.setting(s, "todos." ++ th, todos)
     case ProviderSet{+id, +p, m, _}:
@@ -2319,3 +2328,85 @@ def Bg.doing(+l: String) -> String:
 # a thread's subagents at work
 def Bg.of(+s: State, +th: String) -> List<&2, String>:
   Bg.lines(Setting.get(s, Bg.key(th), ""))
+
+# Ended rows: a task that finished (task_updated, or gone from Claude's
+# background_tasks_changed list) whose outcome the agent has not been
+# handed yet (its task_notification). Its doing reads Bg.ended.mark() and
+# the status; it still counts as work until the notification, or the next
+# turn's end, takes it.
+def Bg.ended.mark() -> String:
+  SCon{Chr{1}, SNil{}} ++ "ended:"
+
+def Bg.ended(+l: String) -> Bool:
+  String.starts_with(Bg.doing(l), Bg.ended.mark())
+
+# how an ended row ended ("" for one at work)
+def Bg.status(+l: String) -> String:
+  Bool.pick(String, Bg.ended(l), String.drop(Bg.doing(l), String.length(Bg.ended.mark())), "")
+
+def Bg.end.k(hit: Bool, +l: String, +id: String, +status: String) -> String:
+  match hit:
+    case True{}:
+      Bg.line(id, Bg.ended.mark() ++ status) ++ Bg.rest(l)
+    case False{}:
+      l
+
+# row id finished with status (one not listed, or already ended, is left)
+def Bg.end(ls: List<&2, String>, +id: String, +status: String) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Bg.end.k(Bool.and(Bg.is(l, id), Bool.not(Bg.ended(l))), l, id, status) <> Bg.end(t, id, status)
+
+# what row id does now, unless it ended
+def Bg.progress(ls: List<&2, String>, +id: String, +doing: String) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Bg.set.k(Bool.and(Bg.is(l, id), Bool.not(Bg.ended(l))), l, id, doing) <> Bg.progress(t, id, doing)
+
+# every row, ended or not: the work the thread still waits on
+def Bg.live(ls: List<&2, String>) -> Nat:
+  List.length(&2, String, ls)
+
+# the rows still at work
+def Bg.running(ls: List<&2, String>) -> Nat:
+  match ls:
+    case Nil{}:
+      0n
+    case +l <> t:
+      Nat.add(Bool.pick(Nat, Bg.ended(l), 0n, 1n), Bg.running(t))
+
+# the rows not ended
+def Bg.unended(ls: List<&2, String>) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Bg.keep(Bg.ended(l), l, Bg.unended(t))
+
+def Bg.in(ids: List<&2, String>, +id: String) -> Bool:
+  match ids:
+    case Nil{}:
+      False{}
+    case +x <> t:
+      Bool.or(String.eq(Bg.clean(x), Bg.clean(id)), Bg.in(t, id))
+
+def Bg.sync.k(gone: Bool, +l: String) -> String:
+  match gone:
+    case True{}:
+      Bg.line(Bg.field(l, 0n), Bg.ended.mark() ++ "done") ++ Bg.rest(l)
+    case False{}:
+      l
+
+# Claude's list of the tasks still open (background_tasks_changed): a row
+# at work that is not on it has ended; none is ever added (the list does
+# not say which a subagent owns)
+def Bg.sync(ls: List<&2, String>, +open: List<&2, String>) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Bg.sync.k(Bool.and(Bool.not(Bg.ended(l)), Bool.not(Bg.in(open, Bg.field(l, 0n)))), l) <> Bg.sync(t, open)

@@ -6566,3 +6566,44 @@ def Laws.cmds_legacy_same(s, now, thread, line, text):
 
 def Laws.wake_act_once():
   {==}
+
+def Laws.bg_sync_ends_absent():
+  {==}
+
+def Laws.bg_sync_never_adds(ls, open):
+  match ls:
+    case Nil{}:
+      {==}
+    case l <> t:
+      %Laws.bg_sync_never_adds(t, open) : {1n+List.length(&2, String, M.Bg.sync(t, open)) == 1n+_ : Nat}
+      {==}
+
+def Laws.bg_updated_ends_not_drops():
+  {==}
+
+def Laws.bg_notification_drops():
+  {==}
+
+def Laws.bg_empty_snapshot_keeps_pending():
+  {==}
+
+def Laws.bg_turn_end_settles_ended():
+  {==}
+
+def Laws.workset_fold_same_as_setting(s, th, kind, rows, at):
+  {==}
+
+def Laws.store_workset_encoded():
+  {==}
+
+def Laws.far_workset_shared():
+  {==}
+
+def Laws.far_workset_mapped(l, th, kind, rows, at):
+  {==}
+
+def Laws.far_forget_drops_work():
+  {==}
+
+def Laws.prompt_background_work():
+  {==}

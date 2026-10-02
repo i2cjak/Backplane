@@ -140,6 +140,8 @@ def Fr.change(+l: String, c: M.Change) -> Maybe<&2, M.Change>:
       Some{M.SpaceSet{Fr.id(l, bot), spec, at}}
     case M.SpacePageSet{+bot, html, at}:
       Some{M.SpacePageSet{Fr.id(l, bot), html, at}}
+    case M.WorkSet{+thread, kind, rows, at}:
+      Some{M.WorkSet{Fr.id(l, thread), kind, rows, at}}
     case _:
       None{}
 
@@ -271,6 +273,8 @@ def Fr.shared(+s: M.State, c: M.Change) -> Bool:
       True{}
     case M.SpacePageSet{_, _, _}:
       True{}
+    case M.WorkSet{+thread, _, _, _}:
+      Fr.thread.shared(s, thread)
     case _:
       False{}
 
@@ -474,12 +478,17 @@ def Fr.world(w: BT.World, +prefix: String) -> BT.World:
 def Fr.ext(bw: List<&2, M.Ext>, +prefix: String, es: List<&2, M.Entry>) -> List<&2, M.Ext>:
   [M.Ext{Fr.world(M.Ext.world(M.Ext.of(bw)), prefix), Fr.index(List.reverse(&2, M.Entry, es), Map.new(&2, List<&2, M.Entry>))}]
 
+# the settings a link's things leave behind: the work their threads had
+# (WorkSet's bg.<link>~... and watch.<link>~...); the rest stay
+def Fr.settings(+sg: Map<&2, String>, +prefix: String) -> Map<&2, String>:
+  Fr.map(String, Fr.map(String, sg, "bg." ++ prefix), "watch." ++ prefix)
+
 def Fr.forget(s: M.State, +link: String) -> M.State:
   match s:
     case M.State{ps, ts, +es, n, tk, sg, qu, ak, dv, +nv, bw}:
       +prefix = link ++ "~"
       +kept = Fr.entries.go(es, prefix, Nil{})
-      M.State{Fr.map(M.Project, ps, prefix), Fr.map(M.Thread, ts, prefix), kept, n, Fr.map(M.Task, tk, prefix), sg,
+      M.State{Fr.map(M.Project, ps, prefix), Fr.map(M.Thread, ts, prefix), kept, n, Fr.map(M.Task, tk, prefix), Fr.settings(sg, prefix),
         Fr.map(List<&2, M.QItem>, qu, prefix), Fr.map(M.Ask, ak, prefix), dv,
         Map.del(&2, M.Nav, Fr.map(M.Nav, nv, prefix), Fr.nav(link)), Fr.ext(bw, prefix, kept)}
 

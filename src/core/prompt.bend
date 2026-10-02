@@ -204,6 +204,10 @@ def Prompt.orchestration.k(may: Bool, +models: String) -> String:
 def Prompt.orchestration(may: Bool, +models: String) -> String:
   "<orchestration>" ++ Prompt.orchestration.k(may, models) ++ "</orchestration>"
 
+# how to wait for work that runs on (laws prompt_background_work*)
+def Prompt.background() -> String:
+  "<background_work>Backplane wakes you itself when an Agent, background shell or monitor task ends. End your turn instead of polling, sleeping or checking in a loop. After a restart you are told what was lost.</background_work>"
+
 # Claude Code arguments
 # ---------------------
 

@@ -178,6 +178,15 @@ try {
   const at5 = turns(t5).filter((x) => x.t <= (wk5[0]?.t ?? 0) + 5).pop()?.s;
   check(at5 === "Running", `bg: running at the wake (${states(t5)})`);
   check(last(t5) === "Completed", `bg: completed after the wake (${states(t5)})`);
+  // its row: at work, then ended but owed (Claude's empty open list), and
+  // gone only at the notification that woke it
+  const work5 = seen.filter((x) => x.c.$ === "WorkSet" && x.c.thread === t5 && x.c.kind === "bg");
+  const kinds5 = work5.map((x) => (x.c.rows === "" ? "-" : x.c.rows.includes("\u0001ended:") ? "E" : "R")).join("");
+  check(/^R+E+-$/.test(kinds5), `bg: row at work, ended and owed, then gone (${kinds5})`);
+  const ended5 = work5.find((x) => x.c.rows.includes("\u0001ended:"))?.t ?? Infinity;
+  const gone5 = work5.filter((x) => x.c.rows === "").pop()?.t ?? 0;
+  check(ended5 <= (wk5[0]?.t ?? 0) && gone5 >= (wk5[0]?.t ?? 0), "bg: owed until the wake");
+  check(!seen.some((x) => x.c.$ === "SettingSet" && String(x.c.key).startsWith("bg.")), "bg: rows go as WorkSet, never as a setting");
 
   // an old CLI
   const t6 = await newThread("old");

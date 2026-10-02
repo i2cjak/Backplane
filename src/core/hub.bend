@@ -1125,13 +1125,15 @@ def Claude.init(+s: M.State, +thread: String, +now: Nat, +o: J.Json) -> Step:
   Claude.init.k(Claude.init.same(Hub.thread(s, thread), sid), thread, sid, now)
 
 # Claude's subagents (model.bend's Bg): a local agent started, what it
-# does now, and its end; the list is written only when it changes
+# does now, and its end; the list is written only when it changes, as a
+# WorkSet (shared with the owner's other machines with its thread; old
+# logs wrote it as the setting bg.<thread>)
 def Bg.put.k(same: Bool, +th: String, +now: Nat, +after: String) -> List<&2, M.Change>:
   match same:
     case True{}:
       Nil{}
     case False{}:
-      [M.SettingSet{M.Bg.key(th), after, now}]
+      [M.WorkSet{th, "bg", after, now}]
 
 def Bg.put(+s: M.State, +th: String, +now: Nat, ls: List<&2, String>) -> List<&2, M.Change>:
   +after = M.Bg.show(ls)
@@ -1169,12 +1171,31 @@ def Bg.moved(bg: Bool, +s: M.State, +th: String, +now: Nat, +id: String) -> List
     case False{}:
       Nil{}
 
-def Bg.ended(done: Bool, bg: Bool, +s: M.State, +th: String, +now: Nat, +id: String) -> List<&2, M.Change>:
+# a task finished: its row stays, ended, until the agent is handed its
+# outcome (its task_notification; Bg.settle at a turn's end)
+def Bg.ended(done: Bool, bg: Bool, +s: M.State, +th: String, +now: Nat, +id: String, +status: String) -> List<&2, M.Change>:
   match done:
     case True{}:
-      Bg.put(s, th, now, M.Bg.drop(M.Bg.of(s, th), id))
+      Bg.put(s, th, now, M.Bg.end(M.Bg.of(s, th), id, status))
     case False{}:
       Bg.moved(bg, s, th, now, id)
+
+def Bg.ids(ts: List<&2, J.Json>) -> List<&2, String>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case +t <> rest:
+      J.Json.get_str(t, "task_id", "") <> Bg.ids(rest)
+
+# Claude's whole list of open tasks (background_tasks_changed): a row not
+# on it has ended (M.Bg.sync; none is added)
+def Bg.sync(+s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M.Change>:
+  Bg.put(s, th, now, M.Bg.sync(M.Bg.of(s, th), Bg.ids(J.Json.elems(J.Json.get_obj(o, "tasks")))))
+
+# a turn ended: the outcomes of the rows that ended before it are the
+# agent's now (the CLI may fold a notification into a running turn)
+def Bg.settle(+s: M.State, +th: String, +now: Nat) -> List<&2, M.Change>:
+  Bg.put(s, th, now, M.Bg.unended(M.Bg.of(s, th)))
 
 # a task the agent left running: a subagent, a background shell or
 # monitor, a workflow; not one a subagent runs for itself, and not a
@@ -1189,18 +1210,25 @@ def Bg.system.k(i: Nat, +s: M.State, +th: String, +now: Nat, +o: J.Json) -> List
     case 0n:
       Bg.started(Bg.listed(o), s, th, now, o)
     case 1n:
-      Bg.put(s, th, now, M.Bg.set(M.Bg.of(s, th), J.Json.get_str(o, "task_id", ""), J.Json.get_str(o, "description", "")))
+      Bg.put(s, th, now, M.Bg.progress(M.Bg.of(s, th), J.Json.get_str(o, "task_id", ""), J.Json.get_str(o, "description", "")))
     case 2n:
       List.append(&2, M.Change, Bg.put(s, th, now, M.Bg.drop(M.Bg.of(s, th), J.Json.get_str(o, "task_id", ""))),
         Bg.mark(th, now, J.Json.get_str(o, "tool_use_id", ""), "end", J.Json.get_str(o, "status", "completed")))
     case 3n:
       Bg.ended(Nat.is_lt(C.Codec.pos(["completed", "failed", "killed", "stopped", "cancelled"], J.Json.get_str(J.Json.get_obj(o, "patch"), "status", "")), 5n),
-        J.Json.get_bool(J.Json.get_obj(o, "patch"), "is_backgrounded", False{}), s, th, now, J.Json.get_str(o, "task_id", ""))
+        J.Json.get_bool(J.Json.get_obj(o, "patch"), "is_backgrounded", False{}), s, th, now, J.Json.get_str(o, "task_id", ""), J.Json.get_str(J.Json.get_obj(o, "patch"), "status", ""))
+    case 4n:
+      Bg.sync(s, th, now, o)
     case _:
       Nil{}
 
 def Bg.system(+s: M.State, +th: String, +now: Nat, +o: J.Json) -> List<&2, M.Change>:
-  Bg.system.k(C.Codec.pos(["task_started", "task_progress", "task_notification", "task_updated"], J.Json.get_str(o, "subtype", "")), s, th, now, o)
+  Bg.system.k(C.Codec.pos(["task_started", "task_progress", "task_notification", "task_updated", "background_tasks_changed"], J.Json.get_str(o, "subtype", "")), s, th, now, o)
+
+# a thread with one background shell at work (the laws' example)
+def Bg.demo() -> M.State:
+  M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.ThreadCreated{"t1", "p1", "x", M.Local{}, "", "", "claude", "", 1n},
+    M.WorkSet{"t1", "bg", "a\tx\tc1\tsleep 8\tshell", 1n}], M.State.empty())
 
 # none left at work (the agent's process ended)
 def Bg.clear(+s: M.State, +th: String, +now: Nat) -> List<&2, M.Change>:
@@ -2448,11 +2476,11 @@ def Claude.line.v.k(v: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json,
     case 2n:
       Claude.line.o(True{}, s, thread, now, o)
     case 3n:
-      Step.after(Claude.result.k(False{}, thread, now, text), Usage.window(s, thread, now, o))
+      Step.after(Step.after(Claude.result.k(False{}, thread, now, text), Usage.window(s, thread, now, o)), Bg.settle(s, thread, now))
     case 4n:
-      Step.after(Claude.result.k(True{}, thread, now, text), Usage.window(s, thread, now, o))
+      Step.after(Step.after(Claude.result.k(True{}, thread, now, text), Usage.window(s, thread, now, o)), Bg.settle(s, thread, now))
     case 5n:
-      Step{[M.TurnChanged{thread, M.Interrupted{}, now}], Nil{}}
+      Step{List.append(&2, M.Change, [M.TurnChanged{thread, M.Interrupted{}, now}], Bg.settle(s, thread, now)), Nil{}}
     case 6n:
       Step.before(Wake.start(s, thread, now, Wake.text(String.eq(J.Json.get_str(o, "type", ""), "command_lifecycle"), s, thread, o)), Nil{},
         Claude.line.o(True{}, s, thread, now, o))

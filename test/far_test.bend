@@ -128,9 +128,28 @@ def fields(xs: List<&2, J.Json>, +k: String) -> String:
     case x <> t:
       J.Json.get_str(x, k, "") ++ ";" ++ fields(t, k)
 
+# the owner's Kit leaves a background shell running after its turn, then
+# wakes for it and completes
+def work.bg() -> List<&2, FR.Item>:
+  numbered([M.WorkSet{"bt1", "bg", "s1\tsleep 8\tc1\tsleep 8\tshell", 103n}, M.TurnChanged{"bt1", M.Completed{}, 104n}], 15n)
+
+def work.wake() -> List<&2, FR.Item>:
+  numbered([M.TurnChanged{"bt1", M.Running{}, 105n}, M.WorkSet{"bt1", "bg", "", 105n}], 17n)
+
+def work.done() -> List<&2, FR.Item>:
+  numbered([M.TurnChanged{"bt1", M.Completed{}, 106n}], 19n)
+
+def phase(+u: U.Ui, +th: String) -> String:
+  M.Phase.label(U.Side.phase(U.Ui.state(u), U.Ui.thread(U.Ui.state(u), th)))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     +u : U.Ui = joined()
+    +w1 : U.Ui = recv(u, far(14n, 16n, False{}, work.bg()))
+    +w2 : U.Ui = recv(w1, far(16n, 18n, False{}, work.wake()))
+    +w3 : U.Ui = recv(w2, far(18n, 19n, False{}, work.done()))
+    C.Check.str("mirror: the owner's work as its phase", phase(w1, "p1~bt1") ++ "|" ++ phase(w2, "p1~bt1") ++ "|" ++ phase(w3, "p1~bt1"), "Monitoring 1 task|Working…|Complete")
+    C.Check.str("mirror: an epoch reset drops the work", Nat.show(M.Bg.live(M.Bg.of(U.Ui.state(w1), "p1~bt1"))) ++ "/" ++ Nat.show(M.Bg.live(M.Bg.of(FR.Fr.forget(U.Ui.state(w1), "p1"), "p1~bt1"))), "1/0")
     C.Check.str("ids", FR.Fr.id("p1", "t~x") ++ " " ++ FR.Fr.link("p1~t~x") ++ " " ++ FR.Fr.local("p1~t~x") ++ " [" ++ FR.Fr.link("t1") ++ "] " ++ FR.Fr.local("t1"),
       "p1~t~x p1 t~x [] t1")
     C.Check.str("thread folded in under its link", count(u, "p1~bt1") ++ " " ++ title(U.Ui.thread(U.Ui.state(u), "p1~bt1")), "1 Kit")

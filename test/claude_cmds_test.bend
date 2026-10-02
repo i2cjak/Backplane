@@ -5,6 +5,7 @@ import ../src/core/utf8.bend as U
 import ../src/core/model.bend as M
 import ../src/core/hub.bend as B
 import ../src/core/cmds.bend as CM
+import ../src/core/codec.bend as C2
 
 # Claude's turns by the command ledger (core/cmds.bend): both recorded
 # Claude Code 2.1.286 streams (test/fixtures/claude/) replayed line by line
@@ -26,8 +27,10 @@ type Ev is Data:
   # the user's Stop
   Stop{}
 
+# (tr: after each line, the thread's background rows, "all/at work", last
+# first)
 type Sim is Data:
-  Sim{s: M.State, c: CM.Cmds, n: Nat, wakes: Nat, ends: Nat}
+  Sim{s: M.State, c: CM.Cmds, n: Nat, wakes: Nat, ends: Nat, tr: List<&2, String>}
 
 def turn.k(t: M.TurnState) -> String:
   match t:
@@ -67,22 +70,29 @@ def start() -> M.State:
   M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.ThreadCreated{"t1", "p1", "x", M.Local{}, "", "", "claude", "", 1n}], M.State.empty())
 
 def sim0() -> Sim:
-  Sim{start(), CM.Cmds.new(), 0n, 0n, 0n}
+  Sim{start(), CM.Cmds.new(), 0n, 0n, 0n, Nil{}}
+
+def rows(+s: M.State) -> String:
+  Nat.show(M.Bg.live(M.Bg.of(s, "t1"))) ++ "/" ++ Nat.show(M.Bg.running(M.Bg.of(s, "t1")))
+
+def trace.k(+s: M.State, tr: List<&2, String>) -> List<&2, String>:
+  rows(s) <> tr
 
 # one line as the server takes it: judged, seen, then stepped
 def feed.k(st: B.Step, +v: Nat, +o: J.Json, sim: Sim) -> Sim & Nat:
   match st sim:
-    case B.Step{+cs, os} Sim{s, c, n, w, e}:
-      (Sim{M.State.replay(cs, s), CM.Cmds.see(c, o), 1n+n, Nat.add(w, wakes(cs)), Nat.add(e, ends(os))}, v)
+    case B.Step{+cs, os} Sim{s, c, n, w, e, tr}:
+      +s2 = M.State.replay(cs, s)
+      (Sim{s2, CM.Cmds.see(c, o), 1n+n, Nat.add(w, wakes(cs)), Nat.add(e, ends(os)), trace.k(s2, tr)}, v)
 
 def feed.v(+v: Nat, +line: String, +o: J.Json, +sim: Sim) -> Sim & Nat:
   match sim:
-    case Sim{+s, +c, _, _, _}:
+    case Sim{+s, +c, _, _, _, _}:
       feed.k(B.Hub.agent_line.vo(v, s, 9n, "t1", line, o, CM.Cmds.text(c, o)), v, o, sim)
 
 def feed.o(+line: String, +o: J.Json, +sim: Sim) -> Sim & Nat:
   match sim:
-    case Sim{+s, +c, _, _, _}:
+    case Sim{+s, +c, _, _, _, _}:
       feed.v(CM.Cmds.verdict(c, B.Hub.running(B.Hub.thread(s, "t1")), o), line, o, sim)
 
 def feed(+line: String, +sim: Sim) -> Sim & Nat:
@@ -97,38 +107,47 @@ def send.k(run: Bool, +s: M.State) -> M.State:
 
 def send(+u: String, sim: Sim) -> Sim:
   match sim:
-    case Sim{+s, c, n, w, e}:
-      Sim{send.k(B.Hub.running(B.Hub.thread(s, "t1")), s), CM.Cmds.sent(CM.Cmds.accept(c, u), u), n, w, e}
+    case Sim{+s, c, n, w, e, tr}:
+      Sim{send.k(B.Hub.running(B.Hub.thread(s, "t1")), s), CM.Cmds.sent(CM.Cmds.accept(c, u), u), n, w, e, tr}
 
 def prep(+u: String, sim: Sim) -> Sim:
   match sim:
-    case Sim{+s, c, n, w, e}:
-      Sim{send.k(B.Hub.running(B.Hub.thread(s, "t1")), s), CM.Cmds.accept(c, u), n, w, e}
+    case Sim{+s, c, n, w, e, tr}:
+      Sim{send.k(B.Hub.running(B.Hub.thread(s, "t1")), s), CM.Cmds.accept(c, u), n, w, e, tr}
 
 def stop(sim: Sim) -> Sim:
   match sim:
-    case Sim{+s, c, n, w, e}:
-      Sim{M.State.replay(B.Queue.changes(B.Hub.interrupt(s, 9n, 0, "r", "t1")), s), CM.Cmds.stop(c, Nil{}), n, w, e}
+    case Sim{+s, c, n, w, e, tr}:
+      Sim{M.State.replay(B.Queue.changes(B.Hub.interrupt(s, 9n, 0, "r", "t1")), s), CM.Cmds.stop(c, Nil{}), n, w, e, tr}
 
 def sim.s(sim: Sim) -> M.State:
   match sim:
-    case Sim{s, _, _, _, _}:
+    case Sim{s, _, _, _, _, _}:
       s
 
 def sim.n(sim: Sim) -> Nat:
   match sim:
-    case Sim{_, _, n, _, _}:
+    case Sim{_, _, n, _, _, _}:
       n
 
 def sim.wakes(sim: Sim) -> Nat:
   match sim:
-    case Sim{_, _, _, w, _}:
+    case Sim{_, _, _, w, _, _}:
       w
 
 def sim.ends(sim: Sim) -> Nat:
   match sim:
-    case Sim{_, _, _, _, e}:
+    case Sim{_, _, _, _, e, _}:
       e
+
+def sim.tr(sim: Sim) -> List<&2, String>:
+  match sim:
+    case Sim{_, _, _, _, _, tr}:
+      List.reverse(&2, String, tr)
+
+# the rows after lines a..b (from 1)
+def rows.at(+sim: Sim, +a: Nat, +b: Nat) -> String:
+  String.join(List.take(&2, String, List.drop(&2, String, sim.tr(sim), Nat.sub(a, 1n)), Nat.add(Nat.sub(b, a), 1n)), ",")
 
 def show(+v: Nat, +s: M.State) -> String:
   Nat.show(v) ++ "/" ++ turn(s)
@@ -283,6 +302,20 @@ def totals(+name: String, +wakes: Nat, +ends: Nat, +sim: Sim) -> IO(Unit):
     C.Check.str(name ++ ": wake Acts", Nat.show(sim.wakes(sim)), Nat.show(wakes))
     C.Check.str(name ++ ": turns ended", Nat.show(sim.ends(sim)), Nat.show(ends))
 
+# the background shell's row: at work, ended when Claude's open list drops
+# it (still owed), gone at its notification
+def totals.bg(+name: String, +wakes: Nat, +ends: Nat, +a: Nat, +b: Nat, +want: String, +sim: Sim) -> IO(Unit):
+  do IO<Unit>:
+    totals(name, wakes, ends, sim)
+    C.Check.str(name ++ ": rows l." ++ Nat.show(a) ++ "-" ++ Nat.show(b), rows.at(sim, a, b), want)
+
+def store.back(m: Maybe<&2, M.Change>) -> Bool:
+  match m:
+    case Some{M.WorkSet{+t, +k, +r, +a}}:
+      Bool.and(Bool.and(String.eq(t, "t1"), String.eq(k, "bg")), Bool.and(String.eq(r, "a\tx"), Nat.is_eq(a, 7n)))
+    case _:
+      False{}
+
 def held() -> IO(Unit):
   do IO<Unit>:
     +c : CM.Cmds = CM.Cmds.accept(CM.Cmds.accept(CM.Cmds.new(), "a"), "b")
@@ -298,14 +331,16 @@ def held() -> IO(Unit):
     C.Check.str("version: 2.1.286 has lifecycles", Bool.show(CM.Cmds.lifecycle("2.1.286")), "True")
     C.Check.str("version: 2.2.0 has", Bool.show(CM.Cmds.lifecycle("2.2.0")), "True")
     C.Check.str("version: 2.1.200 has not", Bool.show(CM.Cmds.lifecycle("2.1.200")), "False")
+    C.Check.str("WorkSet stored and read back", Bool.show(store.back(C2.Change.decode(C2.Change.encode(M.WorkSet{"t1", "bg", "a\tx", 7n})))), "True")
 
 def main() -> IO(Unit):
   do IO<Unit>:
     +f1 : List<&2, String> <- file("test/fixtures/claude/bg-wake.jsonl")
     +f2 : List<&2, String> <- file("test/fixtures/claude/stop-steer.jsonl")
     C.Check.str("fixtures read", Nat.show(List.length(&2, String, f1)) ++ "," ++ Nat.show(List.length(&2, String, f2)), "31,67")
-    run(bg_wake(), f1, sim0(), "bg-wake", s => totals("bg-wake", 1n, 3n, s))
-    run(stop_steer(), f2, sim0(), "stop-steer", s => totals("stop-steer", 1n, 5n, s))
+    run(bg_wake(), f1, sim0(), "bg-wake", s => totals.bg("bg-wake", 1n, 3n, 10n, 23n, "0/0,1/1,1/1,1/1,1/1,1/1,1/1,1/0,1/0,0/0,0/0,0/0,0/0,0/0", s))
+    run(stop_steer(), f2, sim0(), "stop-steer", s => totals.bg("stop-steer", 1n, 5n, 41n, 67n,
+      "0/0,1/1,1/1,1/1,1/1,1/1,1/1,1/1,1/1,1/1,1/1,1/1,1/1,1/1,1/1,1/1,1/1,1/1,1/0,1/0,0/0,0/0,0/0,0/0,0/0,0/0,0/0", s))
     run(stale(), Nil{}, sim0(), "live repro", s => IO.pure(Unit, Unit{}))
     run(stop_early(), Nil{}, sim0(), "stop before start", s => IO.pure(Unit, Unit{}))
     run(tomb_started(), Nil{}, sim0(), "stopped then started", s => totals("stopped then started", 2n, 2n, s))
