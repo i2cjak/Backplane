@@ -2303,15 +2303,23 @@ def Codex.end(s: Socket, +pid: U32, ended: Bool, +thread: String, +inbox: Chan(M
         ok : Bool <- Chan.send(Msg, inbox, AgentLine{thread, AC.Acp.failed("codex exited before the turn ended")})
         Turn.end(s, pid, thread, inbox)
 
+# the stream ended: a last line with no newline still counts (a turn's
+# final event written just before the process died), then the usual end
+def Codex.last(carry: U.Lines, s: Socket, +ended: Bool, +pid: U32, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    +rest : String = U.Lines.rest(carry)
+    e2 : Bool <- Codex.lines(Bool.pick(List<&2, String>, String.is_empty(String.trim(rest)), Nil{}, [rest]), ended, thread, inbox)
+    Codex.end(s, pid, e2, thread, inbox)
+
 def Codex.got(r: Socket & Result<&1, &1, U32 & String, List<&2, U32>>, carry: U.Lines, +ended: Bool, +pid: U32, +thread: String, +inbox: Chan(Msg), k: Socket -> U.Lines -> Bool -> IO(Unit)) -> IO(Unit):
   (s, res) = r
   match res:
     case Done{Nil{}}:
-      Codex.end(s, pid, ended, thread, inbox)
+      Codex.last(carry, s, ended, pid, thread, inbox)
     case Done{bs}:
       Codex.fed(U.Lines.feed(carry, bs), s, ended, thread, inbox, k)
     case Fail{_}:
-      Codex.end(s, pid, ended, thread, inbox)
+      Codex.last(carry, s, ended, pid, thread, inbox)
 
 def Codex.reader(fuel: Nat, s: Socket, carry: U.Lines, +ended: Bool, +pid: U32, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
   match fuel:
@@ -2327,7 +2335,8 @@ def Codex.read(started: U32 & Socket, +thread: String, +gen: String, +inbox: Cha
     s2 : Socket <- H.Sock.shutdown(s)
     +input : Chan(String) <- Chan.new(String, 1)
     ok : Bool <- Chan.send(Msg, inbox, TurnPid{thread, pid, input, gen})
-    Codex.reader(Fuel.forever(), s2, U.Lines.new(), False{}, pid, B.Tag.of(thread, pid), inbox)
+    s3 : Socket <- IO.bind(Socket & Result<&1, &1, U32 & String, Socket>, Socket, H.Sock.dup(s2), d => Agent.watch.start(d, pid, thread, gen, inbox))
+    Codex.reader(Fuel.forever(), s3, U.Lines.new(), False{}, pid, B.Tag.of(thread, pid), inbox)
 
 def Codex.started(r: Result<&1, &1, U32 & String, U32 & Socket>, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   match r:
@@ -2365,16 +2374,35 @@ def Grok.gone(s: Socket, +pid: U32, +thread: String, +inbox: Chan(Msg)) -> IO(Un
     Grok.report([AC.Acp.failed("grok exited before the turn ended (is it signed in? run `grok login`)")], thread, inbox)
     Turn.end(s, pid, thread, inbox)
 
+def Grok.last.k(done: Bool, s: Socket, +pid: U32, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
+  match done:
+    case True{}:
+      Turn.end(s, pid, thread, inbox)
+    case False{}:
+      Grok.gone(s, pid, thread, inbox)
+
+def Grok.last.a(+a: AC.Acp, s: Socket, +pid: U32, +thread: String, +inbox: Chan(Msg)) -> IO(Unit):
+  Grok.last.k(Grok.done(a), s, pid, thread, inbox)
+
+# the stream ended: a last line with no newline still counts (the turn's
+# end written just before the process died); only a turn it does not end
+# fails as one that exited early
+def Grok.last(carry: U.Lines, s: Socket, a: AC.Acp, +t: AC.AcpTurn, +pid: U32, +thread: String, +input: Chan(String), +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    +rest : String = U.Lines.rest(carry)
+    a2 : AC.Acp <- Grok.lines(Bool.pick(List<&2, String>, String.is_empty(String.trim(rest)), Nil{}, [rest]), a, t, thread, input, inbox)
+    Grok.last.a(a2, s, pid, thread, inbox)
+
 def Grok.got(r: Socket & Result<&1, &1, U32 & String, List<&2, U32>>, carry: U.Lines, a: AC.Acp, +t: AC.AcpTurn, +pid: U32, +thread: String, +input: Chan(String), +inbox: Chan(Msg),
     k: Socket -> U.Lines -> AC.Acp -> IO(Unit)) -> IO(Unit):
   (s, res) = r
   match res:
     case Done{Nil{}}:
-      Grok.gone(s, pid, thread, inbox)
+      Grok.last(carry, s, a, t, pid, thread, input, inbox)
     case Done{bs}:
       Grok.fed(U.Lines.feed(carry, bs), s, a, t, pid, thread, input, inbox, k)
     case Fail{_}:
-      Grok.gone(s, pid, thread, inbox)
+      Grok.last(carry, s, a, t, pid, thread, input, inbox)
 
 def Grok.reader(fuel: Nat, s: Socket, carry: U.Lines, a: AC.Acp, +t: AC.AcpTurn, +pid: U32, +thread: String, +input: Chan(String), +inbox: Chan(Msg)) -> IO(Unit):
   match fuel:
@@ -2403,7 +2431,8 @@ def Grok.duped(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, +t: 
         IO.spawn(Unit, Agent.writer(Fuel.forever(), wr, input))
         ok : Bool <- Chan.send(Msg, inbox, TurnPid{thread, pid, input, gen})
         ok2 : Bool <- Chan.send(String, input, AC.Acp.init())
-        Grok.reader(Fuel.forever(), rd, U.Lines.new(), AC.Acp.new(), t, pid, B.Tag.of(thread, pid), input, inbox)
+        rd2 : Socket <- IO.bind(Socket & Result<&1, &1, U32 & String, Socket>, Socket, H.Sock.dup(rd), d => Agent.watch.start(d, pid, thread, gen, inbox))
+        Grok.reader(Fuel.forever(), rd2, U.Lines.new(), AC.Acp.new(), t, pid, B.Tag.of(thread, pid), input, inbox)
     case Fail{e}:
       Grok.dup.failed(e, rd, pid, thread, gen, inbox)
 
