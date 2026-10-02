@@ -5433,7 +5433,7 @@ law contain_no_expand:
 # a hub stops only the scopes it started: one whose description names
 # another home is not its own
 law contain_tag_mine:
-  {Bool.show(CTN.Contain.mine(" backplane /h\n", CTN.Contain.tag("/h"))) ++ Bool.show(CTN.Contain.mine("backplane /other", CTN.Contain.tag("/h"))) == "TrueFalse" : String}
+  {CTN.Contain.stale.mine("bp-agent-t1-1-1.scope loaded active running backplane /h\nbp-agent-t2-1-1.scope loaded active running backplane /other\nbp-agent-t3-1-1.scope loaded failed failed [systemd-run] sleep 3\n", CTN.Contain.tag("/h")) == ["bp-agent-t1-1-1"] : List<&2, String>}
 
 # A streamed reply's settled prefix (client.bend's Live.head: the text up
 # to the last blank line outside a fenced block) renders, and lays out,

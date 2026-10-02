@@ -333,39 +333,31 @@ def Ctn.stop.k(none: Bool, +thread: String, +gen: String) -> IO(Unit):
 def Ctn.stop(+thread: String, +gen: String) -> IO(Unit):
   Ctn.stop.k(String.is_empty(gen), thread, gen)
 
-def Ctn.stale.mine(mine: Bool, +unit: String) -> IO(Unit):
-  match mine:
+def Ctn.stale.one(owned: Bool, +unit: String) -> IO(Unit):
+  match owned:
     case True{}:
       Ctn.stop.unit(unit)
     case False{}:
       IO.pure(Unit, Unit{})
 
-def Ctn.stale.one(owned: Bool, +unit: String, +tag: String) -> IO(Unit):
-  match owned:
-    case True{}:
-      do IO<Unit>:
-        r : P.Ran <- P.Proc.run("timeout", CN.Contain.desc.args(unit), "/")
-        Ctn.stale.mine(CN.Contain.mine(Ctn.mem.of(r), tag), unit)
-    case False{}:
-      IO.pure(Unit, Unit{})
-
-def Ctn.stale.go(us: List<&2, String>, +st: M.State, +tag: String) -> IO(Unit):
+def Ctn.stale.go(us: List<&2, String>, +st: M.State) -> IO(Unit):
   match us:
     case Nil{}:
       IO.pure(Unit, Unit{})
     case +u <> t:
       do IO<Unit>:
-        Ctn.stale.one(B.Hub.owns(st, CN.Contain.thread.of(u)), u, tag)
-        Ctn.stale.go(t, st, tag)
+        Ctn.stale.one(B.Hub.owns(st, CN.Contain.thread.of(u)), u)
+        Ctn.stale.go(t, st)
 
 # at start nothing of this hub's runs: every agent scope of a thread in
-# its log that this hub (its home, Contain.tag) started is one a previous
-# run left (a service restart does not end a scope), and is stopped before
-# the thread resumes; another hub's scopes are left alone
+# its log that this hub (its home, Contain.tag, the scope's description)
+# started is one a previous run left (a service restart does not end a
+# scope), and is stopped before the thread resumes; another hub's scopes
+# are left alone
 def Ctn.stale(+st: M.State, +tag: String) -> IO(Unit):
   do IO<Unit>:
     r : P.Ran <- P.Proc.run("timeout", CN.Contain.stale.args(), "/")
-    Ctn.stale.go(CN.Contain.stale(Ctn.mem.of(r)), st, tag)
+    Ctn.stale.go(CN.Contain.stale.mine(Ctn.mem.of(r), tag), st)
 
 def Ctn.spawn.k(found: Bool, limit: String, tag: String, thread: String, gen: String, cmd: String, args: List<&2, String>, cwd: String) -> IO(Result<&1, &1, U32 & String, U32 & Socket>):
   match found:

@@ -120,11 +120,6 @@ def Contain.argv(limit: String, unit: String, tag: String, cmd: String, args: Li
 def Contain.tag(home: String) -> String:
   "backplane " ++ home
 
-def Contain.desc.args(unit: String) -> List<&2, String>:
-  ["3", "systemctl", "--user", "show", "-p", "Description", "--value", unit ++ ".scope"]
-
-def Contain.mine(+desc: String, +tag: String) -> Bool:
-  String.eq(String.trim(desc), tag)
 
 # the scope's own answer after its process ended
 def Contain.show.args(unit: String) -> List<&2, String>:
@@ -221,6 +216,34 @@ def Contain.units.of(ls: List<&2, String>) -> List<&2, String>:
 # the units in `list-units` output
 def Contain.stale(out: String) -> List<&2, String>:
   Contain.units.of(String.split(out, '\n'))
+
+# a `list-units` line's description: what follows its four columns (unit,
+# load, active, sub)
+def Contain.lcols(ps: List<&2, String>) -> List<&2, String>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case +p <> t:
+      Contain.units.keep(p, Contain.lcols(t))
+
+def Contain.line.desc(l: String) -> String:
+  String.join(List.drop(&2, String, Contain.lcols(String.split(String.trim(l), ' ')), 4n), " ")
+
+# this hub's own: the line's description is its tag (Contain.tag)
+def Contain.line.mine(+l: String, +tag: String) -> String:
+  Bool.pick(String, String.eq(Contain.line.desc(l), tag), Contain.unit.line(l), "")
+
+def Contain.mine.of(ls: List<&2, String>, +tag: String) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Contain.units.keep(Contain.line.mine(l, tag), Contain.mine.of(t, tag))
+
+# the units in `list-units` output that this hub started (another hub's,
+# a test's or a throwaway's, are left out)
+def Contain.stale.mine(out: String, +tag: String) -> List<&2, String>:
+  Contain.mine.of(String.split(out, '\n'), tag)
 
 # the thread a unit was made for: its name without "bp-agent-" and the
 # generation's two last parts
