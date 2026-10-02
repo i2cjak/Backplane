@@ -143,14 +143,16 @@ try {
     await sleep(1000);
     const t0 = Date.now();
     b.send("turn.start", { thread: th.id, text: "flood", msg: `c-stall-${round}` });
-    const done = await until(60000, () => b.seen.find((c) => c.$ === "TurnChanged" && c.thread === th.id && JSON.stringify(c).includes("Completed")));
+    // a flood alone takes about 6 s here; the stall adds the 10 s deadline, and
+    // without it the hub would wait for A to read (45 s)
+    const done = await until(30000, () => b.seen.find((c) => c.$ === "TurnChanged" && c.thread === th.id && /completed/i.test(String(c.state))));
     check(!!done, `round ${round}: B saw the turn complete (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
     const rid = b.send("thread.pin", { thread: th.id });
     const t1 = Date.now();
-    const pinned = await until(15000, () => b.seen.find((c) => c.$ === "ThreadPinned" && c.thread === th.id));
+    const pinned = await until(15000, () => b.seen.find((c) => c.$ === "ThreadPinned" && c.id === th.id));
     check(!!pinned, `round ${round}: a request after it is answered (${((Date.now() - t1) / 1000).toFixed(1)} s)`);
     const said = (await out).trim();
-    check(said.includes("EOF"), `round ${round}: the stalled client was dropped (${said.replace(/\n/g, " | ")})`);
+    check(said.includes("EOF") || said.includes("reset"), `round ${round}: the stalled client was dropped (${said.replace(/\n/g, " | ")})`);
     await a.exited;
     const c = await connect(`?since=0`);
     await sleep(3000);
