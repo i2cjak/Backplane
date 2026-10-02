@@ -509,6 +509,46 @@ static void __attribute__((constructor)) proc_wait_use(void) {
 
 #endif
 
+#ifdef CID_PROC_EXITED
+
+// Proc.exited: the exit code of a child that has exited (left unreaped:
+// WNOWAIT), 4294967295 while it runs; one already reaped reads 255.
+Term proc_exited_run(Env e, Term* f, IoWork* w) {
+  siginfo_t si;
+  memset(&si, 0, sizeof si);
+  int r = waitid(P_PID, (id_t)(uint32_t)f[0], &si, WEXITED | WNOHANG | WNOWAIT);
+  uint32_t code;
+  if (r < 0) {
+    code = 255;
+  } else if (si.si_pid == 0) {
+    code = 4294967295u;
+  } else {
+    code = si.si_code == CLD_EXITED ? (uint32_t)si.si_status : 128u + (uint32_t)si.si_status;
+  }
+  return (Term)code;
+}
+
+static void __attribute__((constructor)) proc_exited_use(void) {
+  io_eff(CID_PROC_EXITED, proc_exited_run, 0);
+}
+
+#endif
+
+#ifdef CID_SOCK_SHUT_READ
+
+// Ends our reading side: a read blocked on this socket returns 0.
+Term sock_shut_read_run(Env e, Term* f, IoWork* w) {
+  int fd = (int)io_hand_v(f[0]);
+  shutdown(fd, SHUT_RD);
+  return io_hand(fd);
+}
+
+static void __attribute__((constructor)) sock_shut_read_use(void) {
+  io_eff(CID_SOCK_SHUT_READ, sock_shut_read_run, 0);
+}
+
+#endif
+
 #ifdef CID_PROC_KILL
 
 Term proc_kill_run(Env e, Term* f, IoWork* w) {

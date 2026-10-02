@@ -67,6 +67,19 @@ def Proc.kill(pid: U32, sig: U32) -> IO(Unit):
   import "./effects/host.c"
   import "./effects/host.js"
 
+# whether a child has exited, without reaping it (the reader's wait does):
+# its exit code (128 + signal when killed), or 4294967295 while it runs.
+# The JS host starts no processes, so there it is always running.
+def Proc.exited(pid: U32) -> IO(U32):
+  import "./effects/host.c"
+  import "./effects/host.js"
+
+# end our reading side: a read blocked on the socket (through any handle)
+# returns end of stream
+def Sock.shut_read(sock: Socket) -> IO(Socket):
+  import "./effects/host.c"
+  import "./effects/host.js"
+
 # (kind, (size, mtime)): kind 0 file, 1 dir, 2 other
 def FS.stat(path: String) -> IO(Result<&1, &1, U32 & String, U32 & U32 & U32>):
   import "./effects/host.c"

@@ -17,8 +17,11 @@
 //   pair         each command works BP_WORK_MS (1500), so a second sent
 //                at once waits queued (stop-steer.jsonl l.20-33)
 //   noLC         an old CLI: no lifecycles, init says 2.0.0
-//   exit-held    a child holds stdout open, the process exits 3
+//   exit-held    a child holds stdout open (30 s), the process exits 3
 //   result-exit  a result, then exit with a child holding stdout
+//   tail-nonl    an old CLI whose last line, its result, has no newline,
+//                then exit with a child holding stdout
+//   exit-now     the process exits (3) as the first command starts
 //   plain        each command: init, an answer, its result
 //   delegate     the first command calls the hub's delegate_task (its MCP
 //                URL from --mcp-config) for a child "mode:plain child
@@ -53,11 +56,11 @@ if (mcpUrl) log(`MCP ${process.pid} ${mcpUrl}`);
 
 const emit = (o: object) => process.stdout.write(JSON.stringify(o) + "\n");
 const lc = (u: string, state: string) => {
-  if (mode !== "noLC") emit({ type: "command_lifecycle", command_uuid: u, state, uuid: rnd(), session_id: session });
+  if (mode !== "noLC" && mode !== "tail-nonl") emit({ type: "command_lifecycle", command_uuid: u, state, uuid: rnd(), session_id: session });
 };
 const init = () =>
   emit({ type: "system", subtype: "init", cwd: process.cwd(), session_id: session, tools: ["Bash"], mcp_servers: [], model: "claude-haiku-4-5-20251001",
-    permissionMode: "bypassPermissions", apiKeySource: "none", claude_code_version: mode === "noLC" ? "2.0.0" : "2.1.286",
+    permissionMode: "bypassPermissions", apiKeySource: "none", claude_code_version: mode === "noLC" || mode === "tail-nonl" ? "2.0.0" : "2.1.286",
     capabilities: mode === "noLC" ? [] : ["interrupt_receipt_v1", "interrupt_cancel_queued_v1", "msg_lifecycle_v1"], uuid: rnd() });
 let msgN = 0;
 const say = (text: string) => {
@@ -129,13 +132,25 @@ async function run(c: Cmd, firstOne: boolean) {
   }
   lc(c.uuid, "started");
   init();
+  if (firstOne && mode === "exit-now") {
+    log(`EXIT ${process.pid}`);
+    process.exit(3);
+  }
+  if (firstOne && mode === "tail-nonl") {
+    say("TAIL");
+    process.stdout.write(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "TAIL", session_id: session, uuid: rnd() }));
+    spawn("sleep", ["30"], { stdio: ["ignore", "inherit", "ignore"], detached: true }).unref();
+    log(`EXIT ${process.pid}`);
+    await sleep(100);
+    process.exit(0);
+  }
   if (firstOne && (mode === "exit-held" || mode === "result-exit")) {
     if (mode === "result-exit") {
       say("BYE");
       result("BYE");
       lc(c.uuid, "completed");
     }
-    spawn("sleep", ["600"], { stdio: ["ignore", "inherit", "ignore"], detached: true }).unref();
+    spawn("sleep", ["30"], { stdio: ["ignore", "inherit", "ignore"], detached: true }).unref();
     log(`EXIT ${process.pid}`);
     await sleep(100);
     process.exit(mode === "exit-held" ? 3 : 0);

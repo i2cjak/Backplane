@@ -6798,3 +6798,22 @@ def Laws.prep_stale_dropped():
 
 def Laws.gen_mcp_path():
   {==}
+
+def Laws.quiet_once():
+  {==}
+
+def Laws.quiet_never_when_busy(heard, now, n):
+  {==}
+
+def Laws.quiet_never_idle(heard, now, said, busy):
+  match said:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Laws.exit_stale_gen_quiet():
+  {==}
+
+def Laws.final_partial_line_flushed():
+  {==}

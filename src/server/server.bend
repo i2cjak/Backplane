@@ -146,6 +146,10 @@ type Msg is Data:
   # a Codex or Grok turn's process could not start: its failure line, heard
   # only from the thread's current generation (B.Gen.*)
   SpawnFailed{thread: String, gen: String, line: String}
+  # an agent process exited (its watcher saw it; the reader ends within 2 s)
+  AgentExited{thread: String, gen: String, code: U32}
+  # time to note running turns that went quiet (each minute)
+  Silence{}
 
 # remote access: also listen on the tailnet, serve HTTPS through
 # `tailscale serve`, and the token remote clients must present
@@ -176,6 +180,10 @@ def ARun.new() -> ARun:
 # a Claude process of generation gen (B.Gen.*)
 def ARun.new.g(+gen: String) -> ARun:
   ARun{CM.Cmds.new(), Nil{}, Nil{}, 0n, gen, False{}}
+
+# the same, started (heard last) at now
+def ARun.new.h(+gen: String, +now: Nat) -> ARun:
+  ARun{CM.Cmds.new(), Nil{}, Nil{}, now, gen, False{}}
 
 def Proc.kill.k(ok: Bool, +pid: U32, +sig: U32) -> IO(Unit):
   match ok:
@@ -445,16 +453,24 @@ def Agent.fed(r: U.Lines & List<&2, String>, s: Socket, +thread: String, +inbox:
 
 # (lines go out under the tag, B.Tag.of(thread, pid), so a replaced
 # process is not heard; the exit names the plain thread and pid)
+# the stream ended: a last line with no newline still counts (a result
+# written just before the process died), then the exit
+def Agent.last(carry: U.Lines, s: Socket, +pid: U32, +thread: String, +tag: String, +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    +rest : String = U.Lines.rest(carry)
+    Agent.lines(Bool.pick(List<&2, String>, String.is_empty(String.trim(rest)), Nil{}, [rest]), tag, inbox)
+    Agent.end(s, pid, thread, inbox)
+
 def Agent.got(r: Socket & Result<&1, &1, U32 & String, List<&2, U32>>, carry: U.Lines, +pid: U32, +thread: String, +tag: String, +inbox: Chan(Msg),
     k: Socket -> U.Lines -> IO(Unit)) -> IO(Unit):
   (s, res) = r
   match res:
     case Done{Nil{}}:
-      Agent.end(s, pid, thread, inbox)
+      Agent.last(carry, s, pid, thread, tag, inbox)
     case Done{bs}:
       Agent.fed(U.Lines.feed(carry, bs), s, tag, inbox, k)
     case Fail{_}:
-      Agent.end(s, pid, thread, inbox)
+      Agent.last(carry, s, pid, thread, tag, inbox)
 
 def Agent.reader(fuel: Nat, s: Socket, carry: U.Lines, +pid: U32, +thread: String, +tag: String, +inbox: Chan(Msg)) -> IO(Unit):
   match fuel:
@@ -879,15 +895,59 @@ def Hub.spawned.fail(e: U32 & String, h: Hub, +thread: String) -> IO(Hub):
     r : Hub & List<&2, String> <- Hub.commit([M.ActivityLogged{thread, "spawn-" ++ Nat.show(now), "error", "spawn", "could not start claude: " ++ msg, now}, M.TurnChanged{thread, M.Failed{}, now}], h, Nil{})
     Hub.announce(r)
 
-def Hub.spawned.dup(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, h: Hub, +thread: String, +key: String, +gen: String) -> IO(Hub):
+# An agent's watcher: each second it asks whether the process exited (not
+# reaping it: the reader's Agent.end does). When it has, the hub hears so
+# and, if the reader has not reached end of stream 2 s later (a child of
+# the agent keeps its output open), the reading side is shut so it does;
+# its last line is read and the exit handled once. It ends with the
+# process, so none outlives its generation.
+def Agent.watch.end(+code: U32, s: Socket, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    ok : Bool <- Chan.send(Msg, inbox, AgentExited{thread, gen, code})
+    IO.sleep(2000)
+    s2 : Socket <- H.Sock.shut_read(s)
+    Socket.close(s2)
+
+def Agent.watch.k(running: Bool, +code: U32, s: Socket, +thread: String, +gen: String, +inbox: Chan(Msg), k: Socket -> IO(Unit)) -> IO(Unit):
+  match running:
+    case True{}:
+      do IO<Unit>:
+        IO.sleep(1000)
+        k(s)
+    case False{}:
+      Agent.watch.end(code, s, thread, gen, inbox)
+
+def Agent.watch.got(+code: U32, s: Socket, +thread: String, +gen: String, +inbox: Chan(Msg), k: Socket -> IO(Unit)) -> IO(Unit):
+  Agent.watch.k(U32.is_eq(code, 4294967295), code, s, thread, gen, inbox, k)
+
+def Agent.watch(fuel: Nat, s: Socket, +pid: U32, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
+  match fuel:
+    case 0n:
+      Socket.close(s)
+    case 1n+f:
+      IO.bind(U32, Unit, H.Proc.exited(pid), code => Agent.watch.got(code, s, thread, gen, inbox, s2 => Agent.watch(f, s2, pid, thread, gen, inbox)))
+
+def Agent.watch.start(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Socket):
   (rd, res) = r
+  match res:
+    case Done{dup}:
+      do IO<Socket>:
+        IO.spawn(Unit, Agent.watch(Fuel.forever(), dup, pid, thread, gen, inbox))
+        return rd
+    case Fail{_}:
+      IO.pure(Socket, rd)
+
+def Hub.spawned.dup(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32, h: Hub, +thread: String, +key: String, +gen: String) -> IO(Hub):
+  (rd0, res) = r
   match res h:
     case Done{wr} Hub{st, f, ls, cl, as, +inbox, cfg, note}:
       do IO<Hub>:
         +input : Chan(String) <- Chan.new(String, 256)
+        +now : Nat <- Now.nat()
         IO.spawn(Unit, Agent.writer(Fuel.forever(), wr, input))
+        rd : Socket <- IO.bind(Socket & Result<&1, &1, U32 & String, Socket>, Socket, H.Sock.dup(rd0), d => Agent.watch.start(d, pid, thread, gen, inbox))
         IO.spawn(Unit, Agent.reader(Fuel.forever(), rd, U.Lines.new(), pid, thread, B.Tag.of(thread, pid), inbox))
-        return Hub{st, f, ls, cl, Agent{thread, input, pid, key, [ARun.new.g(gen)]} <> as, inbox, cfg, note}
+        return Hub{st, f, ls, cl, Agent{thread, input, pid, key, [ARun.new.h(gen, now)]} <> as, inbox, cfg, note}
     # the process started but its socket could not be shared: it is
     # stopped and goes through the usual exit (Agent.end, AgentGone), so
     # its turn fails, its asks close and its task ends
@@ -896,7 +956,7 @@ def Hub.spawned.dup(r: Socket & Result<&1, &1, U32 & String, Socket>, +pid: U32,
         +input : Chan(String) <- Chan.new(String, 1)
         Chan.close(String, input)
         Proc.kill(pid, 15)
-        IO.spawn(Unit, Agent.end(rd, pid, thread, inbox))
+        IO.spawn(Unit, Agent.end(rd0, pid, thread, inbox))
         return Hub{st, f, ls, cl, Agent{thread, input, pid, key, [ARun.new.g(gen)]} <> as, inbox, cfg, note}
 
 def Hub.spawned.ok(started: U32 & Socket, h: Hub, +thread: String, +key: String, +gen: String) -> IO(Hub):
@@ -2689,6 +2749,12 @@ def Claude.put(h: Hub, +thread: String, +line: String) -> IO(Hub):
   match h:
     case Hub{st, f, ls, cl, +as, inbox, cfg, note}:
       Claude.put.r(Agents.run(as, thread), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, line)
+
+# a line heard now: the silence note may come again after a new silence
+def ARun.heard.set(r: ARun, +now: Nat) -> ARun:
+  match r:
+    case ARun{c, h, l, _, g, _}:
+      ARun{c, h, l, now, g, False{}}
 
 def ARun.gen(r: ARun) -> String:
   match r:
@@ -5294,7 +5360,7 @@ def Hub.line.k(p: M.State & Hub, +thread: String, +line: String, +now: Nat) -> I
 def Hub.line.run(+r: ARun, h: Hub, +thread: String, +line: String, +o: J.Json, +now: Nat) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
-      Hub.step(Hub{st, f, ls, cl, Agents.with(as, thread, ARun.put(r, CM.Cmds.see(ARun.cmds(r), o), ARun.held(r))), inbox, cfg, note},
+      Hub.step(Hub{st, f, ls, cl, Agents.with(as, thread, ARun.heard.set(ARun.put(r, CM.Cmds.see(ARun.cmds(r), o), ARun.held(r)), now)), inbox, cfg, note},
         B.Hub.agent_line.vo(CM.Cmds.verdict(ARun.cmds(r), B.Hub.running(B.Hub.thread(st, thread)), o), st, now, thread, line, o, CM.Cmds.text(ARun.cmds(r), o)))
 
 def Hub.line.m(m: Maybe<&2, ARun>, h: Hub, +thread: String, +line: String, +now: Nat) -> IO(Hub):
@@ -5334,6 +5400,7 @@ def Hub.tick(h: Hub, +now: Nat) -> IO(Hub):
         PS.Perf.set("hub.changes", U32.from_nat(List.length(&2, String, ls)))
         PS.Perf.set("hub.busy", U32.from_nat(M.Work.threads(st)))
         Self.post(inbox, Release{})
+        Self.post(inbox, Silence{})
         Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Hub.tick(st, now))
 
 # a tool call's answer goes once its step is stored: a call whose changes
@@ -6516,6 +6583,10 @@ def Msg.kind(m: Msg) -> String:
       "release"
     case SpawnFailed{_, _, _}:
       "spawn_failed"
+    case AgentExited{_, _, _}:
+      "agent_exited"
+    case Silence{}:
+      "silence"
 
 def Hub.spawn_failed.k(ok: Bool, h: Hub, +thread: String, +line: String, +now: Nat) -> IO(Hub):
   match ok h:
@@ -6552,6 +6623,84 @@ def Hub.mcp.g(h: Hub, +tag: String, +body: String, +reply: Chan(String), +now: N
     case Hub{st, f, ls, cl, +as, inbox, cfg, note}:
       Hub.mcp.gate(B.Gen.refused(B.Gen.tag(tag), Agents.gen(as, B.Gen.thread(tag)), Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{})),
         Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Gen.thread(tag), body, reply, now)
+
+def Hub.exited.k(cur: Bool, h: Hub, +thread: String, +code: U32) -> IO(Hub):
+  match cur:
+    case True{}:
+      do IO<Hub>:
+        Log.info("agent for " ++ thread ++ " exited with code " ++ U32.show(code) ++ "; its reader ends at most 2 s later")
+        return h
+    case False{}:
+      IO.pure(Hub, h)
+
+# an agent's watcher saw its process exit: the reader ends (its last line
+# read) and the exit is handled there, once; a stale generation's report
+# changes nothing (B.Exit.current)
+def Hub.exited(h: Hub, +thread: String, +gen: String, +code: U32) -> IO(Hub):
+  match h:
+    case Hub{st, f, ls, cl, +as, inbox, cfg, note}:
+      Hub.exited.k(B.Exit.current(gen, Agents.gen(as, thread)), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, code)
+
+# Silence: a running Claude turn with no line for 10 minutes and no work
+# out is noted once (B.Quiet.due); the note comes again only after a line
+# and a new silence
+type Quieted is Data:
+  Quieted{as: List<&2, Agent>, cs: List<&2, M.Change>}
+
+def Quiet.mark.r(rs: List<&2, ARun>) -> List<&2, ARun>:
+  match rs:
+    case ARun{c, hd, l, n, g, _} <> t:
+      ARun{c, hd, l, n, g, True{}} <> t
+    case Nil{}:
+      Nil{}
+
+def Quiet.mark(a: Agent) -> Agent:
+  match a:
+    case Agent{t, i, p, k, rs}:
+      Agent{t, i, p, k, Quiet.mark.r(rs)}
+
+def Quiet.one.k(due: Bool, a: Agent, +t: String, +st: M.State, +now: Nat, q: Quieted) -> Quieted:
+  match due q:
+    case True{} Quieted{as, +cs}:
+      Quieted{Quiet.mark(a) <> as, B.Quiet.act(t, now, Nat.add(M.State.seq(st), List.length(&2, M.Change, cs))) <> cs}
+    case False{} Quieted{as, cs}:
+      Quieted{a <> as, cs}
+
+def Quiet.heard(rs: List<&2, ARun>) -> Nat:
+  match rs:
+    case ARun{_, _, _, n, _, _} <> _:
+      n
+    case Nil{}:
+      0n
+
+def Quiet.said(rs: List<&2, ARun>) -> Bool:
+  match rs:
+    case ARun{_, _, _, _, _, q} <> _:
+      q
+    case Nil{}:
+      True{}
+
+def Quiet.one(a: Agent, +st: M.State, +now: Nat, q: Quieted) -> Quieted:
+  match a:
+    case Agent{+t, i, p, k, +rs}:
+      Quiet.one.k(B.Quiet.due(B.Hub.running(B.Hub.thread(st, t)), Quiet.heard(rs), now, Quiet.said(rs), M.Work.busy(st, t)), Agent{t, i, p, k, rs}, t, st, now, q)
+
+def Quiet.all(as: List<&2, Agent>, +st: M.State, +now: Nat, q: Quieted) -> Quieted:
+  match as:
+    case Nil{}:
+      q
+    case a <> t:
+      Quiet.all(t, st, now, Quiet.one(a, st, now, q))
+
+def Hub.quiet.k(q: Quieted, h: Hub) -> IO(Hub):
+  match q h:
+    case Quieted{as, cs} Hub{st, f, ls, cl, _, inbox, cfg, note}:
+      Hub.step(Hub{st, f, ls, cl, List.reverse(&2, Agent, as), inbox, cfg, note}, B.Step{cs, Nil{}})
+
+def Hub.quiet(h: Hub, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.quiet.k(Quiet.all(as, st, now, Quieted{Nil{}, Nil{}}), Hub{st, f, ls, cl, Nil{}, inbox, cfg, note})
 
 def Hub.release(p: M.State & Hub, +now: Nat) -> IO(Hub):
   (+st, h) = p
@@ -6645,6 +6794,10 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.release(Hub.state(h), now)
     case SpawnFailed{thread, gen, line}:
       Hub.spawn_failed(h, thread, gen, line, now)
+    case AgentExited{thread, gen, code}:
+      Hub.exited(h, thread, gen, code)
+    case Silence{}:
+      Hub.quiet(h, now)
 
 # each message's handling is timed as hub.<kind> (docs/perf.md)
 def Hub.got(m: Maybe<&1, Msg>, h: Hub, k: Hub -> IO(Unit)) -> IO(Unit):

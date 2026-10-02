@@ -174,6 +174,15 @@ function proc_wait(pid) {
   return 255;
 }
 
+function proc_exited(pid) {
+  return 4294967295;
+}
+
+function sock_shut_read(socket) {
+  host_libc().shutdown(socket, 0);
+  return socket;
+}
+
 function proc_kill(pid, sig) {
   try {
     process.kill(pid, sig);

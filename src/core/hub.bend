@@ -3600,6 +3600,35 @@ def Gen.write(+gen: String, +current: String, +st: Nat) -> Bool:
 def Proc.kill.ok(+pid: U32) -> Bool:
   U32.is_gt(pid, 1)
 
+# Silence and exit
+# ----------------
+# A running turn whose agent wrote nothing for Quiet.after() seconds, with
+# no work out (which it may be waiting on), is noted once in the timeline;
+# nothing is killed (laws quiet_*). An agent process's exit is noticed by
+# its own watcher even when a child keeps its output open; a report from a
+# process that is no longer the thread's changes nothing (law
+# exit_stale_gen_quiet).
+
+def Quiet.after() -> Nat:
+  600n
+
+def Quiet.due.k(run: Bool, said: Bool, +heard: Nat, +now: Nat, +busy: Nat) -> Bool:
+  match run said:
+    case True{} False{}:
+      Bool.and(Nat.is_eq(busy, 0n), Nat.is_ge(now, Nat.add(heard, Quiet.after())))
+    case _ _:
+      False{}
+
+def Quiet.due(run: Bool, +heard: Nat, +now: Nat, said: Bool, +busy: Nat) -> Bool:
+  Quiet.due.k(run, said, heard, now, busy)
+
+def Quiet.act(+thread: String, +now: Nat, +seq: Nat) -> M.Change:
+  M.ActivityLogged{thread, Hub.id("q", now, seq), "info", "quiet", "No output for 10 minutes", now}
+
+# whether an exit report (its generation) is the thread's current agent's
+def Exit.current(+gen: String, +current: String) -> Bool:
+  Bool.and(Bool.not(String.is_empty(gen)), String.eq(gen, current))
+
 # whether a line from this tag is heard, given the pid the hub runs for
 # its thread (None: none)
 def Tag.heard(m: Maybe<&2, U32>, run: Maybe<&2, U32>) -> Bool:

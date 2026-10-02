@@ -12,6 +12,7 @@ import ./src/app/bots.bend as BV
 import ./src/core/board.bend as B
 import ./src/core/hub.bend as H
 import ./src/core/cmds.bend as CM
+import ./src/core/utf8.bend as UT
 import ./src/core/refs.bend as RF
 import ./src/core/todo.bend as TD
 import ./src/core/apikeys.bend as AK
@@ -4892,3 +4893,29 @@ law prep_stale_dropped:
 
 law gen_mcp_path:
   {H.Gen.thread(H.Gen.mcp("t17-3", "1790-7")) ++ "|" ++ H.Gen.tag(H.Gen.mcp("t17-3", "1790-7")) ++ "|" ++ H.Gen.tag("t17-3") == "t17-3|1790-7|" : String}
+
+# Silence and exit (hub.bend's Quiet.*, Exit.*; utf8.bend's Lines.rest): a
+# quiet running turn is noted once, never while it waits on work; a stale
+# generation's exit changes nothing; the last line of a stream with no
+# newline is still read
+law quiet_once:
+  {Bool.show(H.Quiet.due(True{}, 0n, 700n, False{}, 0n)) ++ Bool.show(H.Quiet.due(True{}, 0n, 700n, True{}, 0n)) ++ Bool.show(H.Quiet.due(True{}, 200n, 700n, False{}, 0n)) == "TrueFalseFalse" : String}
+
+law quiet_never_when_busy:
+  for +heard: Nat
+  for +now: Nat
+  for +n: Nat
+  {H.Quiet.due(True{}, heard, now, False{}, 1n+n) == False{} : Bool}
+
+law quiet_never_idle:
+  for +heard: Nat
+  for +now: Nat
+  for said: Bool
+  for +busy: Nat
+  {H.Quiet.due(False{}, heard, now, said, busy) == False{} : Bool}
+
+law exit_stale_gen_quiet:
+  {Bool.show(H.Exit.current("g1", "g2")) ++ Bool.show(H.Exit.current("", "")) ++ Bool.show(H.Exit.current("g1", "g1")) == "FalseFalseTrue" : String}
+
+law final_partial_line_flushed:
+  {UT.Lines.rest(UT.Lines.after(UT.Lines.feed(UT.Lines.new(), UT.Utf8.encode("{\"a\":1}\n{\"type\":\"result\"}")))) == "{\"type\":\"result\"}" : String}
