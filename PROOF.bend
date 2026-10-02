@@ -5888,6 +5888,27 @@ def Laws.hubs_delta_other_thread(hs, th, text, h):
   %Equal.sym(Bool, String.eq(Hb.Hubs.cur(hs), Hb.Hubs.cur(hs)), True{}, Laws.string_eq_refl(Hb.Hubs.cur(hs))) : {Hb.Hubs.shows.k(_, hs, Hb.Hubs.cur(hs), J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{th}}, J.KV{"text", J.Str{text}}])) == False{} : Bool}
   Laws.shows_other_delta(Hb.Hubs.ui(hs, Hb.Hubs.cur(hs)), th, text, h)
 
+def Laws.hubs_redraw_changes_elsewhere(hs, key, items):
+  {==}
+
+def Laws.hubs_redraw_delta_elsewhere(hs, key, th, text, h):
+  Laws.hubs_delta_elsewhere(hs, key, J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{th}}, J.KV{"text", J.Str{text}}]), h)
+
+def Laws.hubs_redraw_delta_other_thread(hs, th, text, h):
+  Laws.hubs_delta_other_thread(hs, th, text, h)
+
+def Laws.alerts_none_for_delta(u, th, text):
+  {==}
+
+def Laws.island_doing_mine_same():
+  {==}
+
+def Laws.island_doing_mine_text():
+  {==}
+
+def Laws.hubs_screen_unfocused_thread_null():
+  {==}
+
 def Laws.shows_changes(u, items):
   {==}
 

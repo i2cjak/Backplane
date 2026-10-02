@@ -38,6 +38,7 @@ import ./src/core/lightbox.bend as LBX
 import ./src/core/links.bend as LK
 import ./src/web/dom.bend as DM
 import ./src/core/client.bend as U
+import ./src/mobile/screen.bend as MSC
 import ./src/core/gh.bend as GH
 import ./src/gfx/text.bend as X
 import ./src/core/fold.bend as FO
@@ -858,6 +859,49 @@ law hubs_delta_other_thread:
   for +text: String
   for h: {String.eq(th, U.Ui.sel(Hb.Hubs.ui(hs, Hb.Hubs.cur(hs)))) == False{} : Bool}
   {Hb.Hubs.shows(hs, Hb.Hubs.cur(hs), J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{th}}, J.KV{"text", J.Str{text}}])) == False{} : Bool}
+
+# the phone redraws for any message from any paired hub (the merged
+# sidebar and the island show them all); streamed text only as Hubs.shows
+# says: not from a hub out of focus, nor for another thread
+law hubs_redraw_changes_elsewhere:
+  for +hs: Hb.Hubs
+  for +key: String
+  for +items: List<&2, J.Json>
+  {Hb.Hubs.redraw(hs, key, J.Json.obj([J.KV{"t", J.Str{"changes"}}, J.KV{"items", J.Json.arr(items)}])) == True{} : Bool}
+
+law hubs_redraw_delta_elsewhere:
+  for +hs: Hb.Hubs
+  for +key: String
+  for +th: String
+  for +text: String
+  for h: {String.eq(key, Hb.Hubs.cur(hs)) == False{} : Bool}
+  {Hb.Hubs.redraw(hs, key, J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{th}}, J.KV{"text", J.Str{text}}])) == False{} : Bool}
+
+law hubs_redraw_delta_other_thread:
+  for +hs: Hb.Hubs
+  for +th: String
+  for +text: String
+  for h: {String.eq(th, U.Ui.sel(Hb.Hubs.ui(hs, Hb.Hubs.cur(hs)))) == False{} : Bool}
+  {Hb.Hubs.redraw(hs, Hb.Hubs.cur(hs), J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{th}}, J.KV{"text", J.Str{text}}])) == False{} : Bool}
+
+# streamed text raises no alert (and nothing is compared for it)
+law alerts_none_for_delta:
+  for +u: U.Ui
+  for +th: String
+  for +text: String
+  {Hb.Did.alerts(Hb.One.got(u, J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{th}}, J.KV{"text", J.Str{text}}]))) == [] : List<&2, J.Json>}
+
+# the island read from each thread's own entries says what the walk over
+# the whole log says, a message the thread sent elsewhere included
+law island_doing_mine_same:
+  {Nt.Note.island.st(U.Ui.threads(Hb.Island.demo()), Hb.Island.demo()) == Nt.Note.island(U.Ui.threads(Hb.Island.demo()), U.Ui.entries(Hb.Island.demo())) : J.Json}
+
+law island_doing_mine_text:
+  {J.Json.show(Nt.Note.island.st(U.Ui.threads(Hb.Island.demo()), Hb.Island.demo())) == "{\"running\":1,\"headline\":\"x\",\"lines\":[{\"thread\":\"t1\",\"title\":\"x\",\"doing\":\"tool ran ls\"}]}" : String}
+
+# a hub out of focus builds no thread for the merged screen
+law hubs_screen_unfocused_thread_null:
+  {J.Json.get_obj(MSC.Mob.screen.f(False{}, U.Ui.init(0n)), "thread") == J.Null{} : J.Json}
 
 # a phone paired with no hub sends nothing, however time passes
 law hubs_unpaired_quiet:

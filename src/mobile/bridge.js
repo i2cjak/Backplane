@@ -293,8 +293,9 @@ globalThis.Backplane = {
   // a binary frame from hub k, as base64
   // quiet: more frames wait behind this one, so no screen is built for it
   // (only the last of a burst is drawn: terminal echoes, streamed text)
-  // (nor for streamed text the screen does not show: App.shows, laws
-  // hubs_delta_*; every token of every agent at work is a frame)
+  // (nor for streamed text the screen does not show: App.shows, that is
+  // Hubs.redraw, laws hubs_redraw_*; every token of every agent at work is
+  // a frame; anything else from any paired hub redraws the merged screen)
   // owe: the app dropped a screen since (a newer call was waiting), so
   // this one builds one
   recv(k, data, quiet, owe) {

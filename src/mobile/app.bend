@@ -74,10 +74,11 @@ def shot(hit: Bool, +o: J.Json) -> J.Json:
 def recv(+hs: H.Hubs, +key: String, +o: J.Json) -> H.HAct:
   H.Hubs.recv(hs, key, shot(String.eq(J.Json.get_str(o, "t", ""), "shot"), o))
 
-# whether that frame can change the screen (Hubs.shows): the bridge builds
-# none for another thread's streamed text
+# whether that frame can change the screen (Hubs.redraw): the bridge
+# builds none for another thread's streamed text, and one for anything
+# else from any paired hub
 def shows(+hs: H.Hubs, +key: String, +o: J.Json) -> Bool:
-  H.Hubs.shows(hs, key, o)
+  H.Hubs.redraw(hs, key, o)
 
 # a cat's rig as JSON text, for the key the screen names it by
 # ("look:mood"); the apps ask once per key and keep it

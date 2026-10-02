@@ -59,12 +59,19 @@ def Note.was.k(hit: Bool, r: Bool, acc: Bool) -> Bool:
     case False{}:
       acc
 
-def Note.was(ss: List<&2, Seen>, +id: String) -> Bool:
-  match ss:
-    case Nil{}:
+# (a tail walk that stops at the thread's first entry: once per thread of
+# every frame, it was the square of the threads)
+def Note.was.go(ss: List<&2, Seen>, +id: String, found: Bool, r: Bool) -> Bool:
+  match ss found:
+    case _ True{}:
+      r
+    case Nil{} False{}:
       False{}
-    case Seen{i, r} <> t:
-      Note.was.k(String.eq(i, id), r, Note.was(t, id))
+    case Seen{i, x} <> t False{}:
+      Note.was.go(t, id, String.eq(i, id), x)
+
+def Note.was(ss: List<&2, Seen>, +id: String) -> Bool:
+  Note.was.go(ss, id, False{}, False{})
 
 # the newest entry text of a thread (entries are kept newest first):
 # its last assistant message, or its last tool action
@@ -215,3 +222,24 @@ def Note.island.k(+ls: List<&2, J.Json>) -> J.Json:
 
 def Note.island(ts: List<&2, M.Thread>, +es: List<&2, M.Entry>) -> J.Json:
   Note.island.k(Note.lines(ts, es))
+
+# The same from the read model: each thread's own entries (M.State.mine),
+# never the whole log per thread. Its entries include what it sent other
+# threads, and the walks keep their thread check, so the text is the same
+# (law island_doing_mine_same)
+def Note.lines.st(ts: List<&2, M.Thread>, +st: M.State) -> List<&2, J.Json>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case M.Thread{+id, _, title, _, _, turn, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _} <> t:
+      List.append(&2, J.Json, Note.one(Note.running(turn), id, title, M.State.mine(st, id)), Note.lines.st(t, st))
+
+def Note.island.st(ts: List<&2, M.Thread>, +st: M.State) -> J.Json:
+  Note.island.k(Note.lines.st(ts, st))
+
+def Note.alerts.st(ts: List<&2, M.Thread>, +seen: List<&2, Seen>, +st: M.State, +desk: String) -> List<&2, J.Json>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case M.Thread{+id, _, title, _, _, turn, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _} <> t:
+      Note.alert(Note.kind(Note.was(seen, id), turn), id, title, st, M.State.mine(st, id), desk, Note.alerts.st(t, seen, st, desk))

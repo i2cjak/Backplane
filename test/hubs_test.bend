@@ -6,6 +6,7 @@ import ../src/core/json.bend as J
 import ../src/core/client.bend as U
 import ../src/mobile/hubs.bend as H
 import ../src/mobile/app.bend as A
+import ../src/mobile/screen.bend as S
 
 # The phone with several hubs: one client each, one screen, actions
 # routed by the hub their value names.
@@ -71,9 +72,34 @@ def searching() -> H.Hubs:
 def obj(+h: H.Hubs, +key: String, +field: String) -> String:
   J.Json.get_str(J.Json.get_obj(H.Hubs.screen(h), key), field, "")
 
+def changes(cs: List<&2, M.Change>) -> J.Json:
+  J.Json.obj([J.KV{"t", J.Json.str("changes")}, J.KV{"items", J.Json.arr(items(cs))}])
+
+def delta(+th: String) -> J.Json:
+  J.Json.obj([J.KV{"t", J.Json.str("delta")}, J.KV{"thread", J.Json.str(th)}, J.KV{"text", J.Json.str("tok")}])
+
+def alerts(a: H.HAct) -> Nat:
+  match a:
+    case H.HAct{_, _, als}:
+      List.length(&2, J.Json, als)
+
+# t2 on the hub out of focus is at work
+def busy() -> H.Hubs:
+  H.Hubs.after(H.Hubs.recv(two(), "box:3787", changes([M.TurnChanged{"t2", M.Running{}, 200n}])))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     C.Check.str("first hub is current", H.Hubs.cur(two()), "100.1.1.1:3787")
+    # every paired hub's messages redraw the merged screen; streamed text
+    # only for the thread open on the hub in focus
+    C.Check.str("an unfocused completion redraws", yes(A.shows(busy(), "box:3787", changes([M.TurnChanged{"t2", M.Completed{}, 300n}]))), "yes")
+    C.Check.str("an unfocused approval redraws", yes(A.shows(busy(), "box:3787", changes([M.AskOpened{"a1", "t2", "approval", "Bash", "ls", "", 300n}]))), "yes")
+    C.Check.str("unfocused streamed text does not", yes(A.shows(busy(), "box:3787", delta("t2"))), "no")
+    C.Check.str("an unfocused completion alerts", Nat.show(alerts(H.Hubs.recv(busy(), "box:3787", changes([M.TurnChanged{"t2", M.Completed{}, 300n}])))), "1")
+    C.Check.str("streamed text alerts nothing", Nat.show(alerts(H.Hubs.recv(busy(), "box:3787", delta("t2")))), "0")
+    C.Check.str("connecting raises no old alerts", Nat.show(alerts(H.Hubs.recv(H.Hubs.set(H.Hubs.init(0n, "c"), ["box:3787"]), "box:3787",
+      log([M.ProjectCreated{"p2", "Box", "/box", 50n}, M.ThreadCreated{"t2", "p2", "Two", M.Local{}, "", "", "claude", "", 100n}, M.TurnChanged{"t2", M.Completed{}, 120n}], "")))), "0")
+    C.Check.str("an unfocused hub's screen has no thread", J.Json.show(J.Json.get_obj(S.Mob.screen.f(False{}, H.Hubs.ui(busy(), "box:3787")), "thread")), "null")
     # a typed draft builds no screen unless what the composer offers changes
     C.Check.str("nothing offered", A.offer(act(two(), "select", "box:3787|t2")), "")
     C.Check.str("plain draft offers nothing", A.offer(act(act(two(), "select", "box:3787|t2"), "draft", "hi")), "")
