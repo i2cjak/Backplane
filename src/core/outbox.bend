@@ -334,8 +334,19 @@ def Items.more(fuel: Nat, +ends: Bool, +xs: List<&2, String>, +most: Nat, +bytes
     case 1n+f _:
       Items.cont(Bool.and(ends, List.is_empty(&2, String, List.drop(&2, String, xs, Join.count.at(xs, most, bytes)))), List.take(&2, String, xs, Join.count.at(xs, most, bytes))) <> Items.more(f, ends, List.drop(&2, String, xs, Join.count.at(xs, most, bytes)), most, bytes)
 
+# the first frame's text: its header, then `plain` or, when the writer
+# splits the lines into more frames, `split` (a log frame that was the
+# join's last says "more": true then, so the frames after it stay inside
+# the bootstrap), the lines and the tail
+def Items.first(+hd: String, +plain: String, +split: String, +xs: List<&2, String>, +tl: String, +most: Nat, +bytes: Nat) -> String:
+  hd ++ Bool.pick(String, List.is_empty(&2, String, List.drop(&2, String, xs, Join.count.at(xs, most, bytes))), plain, split)
+    ++ String.join(List.take(&2, String, xs, Join.count.at(xs, most, bytes)), ",") ++ tl
+
+def Items.texts.s(+hd: String, +plain: String, +split: String, +xs: List<&2, String>, +tl: String, +ends: Bool, +most: Nat, +bytes: Nat) -> List<&2, String>:
+  Items.first(hd, plain, split, xs, tl, most, bytes) <> Items.more(List.length(&2, String, xs), ends, List.drop(&2, String, xs, Join.count.at(xs, most, bytes)), most, bytes)
+
 def Items.texts.at(+hd: String, +xs: List<&2, String>, +tl: String, +ends: Bool, +most: Nat, +bytes: Nat) -> List<&2, String>:
-  (hd ++ String.join(List.take(&2, String, xs, Join.count.at(xs, most, bytes)), ",") ++ tl) <> Items.more(List.length(&2, String, xs), ends, List.drop(&2, String, xs, Join.count.at(xs, most, bytes)), most, bytes)
+  Items.texts.s(hd, "", "", xs, tl, ends, most, bytes)
 
 def Items.texts(+hd: String, +xs: List<&2, String>, +tl: String, +ends: Bool) -> List<&2, String>:
   Items.texts.at(hd, xs, tl, ends, Join.most(), Join.bytes())

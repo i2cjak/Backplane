@@ -74,7 +74,7 @@ type Wire is Data:
   WState{st: M.State, head: String}
   # a message made of a log's lines: head, the lines joined by ",", tail;
   # put together by the writer, off the hub (a join's chunk)
-  WItems{head: String, items: List<&2, String>, tail: String, ends: Bool}
+  WItems{head: String, plain: String, split: String, items: List<&2, String>, tail: String, ends: Bool}
 
 type Msg is Data:
   Announce{text: String}
@@ -922,8 +922,8 @@ def Conn.write(m: Maybe<&1, Wire>, s: Socket, +out: Chan(Wire), k: Socket -> Nat
       Conn.finish(s, W.Ws.encode(8, Nil{}))
     case Some{WState{_, _}}:
       k(s, 0n)
-    case Some{WItems{hd, xs, tl, ends}}:
-      Conn.items(OB.Items.texts(hd, xs, tl, ends), s, out, k)
+    case Some{WItems{hd, pl, sp, xs, tl, ends}}:
+      Conn.items(OB.Items.texts.s(hd, pl, sp, xs, tl, ends, OB.Join.most(), OB.Join.bytes()), s, out, k)
     case None{}:
       Socket.close(s)
 
@@ -1433,12 +1433,12 @@ def Hub.boot_msg(xs: List<&2, String>, last: Bool) -> String:
 
 # the same, put together by the writer
 def Hub.boot_items(xs: List<&2, String>) -> Wire:
-  WItems{"{\"t\":\"changes\",\"boot\":true,\"items\":[", xs, "]}", False{}}
+  WItems{"{\"t\":\"changes\",\"boot\":true,\"items\":[", "", "", xs, "]}", False{}}
 
 # a join's first frame, put together by the writer
 def Hub.log_items(+origin: String, +cfg: Cfg, +since: Nat, xs: List<&2, String>, +more: Bool) -> Wire:
   WItems{"{\"t\":\"log\",\"since\":" ++ Nat.show(since) ++ ",\"origin\":\"" ++ origin ++ "\",\"version\":" ++ J.Json.show(J.Str{Cfg.version(cfg)}) ++ ",\"info\":" ++ J.Json.show(Hub.info(cfg))
-    ++ Bool.pick(String, more, ",\"more\":true", "") ++ ",\"items\":[", xs, "]}", Bool.not(more)}
+    , Bool.pick(String, more, ",\"more\":true,\"items\":[", ",\"items\":["), ",\"more\":true,\"items\":[", xs, "]}", Bool.not(more)}
 
 # Desks
 # -----

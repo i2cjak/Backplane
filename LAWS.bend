@@ -5128,6 +5128,15 @@ law items_split_by_bytes:
 law items_split_keeps_boot:
   {OB.Items.texts.at("H[", ["aaa", "bb", "cccc"], "]", False{}, 5n, 4n) == ["H[aaa]", "{\"t\":\"changes\",\"boot\":true,\"items\":[bb]}", "{\"t\":\"changes\",\"boot\":true,\"items\":[cccc]}"] : List<&2, String>}
 
+# a log frame the writer splits says "more": true (it was the join's last as
+# offered), so the frames after it stay inside the bootstrap; one that is
+# not split stays as offered
+law items_split_marks_more:
+  {OB.Items.texts.s("L", ",i[", ",m,i[", ["aaa", "bb", "cccc"], "]", True{}, 5n, 4n) == ["L,m,i[aaa]", "{\"t\":\"changes\",\"boot\":true,\"items\":[bb]}", "{\"t\":\"changes\",\"boot\":false,\"items\":[cccc]}"] : List<&2, String>}
+
+law items_whole_not_marked:
+  {OB.Items.texts.s("L", ",i[", ",m,i[", ["a", "b"], "]", True{}, 5n, 4n) == ["L,i[a,b]"] : List<&2, String>}
+
 law ui_chunked_join_equals_whole:
   {U.Ui.state(U.Ui.recv(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", True{}, True{}, [C.Change.encode(M.SettingSet{"a", "1", 1n})])),
       U.Boot.demo("changes", False{}, True{}, [C.Change.encode(M.SettingSet{"b", "2", 2n})])), U.Boot.demo("changes", False{}, False{}, [])))

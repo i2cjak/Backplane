@@ -6969,6 +6969,12 @@ def Laws.items_split_by_bytes():
 def Laws.items_split_keeps_boot():
   {==}
 
+def Laws.items_split_marks_more():
+  {==}
+
+def Laws.items_whole_not_marked():
+  {==}
+
 def Laws.ui_chunked_join_equals_whole():
   {==}
 
