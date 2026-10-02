@@ -198,6 +198,15 @@ def Nui.recv.k(n: Nui, +o: J.Json) -> Nui:
     case Nui{+u, w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}:
       Nui{Shot.recv(String.eq(J.Json.get_str(o, "t", ""), "shot"), U.Ui.recv(u, o), o), w, h, mx, my, sd, sc, ca, fo, pa, hi, ms, vw}
 
+# a message through the client's own receive (U.Ui.recv_act): the commands
+# it gives run too, the outbox sent again after a reconnect's log and a
+# desktop notification ({"t":"notify"}) among them, as on the web and the
+# phones
+def Nui.recv.act.k(a: U.Act, +o: J.Json) -> U.Act:
+  match a:
+    case U.Act{u, cs}:
+      U.Act{Shot.recv(String.eq(J.Json.get_str(o, "t", ""), "shot"), u, o), cs}
+
 def Nui.with_focus(n: Nui, fo: String) -> Nui:
   match n:
     case Nui{u, w, h, mx, my, sd, sc, ca, _, pa, hi, ms, vw}:
@@ -686,6 +695,9 @@ def Nui.ui(n: Nui) -> U.Ui:
   match n:
     case Nui{u, _, _, _, _, _, _, _, _, _, _, _, vw}:
       u
+
+def Nui.recv.act(+n: Nui, +o: J.Json) -> U.Act:
+  Nui.recv.act.k(U.Ui.recv_act(Nui.ui(n), o), o)
 
 def Jump.settle(s: Step) -> Step:
   match s:
@@ -1204,7 +1216,7 @@ def Hear.k(text: Bool, +here: Bool, +n: Nui, +o: J.Json) -> Step:
     case True{}:
       Hear.kept(Hear.to(here, Nui.recv(Hear.at(here, n), o)), J.Json.get_str(o, "thread", ""))
     case False{}:
-      Nui.sync.d(Nui.recv(n, o), U.Ui.shows(Nui.ui(n), o))
+      Nui.sync.kd(Nui.recv.act(n, o), n, U.Ui.shows(Nui.ui(n), o))
 
 # a message from the hub (another thread's streamed text draws nothing,
 # U.Ui.shows)
@@ -1397,6 +1409,15 @@ def Nui.adopt.theme(changed: Bool, +n: Nui) -> Nui:
 # draws the viewer's base again (its plain part is the window's ground)
 def Nui.adopt(+n: Nui, +st: M.State, head: J.Json) -> Nui:
   Nui.adopt.theme(Bool.not(String.eq(M.Setting.get(st, "ui.theme", ""), M.Setting.get(U.Ui.state.of(Nui.ui(n)), "ui.theme", ""))), Nui.adopt.k(n, st, head))
+
+# the same, with the outbox sent again: the hub's own window joins without
+# a socket, so what was waiting to be sent goes now (the hub stores a
+# resent message once)
+def Nui.adopt.out(+n: Nui) -> Step:
+  Step{n, Nui.cmds(U.Ui.outbox(Nui.ui(n))), True{}}
+
+def Nui.adopt.step(+n: Nui, +st: M.State, head: J.Json) -> Step:
+  Nui.adopt.out(Nui.adopt(n, st, head))
 
 # A new machine drops native focus, scroll, hits, selections and scene as
 # well as core selectors. A cached read model is safe to display at once.
