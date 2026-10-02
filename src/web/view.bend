@@ -1582,10 +1582,15 @@ def View.aside.n(+kind: String) -> Nat:
     Bool.pick(Nat, String.eq(kind, "3d"), 3n, Bool.pick(Nat, String.eq(kind, "schematic"), 4n,
       Bool.pick(Nat, String.eq(kind, "files"), 6n, Bool.pick(Nat, String.eq(kind, "image"), 7n, Bool.pick(Nat, String.eq(kind, "pdf"), 8n, 5n))))))))
 
-# the side pane of the selected thread: the tabs, then what they show
+# the side pane of the selected thread: the tabs, then what they show. Its
+# left edge is a handle that resizes it (host.js keeps the width per
+# browser; a double-click gives the pane its share back)
+def View.split() -> D.Node:
+  D.El{"div", "split", [D.At{"class", "viewer-split"}, D.At{"title", "Drag to resize the viewer; double-click to reset"}], Nil{}}
+
 def View.aside(+kind: String, +u: U.Ui) -> D.Node:
   D.El{"aside", "viewer", [D.At{"class", "viewer " ++ Bool.pick(String, String.is_empty(kind), "board", kind)}, D.At{"id", "viewer"}],
-    View.tabs(Bool.pick(String, U.Mpage.onpart(u), "mech", U.Fm.tab(U.Solid.kind(u)))) <> View.aside.k(View.aside.n(kind), u)}
+    View.split() <> View.tabs(Bool.pick(String, U.Mpage.onpart(u), "mech", U.Fm.tab(U.Solid.kind(u)))) <> View.aside.k(View.aside.n(kind), u)}
 
 def View.aside.if(open: Bool, +kind: String, +u: U.Ui) -> List<&2, D.Node>:
   match open:

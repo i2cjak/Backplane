@@ -714,6 +714,55 @@ document.addEventListener("keydown", (e) => {
 
 window.addEventListener("resize", () => lbDraw());
 
+// The viewer's width: its left edge (view.bend's View.split) drags it, the
+// width is kept in this browser, and a double-click on the edge gives the
+// pane its usual share back. The thread keeps at least 360 px.
+const VIEWER_W = "backplane-viewer-w";
+function viewerWidth(w) {
+  const root = document.documentElement;
+  if (w == null) { root.style.removeProperty("--viewer-w"); return; }
+  root.style.setProperty("--viewer-w", `${Math.round(w)}px`);
+}
+function viewerClamp(w) {
+  const app = document.querySelector(".app");
+  const side = app?.querySelector(".sidebar")?.getBoundingClientRect().width ?? 264;
+  const max = (app?.getBoundingClientRect().width ?? window.innerWidth) - side - 360;
+  return Math.max(320, Math.min(w, max));
+}
+try { const w = Number(localStorage.getItem(VIEWER_W)); if (w > 0) viewerWidth(viewerClamp(w)); } catch {}
+document.addEventListener("pointerdown", (e) => {
+  const edge = e.target instanceof Element ? e.target.closest(".viewer-split") : null;
+  if (!edge || e.button !== 0) return;
+  e.preventDefault();
+  const pane = edge.parentElement;
+  const right = pane.getBoundingClientRect().right;
+  try { edge.setPointerCapture(e.pointerId); } catch {}
+  edge.classList.add("on");
+  document.body.classList.add("resizing");
+  let w = pane.getBoundingClientRect().width;
+  const move = (m) => { w = viewerClamp(right - m.clientX); viewerWidth(w); };
+  const done = () => {
+    edge.removeEventListener("pointermove", move);
+    edge.removeEventListener("pointerup", done);
+    edge.removeEventListener("pointercancel", done);
+    edge.classList.remove("on");
+    document.body.classList.remove("resizing");
+    try { localStorage.setItem(VIEWER_W, String(Math.round(w))); } catch {}
+  };
+  edge.addEventListener("pointermove", move);
+  edge.addEventListener("pointerup", done);
+  edge.addEventListener("pointercancel", done);
+});
+document.addEventListener("dblclick", (e) => {
+  if (!(e.target instanceof Element) || !e.target.closest(".viewer-split")) return;
+  viewerWidth(null);
+  try { localStorage.removeItem(VIEWER_W); } catch {}
+});
+window.addEventListener("resize", () => {
+  const w = parseFloat(document.documentElement.style.getPropertyValue("--viewer-w"));
+  if (w > 0) viewerWidth(viewerClamp(w));
+});
+
 // Socket
 // ------
 
