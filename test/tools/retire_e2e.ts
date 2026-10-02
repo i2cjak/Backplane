@@ -2,9 +2,9 @@
 // Starts a headless hub with a stand-in `claude` that, on a message saying
 // "approve", asks Backplane's permission prompt over MCP (the request parks
 // until the user answers); on an interrupt it still writes a delta and a
-// result for the stopped turn; and when its input closes it writes a
-// result before exiting (it ignores SIGTERM), as a replaced or archived
-// process might. Checks:
+// result for the stopped turn; and when it is stopped (SIGTERM) it writes
+// a result before exiting, as a replaced or archived process might.
+// Checks:
 // - Stop answers the parked request exactly once with a deny, closes the
 //   ask, and the thread stays Interrupted after the late result: no
 //   Completed, no late delta, and the message queued meanwhile does not
@@ -30,7 +30,8 @@ const log = join(root, "claude.log");
 const perm = join(root, "perm.out");
 mkdirSync(fake);
 writeFileSync(join(fake, "claude"), `#!/bin/sh
-trap '' TERM
+# stopped (a model switch, archive), it still writes a result as it goes
+trap 'echo "EOF $$" >> "$FAKE_LOG"; printf "%s\\n" "{\\"type\\":\\"result\\",\\"subtype\\":\\"success\\",\\"is_error\\":false,\\"result\\":\\"from the old process\\",\\"session_id\\":\\"x\\"}"; exit 0' TERM
 url=$(printf '%s' "$*" | sed -n 's/.*"url":"\\([^"]*\\)".*/\\1/p')
 echo "START $$" >> "$FAKE_LOG"
 init='{"type":"system","subtype":"init","session_id":"sess-'$$'","cwd":"/tmp","tools":["Bash"],"model":"fake","permissionMode":"default"}'
