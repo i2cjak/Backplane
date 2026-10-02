@@ -269,6 +269,50 @@ def Local.keep.go(ks: List<&2, String>, +old: Map<&2, String>, m: Map<&2, String
 def Local.keep(+old: Map<&2, String>, m: Map<&2, String>) -> Map<&2, String>:
   Local.keep.go(["cid", "local.machine", "local.machines", "local.drafts", "local.hub", "clock", "local.fixed", "local.generation", "local.state.hub", "local.state.gen"], old, m)
 
+# A reconnect to the same hub (the log's origin is the one this client
+# had) keeps what the person chose in each thread's viewer: its kind, path
+# and panel, whether they toggled it by hand, the diff, folds, the
+# history step and comparison, the Files folder. Results asked again
+# (refs:, fm.list:) and playback (hist.play:) are left out. Another
+# machine's log keeps none of them (Local.keep runs on a switch too)
+# (laws reset_keeps_viewer, reset_new_origin_drops_viewer)
+def Reset.prefixes() -> List<&2, String>:
+  ["view.", "panel:", "panel.hand:", "diff:", "fold:", "hist.at:", "hist.back:", "hist.diff:", "cmp.a:", "cmp.b:", "cmp.al", "cmp.bl", "fm.want:"]
+
+def Reset.hit(ps: List<&2, String>, +k: String, found: Bool) -> Bool:
+  match ps found:
+    case _ True{}:
+      True{}
+    case Nil{} False{}:
+      False{}
+    case p <> t False{}:
+      Reset.hit(t, k, String.starts_with(k, p))
+
+def Reset.one(hit: Bool, +k: String, +old: Map<&2, String>, m: Map<&2, String>) -> Map<&2, String>:
+  match hit:
+    case True{}:
+      Map.set(&2, String, m, k, Str.get(old, k))
+    case False{}:
+      m
+
+def Reset.copy(ks: List<&2, String>, +old: Map<&2, String>, m: Map<&2, String>) -> Map<&2, String>:
+  match ks:
+    case Nil{}:
+      m
+    case +k <> t:
+      Reset.copy(t, old, Reset.one(Reset.hit(Reset.prefixes(), k, False{}), k, old, m))
+
+def Ui.reset.keep(same: Bool, +old: Map<&2, String>, m: Map<&2, String>) -> Map<&2, String>:
+  match same:
+    case True{}:
+      Reset.copy(Map.keys(&2, String, old), old, m)
+    case False{}:
+      m
+
+# a log from this origin (for laws)
+def Reset.demo(+origin: String) -> J.Json:
+  J.Json.obj([J.KV{"t", J.Str{"log"}}, J.KV{"origin", J.Str{origin}}, J.KV{"items", J.Json.arr(Nil{})}])
+
 def Machines.home.k(home: Bool, +nf: Map<&2, String>) -> Map<&2, String>:
   Bool.pick(Map<&2, String>, Bool.and(home, Bool.not(String.is_empty(Str.get(nf, "machines")))), Map.set(&2, String, nf, "local.machines", Str.get(nf, "machines")), nf)
 
@@ -352,7 +396,8 @@ def Ui.reset(u: Ui, +o: J.Json) -> Ui:
     case Ui{st, sel, dr, live, op, _, now, ad, pa, _, rid, w, er, note, +nf, ob, tr}:
       Ui.fold.items(J.Json.elems(J.Json.get_obj(o, "items")),
         Ui{Ui.base(Nat.is_gt(J.Json.get_nat(o, "since", 0n), 0n), st), sel, dr, live, op, True{}, now, ad, pa, J.Json.get_str(o, "version", ""), rid, w, er, note,
-          Machines.home(Local.keep(nf, Map.set(&2, String, Map.set(&2, String, Info.of(J.Json.get_obj(o, "info")), "cid", Str.get(nf, "cid")), "origin", J.Json.get_str(o, "origin", "")))), ob, tr})
+          Machines.home(Ui.reset.keep(String.eq(J.Json.get_str(o, "origin", ""), Str.get(nf, "origin")), nf,
+            Local.keep(nf, Map.set(&2, String, Map.set(&2, String, Info.of(J.Json.get_obj(o, "info")), "cid", Str.get(nf, "cid")), "origin", J.Json.get_str(o, "origin", ""))))), ob, tr})
 
 # how many changes this client holds (a reconnect asks for the rest)
 # the log's read model handed over whole (the hub's own window: nothing

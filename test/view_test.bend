@@ -21,6 +21,12 @@ def view(+th: String, +path: String) -> J.Json:
 def on(u: U.Ui, +id: String) -> U.Ui:
   ui(U.Ui.act(u, "select", id))
 
+def log(+origin: String, +since: String) -> J.Json:
+  json("{\"t\":\"log\",\"since\":" ++ since ++ ",\"origin\":\"" ++ origin ++ "\",\"info\":{},\"items\":[]}")
+
+def diffs() -> J.Json:
+  json("{\"t\":\"reply\",\"id\":1}")
+
 def main() -> IO(Unit):
   +a = on(U.Ui.init(0n), "a")
   +shown = U.Ui.recv(a, view("a", "/p/a.kicad_pcb"))
@@ -28,7 +34,19 @@ def main() -> IO(Unit):
   +both = U.Ui.recv(shown, view("b", "/p/b.kicad_sch"))
   +old = U.Ui.recv(a, json("{\"t\":\"view\",\"path\":\"/p/x.glb\",\"kind\":\"\"}"))
   +picked = U.Ui.view_pick(both, "schematic")
+  +joined = U.Ui.recv(on(U.Ui.recv(U.Ui.init(0n), log("O", "0")), "a"), view("a", "/p/a.kicad_pcb"))
+  +hist = U.Ui.info_set(U.Ui.info_set(U.Ui.info_set(joined, "diff:a", "x.diff"), "hist.at:a", "3"), "fm.list:a", "stale")
+  +shut = ui(U.Ui.act(joined, "panel", ""))
   do IO<Unit>:
+    C.Check.str("full reconnect keeps the viewer", U.Ui.view_get(U.Ui.recv(joined, log("O", "0")), "view.path"), "/p/a.kicad_pcb")
+    C.Check.str("incremental reconnect keeps the viewer", U.Ui.view_get(U.Ui.recv(joined, log("O", "4")), "view.path"), "/p/a.kicad_pcb")
+    C.Check.str("reconnect keeps the panel open", Bool.show(U.Ui.panel(U.Ui.recv(joined, log("O", "4")))), "True")
+    C.Check.str("reconnect keeps the diff", U.Ui.info(U.Ui.recv(hist, log("O", "4")), "diff:a"), "x.diff")
+    C.Check.str("reconnect keeps the history step", U.Ui.info(U.Ui.recv(hist, log("O", "4")), "hist.at:a"), "3")
+    C.Check.str("reconnect drops a stale listing", U.Ui.info(U.Ui.recv(hist, log("O", "4")), "fm.list:a"), "")
+    C.Check.str("a hand-shut panel stays shut after reconnect", Bool.show(U.Ui.panel(U.Ui.recv(shut, log("O", "4")))), "False")
+    C.Check.str("an auto view after reconnect respects the hand", Bool.show(U.Ui.panel(U.Ui.recv(U.Ui.recv(shut, log("O", "4")), json("{\"t\":\"view\",\"thread\":\"a\",\"path\":\"/p/b.kicad_pcb\",\"kind\":\"\",\"auto\":true}")))), "False")
+    C.Check.str("another hub's log drops the viewer", U.Ui.view_get(U.Ui.recv(joined, log("P", "0")), "view.path"), "")
     C.Check.str("own thread shows", U.Ui.view_get(shown, "view.path"), "/p/a.kicad_pcb")
     C.Check.str("own thread opens", Bool.show(U.Ui.panel(shown)), "True")
     C.Check.str("other thread waits", U.Ui.view_get(other, "view.path"), "")

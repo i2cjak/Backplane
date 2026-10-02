@@ -2110,6 +2110,20 @@ law ui_seq_known_unchanged:
 law ui_seq_log_counts_unknown:
   {U.Ui.seq(U.Ui.recv.k(0n, U.Ui.init(0n), U.Seq.demo("log", [J.Json.obj([J.KV{"$", J.Str{"NoSuch"}}]), C.Change.encode(M.SettingSet{"b", "2", 2n})]))) == 2n : Nat}
 
+# a reconnect to the same hub keeps each thread's viewer as the person
+# left it; a log from another hub keeps none of it
+law reset_keeps_viewer:
+  {U.Ui.info(U.Ui.reset(U.Ui.info_set(U.Ui.reset(U.Ui.init(0n), U.Reset.demo("O")), "view.kind:t1", "board"), U.Reset.demo("O")), "view.kind:t1") == "board" : String}
+
+law reset_keeps_hand:
+  {U.Ui.info(U.Ui.reset(U.Ui.info_set(U.Ui.reset(U.Ui.init(0n), U.Reset.demo("O")), "panel.hand:t1", "1"), U.Reset.demo("O")), "panel.hand:t1") == "1" : String}
+
+law reset_new_origin_drops_viewer:
+  {U.Ui.info(U.Ui.reset(U.Ui.info_set(U.Ui.reset(U.Ui.init(0n), U.Reset.demo("O")), "view.kind:t1", "board"), U.Reset.demo("P")), "view.kind:t1") == "" : String}
+
+law reset_drops_results:
+  {U.Ui.info(U.Ui.reset(U.Ui.info_set(U.Ui.reset(U.Ui.init(0n), U.Reset.demo("O")), "fm.list:t1", "x"), U.Reset.demo("O")), "fm.list:t1") == "" : String}
+
 # a draft read back after a restart fills an empty composer and never
 # replaces what is typed there
 law draft_restore_fills:

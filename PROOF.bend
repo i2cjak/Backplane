@@ -4181,6 +4181,18 @@ def Laws.ui_seq_known_unchanged():
 def Laws.ui_seq_log_counts_unknown():
   {==}
 
+def Laws.reset_keeps_viewer():
+  {==}
+
+def Laws.reset_keeps_hand():
+  {==}
+
+def Laws.reset_new_origin_drops_viewer():
+  {==}
+
+def Laws.reset_drops_results():
+  {==}
+
 def Laws.draft_restore_fills(saved):
   {==}
 
