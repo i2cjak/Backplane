@@ -119,6 +119,35 @@ function sock_send_bytes(socket, data) {
   return host_send(socket, Uint8Array.from(bytes));
 }
 
+// Sock.send_until: host_send with one deadline for the frame; out of time
+// (or failed), the socket is shut both ways
+function sock_send_until(socket, data, ms) {
+  const bytes = [];
+  for (let xs = data; xs.$ === "Con"; xs = xs.tail) {
+    bytes.push(xs.head);
+  }
+  if (bytes.some((x) => x > 255)) {
+    return io_tup(socket, io_fail(22));
+  }
+  const sys = io_sys();
+  const b = Uint8Array.from(bytes);
+  const until = performance.now() + Number(ms);
+  let at = 0;
+  while (at < b.length) {
+    const n = Number(sys.send(socket, sys.ptr(b.subarray(at)), BigInt(b.length - at), 0x4000));
+    if (n < 0) {
+      const code = sys.errno();
+      if (code === (sys.mac ? 35 : 11) && performance.now() < until) {
+        continue;
+      }
+      host_libc().shutdown(socket, 2);
+      return io_tup(socket, io_fail(code === (sys.mac ? 35 : 11) ? 110 : code));
+    }
+    at += n;
+  }
+  return io_tup(socket, io_done({ $: "Unit" }));
+}
+
 function sock_send_text(socket, text) {
   return host_send(socket, io_bytes(text));
 }

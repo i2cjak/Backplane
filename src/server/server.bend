@@ -425,14 +425,35 @@ def Conn.finish(s: Socket, bs: List<&2, U32>) -> IO(Unit):
 def Conn.frame.out(t: String) -> List<&2, U32>:
   W.Ws.cbor(t)
 
-def Conn.write(m: Maybe<&1, Wire>, s: Socket, k: Socket -> IO(Unit)) -> IO(Unit):
+# A client's frames go out with a deadline each (Conn.deadline, ms): a
+# peer that stops reading (a half-open link, a phone that no longer reads)
+# fails the send, and then its channel is closed first, so the hub's sends
+# to it end at once instead of waiting on a full queue, and the socket is
+# closed (the effect shut it both ways: its reader ends and it leaves)
+def Conn.deadline() -> U32:
+  10000
+
+def Conn.sent.k(r: Socket & Result<&1, &1, U32 & String, Unit>, +out: Chan(Wire), k: Socket -> IO(Unit)) -> IO(Unit):
+  (s, res) = r
+  match res:
+    case Done{_}:
+      k(s)
+    case Fail{_}:
+      do IO<Unit>:
+        Chan.close(Wire, out)
+        Socket.close(s)
+
+def Conn.out(s: Socket, bs: List<&2, U32>, +out: Chan(Wire), k: Socket -> IO(Unit)) -> IO(Unit):
+  IO.bind(Socket & Result<&1, &1, U32 & String, Unit>, Unit, H.Sock.send_until(s, bs, Conn.deadline()), r => Conn.sent.k(r, out, k))
+
+def Conn.write(m: Maybe<&1, Wire>, s: Socket, +out: Chan(Wire), k: Socket -> IO(Unit)) -> IO(Unit):
   match m:
     case Some{WText{t}}:
-      IO.bind(Socket, Unit, Conn.send(s, Conn.frame.out(t)), k)
+      Conn.out(s, Conn.frame.out(t), out, k)
     case Some{WPong{p}}:
-      IO.bind(Socket, Unit, Conn.send(s, W.Ws.encode(10, p)), k)
+      Conn.out(s, W.Ws.encode(10, p), out, k)
     case Some{WBin{bs}}:
-      IO.bind(Socket, Unit, Conn.send(s, W.Ws.encode(2, bs)), k)
+      Conn.out(s, W.Ws.encode(2, bs), out, k)
     case Some{WClose{}}:
       Conn.finish(s, W.Ws.encode(8, Nil{}))
     case Some{WState{_, _}}:
@@ -446,7 +467,7 @@ def Conn.writer(fuel: Nat, s: Socket, +out: Chan(Wire)) -> IO(Unit):
     case 0n:
       Socket.close(s)
     case 1n+f:
-      IO.bind(Maybe<&1, Wire>, Unit, Chan.recv(Wire, out), m => Conn.write(m, s, s2 => Conn.writer(f, s2, out)))
+      IO.bind(Maybe<&1, Wire>, Unit, Chan.recv(Wire, out), m => Conn.write(m, s, out, s2 => Conn.writer(f, s2, out)))
 
 def Conn.leave(s: Socket, +id: U32, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
