@@ -333,21 +333,24 @@ def Ctn.stop.k(none: Bool, +thread: String, +gen: String) -> IO(Unit):
 def Ctn.stop(+thread: String, +gen: String) -> IO(Unit):
   Ctn.stop.k(String.is_empty(gen), thread, gen)
 
-def Ctn.stale.one(owned: Bool, +unit: String) -> IO(Unit):
-  match owned:
-    case True{}:
-      Ctn.stop.unit(unit)
-    case False{}:
-      IO.pure(Unit, Unit{})
+def Ctn.stale.keep(owned: Bool, +u: String, +rest: List<&2, String>) -> List<&2, String>:
+  Bool.pick(List<&2, String>, owned, u <> rest, rest)
 
-def Ctn.stale.go(us: List<&2, String>, +st: M.State) -> IO(Unit):
+def Ctn.stale.owned(us: List<&2, String>, +st: M.State) -> List<&2, String>:
   match us:
     case Nil{}:
-      IO.pure(Unit, Unit{})
+      Nil{}
     case +u <> t:
+      Ctn.stale.keep(B.Hub.owns(st, CN.Contain.thread.of(u)), u, Ctn.stale.owned(t, st))
+
+def Ctn.stale.stop(none: Bool, +us: List<&2, String>) -> IO(Unit):
+  match none:
+    case True{}:
+      IO.pure(Unit, Unit{})
+    case False{}:
       do IO<Unit>:
-        Ctn.stale.one(B.Hub.owns(st, CN.Contain.thread.of(u)), u)
-        Ctn.stale.go(t, st)
+        r : P.Ran <- P.Proc.run("timeout", CN.Contain.stale.stop.args(us), "/")
+        return Unit{}
 
 # at start nothing of this hub's runs: every agent scope of a thread in
 # its log that this hub (its home, Contain.tag, the scope's description)
@@ -357,7 +360,8 @@ def Ctn.stale.go(us: List<&2, String>, +st: M.State) -> IO(Unit):
 def Ctn.stale(+st: M.State, +tag: String) -> IO(Unit):
   do IO<Unit>:
     r : P.Ran <- P.Proc.run("timeout", CN.Contain.stale.args(), "/")
-    Ctn.stale.go(CN.Contain.stale.mine(Ctn.mem.of(r), tag), st)
+    +us : List<&2, String> = Ctn.stale.owned(CN.Contain.stale.mine(Ctn.mem.of(r), tag), st)
+    Ctn.stale.stop(List.is_empty(&2, String, us), us)
 
 def Ctn.spawn.k(found: Bool, limit: String, tag: String, thread: String, gen: String, cmd: String, args: List<&2, String>, cwd: String) -> IO(Result<&1, &1, U32 & String, U32 & Socket>):
   match found:

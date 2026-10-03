@@ -182,6 +182,18 @@ def Contain.why(text: String, code: U32) -> String:
 # ending a scope (a process of it ended or was retired): what is left in
 # it is stopped, SIGTERM then SIGKILL after TimeoutStopSec; and scopes a
 # previous hub run left
+def Contain.scopes(us: List<&2, String>) -> List<&2, String>:
+  match us:
+    case Nil{}:
+      Nil{}
+    case +u <> t:
+      (u ++ ".scope") <> Contain.scopes(t)
+
+# the leftovers a recovery found, stopped in one call that only queues the
+# jobs (--no-block): a stop that waits could hold the hub's start
+def Contain.stale.stop.args(+units: List<&2, String>) -> List<&2, String>:
+  List.append(&2, String, ["10", "systemctl", "--user", "stop", "--no-block"], Contain.scopes(units))
+
 def Contain.stop.args(unit: String) -> List<&2, String>:
   ["10", "systemctl", "--user", "stop", unit ++ ".scope"]
 
