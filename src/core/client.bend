@@ -22,6 +22,7 @@ import ./links.bend as LK
 import ./apikeys.bend as AK
 import ./diff.bend as DF
 import ./fm.bend as FM
+import ./onboard.bend as OB
 
 # The client state, Elm-style, shared by the native window and the web
 # page: a host feeds server messages to Ui.recv and user actions to Ui.act,
@@ -395,7 +396,7 @@ def Ui.reset(u: Ui, +o: J.Json) -> Ui:
   match u:
     case Ui{st, sel, dr, live, op, _, now, ad, pa, _, rid, w, er, note, +nf, ob, tr}:
       Ui.fold.items(J.Json.elems(J.Json.get_obj(o, "items")),
-        Ui{Ui.base(Nat.is_gt(J.Json.get_nat(o, "since", 0n), 0n), st), sel, dr, live, op, True{}, now, ad, pa, J.Json.get_str(o, "version", ""), rid, w, er, note,
+        Ui{Ui.base(Nat.is_gt(J.Json.get_nat(o, "since", 0n), 0n), st), sel, Map.set(&2, String, dr, "@sync", "1"), live, op, True{}, now, ad, pa, J.Json.get_str(o, "version", ""), rid, w, er, note,
           Machines.home(Ui.reset.keep(String.eq(J.Json.get_str(o, "origin", ""), Str.get(nf, "origin")), nf,
             Local.keep(nf, Map.set(&2, String, Map.set(&2, String, Info.of(J.Json.get_obj(o, "info")), "cid", Str.get(nf, "cid")), "origin", J.Json.get_str(o, "origin", ""))))), ob, tr})
 
@@ -611,6 +612,35 @@ def Update.packaged(+nf: Map<&2, String>) -> Bool:
 def Pair.link(+nf: Map<&2, String>) -> String:
   Str.get(nf, "pair")
 
+# Tailscale in Settings, for every client. The hub says what it found (info
+# "tailscale": off for --no-tailscale, checking, unavailable when Tailscale
+# gave no address or the bind failed, reachable when the hub answers on its
+# tailnet address, even without a pairing link of its own, as with
+# --host 0.0.0.0). A hub too old to say ("tailscale" missing) is read the old
+# way: up only once it has a pairing link ("pair").
+def Tail.told(+nf: Map<&2, String>) -> String:
+  Bool.pick(String, String.is_empty(Str.get(nf, "tailscale")),
+    Bool.pick(String, String.eq(Str.get(nf, "tailnet"), "off"), "off", Bool.pick(String, String.is_empty(Pair.link(nf)), "unavailable", "reachable")),
+    Str.get(nf, "tailscale"))
+
+def Tail.state.of(+t: String, +nf: Map<&2, String>) -> String:
+  Bool.pick(String, String.eq(t, "reachable"), Str.get(nf, "tailnet"), Bool.pick(String, String.eq(t, "unavailable"), "not connected", t))
+
+def Tail.state(+nf: Map<&2, String>) -> String:
+  Tail.state.of(Tail.told(nf), nf)
+
+def Tail.label(+nf: Map<&2, String>) -> String:
+  "Tailscale: " ++ Tail.state(nf)
+
+def Tail.note.of(+t: String, +nf: Map<&2, String>) -> String:
+  Bool.pick(String, String.eq(t, "off"), "Listening on " ++ Str.get(nf, "listen") ++ " only: started with --no-tailscale.",
+    Bool.pick(String, String.eq(t, "reachable"), "Also on your tailnet: your own devices get in, others need the pairing token.",
+      Bool.pick(String, String.eq(t, "unavailable"), "Listening on " ++ Str.get(nf, "listen") ++ " only. Sign in to Tailscale, then restart Backplane.",
+        "Looking for Tailscale.")))
+
+def Tail.note(+nf: Map<&2, String>) -> String:
+  Tail.note.of(Tail.told(nf), nf)
+
 def Pair.note(+link: String) -> String:
   Bool.pick(String, String.is_empty(link), "Shown once Backplane listens on your tailnet.", link)
 
@@ -767,7 +797,7 @@ def Ui.pending(u: Ui, +thread: String) -> List<&2, String>:
 def Ui.online(u: Ui, b: Bool) -> Ui:
   match u:
     case Ui{st, sel, dr, live, op, _, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
-      Ui{st, sel, Map.set(&2, String, Map.set(&2, String, Map.set(&2, String, dr, "@mech.at", ""), "@solid.at", ""), "@desk", ""), live, op, b, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
+      Ui{st, sel, Map.set(&2, String, Map.set(&2, String, Map.set(&2, String, Map.set(&2, String, dr, "@mech.at", ""), "@solid.at", ""), "@desk", ""), "@sync", ""), live, op, b, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
 
 # the clock goes in the info map too, where a thread's folded turns read
 # it ("5m ago", FO.Fold.roles)
@@ -2589,6 +2619,12 @@ def Ui.new_thread(u: Ui, +pid: String) -> Act:
 # hub's answer names it
 def Ui.fork(+u: Ui) -> Act:
   Ui.rpc(Made.want(u), "thread.fork", [J.KV{"thread", J.Str{Ui.sel(u)}}])
+
+# State put back from a cache (a page's saved log, a phone's saved state)
+# is not this connection's: only a live log sets "@sync" again (Ui.reset),
+# so the first-run tour waits for the hub (law onboard_cache_unsynced)
+def Ui.unsync(u: Ui) -> Ui:
+  Ui.scratch_set(u, "@sync", "")
 
 # The active view
 # ---------------
@@ -6744,6 +6780,123 @@ def Emb.act.k(i: Nat, +u: Ui, +value: String) -> Act:
 def Emb.act(+u: Ui, +action: String, +value: String) -> Act:
   Emb.act.k(C.Codec.pos(["emb-key", "emb-paste", "emb-restart", "emb-pin"], action), u, value)
 
+# The first-run tour (core/onboard.bend): the step on screen is the
+# scratch "@tour" ("" and digits when it came up by itself, "m" and digits
+# when Settings' "Show the tour" asked for it); the hub keeps only that it
+# was finished or skipped, the setting "onboard.done", so every client of
+# a hub agrees. A tour that came up by itself waits until this connection's
+# log has arrived ("@sync", set by Ui.reset, cleared when the connection
+# changes: a cached state is not current) and ends when the hub says it is
+# done, even from another client. Actions "ob-next", "ob-back", "ob-skip"
+# and "ob-open" (which shuts Settings: the tour shows over the usual
+# screen). Leaving puts the keyboard in a field of the view on screen (a
+# room's, a remote chat's, an open thread's composer), else nowhere, so no
+# hidden field keeps it; the thread's buttons are only pointed at while its
+# header shows.
+def Tour.done(+st: M.State) -> Bool:
+  String.eq(M.Setting.get(st, "onboard.done", ""), "1")
+
+def Tour.ready(+u: Ui) -> Bool:
+  Bool.and(Nat.is_gt(Ui.seq(u), 0n), String.eq(Ui.scratch(u, "@sync"), "1"))
+
+def Tour.at(+u: Ui) -> Nat:
+  OB.Ob.at(Tour.ready(u), Tour.done(Ui.state(u)), Ui.scratch(u, "@tour"))
+
+def Tour.on(+u: Ui) -> Bool:
+  OB.Ob.live(Tour.at(u))
+
+# Scratch's lifetime in days (the "scratch.days" setting)
+def Tour.days(+u: Ui) -> String:
+  Nat.show(Nat.div(M.Scratch.window(Ui.state(u)), 86400n))
+
+# the step's words for a kind of client (0 window, 1 web, 2 phone)
+def Tour.body(+k: Nat, +u: Ui) -> String:
+  OB.Ob.body(k, Tour.days(u), Tour.at(u))
+
+def Tour.target.k(+g: String, open: Bool) -> String:
+  Bool.pick(String, Bool.and(String.eq(g, "head"), Bool.not(open)), "", g)
+
+# a bot of this thread is what the main area shows
+def Tour.bot(m: Maybe<&2, BT.Bot>, +u: Ui) -> Bool:
+  match m:
+    case Some{BT.Bot{_, _, +th, _, _, _, _}}:
+      String.eq(th, Ui.sel(u))
+    case None{}:
+      False{}
+
+# an open thread's own header is on screen: its timeline is what shows
+# (not Settings, a room, a remote chat or a bot's view, whatever thread
+# is still selected under them)
+def Tour.head(+u: Ui) -> Bool:
+  Bool.and(Ui.timeline(u), Bool.not(Tour.bot(BT.World.find.id(BT.World.bot(M.State.bots(Ui.state.of(u)), Ui.scratch(u, "@bot"))), u)))
+
+# what the step points at: the thread's buttons only when its header shows
+def Tour.target(+k: Nat, +u: Ui) -> String:
+  Tour.target.k(OB.Ob.target(k, Tour.at(u)), Tour.head(u))
+
+def Tour.room.on(r: BT.Room) -> Bool:
+  match r:
+    case BT.Room{_, _, _, _, deleted}:
+      Bool.not(deleted)
+
+# the field the keyboard goes back to when the tour is left: the one of the
+# view that is on screen (a room's, a remote chat's, an open thread's
+# composer), else nowhere
+def Tour.focus.k(settings: Bool, room: Bool, +remote: String, timeline: Bool) -> String:
+  Bool.pick(String, settings, "", Bool.pick(String, room, "room-post", Bool.pick(String, Bool.not(String.is_empty(remote)), "remote-send", Bool.pick(String, timeline, "composer", ""))))
+
+def Tour.focus(+u: Ui) -> String:
+  Tour.focus.k(Ui.flag(u, "settings"), Tour.room.on(BT.World.room(M.State.bots(Ui.state.of(u)), Ui.scratch(u, "@room"))), Ui.scratch(u, "@remote"), Ui.timeline(u))
+
+def Tour.leave(a: Act, +field: String) -> Act:
+  match a:
+    case Act{u, cs}:
+      Act{u, Focus{field} <> cs}
+
+def Tour.finish(+u: Ui) -> Act:
+  Tour.leave(Ui.setting(Ui.scratch_set(u, "@tour", ""), "onboard.done=1"), Tour.focus(u))
+
+# to step i (by hand or not as the tour was), or (past the last) the end
+def Tour.go.k(live: Bool, +i: Nat, +u: Ui) -> Act:
+  match live:
+    case True{}:
+      Act{Ui.scratch_set(Ui.scratch_set(u, "@tour", OB.Ob.raw(OB.Ob.manual(Ui.scratch(u, "@tour")), i)), "@tour.sc", ""), Nil{}}
+    case False{}:
+      Tour.finish(u)
+
+def Tour.go(+i: Nat, +u: Ui) -> Act:
+  Tour.go.k(OB.Ob.live(i), i, u)
+
+def Tour.open.k(+u: Ui) -> Act:
+  Tour.leave(Act{Ui.scratch_set(Ui.scratch_set(u, "@tour", OB.Ob.raw(True{}, 0n)), "@tour.sc", ""), Nil{}}, Tour.focus(u))
+
+def Tour.open(+u: Ui) -> Act:
+  Tour.open.k(Ui.flag_off(u, "settings"))
+
+def Tour.act.k(i: Nat, +u: Ui) -> Act:
+  match i:
+    case 0n:
+      Tour.go(OB.Ob.next(Tour.at(u)), u)
+    case 1n:
+      Tour.go(OB.Ob.back(Tour.at(u)), u)
+    case 2n:
+      Tour.finish(u)
+    case 3n:
+      Tour.open(u)
+    case _:
+      Act{u, Nil{}}
+
+# a move needs a step on screen (a stray one never ends the tour)
+def Tour.act.on(on: Bool, +u: Ui, +action: String) -> Act:
+  match on:
+    case True{}:
+      Tour.act.k(C.Codec.pos(["ob-next", "ob-back", "ob-skip", "ob-open"], action), u)
+    case False{}:
+      Tour.act.k(Bool.pick(Nat, String.eq(action, "ob-open"), 3n, 9n), u)
+
+def Tour.act(+u: Ui, +action: String) -> Act:
+  Tour.act.on(Tour.on(u), u, action)
+
 # a user action with its value
 def Ui.act.m(menu: Bool, +i: Nat, +u: Ui, +action: String, +value: String) -> Act:
   match menu:
@@ -6759,8 +6912,15 @@ def Ui.act.e(emb: Bool, +u: Ui, +action: String, +value: String) -> Act:
     case False{}:
       Emb.sync.sel(Ui.sel(u), Mpage.sync(Ui.act.m(Nat.is_lt(C.Codec.pos(Menu.actions(), action), 16n), C.Codec.pos(Menu.actions(), action), u, action, value)))
 
+def Ui.act.t(tour: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match tour:
+    case True{}:
+      Tour.act(u, action)
+    case False{}:
+      Ui.act.e(String.starts_with(action, "emb-"), u, action, value)
+
 def Ui.act(+u: Ui, +action: String, +value: String) -> Act:
-  Ui.act.e(String.starts_with(action, "emb-"), u, action, value)
+  Ui.act.t(String.starts_with(action, "ob-"), u, action, value)
 
 # the newest n of a list (oldest first), and how many are left out
 type Win is Data:

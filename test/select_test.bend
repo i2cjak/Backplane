@@ -107,5 +107,5 @@ def main() -> IO(Unit):
     C.Check.str("drag selects", Bool.show(Nat.is_gt(String.length(N.Sel.text(n3)), 20n)), "True")
     C.Check.str("spans lines", Bool.show(String.contains(N.Sel.text(n3), "\n")), "True")
     C.Check.str("release ends the drag", U.Ui.scratch(N.Nui.ui(n3), "@ts.on"), "")
-    C.Check.str("ctrl+c copies it", copied(N.Nui.event(n3, W.WKey{99, 99, 2, True{}})), N.Sel.text(n3))
+    C.Check.str("ctrl+c copies it", copied(N.Nui.event(n3, W.WKey{99, 99, 2, True{}, 0})), N.Sel.text(n3))
     C.Check.str("a press on nothing drops it", N.Sel.text(n4), "")

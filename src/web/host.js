@@ -237,6 +237,7 @@ function render() {
     document.getElementById(focus)?.focus();
     focus = null;
   }
+  tourSync();
 }
 
 function later() {
@@ -576,6 +577,85 @@ document.addEventListener("keydown", (e) => {
   dispatch(alt || el.getAttribute("data-enter"), valueOf(el));
 });
 
+// The first-run tour (view.bend's View.tour) is modal while its dialog is on
+// the page: the page behind is inert, focus stays in the dialog (Tab goes
+// round its buttons), the keys that mean something go through app.bend's
+// tour_key (a repeat does nothing), every other key, ctrl/meta combination,
+// paste and drop is stopped, and a focused button does its own action. Every
+// key pressed while it is up (by KeyboardEvent.code, modified ones too) has
+// its repeats dropped after it closes, until the key is let go or pressed
+// afresh, so holding Enter through Done never reaches the composer behind.
+let tourFocus = null; // where the keyboard was when the dialog came up
+let tourOn = false;
+const tourEaten = new Set();
+let tourDrop = "";
+function tourSync() {
+  const tour = document.querySelector(".tour");
+  const app = document.querySelector(".app");
+  if (tour && !tourOn) {
+    tourOn = true;
+    tourFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  }
+  if (app) {
+    for (const el of app.children) {
+      if (tour && !el.classList.contains("tour") && !el.classList.contains("tour-back")) el.setAttribute("inert", "");
+      else el.removeAttribute("inert");
+    }
+  }
+  if (tour) {
+    if (!tour.contains(document.activeElement)) (tour.querySelector("button.primary") || tour.querySelector("button"))?.focus();
+  } else if (tourOn) {
+    tourOn = false;
+    // back where it was, unless that went away (Settings shut): the composer
+    const back = tourFocus && tourFocus !== document.body && tourFocus.isConnected ? tourFocus : document.getElementById("composer");
+    back?.focus?.();
+    tourFocus = null;
+  }
+}
+document.addEventListener("keydown", (e) => {
+  const tour = document.querySelector(".tour");
+  if (!tour) {
+    // a key pressed while it was up, still held: its repeats are dropped
+    // (its keypress and input with them) until it is let go or pressed afresh
+    if (tourEaten.has(e.code)) {
+      if (e.repeat) { tourDrop = e.code; e.preventDefault(); e.stopImmediatePropagation(); return; }
+      tourEaten.delete(e.code);
+    }
+    tourDrop = "";
+    return;
+  }
+  if (e.isComposing) return;
+  tourEaten.add(e.code);
+  e.stopImmediatePropagation();
+  if (e.ctrlKey || e.metaKey || e.altKey) { e.preventDefault(); return; }
+  if (e.key === "Tab") {
+    e.preventDefault();
+    const bs = [...tour.querySelectorAll("button")];
+    const at = bs.indexOf(document.activeElement);
+    bs[(at + (e.shiftKey ? bs.length - 1 : 1)) % bs.length]?.focus();
+    return;
+  }
+  const act = App.tour_key(e.key);
+  const onButton = document.activeElement instanceof HTMLButtonElement && tour.contains(document.activeElement);
+  // Enter or Space on a focused button is that button's (the click does it)
+  if (onButton && (e.key === "Enter" || e.key === " ")) {
+    if (e.repeat) e.preventDefault();
+    return;
+  }
+  e.preventDefault();
+  if (!act || e.repeat) return;
+  dispatch(act, "");
+}, true);
+document.addEventListener("keyup", (e) => {
+  tourEaten.delete(e.code);
+  if (tourDrop === e.code) tourDrop = "";
+}, true);
+for (const ev of ["paste", "drop", "dragover", "beforeinput", "cut", "keypress"]) {
+  document.addEventListener(ev, (e) => {
+    if (document.querySelector(".tour") || (tourDrop && (ev === "beforeinput" || ev === "keypress"))) { e.preventDefault(); e.stopImmediatePropagation(); }
+  }, true);
+}
+
 // Lightbox
 // --------
 // A click on an image in a thread ([data-lightbox]) shows it over the page.
@@ -839,6 +919,8 @@ document.addEventListener("visibilitychange", () => {
 
 if (cache && Array.isArray(cache.items)) {
   ui = App.recv(ui, toJson({ t: "log", since: 0, origin: cache.origin, items: cache.items })).ui;
+  // a saved log is not this connection's: the hub's own log says when
+  ui = App.unsync(ui);
 }
 
 function connect() {

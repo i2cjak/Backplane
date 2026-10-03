@@ -5,9 +5,9 @@ import Base
 
 # mods: 1 shift, 2 ctrl, 4 alt, 8 super. code is the X keysym; text is the
 # code point the key typed (0 for none). Wheel dir: 0 up, 1 down, 2 left,
-# 3 right.
+# 3 right. A key press or release also says its keycode (the physical key).
 type WinEv is Data:
-  WKey{code: U32, text: U32, mods: U32, down: Bool}
+  WKey{code: U32, text: U32, mods: U32, down: Bool, kc: U32}
   WButton{x: U32, y: U32, button: U32, down: Bool}
   WMove{x: U32, y: U32, mods: U32}
   WWheel{x: U32, y: U32, dir: U32}
@@ -79,7 +79,7 @@ def Win.title(win: Window, title: String) -> IO(Window):
 def Win.ev.k(k: Nat, +a: U32, +b: U32, +c: U32, +d: U32) -> WinEv:
   match k:
     case 0n:
-      WKey{a, b, c, U32.is_ne(d, 0)}
+      WKey{a, b, c, U32.is_ne(U32.and(d, 1), 0), U32.shrn(d, 1n)}
     case 1n:
       WButton{a, b, c, U32.is_ne(d, 0)}
     case 2n:

@@ -131,7 +131,7 @@ def next(f: Nat, +c: U32, +n: N.Nui) -> N.Nui:
     case 3n:
       wheel(False{}, n)
     case _:
-      ev(n, W.WKey{c, c, 0, True{}})
+      ev(n, W.WKey{c, c, 0, True{}, 0})
 
 # the frame drawn from scratch: every post wrapped afresh, every tile drawn
 def fresh(+ty: L.Ty, +memo: L.TLMemo, +cats: Map<&2, CA.CatF>, +n: N.Nui) -> Image:

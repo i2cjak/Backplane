@@ -16,6 +16,7 @@ import ../core/subs.bend as SB
 import ../core/diff.bend as DF
 import ../core/vt.bend as VT
 import ../core/codec.bend as C
+import ../core/onboard.bend as OB
 import ../core/botui.bend as B
 import ./bots.bend as MB
 import ../core/hist.bend as HS
@@ -904,6 +905,24 @@ def Mob.renaming.k(none: Bool, +id: String, +value: String) -> J.Json:
 def Mob.renaming(+u: U.Ui) -> J.Json:
   Mob.renaming.k(String.is_empty(U.Ren.on(u)), U.Ren.on(u), U.Ui.scratch(u, "@f.title"))
 
+# the first-run tour (core/onboard.bend), while a step is on screen: its
+# number, count and counter, its title and text, and the buttons (actions
+# "ob-back", "ob-next", "ob-skip", sent with no value to the hub in focus)
+def Mob.tour.k(+i: Nat, +u: U.Ui) -> J.Json:
+  J.Json.obj([J.KV{"step", J.Json.nat(i)}, J.KV{"count", J.Json.nat(OB.Ob.count())}, J.KV{"counter", J.Json.str(OB.Ob.counter(i))},
+    J.KV{"title", J.Json.str(OB.Ob.title(i))}, J.KV{"body", J.Json.str(U.Tour.body(2n, u))}, J.KV{"first", J.Json.bool(Nat.is_eq(i, 0n))},
+    J.KV{"next", J.Json.str(OB.Ob.forward(i))}, J.KV{"back", J.Json.str("Back")}, J.KV{"skip", J.Json.str("Skip")}])
+
+def Mob.tour.at(live: Bool, +i: Nat, +u: U.Ui) -> J.Json:
+  match live:
+    case True{}:
+      Mob.tour.k(i, u)
+    case False{}:
+      J.Null{}
+
+def Mob.tour(+u: U.Ui) -> J.Json:
+  Mob.tour.at(U.Tour.on(u), U.Tour.at(u), u)
+
 def Mob.deleting(+u: U.Ui) -> J.Json:
   Mob.deleting.k(String.is_empty(U.Ui.row_deleting(u)), Mob.st(u), U.Ui.row_deleting(u))
 
@@ -1034,7 +1053,7 @@ def Mob.settings.of(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +n
     Mob.set.row(U.KiCad.ipc.label(nf), U.KiCad.ipc.note(nf), Bool.pick(List<&2, J.Json>, U.KiCad.ipc.ready(nf), Mob.set.chips(["on", "off"], M.Setting.get(st, "kicad.ipc", "on"), "kicad.ipc"), Nil{})),
     Mob.set.row("Theme", "Unset, the phone follows its own system.", Mob.set.chips(["dark", "light"], M.Setting.get(st, "ui.theme", ""), "ui.theme")),
     Mob.set.row("Thread list", "Projects groups threads by project; active lists what is going on, what needs you first.", Mob.set.chips(["projects", "active"], U.Side.view(st), "sidebar.view")),
-    Mob.set.row("Tailscale: " ++ U.Str.get(nf, "tailnet"), "Listening on " ++ U.Str.get(nf, "listen"), Nil{}),
+    Mob.set.row(U.Tail.label(nf), U.Tail.note(nf), Nil{}),
     Mob.set.pair(U.Ui.flag(u, "pairqr"), nf),
     Mob.set.row("Update channel", "Stable takes releases; nightly also takes the daily builds.", Mob.set.chips(["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel")),
     Mob.set.row("Backplane " ++ v, U.Update.line.w(st, nf, note), Mob.update.btn(U.Update.btn(st, nf, note)))], more))}])
@@ -1048,7 +1067,7 @@ def Mob.settings.k(+u: U.Ui, more: List<&2, J.Json>) -> J.Json:
 def Mob.settings(open: Bool, +u: U.Ui) -> J.Json:
   match open:
     case True{}:
-      Mob.settings.k(u, Mob.keys(u))
+      Mob.settings.k(u, List.append(&2, J.Json, Mob.keys(u), [Mob.set.row("Tour", "The short walk through projects, threads, bots, your agents and your machines.", [Mob.set.btn("Show the tour", "ob-open", "", False{})])]))
     case False{}:
       J.Null{}
 
@@ -1102,9 +1121,55 @@ def Mob.scratch(u: U.Ui) -> Map<&2, String>:
 # the whole screen. A hub out of focus (focus False) builds no thread, bot
 # or viewer (null: the merged screen reads them from the hub in focus),
 # and the sidebar's groups are found once
+def Mob.up(j: J.Json) -> Bool:
+  match j:
+    case J.Null{}:
+      False{}
+    case _:
+      True{}
+
+# something else is presented over the list (so the first-run tour waits,
+# and shows once all of it is closed): an error, a menu, a delete, rename or
+# remove question, Settings, Find, the folder picker, a bot or room form,
+# and in the thread on screen its viewer, diff, terminal, history menu, and
+# a bot's routine form. The apps add only what they keep to themselves (a
+# picture opened large, the hubs sheet, the camera).
+def Mob.covered.thread(+th: J.Json, +bot: J.Json) -> Bool:
+  Bool.or(Bool.or(Bool.not(String.is_empty(J.Json.get_str(J.Json.get_obj(th, "viewer"), "open", ""))), Mob.up(J.Json.get_obj(th, "diff"))),
+    Bool.or(Bool.or(Mob.up(J.Json.get_obj(th, "term")), Mob.up(J.Json.get_obj(J.Json.get_obj(J.Json.get_obj(th, "viewer"), "hist"), "menu"))),
+      J.Json.get_bool(J.Json.get_obj(bot, "routine"), "open", False{})))
+
+def Mob.covered.any(js: List<&2, J.Json>) -> Bool:
+  match js:
+    case Nil{}:
+      False{}
+    case h <> t:
+      Bool.pick(Bool, Mob.up(h), True{}, Mob.covered.any(t))
+
+def Mob.covered(+e: String, +ups: List<&2, J.Json>, +th: J.Json, +bot: J.Json) -> Bool:
+  Bool.or(Bool.or(Bool.not(String.is_empty(e)), Mob.covered.any(ups)), Mob.covered.thread(th, bot))
+
+def Mob.tour.gate(covered: Bool, +u: U.Ui) -> J.Json:
+  match covered:
+    case True{}:
+      J.Null{}
+    case False{}:
+      Mob.tour(u)
+
 def Mob.screen.go(+focus: Bool, +u: U.Ui, +ix: U.SIx, +g: U.SGroups, +side: MSide) -> J.Json:
   match u:
     case U.Ui{+st, +sel, +dr, _, +o, +on, +now, _, _, +v, _, _, +e, +note, _, _, _}:
+      +rmenu = Mob.rmenu(u)
+      +deleting = Mob.deleting(u)
+      +renaming = Mob.renaming(u)
+      +removing = Mob.removing(u)
+      +settings = Mob.settings(U.Ui.flag(u, "settings"), u)
+      +find = Mob.find(U.Ui.flag(u, "palette"), u)
+      +folders = PK.MPick.json(u)
+      +newbot = MB.MBots.new(u)
+      +newroom = MB.MBots.rnew(u)
+      +thread = Mob.focus.thread(focus, u, sel)
+      +bot = Mob.focus.bot(focus, u)
       J.Json.obj([J.KV{"online", J.Json.bool(on)}, J.KV{"version", J.Json.str(v)}, J.KV{"seq", J.Json.nat(U.Ui.seq(u))}, J.KV{"error", J.Json.str(e)},
         J.KV{"note", J.Json.str(note)}, J.KV{"sel", J.Json.str(sel)}, J.KV{"theme", J.Json.str(M.Setting.get(st, "ui.theme", ""))},
         J.KV{"empty", J.Json.str(Mob.empty(List.length(&2, M.Project, U.Ui.projects(st))))},
@@ -1113,21 +1178,22 @@ def Mob.screen.go(+focus: Bool, +u: U.Ui, +ix: U.SIx, +g: U.SGroups, +side: MSid
         J.KV{"view", J.Json.str(U.Side.view(st))},
         J.KV{"active", J.Json.arr(MSide.rows(side))},
         J.KV{"settled", MSide.settled(side)},
-        J.KV{"rowMenu", Mob.rmenu(u)},
+        J.KV{"rowMenu", rmenu},
         J.KV{"search", Mob.search(u)},
-        J.KV{"deleting", Mob.deleting(u)},
-        J.KV{"renaming", Mob.renaming(u)},
-        J.KV{"removing", Mob.removing(u)},
-        J.KV{"settings", Mob.settings(U.Ui.flag(u, "settings"), u)},
-        J.KV{"find", Mob.find(U.Ui.flag(u, "palette"), u)},
-        J.KV{"folders", PK.MPick.json(u)},
+        J.KV{"deleting", deleting},
+        J.KV{"renaming", renaming},
+        J.KV{"removing", removing},
+        J.KV{"tour", Mob.tour.gate(Mob.covered(e, [rmenu, deleting, renaming, removing, settings, find, folders, newbot, newroom], thread, bot), u)},
+        J.KV{"settings", settings},
+        J.KV{"find", find},
+        J.KV{"folders", folders},
         J.KV{"island", N.Note.island.w(U.Ui.threads(st), st)},
-        J.KV{"thread", Mob.focus.thread(focus, u, sel)},
+        J.KV{"thread", thread},
         J.KV{"bots", J.Json.arr(MB.MBots.rows(B.BU.rows(u)))},
         J.KV{"rooms", J.Json.arr(MB.MBots.rooms(B.BU.rooms(u)))},
-        J.KV{"newBot", MB.MBots.new(u)},
-        J.KV{"newRoom", MB.MBots.rnew(u)},
-        J.KV{"bot", Mob.focus.bot(focus, u)}])
+        J.KV{"newBot", newbot},
+        J.KV{"newRoom", newroom},
+        J.KV{"bot", bot}])
 
 def Mob.screen.ix(+focus: Bool, +u: U.Ui, +ix: U.SIx) -> J.Json:
   Mob.screen.go(focus, u, ix, U.Side.groups(U.Side.shown.ix(U.Ui.state.of(u), ix, Mob.now(u), U.Find.q(Mob.open(u), Mob.scratch(u))), Mob.now(u)),

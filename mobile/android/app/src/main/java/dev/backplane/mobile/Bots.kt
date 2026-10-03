@@ -547,6 +547,7 @@ private fun SettingsTab(m: AppModel, b: BotView, st: BotSettings) {
         HorizontalDivider(Modifier.padding(top = 16.dp))
         TextButton(onClick = { deleting = true }) { Text("Delete bot", color = MaterialTheme.colorScheme.error) }
     }
+    if (deleting) Overlaid()
     if (deleting) AlertDialog(
         onDismissRequest = { deleting = false },
         title = { Text("Delete ${b.name}?") },

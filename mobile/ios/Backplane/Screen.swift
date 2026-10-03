@@ -421,6 +421,15 @@ struct Deleting: Decodable, Equatable {
     let id, title, body, yes, no: String
 }
 
+// the first-run tour's step on screen (core/onboard.bend): the counter
+// ("3 of 8"), title and text, and the buttons' labels; actions "ob-skip",
+// "ob-back" (not on the first step) and "ob-next"
+struct Tour: Decodable, Equatable {
+    let step, count: Int
+    let counter, title, body, next, back, skip: String
+    let first: Bool
+}
+
 // a thread being renamed: its id, the alert's title, the title so far, the
 // buttons ("rename-save" with "id\u{1f}title", or "rename-no")
 struct Renaming: Decodable, Equatable {
@@ -628,6 +637,7 @@ struct Screen: Decodable {
     // a project remove to confirm ("proj-remove" id, or "proj-keep")
     let removing: Deleting?
     let renaming: Renaming?
+    let tour: Tour?
     let search: Search?
     let folders: Folders?
     let settings: Settings?

@@ -97,6 +97,12 @@ def Tools.head(h: Head, sa: String, sv: String, ta: String, tv: String) -> List<
         [Tools.fork()], Tools.back(forked),
         [Tools.term(term, ta, tv), Tools.panel(panel)]])
 
+# a button's label, which the first-run tour names it by
+def Tools.label(t: Tool) -> String:
+  match t:
+    case Tool{_, +l, _, _, _, _, _, _}:
+      l
+
 def Tools.icons(ts: List<&2, Tool>) -> List<&2, String>:
   match ts:
     case Nil{}:

@@ -505,6 +505,19 @@ def Hubs.recv(hs: Hubs, +key: String, o: J.Json) -> HAct:
 def Hubs.online(hs: Hubs, +key: String, b: Bool) -> HAct:
   Hubs.step(hs, False{}, key, On{b})
 
+def Hubs.stale.go(l: List<&2, Hub>) -> List<&2, Hub>:
+  match l:
+    case Nil{}:
+      Nil{}
+    case Hub{+k, +u} <> t:
+      Hub{k, U.Ui.unsync(u)} <> Hubs.stale.go(t)
+
+# state loaded from the phone's saved copy: no hub has answered yet
+def Hubs.stale(hs: Hubs) -> Hubs:
+  match hs:
+    case Hubs{cid, now, cur, list}:
+      Hubs{cid, now, cur, Hubs.stale.go(list)}
+
 def Hubs.now(hs: Hubs, now: Nat) -> Hubs:
   match hs:
     case Hubs{cid, _, cur, list}:
@@ -1309,6 +1322,7 @@ def Hubs.screen.k(+ss: List<&2, Shown>, +cur: String, +list: List<&2, Hub>) -> J
     J.KV{"search", Hubs.first_obj(ss, "search")},
     J.KV{"folders", J.Json.get_obj(Hubs.of(ss, cur), "folders")},
     J.KV{"settings", J.Json.get_obj(Hubs.of(ss, cur), "settings")},
+    J.KV{"tour", J.Json.get_obj(Hubs.of(ss, cur), "tour")},
     J.KV{"find", J.Json.get_obj(Hubs.of(ss, cur), "find")},
     J.KV{"island", N.Note.island.k(Hubs.lines(ss))},
     J.KV{"thread", Hubs.origin.focus(ss, cur, "thread")},

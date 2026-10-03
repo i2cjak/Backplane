@@ -8,6 +8,11 @@ struct RootView: View {
     @State private var removed = ""
     @State private var renamed = ""
     @State private var newTitle = ""
+    // the first-run tour waits until nothing else is presented over the root
+    // (see tourWait): its screen model already lacks a step while Bend
+    // knows of another overlay, and this covers the rest (the hubs sheet, a
+    // picture opened large, menus and sheets still going away)
+    @State private var tourReady = false
 
     var body: some View {
         if model.links.isEmpty {
@@ -26,6 +31,10 @@ struct RootView: View {
                             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { pairing = false } } }
                     }
                 }
+                .sheet(isPresented: tourShown) {
+                    if let t = model.screen?.tour { TourSheet(model: model, tour: t) }
+                }
+                .task(id: "\(model.screen?.tour != nil)|\(pairing)") { await tourWait() }
         } else {
             ProgressView()
         }
@@ -34,6 +43,29 @@ struct RootView: View {
     // split up so Swift type-checks each part in reasonable time
     private var settingsShown: Binding<Bool> {
         Binding(get: { model.screen?.settings != nil }, set: { if !$0, model.screen?.settings != nil { model.act("flag", "settings") } })
+    }
+
+    // the first-run tour (core/onboard.bend): up while the screen carries a
+    // step (Bend leaves it out while it knows of another overlay) and
+    // tourWait has seen the root clear; the same as Android: dismissing it
+    // (swipe down) is Skip
+    private var tourShown: Binding<Bool> {
+        Binding(get: { model.screen?.tour != nil && tourReady && !pairing },
+                set: { if !$0, model.screen?.tour != nil { model.act("ob-skip") } })
+    }
+
+    // each time the step appears or the hubs sheet moves: not ready, then
+    // ready once no view controller is presented over the root (a sheet or
+    // alert still going away counts as presented), polled only while a step
+    // waits
+    private func tourWait() async {
+        tourReady = false
+        guard model.screen?.tour != nil, !pairing else { return }
+        repeat {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            if Task.isCancelled { return }
+        } while !Presented.none
+        tourReady = true
     }
 
     private var findShown: Binding<Bool> {
@@ -973,5 +1005,44 @@ struct ThreadScreen: View {
         case "x": "xmark"
         default: "circle"
         }
+    }
+}
+
+// the first-run tour: one step (its text comes from core/onboard.bend),
+// Skip, Back and Next; Skip and the last step's Done end it for every
+// client of the hub
+struct TourSheet: View {
+    let model: AppModel
+    let tour: Tour
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(tour.counter).font(.caption).foregroundStyle(.secondary)
+                    Text(tour.title).font(.title3.weight(.semibold))
+                    Text(tour.body).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            HStack {
+                Button(tour.skip) { model.act("ob-skip") }
+                Spacer()
+                if !tour.first { Button(tour.back) { model.act("ob-back") } }
+                Button(tour.next) { model.act("ob-next") }.buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(20)
+        .presentationDetents([.medium, .large])
+    }
+}
+
+// whether nothing is presented over the app's root view controller
+// (sheets, alerts, dialogs and full-screen covers, going away included)
+enum Presented {
+    @MainActor static var none: Bool {
+        let root = UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow?.rootViewController }.first
+        return root?.presentedViewController == nil
     }
 }

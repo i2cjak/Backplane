@@ -16,6 +16,7 @@ import ./src/core/utf8.bend as UT
 import ./src/core/refs.bend as RF
 import ./src/core/todo.bend as TD
 import ./src/core/apikeys.bend as AK
+import ./src/core/onboard.bend as OBD
 import ./src/core/fm.bend as FMG
 import ./src/core/acp.bend as AC
 import ./src/core/mcp.bend as MC
@@ -5492,3 +5493,201 @@ law qr_link_none:
 # no pairing link, no code
 law pair_qr_none:
   {U.Pair.qr.ready(Map.new(&2, String)) == False{} : Bool}
+# The first-run tour (core/onboard.bend). Every step has a title, a known
+# target and words for the window, the web and the phones.
+law onboard_steps_sound:
+  {OBD.Ob.sound() == True{} : Bool}
+
+# next and back stay within the steps for every number from 0 to 14 (past
+# the end they clamp), a step on screen goes forward by next and (past the
+# first) back by back
+law onboard_nav_every_step:
+  {OBD.Ob.nav(14n) == True{} : Bool}
+
+law onboard_back_floor:
+  {OBD.Ob.back(0n) == 0n : Nat}
+
+law onboard_next_step:
+  {OBD.Ob.next(2n) == 3n : Nat}
+
+law onboard_back_step:
+  {OBD.Ob.back(3n) == 2n : Nat}
+
+# next from the last step ends it, and the end stays the end
+law onboard_next_ends:
+  {OBD.Ob.live(OBD.Ob.next(8n)) == False{} : Bool}
+
+law onboard_end_stays:
+  {OBD.Ob.next(OBD.Ob.count()) == OBD.Ob.count() : Nat}
+
+# skip ends it from anywhere
+law onboard_skip_ends:
+  {OBD.Ob.live(OBD.Ob.skip()) == False{} : Bool}
+
+# a tour that came up by itself waits for this connection's state
+law onboard_waits:
+  for done: Bool
+  {OBD.Ob.at(False{}, done, "") == OBD.Ob.count() : Nat}
+
+# a first run shows the first step; once done it never shows by itself
+law onboard_fresh_first:
+  {OBD.Ob.at(True{}, False{}, "") == 0n : Nat}
+
+law onboard_done_quiet:
+  {OBD.Ob.at(True{}, True{}, "") == OBD.Ob.count() : Nat}
+
+# one that came up by itself and was moved on keeps its step, and closes
+# when the hub says it is done (from another client too)
+law onboard_auto_moved:
+  {OBD.Ob.at(True{}, False{}, OBD.Ob.raw(False{}, 4n)) == 4n : Nat}
+
+law onboard_done_closes_auto:
+  {OBD.Ob.at(True{}, True{}, OBD.Ob.raw(False{}, 5n)) == OBD.Ob.count() : Nat}
+
+# one asked for by hand shows whatever the hub says, offline too
+law onboard_hand_stays:
+  {OBD.Ob.at(True{}, True{}, OBD.Ob.raw(True{}, 5n)) == 5n : Nat}
+
+law onboard_hand_offline:
+  {OBD.Ob.at(False{}, False{}, OBD.Ob.raw(True{}, 2n)) == 2n : Nat}
+
+law onboard_wild_ends:
+  {OBD.Ob.at(True{}, False{}, "99") == OBD.Ob.count() : Nat}
+
+# phones point at nothing
+law onboard_phone_no_target:
+  {OBD.Ob.target(2n, 3n) == "" : String}
+
+# one policy for the keys, in the window and the web
+law onboard_keys:
+  {OBD.Ob.dom("Enter") ++ OBD.Ob.dom("ArrowLeft") ++ OBD.Ob.dom("Escape") ++ OBD.Ob.dom("a") == "ob-nextob-backob-skip" : String}
+
+law onboard_syms:
+  {OBD.Ob.sym(65293) ++ OBD.Ob.sym(65361) ++ OBD.Ob.sym(65307) ++ OBD.Ob.sym(97) == "ob-nextob-backob-skip" : String}
+
+# the client: a state not yet current shows nothing; skipping sets the
+# hub's setting; a done from elsewhere closes a tour that was moved on;
+# the Settings button shows it again after it was done
+def OnbUi.log() -> M.State:
+  M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}], M.State.empty())
+
+def OnbUi.done() -> M.State:
+  M.State.replay([M.ProjectCreated{"p1", "p", "/p", 1n}, M.SettingSet{"onboard.done", "1", 2n}], M.State.empty())
+
+def OnbUi.synced(st: M.State) -> U.Ui:
+  U.Ui.scratch_set(U.Ui.adopt.raw(U.Ui.init(1n), st), "@sync", "1")
+
+def OnbUi.after(a: U.Act) -> U.Ui:
+  match a:
+    case U.Act{u, _}:
+      u
+
+law onboard_unsynced_hidden:
+  {U.Tour.at(U.Ui.adopt.raw(U.Ui.init(1n), OnbUi.log())) == OBD.Ob.count() : Nat}
+
+law onboard_synced_shows:
+  {U.Tour.at(OnbUi.synced(OnbUi.log())) == 0n : Nat}
+
+law onboard_finish_sets_done:
+  {U.Tour.done(U.Ui.state(OnbUi.after(U.Ui.act(OnbUi.synced(OnbUi.log()), "ob-skip", "")))) == True{} : Bool}
+
+law onboard_elsewhere_closes:
+  {U.Tour.at(U.Ui.adopt.raw(OnbUi.after(U.Ui.act(OnbUi.synced(OnbUi.log()), "ob-next", "")), OnbUi.done())) == OBD.Ob.count() : Nat}
+
+law onboard_reopen:
+  {U.Tour.at(OnbUi.after(U.Ui.act(OnbUi.synced(OnbUi.done()), "ob-open", ""))) == 0n : Nat}
+
+# State put back from a cache (a page's saved log, a phone's saved state) is
+# not this connection's: only a live log shows the tour
+def OnbUi.live() -> U.Ui:
+  U.Ui.recv.k(0n, U.Ui.init(1n), U.Seq.demo("log", [C.Change.encode(M.ProjectCreated{"p1", "p", "/p", 1n})]))
+
+def OnbUi.phone() -> Hb.Hubs:
+  Hb.Hubs{"c", 1n, "h", [Hb.Hub{"h", OnbUi.live()}]}
+
+law onboard_live_log_shows:
+  {U.Tour.at(OnbUi.live()) == 0n : Nat}
+
+law onboard_cache_unsynced:
+  {U.Tour.at(U.Ui.unsync(OnbUi.live())) == OBD.Ob.count() : Nat}
+
+law onboard_phone_cache_unsynced:
+  {U.Tour.at(Hb.Hubs.ui(Hb.Hubs.stale(OnbUi.phone()), "h")) == OBD.Ob.count() : Nat}
+
+# the keyboard goes back to, and the head is pointed at, only what is on
+# screen: a thread selected under a room, a remote chat, a bot's view or
+# Settings is not
+def OnbUi.thread() -> U.Ui:
+  U.Bots.sel.set(OnbUi.live(), "t1")
+
+def OnbUi.step(u: U.Ui, s: String) -> U.Ui:
+  U.Ui.scratch_set(u, "@tour", s)
+
+law onboard_focus_thread:
+  {U.Tour.focus(OnbUi.thread()) == "composer" : String}
+
+law onboard_focus_none:
+  {U.Tour.focus(OnbUi.live()) == "" : String}
+
+law onboard_focus_remote:
+  {U.Tour.focus(U.Bots.views(OnbUi.thread(), "", "", "x")) == "remote-send" : String}
+
+law onboard_focus_room:
+  {U.Tour.focus.k(False{}, True{}, "", True{}) == "room-post" : String}
+
+law onboard_focus_settings:
+  {U.Tour.focus(U.Ui.flag_on(OnbUi.thread(), "settings")) == "" : String}
+
+law onboard_head_thread:
+  {U.Tour.target(0n, OnbUi.step(OnbUi.thread(), "m3")) == "head" : String}
+
+law onboard_head_remote:
+  {U.Tour.target(0n, OnbUi.step(U.Bots.views(OnbUi.thread(), "", "", "x"), "m3")) == "" : String}
+
+law onboard_head_settings:
+  {U.Tour.target(0n, OnbUi.step(U.Ui.flag_on(OnbUi.thread(), "settings"), "m3")) == "" : String}
+
+# keys pressed while the tour is up stay quarantined until let go, however
+# the tour closes, until their release
+def OnbN.n() -> N.Nui:
+  N.Nui.init(U.Ui.init(1n), 800, 600)
+
+law held_set_has:
+  {N.Held.has(N.Nui.ui(N.Held.set(OnbN.n(), 36)), 36) == True{} : Bool}
+
+law held_other_key:
+  {N.Held.has(N.Nui.ui(N.Held.set(OnbN.n(), 36)), 38) == False{} : Bool}
+
+law held_let_frees:
+  {N.Held.has(N.Nui.ui(N.Held.let(N.Held.set(OnbN.n(), 36), 36)), 36) == False{} : Bool}
+
+# with nothing in quarantine every key press and release goes through as it
+# always did
+law held_empty_passes_press:
+  {N.Nui.event.t(False{}, OnbN.n(), W.WKey{97, 97, 0, True{}, 38}) == N.Nui.event.go(False{}, OnbN.n(), W.WKey{97, 97, 0, True{}, 38}) : N.Step}
+
+law held_empty_passes_release:
+  {N.Nui.event.t(False{}, OnbN.n(), W.WKey{97, 0, 0, False{}, 38}) == N.Nui.event.go(False{}, N.Held.let(OnbN.n(), 38), W.WKey{97, 0, 0, False{}, 38}) : N.Step}
+
+law held_none_at_first:
+  {N.Held.has(N.Nui.ui(OnbN.n()), 36) == False{} : Bool}
+
+law held_swallowed_without_tour:
+  {N.Nui.event.t(False{}, N.Held.set(OnbN.n(), 36), W.WKey{65293, 0, 0, True{}, 36}) == N.Step{N.Held.set(OnbN.n(), 36), Nil{}, False{}} : N.Step}
+
+# the wheel over the tour's card scrolls two lines a notch within what
+# overflows
+law tour_scroll_down:
+  {N.Tour.scroll(0n, 5n, False{}) == 2n : Nat}
+
+law tour_scroll_down_stops:
+  {N.Tour.scroll(4n, 5n, False{}) == 5n : Nat}
+
+law tour_scroll_up:
+  {N.Tour.scroll(3n, 5n, True{}) == 1n : Nat}
+
+law tour_scroll_up_stops:
+  {N.Tour.scroll(1n, 5n, True{}) == 0n : Nat}
+
+law tour_scroll_none:
+  {N.Tour.scroll(0n, 0n, False{}) == 0n : Nat}

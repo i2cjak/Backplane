@@ -46,6 +46,10 @@ data class Deleting(val id: String, val title: String, val body: String, val yes
 // a thread being renamed: its id, the dialog's title, the title so far, the
 // buttons ("rename-save" with "id\u001ftitle", or "rename-no")
 data class Renaming(val id: String, val title: String, val text: String, val yes: String, val no: String)
+// the first-run tour's step on screen (core/onboard.bend): the counter
+// ("3 of 8"), title and text, the buttons' labels; actions "ob-skip",
+// "ob-back" (not on the first step) and "ob-next"
+data class Tour(val counter: String, val title: String, val body: String, val next: String, val back: String, val skip: String, val first: Boolean)
 
 // the list's search, always at its top: its query ("proj-find-q"), the hint
 data class Search(val open: Boolean, val query: String, val hint: String)
@@ -346,6 +350,7 @@ data class Screen(
     val view: String = "projects", val active: List<Row> = emptyList(),
     val older: Older? = null, val settled: Older? = null, val rowMenu: RowMenu? = null,
     val renaming: Renaming? = null,
+    val tour: Tour? = null,
 )
 
 data class Cmd(
@@ -609,6 +614,9 @@ fun parseScreen(o: JSONObject) = Screen(
     },
     renaming = o.optJSONObject("renaming")?.let {
         Renaming(it.optString("id"), it.optString("title"), it.optString("text"), it.optString("yes"), it.optString("no"))
+    },
+    tour = o.optJSONObject("tour")?.let {
+        Tour(it.optString("counter"), it.optString("title"), it.optString("body"), it.optString("next"), it.optString("back"), it.optString("skip"), it.optBoolean("first"))
     },
 )
 
