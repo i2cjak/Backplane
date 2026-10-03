@@ -239,6 +239,13 @@ type Change is Data:
   BotWoke{bot: String, hop: Nat, at: Nat}
   # a bot's space as a web page ("" takes it away)
   SpacePageSet{bot: String, html: String, at: Nat}
+  # the work a thread has out of hand (kind "bg": an agent's subagents,
+  # background shells and monitors, Bg below; "watch": work Backplane
+  # watches for it), its rows as text; folded as the setting
+  # "<kind>.<thread>", the same state a SettingSet of it gives (old logs
+  # say bg.<thread> that way). Unlike a setting, it goes to the owner's
+  # other machines with its thread (far.bend's Fr.shared)
+  WorkSet{thread: String, kind: String, rows: String, at: Nat}
 
 # the later of two times. Base's Nat.max recurses once per unit and
 # overflows at epoch scale; Nat.is_ge compiles to a machine comparison.
@@ -1516,6 +1523,8 @@ def State.apply.go(s: State, e: Change) -> State:
       State.woke(s, bot, hop)
     case SpacePageSet{bot, html, at}:
       State.world((w => BT.World.spage_set(w, bot, html, at)), s)
+    case WorkSet{+th, +kind, rows, _}:
+      State.setting(s, kind ++ "." ++ th, rows)
     case TodosSet{+th, todos, _}:
       State.setting(s, "todos." ++ th, todos)
     case ProviderSet{+id, +p, m, _}:
@@ -2074,6 +2083,15 @@ def Status.wait(any: Bool, s: Status) -> Status:
     case _ _:
       s
 
+# the same, except that a failed turn stays failed with work out: the
+# person has to act on it
+def Status.wait.f(any: Bool, s: Status) -> Status:
+  match s:
+    case StFailed{}:
+      StFailed{}
+    case _:
+      Status.wait(any, s)
+
 # Thread phase
 # ------------
 # The line at the end of a thread's timeline says what the thread is doing
@@ -2106,10 +2124,13 @@ def Phase.of.t(t: TurnState, queued: Bool) -> Phase:
     case _ False{}:
       PhIdle{}
 
+# (a failed turn says so before the work it left: the person has to act)
 def Phase.of.w(+tasks: Nat, t: TurnState, queued: Bool) -> Phase:
   match t:
     case Running{}:
       PhWorking{}
+    case Failed{}:
+      PhFailed{}
     case _:
       Bool.pick(Phase, Nat.is_gt(tasks, 0n), PhMonitoring{tasks}, Phase.of.t(t, queued))
 
@@ -2200,6 +2221,35 @@ def Bg.log(+th: String) -> String:
 # a subagent's id or what it does, on one line with no tab
 def Bg.clean(+t: String) -> String:
   String.join(String.split(String.join(String.split(t, '\t'), " "), '\n'), " ")
+
+# a command or path kept whole on one tab-free line: "\e" then the text with
+# backslash, tab, newline and return written \b \t \n \r (a row written
+# before this reads as it was, cleaned; laws watch_target_*)
+def Bg.enc(+t: String) -> String:
+  "\\e" ++ String.join(String.split(String.join(String.split(String.join(String.split(String.join(String.split(t, '\\'), "\\b"), '\t'), "\\t"), '\n'), "\\n"), '\r'), "\\r")
+
+def Bg.dec.piece(+p: String) -> String:
+  Bool.pick(String, String.starts_with(p, "b"), "\\" ++ String.drop(p, 1n),
+    Bool.pick(String, String.starts_with(p, "t"), "\t" ++ String.drop(p, 1n),
+      Bool.pick(String, String.starts_with(p, "n"), "\n" ++ String.drop(p, 1n),
+        Bool.pick(String, String.starts_with(p, "r"), "\r" ++ String.drop(p, 1n), "\\" ++ p))))
+
+def Bg.dec.go(ps: List<&2, String>) -> String:
+  match ps:
+    case Nil{}:
+      ""
+    case +p <> t:
+      Bg.dec.piece(p) ++ Bg.dec.go(t)
+
+def Bg.dec.k(ps: List<&2, String>) -> String:
+  match ps:
+    case Nil{}:
+      ""
+    case +p <> t:
+      p ++ Bg.dec.go(t)
+
+def Bg.dec(+t: String) -> String:
+  Bool.pick(String, String.starts_with(t, "\\e"), Bg.dec.k(String.split(String.drop(t, 2n), '\\')), t)
 
 def Bg.line(+id: String, +doing: String) -> String:
   Bg.clean(id) ++ "\t" ++ Bg.clean(doing)
@@ -2319,3 +2369,213 @@ def Bg.doing(+l: String) -> String:
 # a thread's subagents at work
 def Bg.of(+s: State, +th: String) -> List<&2, String>:
   Bg.lines(Setting.get(s, Bg.key(th), ""))
+
+# Ended rows: a task that finished (task_updated, or gone from Claude's
+# background_tasks_changed list) whose outcome the agent has not been
+# handed yet (its task_notification). Its doing reads Bg.ended.mark() and
+# the status; it still counts as work until the notification, or the next
+# turn's end, takes it.
+def Bg.ended.mark() -> String:
+  SCon{Chr{1}, SNil{}} ++ "ended:"
+
+def Bg.ended(+l: String) -> Bool:
+  String.starts_with(Bg.doing(l), Bg.ended.mark())
+
+# how an ended row ended ("" for one at work)
+def Bg.status(+l: String) -> String:
+  Bool.pick(String, Bg.ended(l), String.drop(Bg.doing(l), String.length(Bg.ended.mark())), "")
+
+def Bg.end.k(hit: Bool, +l: String, +id: String, +status: String) -> String:
+  match hit:
+    case True{}:
+      Bg.line(id, Bg.ended.mark() ++ status) ++ Bg.rest(l)
+    case False{}:
+      l
+
+# row id finished with status (one not listed, or already ended, is left)
+def Bg.end(ls: List<&2, String>, +id: String, +status: String) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Bg.end.k(Bool.and(Bg.is(l, id), Bool.not(Bg.ended(l))), l, id, status) <> Bg.end(t, id, status)
+
+# what row id does now, unless it ended
+def Bg.progress(ls: List<&2, String>, +id: String, +doing: String) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Bg.set.k(Bool.and(Bg.is(l, id), Bool.not(Bg.ended(l))), l, id, doing) <> Bg.progress(t, id, doing)
+
+# every row, ended or not: the work the thread still waits on
+def Bg.live(ls: List<&2, String>) -> Nat:
+  List.length(&2, String, ls)
+
+# the rows still at work
+def Bg.running(ls: List<&2, String>) -> Nat:
+  match ls:
+    case Nil{}:
+      0n
+    case +l <> t:
+      Nat.add(Bool.pick(Nat, Bg.ended(l), 0n, 1n), Bg.running(t))
+
+# the rows not ended
+def Bg.unended(ls: List<&2, String>) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Bg.keep(Bg.ended(l), l, Bg.unended(t))
+
+def Bg.in(ids: List<&2, String>, +id: String) -> Bool:
+  match ids:
+    case Nil{}:
+      False{}
+    case +x <> t:
+      Bool.or(String.eq(Bg.clean(x), Bg.clean(id)), Bg.in(t, id))
+
+def Bg.sync.k(gone: Bool, +l: String) -> String:
+  match gone:
+    case True{}:
+      Bg.line(Bg.field(l, 0n), Bg.ended.mark() ++ "done") ++ Bg.rest(l)
+    case False{}:
+      l
+
+# Claude's list of the tasks still open (background_tasks_changed): a row
+# at work that is not on it has ended; none is ever added (the list does
+# not say which a subagent owns)
+def Bg.sync(ls: List<&2, String>, +open: List<&2, String>) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Bg.sync.k(Bool.and(Bool.not(Bg.ended(l)), Bool.not(Bg.in(open, Bg.field(l, 0n)))), l) <> Bg.sync(t, open)
+
+# Readiness
+# ---------
+# One check for "this thread's work is done", used by everything that
+# acts on it (alerts, thread_wait, settling, scratch expiry, worktree
+# removal, the phone's island, delegated tasks, bot replies): no turn
+# running, nothing queued, and nothing out of hand: child tasks not
+# finished, the agent's background rows (ended ones included: their
+# outcome is still owed) and watched work ("watch.<thread>", rows like
+# Bg's) (laws work_*).
+
+def Work.kids.go(ts: List<&2, Task>, +th: String) -> Nat:
+  match ts:
+    case Nil{}:
+      0n
+    case Task{_, +p, _, _, st, _, _, _, _} <> t:
+      Nat.add(Bool.pick(Nat, Bool.and(String.eq(p, th), Bool.not(TaskState.terminal(st))), 1n, 0n), Work.kids.go(t, th))
+
+# a thread's child tasks not yet finished
+def Work.kids(+s: State, +th: String) -> Nat:
+  match s:
+    case State{_, _, _, _, +tk, _, _, _, _, _, _}:
+      Work.kids.go(Map.values(&2, Task, tk), th)
+
+def Work.watch.key(+th: String) -> String:
+  "watch." ++ th
+
+# the work Backplane watches for a thread
+def Work.watch(+s: State, +th: String) -> List<&2, String>:
+  Bg.lines(Setting.get(s, Work.watch.key(th), ""))
+
+# what a thread's own rows hold (its background rows and watched work)
+def Work.rows(+s: State, +th: String) -> Nat:
+  Nat.add(Bg.live(Bg.of(s, th)), Bg.live(Work.watch(s, th)))
+
+# how much work a thread still waits on (0: none)
+def Work.busy(+s: State, +th: String) -> Nat:
+  Nat.add(Work.kids(s, th), Work.rows(s, th))
+
+def Work.ready.k(run: Bool, queued: Bool, +busy: Nat) -> Bool:
+  match run queued:
+    case False{} False{}:
+      Nat.is_eq(busy, 0n)
+    case _ _:
+      False{}
+
+# whether a thread is done: not running, nothing queued, nothing out
+def Work.ready(+s: State, +th: String) -> Bool:
+  Work.ready.k(State.running.k(State.thread.get(s, th)), Queue.waiting(s, th), Work.busy(s, th))
+
+def Work.kids.inc(r: Map<&2, Nat> & Nat, +p: String) -> Map<&2, Nat>:
+  (m, n) = r
+  Map.set(&2, Nat, m, p, 1n+n)
+
+def Work.kids.add(hit: Bool, m: Map<&2, Nat>, +p: String) -> Map<&2, Nat>:
+  match hit:
+    case True{}:
+      Work.kids.inc(Map.get(Nat, 0n, m, p), p)
+    case False{}:
+      m
+
+def Work.kids.fold(ts: List<&2, Task>, m: Map<&2, Nat>) -> Map<&2, Nat>:
+  match ts:
+    case Nil{}:
+      m
+    case Task{_, +p, _, _, st, _, _, _, _} <> t:
+      Work.kids.fold(t, Work.kids.add(Bool.not(TaskState.terminal(st)), m, p))
+
+# every parent's unfinished child tasks, in one pass (for the tick)
+def Work.kids.map(+s: State) -> Map<&2, Nat>:
+  match s:
+    case State{_, _, _, _, +tk, _, _, _, _, _, _}:
+      Work.kids.fold(Map.values(&2, Task, tk), Map.new(&2, Nat))
+
+def Work.kids.at.k(r: Map<&2, Nat> & Nat) -> Nat:
+  (_, n) = r
+  n
+
+# Work.busy with the children counted once for every thread (Work.kids.map)
+def Work.busy.at(+m: Map<&2, Nat>, +s: State, +th: String) -> Nat:
+  Nat.add(Work.kids.at.k(Map.get(Nat, 0n, m, th)), Work.rows(s, th))
+
+def Work.row.title(+l: String) -> String:
+  Bool.pick(String, String.is_empty(Bg.title(l)), Bg.doing(l), Bg.title(l))
+
+def Work.row.titles(ls: List<&2, String>) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Work.row.title(l) <> Work.row.titles(t)
+
+def Work.kid.titles(ts: List<&2, Task>, +s: State, +th: String) -> List<&2, String>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case Task{_, +p, +c, _, st, _, _, _, _} <> t:
+      Bg.keep(Bool.not(Bool.and(String.eq(p, th), Bool.not(TaskState.terminal(st)))), "task " ++ c, Work.kid.titles(t, s, th))
+
+# what a thread waits on, one line each (thread_wait's "work")
+def Work.titles(+s: State, +th: String) -> List<&2, String>:
+  match s:
+    case State{_, _, _, _, +tk, _, _, _, _, _, _}:
+      List.concat(&2, String, [Work.kid.titles(Map.values(&2, Task, tk), s, th), Work.row.titles(Bg.of(s, th)), Work.row.titles(Work.watch(s, th))])
+
+# a scratch thread that has had its time and waits on no work (busy:
+# Work.busy; law scratch_busy_kept)
+def Scratch.expired.w(+now: Nat, +w: Nat, t: Thread, +busy: Nat) -> Bool:
+  Bool.and(Scratch.expired(now, w, t), Nat.is_eq(busy, 0n))
+
+# whether a thread's worktree goes now, never while it waits on work
+# (law worktree_busy_kept)
+def Worktree.drop.w(+s: State, +t: Thread, +now: Nat, +window: Nat, +busy: Nat) -> Bool:
+  Bool.and(Worktree.drop(s, t, now, window), Nat.is_eq(busy, 0n))
+
+def Work.threads.go(ts: List<&2, Thread>, +kids: Map<&2, Nat>, +s: State) -> Nat:
+  match ts:
+    case Nil{}:
+      0n
+    case Thread{+id, _, _, _, _, turn, _, ar, _, _, _, _, _, _, _, _, _, _, _, _, de} <> t:
+      Nat.add(Bool.pick(Nat, Bool.and(Bool.not(Bool.or(ar, de)), Bool.or(State.running.k(State.thread.get(s, id)), Nat.is_gt(Work.busy.at(kids, s, id), 0n))), 1n, 0n),
+        Work.threads.go(t, kids, s))
+
+# how many threads run a turn or wait on work (an update waits for them)
+def Work.threads(+s: State) -> Nat:
+  match s:
+    case State{_, +ts, _, _, _, _, _, _, _, _, _}:
+      Work.threads.go(Map.values(&2, Thread, ts), Work.kids.map(s), s)

@@ -19,6 +19,11 @@ import ./utf8.bend as U8
 type McpOut is Data:
   McpOut{reply: String, step: B.Step, park: String}
 
+def McpOut.reply(o: McpOut) -> String:
+  match o:
+    case McpOut{r, _, _}:
+      r
+
 def Mcp.result(+id: J.Json, r: J.Json) -> String:
   J.Json.show(J.Json.obj([J.KV{"jsonrpc", J.Str{"2.0"}}, J.KV{"id", id}, J.KV{"result", r}]))
 
@@ -121,7 +126,16 @@ def Mcp.tools() -> J.Json:
     Tool.def("terminal_send", "Type into a terminal of this chat, as the user would: text is sent as is (\\r is Enter, \\u0003 is ctrl+c, \\u001b[A is Up).",
       [Tool.prop("id", "string", "The terminal's id."), Tool.prop("text", "string", "The bytes to send, as text.")], ["id", "text"]),
     Tool.def("terminal_close", "Stop a terminal of this chat (its program is hung up; the user can start it again).",
-      [Tool.prop("id", "string", "The terminal's id.")], ["id"])]
+      [Tool.prop("id", "string", "The terminal's id.")], ["id"]),
+    Tool.def("work_run", "Start long or detached work (a build, a test run, a job on another machine) so Backplane owns it: it survives restarts of Backplane, and when it ends you are woken with its exit code and the end of its output. Use this instead of `&`, nohup, disown or systemd-run, then end your turn; never poll or sleep-wait.",
+      [Tool.prop("command", "string", "The shell command, run in this thread's folder."), Tool.prop("note", "string", "What it is, in a few words."), Tool.prop("timeoutSec", "number", "Give up watching after this long (the work keeps running; the outcome is then unknown).")], ["command"]),
+    Tool.def("work_watch", "Have Backplane watch work that is already running and wake you when it ends: kind unit (a systemd --user unit), pid (a process), or file (a file that will contain the token this call returns). Then end your turn.",
+      [Tool.prop("kind", "string", "unit, pid or file."), Tool.prop("target", "string", "The unit name, the pid, or the file's path."), Tool.prop("note", "string", "What it is."), Tool.prop("timeoutSec", "number", "Give up watching after this long.")], ["kind", "target"]),
+    Tool.def("work_list", "List the work Backplane watches for this thread (work_run and work_watch), with each one's state.", Nil{}, Nil{}),
+    Tool.def("work_cancel", "Stop work started with work_run (or a watched unit or pid). It shows as cancelling until its end is confirmed.",
+      [Tool.prop("id", "string", "The work's id.")], ["id"]),
+    Tool.def("work_unwatch", "Stop watching work without stopping it: it may still run, and you will not be told when it ends.",
+      [Tool.prop("id", "string", "The work's id.")], ["id"])]
     , List.append(&2, J.Json, Mcp.preview_tools(), [Tool.def("permission_prompt", "Internal to Backplane: asks the user before a tool runs. Do not call it yourself.",
       [Tool.prop("tool_name", "string", "The tool."), Tool.prop("input", "object", "Its input."), Tool.prop("tool_use_id", "string", "The call.")], ["tool_name", "input"])])))}])
 
@@ -349,7 +363,7 @@ def Mcp.delegate.go(+s: M.State, +now: Nat, +parent: String, +project: String, e
         M.TaskStateSet{task, M.TaskRunning{}, "", now},
         M.MessagePosted{child, Mcp.from.id(Bool.pick(String, Mcp.bot(s, parent), parent, ""), B.Hub.id("m", now, 2n+seq)), M.User{}, prompt, now},
         M.TurnChanged{child, M.Running{}, now}],
-      B.Hub.run(M.Thread{child, project, name, now, now, M.Running{}, 0n, False{}, M.NoOverride{}, 0n, 0n, False{}, M.Local{}, branch, wt, provider, model, rm, M.DefaultMode{}, "", False{}}, cwd, prompt)}}
+      B.Hub.run(M.Thread{child, project, name, now, now, M.Running{}, 0n, False{}, M.NoOverride{}, 0n, 0n, False{}, M.Local{}, branch, wt, provider, model, rm, M.DefaultMode{}, "", False{}}, cwd, prompt, B.Hub.uuid(now, child ++ "/d"))}}
 
 def Mcp.delegate.k(ok: Bool, t: M.Thread, +s: M.State, +now: Nat, +thread: String, +bot: Bool, +proj: String, +p: J.Json) -> Res:
   match ok t:
@@ -488,13 +502,27 @@ def Mcp.last(es: List<&2, M.Entry>, +th: String) -> String:
 def Mcp.done(+s: M.State, +th: String) -> Bool:
   Bool.and(Bool.not(B.Hub.running(B.Hub.thread(s, th))), Bool.not(M.Queue.waiting(s, th)))
 
+# done, and nothing out of hand either (model.bend's Work.ready): a turn
+# that left a subagent, background shell or watched work running is not
+# done until that work is (law wait_busy_not_done)
+def Mcp.done.w(+s: M.State, +th: String) -> Bool:
+  Bool.and(Mcp.done(s, th), Nat.is_eq(M.Work.busy(s, th), 0n))
+
+def Mcp.strs(xs: List<&2, String>) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case x <> t:
+      J.Str{x} <> Mcp.strs(t)
+
 # where a thread stands, answered at once (the server asks again each
 # second while it waits, up to the timeout)
 def Mcp.wait.k(ok: Bool, +s: M.State, +target: String) -> Res:
   match ok:
     case True{}:
       Res.ok(J.Json.obj([J.KV{"threadId", J.Str{target}}, J.KV{"turn", J.Str{C.Turn.name(M.Thread.turn(B.Hub.thread(s, target)))}},
-        J.KV{"done", J.Flag{Mcp.done(s, target)}}, J.KV{"lastReply", J.Str{String.take(Mcp.last(M.State.mine(s, target), target), 8000n)}}]))
+        J.KV{"done", J.Flag{Mcp.done.w(s, target)}}, J.KV{"waiting", J.Json.nat(M.Work.busy(s, target))}, J.KV{"work", J.Json.arr(Mcp.strs(M.Work.titles(s, target)))},
+        J.KV{"lastReply", J.Str{String.take(Mcp.last(M.State.mine(s, target), target), 8000n)}}]))
     case False{}:
       Res.fail("that thread is not in this project")
 
@@ -527,7 +555,50 @@ def Mcp.send.k(ok: Bool, +s: M.State, +now: Nat, +thread: String, +target: Strin
 
 def Mcp.names() -> List<&2, String>:
   ["orchestrator_capabilities", "delegate_task", "task_status", "task_cancel", "thread_list", "thread_read", "thread_send", "viewer_show",
-   "thread_launch", "thread_update", "thread_wait", "thread_interrupt", "thread_wait_now", "terminal_open", "terminal_send", "terminal_close"]
+   "thread_launch", "thread_update", "thread_wait", "thread_interrupt", "thread_wait_now", "terminal_open", "terminal_send", "terminal_close", "work_run", "work_watch", "work_list", "work_cancel", "work_unwatch"]
+
+# Watched work (hub.bend's Watch.*): work_run, work_watch, work_list,
+# work_cancel, work_unwatch; each answers once its row is stored (the
+# server answers after the step's write)
+def Mcp.secs(+a: J.Json) -> Nat:
+  M.Switch.num(J.Json.as_raw(J.Json.get(a, "timeoutSec"), "0"), 0n)
+
+def Mcp.work.json(+l: String) -> J.Json:
+  J.Json.obj([J.KV{"id", J.Str{M.Bg.field(l, 0n)}}, J.KV{"state", J.Str{Bool.pick(String, M.Bg.ended(l), M.Bg.status(l), B.Watch.state(l))}},
+    J.KV{"note", J.Str{M.Bg.title(l)}}, J.KV{"kind", J.Str{B.Watch.kind(l)}}, J.KV{"target", J.Str{B.Watch.target(l)}}])
+
+def Mcp.work.rows(ls: List<&2, String>) -> List<&2, J.Json>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Mcp.work.json(l) <> Mcp.work.rows(t)
+
+def Mcp.work.run(empty: Bool, +s: M.State, +now: Nat, +thread: String, +a: J.Json) -> Res:
+  match empty:
+    case True{}:
+      Res.fail("command is required")
+    case False{}:
+      Res{True{}, J.Json.obj([J.KV{"id", J.Str{B.Watch.id(s, thread)}}, J.KV{"state", J.Str{"launching"}},
+          J.KV{"next", J.Str{"End your turn: you will be woken with the outcome."}}]),
+        B.Watch.start(s, now, thread, "run", J.Json.get_str(a, "command", ""), Mcp.or(J.Json.get_str(a, "note", ""), J.Json.get_str(a, "command", "")), Mcp.secs(a))}
+
+def Mcp.work.watch(ok: Bool, +s: M.State, +now: Nat, +thread: String, +a: J.Json) -> Res:
+  match ok:
+    case True{}:
+      Res{True{}, J.Json.obj([J.KV{"id", J.Str{B.Watch.id(s, thread)}}, J.KV{"token", J.Str{B.Watch.id(s, thread)}},
+          J.KV{"next", J.Str{Bool.pick(String, String.eq(J.Json.get_str(a, "kind", ""), "file"), "Make the work write the token into the file when it is done, then end your turn.", "End your turn: you will be woken when it ends.")}}]),
+        B.Watch.start(s, now, thread, J.Json.get_str(a, "kind", ""), J.Json.get_str(a, "target", ""), Mcp.or(J.Json.get_str(a, "note", ""), J.Json.get_str(a, "target", "")), Mcp.secs(a))}
+    case False{}:
+      Res.fail("kind must be unit, pid or file")
+
+def Mcp.work.cancel(+l: String, +s: M.State, +now: Nat, +thread: String, +id: String) -> Res:
+  Bool.pick(Res, Bool.or(String.is_empty(l), M.Bg.ended(l)), Res.fail("no such work running"),
+    Res{True{}, J.Json.obj([J.KV{"id", J.Str{id}}, J.KV{"state", J.Str{"cancelling"}}]), B.Watch.cancel(s, now, thread, id)})
+
+def Mcp.work.unwatch(+l: String, +s: M.State, +now: Nat, +thread: String, +id: String) -> Res:
+  Bool.pick(Res, String.is_empty(l), Res.fail("no such work"),
+    Res{True{}, J.Json.obj([J.KV{"id", J.Str{id}}, J.KV{"state", J.Str{B.Watch.unwatch.text()}}]), B.Watch.unwatch(s, now, thread, id)})
 
 def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json, +a: J.Json) -> Res:
   match i:
@@ -564,6 +635,16 @@ def Mcp.call.k(i: Nat, +s: M.State, +now: Nat, +thread: String, +models: J.Json,
       Mcp.term.op(String.is_empty(EM.Emb.sum(M.State.mine(s, thread), J.Json.get_str(a, "id", ""))), True{}, thread, J.Json.get_str(a, "id", ""), J.Json.get_str(a, "text", ""))
     case 15n:
       Mcp.term.op(String.is_empty(EM.Emb.sum(M.State.mine(s, thread), J.Json.get_str(a, "id", ""))), False{}, thread, J.Json.get_str(a, "id", ""), "")
+    case 16n:
+      Mcp.work.run(String.is_empty(String.trim(J.Json.get_str(a, "command", ""))), s, now, thread, a)
+    case 17n:
+      Mcp.work.watch(Nat.is_lt(C.Codec.pos(["unit", "pid", "file"], J.Json.get_str(a, "kind", "")), 3n), s, now, thread, a)
+    case 18n:
+      Res.ok(J.Json.obj([J.KV{"work", J.Json.arr(Mcp.work.rows(M.Work.watch(s, thread)))}]))
+    case 19n:
+      Mcp.work.cancel(B.Watch.find(M.Work.watch(s, thread), J.Json.get_str(a, "id", "")), s, now, thread, J.Json.get_str(a, "id", ""))
+    case 20n:
+      Mcp.work.unwatch(B.Watch.find(M.Work.watch(s, thread), J.Json.get_str(a, "id", "")), s, now, thread, J.Json.get_str(a, "id", ""))
     case _:
       Res.fail("unknown tool")
 

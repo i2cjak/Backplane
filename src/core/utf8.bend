@@ -143,3 +143,14 @@ def Lines.split(r: Lines) -> Lines & List<&2, String>:
 # feed a chunk; answers the carry and the lines it completed, oldest first
 def Lines.feed(l: Lines, bs: List<&2, U32>) -> Lines & List<&2, String>:
   Lines.split(Lines.go(bs, l))
+
+# what is left of a line not yet ended ("" for none): at the stream's end
+# it is the last line, read as one (law final_partial_line_flushed)
+def Lines.rest(l: Lines) -> String:
+  match l:
+    case Lines{part, _}:
+      Utf8.decode(List.reverse(&2, U32, part))
+
+def Lines.after(r: Lines & List<&2, String>) -> Lines:
+  (l, _) = r
+  l

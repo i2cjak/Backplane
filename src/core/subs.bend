@@ -161,9 +161,22 @@ def Subs.agg.row(a: SubAgg, +info: Map<&2, String>, +kind: String, +title: Strin
       SubRow{call, True{}, Subs.named(kd, Subs.or(Subs.or(title, ti), "Subagent")), Subs.or(kd, "subagent"), Bool.pick(String, live, "running", Subs.ended(en)),
         doing, live, open, n, Subs.steps(open, ss)}
 
-# a subagent at work (a line of the thread's Bg)
+# what an ended row (M.Bg.ended: finished, its outcome not yet handed to
+# the agent) shows in place of what it does
+def Subs.reporting() -> String:
+  "finished, reporting"
+
+def Subs.word.k(ended: Bool, r: SubRow) -> SubRow:
+  match ended r:
+    case True{} SubRow{k, a, ti, who, _, _, live, o, n, ss}:
+      SubRow{k, a, ti, who, "reporting", Subs.reporting(), live, o, n, ss}
+    case False{} _:
+      r
+
+# a subagent at work (a line of the thread's Bg); an ended one still
+# counts, "reporting"
 def Subs.bg.row(+l: String, +as: List<&2, SubAgg>, +info: Map<&2, String>) -> SubRow:
-  Subs.agg.row(Agg.find(as, Subs.or(M.Bg.call(l), M.Bg.field(l, 0n))), info, M.Bg.kind.of(l), M.Bg.title(l), M.Bg.doing(l), True{})
+  Subs.word.k(M.Bg.ended(l), Subs.agg.row(Agg.find(as, Subs.or(M.Bg.call(l), M.Bg.field(l, 0n))), info, M.Bg.kind.of(l), M.Bg.title(l), M.Bg.doing(l), True{}))
 
 def Subs.bg.rows(ls: List<&2, String>, +as: List<&2, SubAgg>, +info: Map<&2, String>) -> List<&2, SubRow>:
   match ls:
@@ -201,12 +214,47 @@ def Subs.done(as: List<&2, SubAgg>, +busy: List<&2, String>, +info: Map<&2, Stri
     case +a <> t:
       Subs.done.k(Subs.has(busy, Agg.call(a)), a, info, Subs.done(t, busy, info))
 
+# watched work (hub.bend's Watch.*: work_run, work_watch): a row a
+# piece, kind "watch", its state the word ("launching", "watching",
+# "cancelling", or "unknown" once its outcome cannot be known)
+def Subs.watch.word(+l: String) -> String:
+  Bool.pick(String, M.Bg.ended(l), M.Bg.status(l), M.Bg.doing(l))
+
+def Subs.watch.row(+l: String, +info: Map<&2, String>) -> SubRow:
+  SubRow{M.Bg.field(l, 0n), True{}, "watch: " ++ M.Bg.title(l), "watch", Subs.watch.word(l), M.Bg.clean(M.Bg.dec(M.Bg.field(l, 6n))), True{}, Subs.open(info, M.Bg.field(l, 0n), True{}), 0n, Nil{}}
+
+def Subs.watch.rows(ls: List<&2, String>, +info: Map<&2, String>) -> List<&2, SubRow>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Subs.watch.row(l, info) <> Subs.watch.rows(t, info)
+
+def Subs.key(r: SubRow) -> String:
+  match r:
+    case SubRow{k, _, _, _, _, _, _, _, _, _}:
+      k
+
+def Subs.word(r: SubRow) -> String:
+  match r:
+    case SubRow{_, _, _, _, w, _, _, _, _, _}:
+      w
+
+# the action a row's Stop sends (with the row's key): watched work still
+# at work "work-cancel", a delegated task at work "task-cancel"; "" for
+# none (the agent's own subagents stop with its turn)
+def Subs.cancel(r: SubRow) -> String:
+  match r:
+    case SubRow{_, +agent, _, +who, +word, _, +live, _, _, _}:
+      Bool.pick(String, Bool.and(agent, Bool.and(String.eq(who, "watch"), Bool.and(live, Bool.not(Bool.or(String.eq(word, "cancelling"), String.eq(word, "unknown")))))), "work-cancel",
+        Bool.pick(String, Bool.and(Bool.not(agent), live), "task-cancel", ""))
+
 # the agent's own subagents: those at work in the order they started, then
-# the newest finished ones
+# the work Backplane watches for it, then the newest finished ones
 def Subs.agents(+st: M.State, +info: Map<&2, String>, +th: String) -> List<&2, SubRow>:
   +as = Subs.aggs(st, th)
   +ls = M.Bg.of(st, th)
-  List.append(&2, SubRow, Subs.bg.rows(ls, as, info), List.take(&2, SubRow, Subs.done(as, Subs.calls(ls), info), Subs.done_kept()))
+  List.concat(&2, SubRow, [Subs.bg.rows(ls, as, info), Subs.watch.rows(M.Work.watch(st, th), info), List.take(&2, SubRow, Subs.done(as, Subs.calls(ls), info), Subs.done_kept())])
 
 # what a thread did last: its newest entry's first line
 def Subs.latest.of(es: List<&2, M.Entry>) -> String:
@@ -294,6 +342,24 @@ def Subs.agent_n(ls: List<&2, String>) -> Nat:
 # monitors are not agents)
 def Subs.count(+st: M.State, +th: String) -> Nat:
   Nat.add(U.Side.live(U.Tasks.of(st, th)), Subs.agent_n(M.Bg.of(st, th)))
+
+# Subs.count from the sidebar's index (law subs_count_ix_eq)
+def Subs.count.ix(+ix: U.SIx, +st: M.State, +th: String) -> Nat:
+  Nat.add(U.SIx.kids(ix, th), Subs.agent_n(M.Bg.of(st, th)))
+
+def Subs.counts(ts: List<&2, M.Thread>, +st: M.State) -> List<&2, Nat>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case +t <> rest:
+      Subs.count(st, M.Thread.id(t)) <> Subs.counts(rest, st)
+
+def Subs.counts.ix(ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State) -> List<&2, Nat>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case +t <> rest:
+      Subs.count.ix(ix, st, M.Thread.id(t)) <> Subs.counts.ix(rest, ix, st)
 
 # a sidebar row's badge: "1 agent", "3 agents", or "" with none
 def Subs.badge(+n: Nat) -> String:

@@ -215,9 +215,10 @@ struct EntryRow: View {
 private func subColor(_ state: String) -> Color {
     switch state {
     case "running": PhaseColor.accent
-    case "done": PhaseColor.ok
+    case "done", "reporting": PhaseColor.ok
+    case "watching", "launching": PhaseColor.accent
     case "queued": PhaseColor.faint
-    case "cancelled": PhaseColor.warn
+    case "cancelled", "cancelling": PhaseColor.warn
     default: PhaseColor.bad
     }
 }
@@ -251,6 +252,9 @@ struct SubsView: View {
                             Text(r.agent ? (r.open ? "▾" : "▸") : r.who).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                             Text(r.title).lineLimit(1)
                             Spacer(minLength: 0)
+                            if let c = r.cancel, !c.isEmpty {
+                                Button("Stop") { model.act(c, r.id) }.font(.caption2).foregroundStyle(PhaseColor.warn).buttonStyle(.plain)
+                            }
                             Text(r.state).font(.caption2).foregroundStyle(subColor(r.state))
                         }
                         if !r.doing.isEmpty {

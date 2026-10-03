@@ -6,6 +6,7 @@ import ./view.bend as V
 import ../core/cbor.bend as C
 import ../core/attach.bend as AT
 import ../core/lightbox.bend as LB
+import ../core/desk.bend as DK
 import ./cat.bend as WC
 import ../core/onboard.bend as OB
 
@@ -82,6 +83,11 @@ def desk(u: U.Ui, focused: Bool, now: Nat) -> U.Act:
 
 def online(u: U.Ui, b: Bool) -> U.Ui:
   U.Ui.online(u, b)
+
+# whether a link last heard from at `last` (ms) is dead at `now`: the hub
+# sends a heartbeat every 15 s (core/desk.bend's Alive)
+def alive_due(last: Nat, now: Nat) -> Bool:
+  DK.Alive.due(last, now)
 
 # the saved log put back on load is not a connection's: nothing is synced
 # until the hub's own log arrives

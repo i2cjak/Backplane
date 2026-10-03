@@ -408,12 +408,15 @@ def Bots.fan(ms: List<&2, String>, +i: Nat, +s: M.State, +now: Nat, +seq: Nat, +
 # is logged, here and on the machines of members elsewhere, for the
 # person, and heard by no bot). `from` is the sender's thread ("" for a
 # person), `self` its bot id
-def Bots.post(+s: M.State, +now: Nat, +from: String, +fname: String, +self: String, r: BT.Room, +text: String, +hop: Nat) -> B.Step:
+def Bots.post.id(+mid: String, +s: M.State, +now: Nat, +from: String, +fname: String, +self: String, r: BT.Room, +text: String, +hop: Nat) -> B.Step:
   match r:
     case BT.Room{+room, +rname, +ms, _, _}:
-      B.Step.before([M.RoomPosted{B.Hub.id("p", now, B.Hub.seq(s)), room, fname, text, hop, now}],
+      B.Step.before([M.RoomPosted{mid, room, fname, text, hop, now}],
         Bots.remotes(Bots.peers.of(ms, s, Nil{}), s, ms, fname, room, rname, text, hop),
         Bots.hop.gate(BT.Hop.live(hop), Bots.fan(ms, 0n, s, now, B.Hub.seq(s), from, fname, self, room, rname, text, hop)))
+
+def Bots.post(+s: M.State, +now: Nat, +from: String, +fname: String, +self: String, r: BT.Room, +text: String, +hop: Nat) -> B.Step:
+  Bots.post.id(B.Hub.id("p", now, B.Hub.seq(s)), s, now, from, fname, self, r, text, hop)
 
 # a direct message from a bot (or a person) to one bot, here or elsewhere
 def Bots.direct(+s: M.State, +now: Nat, +from: String, +fname: String, +self: String, +to: String, +tname: String, +text: String, +hop: Nat) -> B.Step:
@@ -499,12 +502,36 @@ def Bots.delete.k(live: Bool, +s: M.State, +now: Nat, +client: U32, +id: String,
       Bots.err(client, id, "no such bot")
 
 # a person talks to a bot: the conversation starts over at hop 0
-def Bots.say.k(live: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +bot: String, +text: String) -> B.Step:
+def Bots.say.id(+mid: String, live: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +bot: String, +text: String) -> B.Step:
   match live:
     case True{}:
-      B.Step.before(Nil{}, [B.Reply.ok(client, id)], Bots.wake(s, now, "", Bots.bot(s, bot), B.Hub.id("m", now, B.Hub.seq(s)), text, 0n))
+      B.Step.before(Nil{}, [B.Reply.ok(client, id)], Bots.wake(s, now, "", Bots.bot(s, bot), mid, text, 0n))
     case False{}:
       Bots.err(client, id, "no such bot")
+
+def Bots.say.k(live: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +bot: String, +text: String) -> B.Step:
+  Bots.say.id(B.Hub.id("m", now, B.Hub.seq(s)), live, s, now, client, id, bot, text)
+
+# The same request sent again (the client's outbox after a dropped link)
+# carries the same `msg`, which is the entry's id: a repeat is answered ok
+# and stores and wakes nothing (laws bots_say_once, bots_post_once,
+# bots_tell_once). A request with no `msg` is as it was.
+def Bots.said.k(named: Bool, +s: M.State, +bot: String, +msg: String) -> Bool:
+  match named:
+    case True{}:
+      B.Hub.has_msg(M.State.mine(s, BT.Bot.thread(Bots.bot(s, bot))), msg)
+    case False{}:
+      False{}
+
+def Bots.say.once(dup: Bool, +msg: String, live: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +bot: String, +text: String) -> B.Step:
+  match dup:
+    case True{}:
+      B.Step.outs([B.Reply.ok(client, id)])
+    case False{}:
+      Bots.say.id(Bool.pick(String, String.is_empty(msg), B.Hub.id("m", now, B.Hub.seq(s)), msg), live, s, now, client, id, bot, text)
+
+def Bots.say.msg(live: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +bot: String, +text: String, +msg: String) -> B.Step:
+  Bots.say.once(Bots.said.k(Bool.not(String.is_empty(msg)), s, bot, msg), msg, live, s, now, client, id, bot, text)
 
 def Bots.room.id(+s: M.State, +now: Nat, +id: String) -> String:
   Bool.pick(String, String.is_empty(id), B.Hub.id("r", now, B.Hub.seq(s)), id)
@@ -514,12 +541,37 @@ def Bots.room(+s: M.State, +now: Nat, +client: U32, +id: String, +p: J.Json) -> 
     J.Json.get_str(p, "members", ""), now}])
 
 # a person posts in a room (hop 0)
-def Bots.say.room(m: Maybe<&2, BT.Room>, +s: M.State, +now: Nat, +client: U32, +id: String, +text: String) -> B.Step:
+def Bots.say.room.id(+mid: String, m: Maybe<&2, BT.Room>, +s: M.State, +now: Nat, +client: U32, +id: String, +text: String) -> B.Step:
   match m:
     case Some{r}:
-      B.Step.before(Nil{}, [B.Reply.ok(client, id)], Bots.post(s, now, "", "you", "", r, text, 0n))
+      B.Step.before(Nil{}, [B.Reply.ok(client, id)], Bots.post.id(mid, s, now, "", "you", "", r, text, 0n))
     case None{}:
       Bots.err(client, id, "no such room")
+
+def Bots.say.room(m: Maybe<&2, BT.Room>, +s: M.State, +now: Nat, +client: U32, +id: String, +text: String) -> B.Step:
+  Bots.say.room.id(B.Hub.id("p", now, B.Hub.seq(s)), m, s, now, client, id, text)
+
+# a post sent again (same `msg`, the post's id) is answered ok and stored
+# once; the id of a post with none is made here
+def Bots.post.mid(+s: M.State, +now: Nat, +msg: String) -> String:
+  Bool.pick(String, String.is_empty(msg), B.Hub.id("p", now, B.Hub.seq(s)), msg)
+
+def Bots.posted(named: Bool, +s: M.State, +msg: String) -> Bool:
+  match named:
+    case True{}:
+      BT.World.has_post(M.State.bots(s), msg)
+    case False{}:
+      False{}
+
+def Bots.post.once(dup: Bool, +mid: String, m: Maybe<&2, BT.Room>, +s: M.State, +now: Nat, +client: U32, +id: String, +text: String) -> B.Step:
+  match dup:
+    case True{}:
+      B.Step.outs([B.Reply.ok(client, id)])
+    case False{}:
+      Bots.say.room.id(mid, m, s, now, client, id, text)
+
+def Bots.post.msg(m: Maybe<&2, BT.Room>, +s: M.State, +now: Nat, +client: U32, +id: String, +text: String, +msg: String) -> B.Step:
+  Bots.post.once(Bots.posted(Bool.not(String.is_empty(msg)), s, msg), Bots.post.mid(s, now, msg), m, s, now, client, id, text)
 
 def Bots.room.live(r: BT.Room) -> Maybe<&2, BT.Room>:
   match r:
@@ -672,55 +724,23 @@ def Bots.fire(+s: M.State, +now: Nat, +i: Nat, r: BT.Routine) -> B.Step:
 
 # the machine a person wrote from, read from the head of a turn's message
 # ("[message from person@<machine>]"); "" for anything else: a bot, a room
-def Reply.peer.k(ok: Bool, +head: String) -> String:
-  match ok:
-    case True{}:
-      String.take(String.drop(head, 21n), Nat.sub(String.length(head), 22n))
-    case False{}:
-      ""
-
-def Reply.peer.head(+head: String) -> String:
-  Reply.peer.k(Bool.and(Bool.and(String.starts_with(head, "[message from person@"), String.ends_with(head, "]")),
-    Bool.and(Bool.not(String.contains(head, " in #")), Nat.is_gt(String.length(head), 22n))), head)
-
+# (read by hub.bend's Answer.*, which captures the answer when the turn
+# that finishes the thread's work ends)
 def Reply.peer(+text: String) -> String:
-  Reply.peer.head(Maybe.default(&2, String, List.head(&2, String, String.split(text, '\n')), ""))
+  B.Answer.peer(text)
 
 # a thread's current turn read back from its entries (newest first): the
 # message that started it and the newest answer since
 type Said is Data:
   Said{answer: String, trigger: String}
 
-def Said.user(hit: Bool, text: String, acc: Said) -> Said:
-  match hit acc:
-    case True{} Said{a, _}:
-      Said{a, text}
-    case False{} _:
-      acc
-
-def Said.answer(hit: Bool, text: String, acc: Said) -> Said:
-  match hit acc:
-    case True{} Said{+a, t}:
-      Said{Bool.pick(String, String.is_empty(a), text, a), t}
-    case False{} _:
-      acc
-
-# the walk stops at the thread's newest user message
-def Said.scan(es: List<&2, M.Entry>, +id: String, done: Bool, acc: Said) -> Said:
-  match es done:
-    case _ True{}:
-      acc
-    case Nil{} False{}:
-      acc
-    case M.Msg{_, +th, M.User{}, text, _} <> t False{}:
-      Said.scan(t, id, String.eq(th, id), Said.user(String.eq(th, id), text, acc))
-    case M.Msg{_, +th, M.Assistant{}, text, _} <> t False{}:
-      Said.scan(t, id, False{}, Said.answer(String.eq(th, id), text, acc))
-    case _ <> t False{}:
-      Said.scan(t, id, False{}, acc)
+def Said.from(a: B.Answer) -> Said:
+  match a:
+    case B.Answer{x, t}:
+      Said{x, t}
 
 def Said.of(es: List<&2, M.Entry>, +id: String) -> Said:
-  Said.scan(es, id, False{}, Said{"", ""})
+  Said.from(B.Answer.of(es, id))
 
 def Reply.back.k(p: Maybe<&2, BT.Peer>, b: Maybe<&2, BT.Bot>, +s: M.State, +now: Nat, +machine: String, +text: String) -> B.Step:
   match p b:
@@ -743,8 +763,14 @@ def Reply.back.said(sd: Said, +s: M.State, +now: Nat, +thread: String, +done: Bo
       Reply.back.go(Bool.and(done, Bool.and(Bool.not(String.is_empty(answer)), Bool.not(String.is_empty(Reply.peer(trigger))))),
         s, now, thread, Reply.peer(trigger), answer)
 
+# an answer captured at the turn's end (hub.bend's BotReply): it goes back
+# to the person's machine and is logged in their room with the bot
+def Reply.send(+s: M.State, +now: Nat, +thread: String, +to: String, +text: String) -> B.Step:
+  Reply.back.k(Bots.peer(s, to), BT.World.of_thread(M.State.bots(s), thread), s, now, to, text)
+
 # a turn ended ("completed" or "failed"): a bot's completed answer to a
-# person on a linked machine goes back to them
+# person on a linked machine goes back to them (bots.answered, which a
+# hub no longer sends itself: BotReply is captured instead)
 def Reply.back(+s: M.State, +now: Nat, +thread: String, +state: String) -> B.Step:
   Reply.back.said(Said.of(M.State.entries.all(s), thread), s, now, thread, String.eq(state, "completed"))
 
@@ -762,21 +788,35 @@ def Bots.methods() -> List<&2, String>:
 def Bots.is(+m: String) -> Bool:
   String.starts_with(m, "bots.")
 
-def Bots.tell.k(m: Maybe<&2, BT.Peer>, +s: M.State, +now: Nat, +client: U32, +id: String, +to: String, +text: String) -> B.Step:
+def Bots.tell.k(+mid: String, m: Maybe<&2, BT.Peer>, +s: M.State, +now: Nat, +client: U32, +id: String, +to: String, +text: String) -> B.Step:
   match m:
     case Some{p}:
-      B.Step{[M.RoomPosted{B.Hub.id("p", now, B.Hub.seq(s)), BT.Room.dm("you", to), "you", text, 0n, now}],
+      B.Step{[M.RoomPosted{mid, BT.Room.dm("you", to), "you", text, 0n, now}],
         [B.Reply.ok(client, id), B.BotFx{"send", Bots.peer.id(p), "/bots/deliver", Bots.remote.body("person", Bots.at.name(to), "", "", text, 0n)}]}
     case None{}:
       Bots.err(client, id, "no linked machine called " ++ Bots.at.peer(to))
 
 # a person writes to a bot on a linked machine
-def Bots.tell(remote: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +to: String, +text: String) -> B.Step:
+def Bots.tell.mid(remote: Bool, +mid: String, +s: M.State, +now: Nat, +client: U32, +id: String, +to: String, +text: String) -> B.Step:
   match remote:
     case True{}:
-      Bots.tell.k(Bots.peer(s, Bots.at.peer(to)), s, now, client, id, to, text)
+      Bots.tell.k(mid, Bots.peer(s, Bots.at.peer(to)), s, now, client, id, to, text)
     case False{}:
       Bots.err(client, id, "write to a bot here with bots.say")
+
+def Bots.tell(remote: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +to: String, +text: String) -> B.Step:
+  Bots.tell.mid(remote, Bots.post.mid(s, now, ""), s, now, client, id, to, text)
+
+def Bots.tell.once(dup: Bool, +mid: String, remote: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +to: String, +text: String) -> B.Step:
+  match dup:
+    case True{}:
+      B.Step.outs([B.Reply.ok(client, id)])
+    case False{}:
+      Bots.tell.mid(remote, mid, s, now, client, id, to, text)
+
+# (sent again with the same `msg`: answered ok, stored and sent once)
+def Bots.tell.msg(remote: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +to: String, +text: String, +msg: String) -> B.Step:
+  Bots.tell.once(Bots.posted(Bool.not(String.is_empty(msg)), s, msg), Bots.post.mid(s, now, msg), remote, s, now, client, id, to, text)
 
 # a space's button or field: the bot hears it as a person's message
 def Bots.space.msg(+action: String, +value: String) -> String:
@@ -895,13 +935,13 @@ def Bots.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p
     case 2n:
       Bots.delete.k(Bots.live(s, J.Json.get_str(p, "bot", "")), s, now, client, id, J.Json.get_str(p, "bot", ""))
     case 3n:
-      Bots.say.k(Bots.live(s, J.Json.get_str(p, "bot", "")), s, now, client, id, J.Json.get_str(p, "bot", ""), J.Json.get_str(p, "text", ""))
+      Bots.say.msg(Bots.live(s, J.Json.get_str(p, "bot", "")), s, now, client, id, J.Json.get_str(p, "bot", ""), J.Json.get_str(p, "text", ""), J.Json.get_str(p, "msg", ""))
     case 4n:
       Bots.room(s, now, client, id, p)
     case 5n:
       B.Step.reply(client, id, [M.RoomDeleted{J.Json.get_str(p, "room", ""), now}])
     case 6n:
-      Bots.say.room(Bots.room.get(s, J.Json.get_str(p, "room", "")), s, now, client, id, J.Json.get_str(p, "text", ""))
+      Bots.post.msg(Bots.room.get(s, J.Json.get_str(p, "room", "")), s, now, client, id, J.Json.get_str(p, "text", ""), J.Json.get_str(p, "msg", ""))
     case 7n:
       Bots.routine(s, now, client, id, p)
     case 8n:
@@ -929,7 +969,7 @@ def Bots.request.k(i: Nat, +s: M.State, +now: Nat, +client: U32, +id: String, +p
     case 18n:
       B.Step.outs([B.BotFx{"google", J.Json.show(p), U32.show(client), id}])
     case 19n:
-      Bots.tell(Bots.remote(J.Json.get_str(p, "to", "")), s, now, client, id, J.Json.get_str(p, "to", ""), J.Json.get_str(p, "text", ""))
+      Bots.tell.msg(Bots.remote(J.Json.get_str(p, "to", "")), s, now, client, id, J.Json.get_str(p, "to", ""), J.Json.get_str(p, "text", ""), J.Json.get_str(p, "msg", ""))
     case 20n:
       Bots.token(s, client, id, p)
     case 21n:

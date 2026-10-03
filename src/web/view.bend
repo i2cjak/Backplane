@@ -75,44 +75,44 @@ def View.row.k(+id: String, +title: String, +ago: String, +badge: String, +dot: 
       D.Dom.cat(Bool.pick(List<&2, D.Node>, movable, [D.El{"span", "", [D.At{"class", "moves"}], [D.Dom.button("move", "move", id ++ "|up", "Move up", "↑"), D.Dom.button("move", "move", id ++ "|down", "Move down", "↓")]}], Nil{}),
         [View.note(badge, ago)]))}
 
-def View.row(+t: M.Thread, +st: M.State, +sel: String, +now: Nat, +movable: Bool, +snoozed: Bool) -> D.Node:
+def View.row(+t: M.Thread, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +movable: Bool, +snoozed: Bool) -> D.Node:
   match t:
     case M.Thread{+id, _, +title, _, +a, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
-      View.row.k(id, U.Label.title(st, id, title), Bool.pick(String, snoozed, U.Time.ago(U.Side.until(st, id), now), U.Time.ago(now, a)), SB.Subs.badge(SB.Subs.count(st, id)), M.Phase.name(U.Side.phase(st, t)), sel, movable)
+      View.row.k(id, U.Label.title(st, id, title), Bool.pick(String, snoozed, U.Time.ago(U.Side.until(st, id), now), U.Time.ago(now, a)), SB.Subs.badge(SB.Subs.count.ix(ix, st, id)), M.Phase.name(U.Side.phase.ix(ix, st, t)), sel, movable)
 
-def View.rows_in(ts: List<&2, M.Thread>, +st: M.State, +sel: String, +now: Nat, +movable: Bool, +snoozed: Bool) -> List<&2, D.Node>:
+def View.rows_in(ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +movable: Bool, +snoozed: Bool) -> List<&2, D.Node>:
   match ts:
     case Nil{}:
       Nil{}
     case +t <> rest:
-      View.row(t, st, sel, now, movable, snoozed) <> View.rows_in(rest, st, sel, now, movable, snoozed)
+      View.row(t, ix, st, sel, now, movable, snoozed) <> View.rows_in(rest, ix, st, sel, now, movable, snoozed)
 
-def View.rows_of(ts: List<&2, M.Thread>, +st: M.State, +sel: String, +now: Nat) -> List<&2, D.Node>:
-  View.rows_in(ts, st, sel, now, False{}, False{})
+def View.rows_of(ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat) -> List<&2, D.Node>:
+  View.rows_in(ts, ix, st, sel, now, False{}, False{})
 
-def View.shelf.k(open: Bool, +key: String, +label: String, ts: List<&2, M.Thread>, +st: M.State, +sel: String, +now: Nat) -> List<&2, D.Node>:
+def View.shelf.k(open: Bool, +key: String, +label: String, ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat) -> List<&2, D.Node>:
   match open:
     case True{}:
-      WI.WIcon.button("shelf open", "toggle-settled", key, "Hide", "chevron-down", 14, label) <> View.rows_of(ts, st, sel, now)
+      WI.WIcon.button("shelf open", "toggle-settled", key, "Hide", "chevron-down", 14, label) <> View.rows_of(ts, ix, st, sel, now)
     case False{}:
       [WI.WIcon.button("shelf", "toggle-settled", key, "Show", "chevron-right", 14, label)]
 
 # a collapsible shelf (Settled, Archived): its label and count, then its
 # rows when open; nothing when empty
-def View.shelf(open: Bool, +key: String, +name: String, ts: List<&2, M.Thread>, +st: M.State, +sel: String, +now: Nat) -> List<&2, D.Node>:
+def View.shelf(open: Bool, +key: String, +name: String, ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat) -> List<&2, D.Node>:
   match ts:
     case Nil{}:
       Nil{}
     case +t <> +rest:
-      View.shelf.k(open, key, name ++ " " ++ Nat.show(List.length(&2, M.Thread, t <> rest)), t <> rest, st, sel, now)
+      View.shelf.k(open, key, name ++ " " ++ Nat.show(List.length(&2, M.Thread, t <> rest)), t <> rest, ix, st, sel, now)
 
 # snoozed threads, soonest to wake first
-def View.snoozed(ts: List<&2, M.Thread>, +st: M.State, +sel: String, +now: Nat) -> List<&2, D.Node>:
+def View.snoozed(ts: List<&2, M.Thread>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat) -> List<&2, D.Node>:
   match ts:
     case Nil{}:
       Nil{}
     case +t <> +rest:
-      D.Dom.span("shelf-label", "Snoozed") <> View.rows_in(t <> rest, st, sel, now, False{}, True{})
+      D.Dom.span("shelf-label", "Snoozed") <> View.rows_in(t <> rest, ix, st, sel, now, False{}, True{})
 
 # a project's badge editor, open under its name: its tints, then its
 # icons (a click sets one and leaves it open; a click anywhere else, on the
@@ -145,119 +145,123 @@ def View.look(open: Bool, +st: M.State, +id: String, +rm: Bool) -> List<&2, D.No
     case False{}:
       Nil{}
 
-def View.project(r: U.SRow, +quiet: Bool, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> D.Node:
+def View.project(r: U.SRow, +quiet: Bool, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> D.Node:
   match r:
     case U.SRow{_, M.Project{+id, title, root, _, _}, M.Shelves{pinned, active, settled, hidden, snoozed}}:
       D.El{"section", id, [D.At{"class", Bool.pick(String, quiet, "project quiet", "project")}, D.At{"style", "--tint:" ++ BG.Badge.css_of(st, id)}, D.At{"data-drag-to", id}, D.At{"data-drag-act", "reorder-project"}],
         List.concat(&2, D.Node, [[D.El{"div", "", [D.At{"class", "project-head"}, D.At{"title", root}, D.At{"draggable", "true"}, D.At{"data-drag", id}, D.At{"data-drag-act", "reorder-project"}, D.At{"data-value", id}, D.On{"contextmenu", "proj-menu"}],
             [WI.WIcon.button("badge", "look", id, "Colour and icon", BG.Badge.icon(st, id), 14, ""), D.Dom.span("name", U.Label.title(st, id, title)), WI.WIcon.button("icon", "new-thread", id, "New thread", "plus", 16, "")]}],
           View.look(String.eq(look, id), st, id, String.eq(rm, id)),
-          View.rows_in(pinned, st, sel, now, True{}, False{}),
-          View.rows_in(active, st, sel, now, True{}, False{}),
-          View.snoozed(snoozed, st, sel, now),
-          View.shelf(U.Flag.get(open, id), id, "Settled", settled, st, sel, now),
-          View.shelf(U.Flag.get(open, "arch:" ++ id), "arch:" ++ id, "Archived", M.Archive.of(hidden), st, sel, now)])}
+          View.rows_in(pinned, ix, st, sel, now, True{}, False{}),
+          View.rows_in(active, ix, st, sel, now, True{}, False{}),
+          View.snoozed(snoozed, ix, st, sel, now),
+          View.shelf(U.Flag.get(open, id), id, "Settled", settled, ix, st, sel, now),
+          View.shelf(U.Flag.get(open, "arch:" ++ id), "arch:" ++ id, "Archived", M.Archive.of(hidden), ix, st, sel, now)])}
 
-def View.projects(rs: List<&2, U.SRow>, +quiet: Bool, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
+def View.projects(rs: List<&2, U.SRow>, +quiet: Bool, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
   match rs:
     case Nil{}:
       Nil{}
     case r <> t:
-      View.project(r, quiet, open, st, sel, now, look, rm) <> View.projects(t, quiet, open, st, sel, now, look, rm)
+      View.project(r, quiet, open, ix, st, sel, now, look, rm) <> View.projects(t, quiet, open, ix, st, sel, now, look, rm)
 
-def View.older.open(on: Bool, rs: List<&2, U.SRow>, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
+def View.older.open(on: Bool, rs: List<&2, U.SRow>, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
   match on:
     case True{}:
-      View.projects(rs, True{}, open, st, sel, now, look, rm)
+      View.projects(rs, True{}, open, ix, st, sel, now, look, rm)
     case False{}:
       Nil{}
 
 # the older projects (quiet for Quiet.days) folded under one row; a search
 # shows them in place
-def View.older.k(searching: Bool, +n: Nat, rs: List<&2, U.SRow>, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
+def View.older.k(searching: Bool, +n: Nat, rs: List<&2, U.SRow>, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
   match searching:
     case True{}:
-      View.projects(rs, True{}, open, st, sel, now, look, rm)
+      View.projects(rs, True{}, open, ix, st, sel, now, look, rm)
     case False{}:
       WI.WIcon.button(Bool.pick(String, U.Flag.get(open, "old-projects"), "shelf older open", "shelf older"), "side-older", "", "Projects quiet for three days",
           Bool.pick(String, U.Flag.get(open, "old-projects"), "chevron-down", "chevron-right"), 14, "Older " ++ Nat.show(n))
-        <> View.older.open(U.Flag.get(open, "old-projects"), rs, open, st, sel, now, look, rm)
+        <> View.older.open(U.Flag.get(open, "old-projects"), rs, open, ix, st, sel, now, look, rm)
 
-def View.older(rs: List<&2, U.SRow>, +searching: Bool, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
+def View.older(rs: List<&2, U.SRow>, +searching: Bool, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
   match rs:
     case Nil{}:
       Nil{}
     case +r <> +t:
-      View.older.k(searching, List.length(&2, U.SRow, r <> t), r <> t, open, st, sel, now, look, rm)
+      View.older.k(searching, List.length(&2, U.SRow, r <> t), r <> t, open, ix, st, sel, now, look, rm)
 
 # the projects view: live, quiet (faded), older (folded): core's Side.groups
-def View.groups(g: U.SGroups, +q: String, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
+def View.groups(g: U.SGroups, +q: String, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
   match g:
     case U.SGroups{l, qs, o}:
-      List.concat(&2, D.Node, [View.projects(l, False{}, open, st, sel, now, look, rm), View.projects(qs, True{}, open, st, sel, now, look, rm),
-        View.older(o, Bool.not(String.is_empty(q)), open, st, sel, now, look, rm)])
+      List.concat(&2, D.Node, [View.projects(l, False{}, open, ix, st, sel, now, look, rm), View.projects(qs, True{}, open, ix, st, sel, now, look, rm),
+        View.older(o, Bool.not(String.is_empty(q)), open, ix, st, sel, now, look, rm)])
 
 # the active view: every live thread, what waits on you first, then the
 # threads settled lately, faded (core's Active.rows); a row names its
 # project where the other view shows its age
-def View.arow(r: U.ARow, +st: M.State, +sel: String) -> D.Node:
+def View.arow(r: U.ARow, +ix: U.SIx, +st: M.State, +sel: String) -> D.Node:
   match r:
     case U.ARow{_, _, +t, +pid, +pt, +faded}:
       D.El{"div", M.Thread.id(t), [D.At{"class", Bool.pick(String, String.eq(M.Thread.id(t), sel), "thread on", Bool.pick(String, faded, "thread faded", "thread"))},
           D.At{"style", "--tint:" ++ BG.Badge.css_of(st, pid)}, D.At{"data-value", M.Thread.id(t)}, D.On{"click", "select"}, D.On{"contextmenu", "row-menu"}],
-        [D.Dom.span("dot " ++ M.Phase.name(U.Side.phase(st, t)), ""), D.Dom.span("title", U.Label.title(st, M.Thread.id(t), U.Active.title(t))), View.note(SB.Subs.badge(SB.Subs.count(st, M.Thread.id(t))), pt)]}
+        [D.Dom.span("dot " ++ M.Phase.name(U.Side.phase.ix(ix, st, t)), ""), D.Dom.span("title", U.Label.title(st, M.Thread.id(t), U.Active.title(t))), View.note(SB.Subs.badge(SB.Subs.count.ix(ix, st, M.Thread.id(t))), pt)]}
 
-def View.arows(rs: List<&2, U.ARow>, +st: M.State, +sel: String) -> List<&2, D.Node>:
+def View.arows(rs: List<&2, U.ARow>, +ix: U.SIx, +st: M.State, +sel: String) -> List<&2, D.Node>:
   match rs:
     case Nil{}:
       Nil{}
     case r <> t:
-      View.arow(r, st, sel) <> View.arows(t, st, sel)
+      View.arow(r, ix, st, sel) <> View.arows(t, ix, st, sel)
 
-def View.afaded.open(on: Bool, rs: List<&2, U.ARow>, +st: M.State, +sel: String) -> List<&2, D.Node>:
+def View.afaded.open(on: Bool, rs: List<&2, U.ARow>, +ix: U.SIx, +st: M.State, +sel: String) -> List<&2, D.Node>:
   match on:
     case True{}:
-      View.arows(rs, st, sel)
+      View.arows(rs, ix, st, sel)
     case False{}:
       Nil{}
 
 # the settled rows folded under one "Settled N" row, shown while it is
 # open or a search is on (core's Active.open)
-def View.afaded.k(searching: Bool, +open: Bool, +n: Nat, rs: List<&2, U.ARow>, +st: M.State, +sel: String) -> List<&2, D.Node>:
+def View.afaded.k(searching: Bool, +open: Bool, +n: Nat, rs: List<&2, U.ARow>, +ix: U.SIx, +st: M.State, +sel: String) -> List<&2, D.Node>:
   match searching:
     case True{}:
-      View.arows(rs, st, sel)
+      View.arows(rs, ix, st, sel)
     case False{}:
       WI.WIcon.button(Bool.pick(String, open, "shelf older open", "shelf older"), "side-settled", "", "Threads settled in the last three days",
           Bool.pick(String, open, "chevron-down", "chevron-right"), 14, "Settled " ++ Nat.show(n))
-        <> View.afaded.open(open, rs, st, sel)
+        <> View.afaded.open(open, rs, ix, st, sel)
 
-def View.afaded(rs: List<&2, U.ARow>, +q: String, +open: Map<&2, Bool>, +st: M.State, +sel: String) -> List<&2, D.Node>:
+def View.afaded(rs: List<&2, U.ARow>, +q: String, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String) -> List<&2, D.Node>:
   match rs:
     case Nil{}:
       Nil{}
     case +r <> +t:
-      View.afaded.k(Bool.not(String.is_empty(q)), U.Flag.get(open, "active-settled"), List.length(&2, U.ARow, r <> t), r <> t, st, sel)
+      View.afaded.k(Bool.not(String.is_empty(q)), U.Flag.get(open, "active-settled"), List.length(&2, U.ARow, r <> t), r <> t, ix, st, sel)
 
-def View.active.k(p: U.AParts, +q: String, +open: Map<&2, Bool>, +st: M.State, +sel: String) -> List<&2, D.Node>:
+def View.active.k(p: U.AParts, +q: String, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String) -> List<&2, D.Node>:
   match p:
     case U.AParts{l, f}:
-      [D.El{"section", "", [D.At{"class", "project active"}], List.append(&2, D.Node, View.arows(l, st, sel), View.afaded(f, q, open, st, sel))}]
+      [D.El{"section", "", [D.At{"class", "project active"}], List.append(&2, D.Node, View.arows(l, ix, st, sel), View.afaded(f, q, open, ix, st, sel))}]
 
-def View.active(rs: List<&2, U.ARow>, +q: String, +open: Map<&2, Bool>, +st: M.State, +sel: String) -> List<&2, D.Node>:
+def View.active(rs: List<&2, U.ARow>, +q: String, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String) -> List<&2, D.Node>:
   match rs:
     case Nil{}:
       [D.Dom.span("shelf-label", "Nothing active")]
     case +r <> +t:
-      View.active.k(U.Active.parts(r <> t), q, open, st, sel)
+      View.active.k(U.Active.parts(r <> t), q, open, ix, st, sel)
 
 # the list the "sidebar.view" setting picks (only that one is built)
-def View.list(active: Bool, +q: String, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
+def View.list.k(active: Bool, +q: String, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
   match active:
     case True{}:
-      View.active(U.Active.rows(st, now, q), q, open, st, sel)
+      View.active(U.Active.rows.ix(st, ix, now, q), q, open, ix, st, sel)
     case False{}:
-      View.groups(U.Side.groups(U.Side.shown(st, now, q), now), q, open, st, sel, now, look, rm)
+      View.groups(U.Side.groups(U.Side.shown.ix(st, ix, now, q), now), q, open, ix, st, sel, now, look, rm)
+
+# (what every row asks of the whole state is gathered once: core's Side.ix)
+def View.list(active: Bool, +q: String, +open: Map<&2, Bool>, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> List<&2, D.Node>:
+  View.list.k(active, q, open, U.Side.ix(st), st, sel, now, look, rm)
 
 # the search, always at the top of the list
 def View.find(+active: Bool, +q: String) -> List<&2, D.Node>:
@@ -528,13 +532,20 @@ def View.sub.act(agent: Bool, +open: Bool, +key: String) -> List<&2, D.Attr>:
     case False{}:
       [D.At{"data-value", key}, D.On{"click", "select"}]
 
-def View.sub(r: SB.SubRow) -> D.Node:
+# a row's Stop (SB.Subs.cancel): beside the row, not inside its click
+def View.sub.stop(+act: String, +key: String) -> List<&2, D.Node>:
+  D.Dom.when(Bool.not(String.is_empty(act)), D.Dom.button("sub-stop", act, key, "Stop this work", "Stop"))
+
+def View.sub.k(r: SB.SubRow, +act: String) -> D.Node:
   match r:
     case SB.SubRow{+key, +agent, +title, +who, +word, +doing, +live, +open, _, ss}:
       D.El{"div", key, [D.At{"class", "sub " ++ word ++ Bool.pick(String, live, " live", "")}],
         D.Dom.cat([D.El{"div", "", List.append(&2, D.Attr, [D.At{"class", "sub-row"}], View.sub.act(agent, open, key)),
           [D.Dom.span("state-dot", ""), D.Dom.span("who", Bool.pick(String, agent, Bool.pick(String, open, "▾", "▸"), who)), D.Dom.span("title", title), D.Dom.span("state", word)]}],
-          D.Dom.cat(D.Dom.when(Bool.not(String.is_empty(doing)), D.Dom.span("doing", doing)), View.sub.steps(ss)))}
+          D.Dom.cat(View.sub.stop(act, key), D.Dom.cat(D.Dom.when(Bool.not(String.is_empty(doing)), D.Dom.span("doing", doing)), View.sub.steps(ss))))}
+
+def View.sub(+r: SB.SubRow) -> D.Node:
+  View.sub.k(r, SB.Subs.cancel(r))
 
 def View.subs.go(rs: List<&2, SB.SubRow>) -> List<&2, D.Node>:
   match rs:
@@ -727,6 +738,18 @@ def View.pair.qr(on: Bool, +nf: Map<&2, String>) -> List<&2, D.Node>:
       Nil{}
 
 # the same settings as the native window
+# the version row's button (U.Update.btn)
+def View.update.btn(i: Nat) -> List<&2, D.Node>:
+  match i:
+    case 1n:
+      [D.Dom.button("primary", "update", "", "Install the update", "Install update")]
+    case 2n:
+      [D.Dom.button("", "update-check", "", "Look for an update now", "Check now")]
+    case 3n:
+      [D.Dom.button("primary", "update-now", "", "Update without waiting for the threads at work", "Update now")]
+    case _:
+      Nil{}
+
 def View.settings(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String) -> D.Node:
   +prov = M.Setting.get(st, "agent.provider", "claude")
   +ipc = M.Setting.get(st, "kicad.ipc", "on")
@@ -752,9 +775,7 @@ def View.settings(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +not
         D.Dom.when(Bool.not(String.is_empty(U.Pair.link(nf))), D.Dom.copy(U.Pair.link(nf)))))],
       View.pair.qr(U.Ui.flag(u, "pairqr"), nf),
       [View.setrow("Update channel", "Stable takes releases; nightly also takes the daily builds.", View.chips(["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel")),
-      View.setrow("Backplane " ++ v, U.Update.line(nf, note),
-        Bool.pick(List<&2, D.Node>, U.Update.packaged(nf), Nil{}, Bool.pick(List<&2, D.Node>, String.starts_with(note, "update "), [D.Dom.button("primary", "update", "", "Install the update", "Install update")],
-          [D.Dom.button("", "update-check", "", "Look for an update now", "Check now")])))], View.voice.set(u, st), View.keys.set(u), [View.setrow("Tour", "The short walk through projects, threads, bots, your agents and your machines.", [D.Dom.button("", "ob-open", "", "Show the tour again", "Show the tour")])]])}]}
+      View.setrow("Backplane " ++ v, U.Update.line.w(st, nf, note), View.update.btn(U.Update.btn(st, nf, note)))], View.voice.set(u, st), View.keys.set(u), [View.setrow("Tour", "The short walk through projects, threads, bots, your agents and your machines.", [D.Dom.button("", "ob-open", "", "Show the tour again", "Show the tour")])]])}]}
 
 def View.empty(n: Nat) -> D.Node:
   D.El{"main", "empty", [D.At{"class", "empty"}], [D.Txt{Bool.pick(String, Nat.is_eq(n, 0n), "Add a project with + to start.", "Pick a thread, or start one with + next to a project.")}]}

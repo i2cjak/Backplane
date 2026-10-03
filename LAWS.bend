@@ -11,6 +11,8 @@ import ./src/app/nui.bend as N
 import ./src/app/bots.bend as BV
 import ./src/core/board.bend as B
 import ./src/core/hub.bend as H
+import ./src/core/cmds.bend as CM
+import ./src/core/utf8.bend as UT
 import ./src/core/refs.bend as RF
 import ./src/core/todo.bend as TD
 import ./src/core/apikeys.bend as AK
@@ -77,6 +79,9 @@ import ./src/core/voice.bend as VO
 import ./src/core/once.bend as ON
 import ./src/core/desk.bend as DK
 import ./src/core/emb.bend as EMB
+import ./src/core/outbox.bend as OB
+import ./src/core/live.bend as LV
+import ./src/core/contain.bend as CTN
 import ./src/core/qr.bend as QR
 
 # Backplane's rules, stated over the real code. `bend PROOF.bend` proves each
@@ -1223,7 +1228,7 @@ law tl_memo_exact:
   for +sel0: String
   for +px: U32
   for +sel: String
-  {L.TL.memo.of(ty, es, px, sel, L.TLMemo{px0, sel0, L.TL.memo.make(ty, old, px0, sel0)}) == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel)} : L.TLMemo}
+  {L.TL.memo.of(ty, es, px, sel, L.TLMemo{px0, sel0, L.TL.memo.make(ty, old, px0, sel0), L.TL.live.none()}) == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel), L.TL.live.none()} : L.TLMemo}
 
 # a memo lined up with the entries (an item dropped in front, or entries
 # made in front: TL.align.of's guess, whatever it is) is still exactly the
@@ -1248,7 +1253,7 @@ law tl_lines_exact:
   for +sel: String
   for +px: U32
   for +pics: Map<&2, String>
-  {L.TL.memo.lines(ty, L.TLMemo{px0, sel0, L.TL.memo.make(ty, old, px0, sel0)}, es, st, sel, px, pics) == L.TL.entries(ty, es, st, sel, px, pics) : List<&2, L.TLine>}
+  {L.TL.memo.lines(ty, L.TLMemo{px0, sel0, L.TL.memo.make(ty, old, px0, sel0), L.TL.live.none()}, es, st, sel, px, pics) == L.TL.entries(ty, es, st, sel, px, pics) : List<&2, L.TLine>}
 # Links
 # -----
 
@@ -1473,7 +1478,7 @@ law tl_frame_exact:
   for +sel: String
   for +px: U32
   for +pics: Map<&2, String>
-  {L.TL.memo.shown(ty, L.TL.memo.of(ty, es, px, sel, L.TLMemo{px0, sel0, L.TL.memo.make(ty, old, px0, sel0)}), st, sel, px, pics) == L.TL.entries(ty, es, st, sel, px, pics) : List<&2, L.TLine>}
+  {L.TL.memo.shown(ty, L.TL.memo.of(ty, es, px, sel, L.TLMemo{px0, sel0, L.TL.memo.make(ty, old, px0, sel0), L.TL.live.none()}), st, sel, px, pics) == L.TL.entries(ty, es, st, sel, px, pics) : List<&2, L.TLine>}
 
 # Tool calls folded
 # -----------------
@@ -2605,8 +2610,9 @@ law tl_memos_hit:
   for +px: U32
   for +sel: String
   for +its: List<&2, L.TLE>
+  for +lv: L.LiveMemo
   for ms: List<&2, L.TLMemo>
-  {L.TL.memos.pick(L.TL.memos.keep(L.TLMemo{px, sel, its}, ms), sel) == L.TLMemo{px, sel, its} : L.TLMemo}
+  {L.TL.memos.pick(L.TL.memos.keep(L.TLMemo{px, sel, its, lv}, ms), sel) == L.TLMemo{px, sel, its, lv} : L.TLMemo}
 
 # and the memos kept stay few
 law tl_memos_bounded:
@@ -4492,6 +4498,965 @@ law emb_note_none:
 
 law emb_focus_round:
   {EMB.Emb.focused(EMB.Emb.focus(EMB.Emb.key("t1", "x5"))) == "x:t1:x5" : String}
+# Claude's command ledger (core/cmds.bend): a turn ends when its own
+# command's lifecycle does, a result while another command is outstanding
+# never ends it (the live repro: a stale notification turn's result while
+# the user's message waited), a stopped command's late error is quiet, and
+# a turn Claude starts by itself shows as running
+law cmds_foreign_result_quiet:
+  {CM.Cmds.verdict(CM.Cmds.one("u1", 1n, False{}), True{}, CM.Cmds.o(CM.Cmds.l.result())) == 1n : Nat}
+
+law cmds_foreign_result_keeps_running:
+  {H.Hub.running(H.Hub.thread(M.State.replay(H.Queue.changes(H.Hub.agent_line.v(1n, H.Demo.state("claude", M.Running{}), 9n, "t1", CM.Cmds.l.result(), "")), H.Demo.state("claude", M.Running{})), "t1")) == True{} : Bool}
+
+law cmds_result_waits_lc:
+  {CM.Cmds.verdict(CM.Cmds.one("u1", 2n, False{}), True{}, CM.Cmds.o(CM.Cmds.l.result())) == 1n : Nat}
+
+law cmds_lc_completed_ends:
+  {CM.Cmds.verdict(CM.Cmds.see(CM.Cmds.one("u1", 2n, False{}), CM.Cmds.o(CM.Cmds.l.result())), True{}, CM.Cmds.o(CM.Cmds.l.lc("u1", "completed"))) == 3n : Nat}
+
+law cmds_lc_end_completes:
+  {M.Thread.turn(H.Hub.thread(M.State.replay(H.Queue.changes(H.Hub.agent_line.v(3n, H.Demo.state("claude", M.Running{}), 9n, "t1", CM.Cmds.l.lc("u1", "completed"), "ok")), H.Demo.state("claude", M.Running{})), "t1")) == M.Completed{} : M.TurnState}
+
+law cmds_pair_stays_running:
+  {CM.Cmds.verdict(CM.Cmds.see(CM.Cmds{[CM.Cmd{"u3", 2n, False{}, ""}, CM.Cmd{"u4", 1n, False{}, ""}], 1n, False{}}, CM.Cmds.o(CM.Cmds.l.result())), True{}, CM.Cmds.o(CM.Cmds.l.lc("u3", "completed"))) == 1n : Nat}
+
+law cmds_tomb_error_quiet:
+  {CM.Cmds.verdict(CM.Cmds.stop(CM.Cmds.one("u1", 2n, False{}), []), False{}, CM.Cmds.o(CM.Cmds.l.failed())) == 1n : Nat}
+
+law cmds_tomb_cancel_quiet:
+  {CM.Cmds.verdict(CM.Cmds.see(CM.Cmds.stop(CM.Cmds.one("u1", 2n, False{}), []), CM.Cmds.o(CM.Cmds.l.failed())), False{}, CM.Cmds.o(CM.Cmds.l.lc("u1", "cancelled"))) == 1n : Nat}
+
+# after a Stop, the next message's own lifecycle ends its turn, and the
+# stopped one's error never fails it
+law cmds_stop_then_new_error_quiet:
+  {CM.Cmds.verdict(CM.Cmds.sent(CM.Cmds.accept(CM.Cmds.stop(CM.Cmds.one("u1", 2n, False{}), []), "u2"), "u2"), True{}, CM.Cmds.o(CM.Cmds.l.failed())) == 1n : Nat}
+
+law cmds_stop_then_new:
+  {CM.Cmds.verdict(CM.Cmds.see(CM.Cmds.see(CM.Cmds.see(CM.Cmds.see(CM.Cmds.sent(CM.Cmds.accept(CM.Cmds.stop(CM.Cmds.one("u1", 2n, False{}), []), "u2"), "u2"),
+      CM.Cmds.o(CM.Cmds.l.failed())), CM.Cmds.o(CM.Cmds.l.lc("u1", "cancelled"))), CM.Cmds.o(CM.Cmds.l.lc("u2", "started"))), CM.Cmds.o(CM.Cmds.l.result())),
+    True{}, CM.Cmds.o(CM.Cmds.l.lc("u2", "completed"))) == 3n : Nat}
+
+law cmds_wake_start:
+  {CM.Cmds.verdict(CM.Cmds{[], 1n, False{}}, False{}, CM.Cmds.o(CM.Cmds.l.note())) == 6n : Nat}
+
+law cmds_wake_runs:
+  {H.Hub.running(H.Hub.thread(M.State.replay(H.Queue.changes(H.Hub.agent_line.v(6n, H.Demo.state("claude", M.Completed{}), 9n, "t1", CM.Cmds.l.note(), "")), H.Demo.state("claude", M.Completed{})), "t1")) == True{} : Bool}
+
+law cmds_wake_result_ends:
+  {CM.Cmds.verdict(CM.Cmds{[], 1n, True{}}, True{}, CM.Cmds.o(CM.Cmds.l.result())) == 3n : Nat}
+
+law cmds_wake_with_queued_user:
+  {CM.Cmds.verdict(CM.Cmds.one("u1", 1n, True{}), True{}, CM.Cmds.o(CM.Cmds.l.result())) == 1n : Nat}
+
+law cmds_tomb_started_resumes:
+  {CM.Cmds.verdict(CM.Cmds.one("u1", 4n, False{}), False{}, CM.Cmds.o(CM.Cmds.l.lc("u1", "started"))) == 6n : Nat}
+
+law cmds_tomb_started_says:
+  {H.Wake.text(True{}, H.Demo.state("claude", M.Interrupted{}), "t1", CM.Cmds.o(CM.Cmds.l.lc("u1", "started"))) == "Resumed after Stop" : String}
+
+# a message still being prepared (its images read) counts as outstanding
+law cmds_prep_counts:
+  {CM.Cmds.verdict(CM.Cmds.one("u1", 0n, True{}), True{}, CM.Cmds.o(CM.Cmds.l.result())) == 1n : Nat}
+
+# lifecycles from the first lifecycle line, or from an init new enough;
+# an older CLI keeps the old rule (verdict 0)
+law cmds_mode_version:
+  {CM.Cmds.mode(CM.Cmds.see(CM.Cmds.new(), CM.Cmds.o(CM.Cmds.l.init("2.1.286")))) == 1n : Nat}
+
+law cmds_mode_old:
+  {CM.Cmds.mode(CM.Cmds.see(CM.Cmds.new(), CM.Cmds.o(CM.Cmds.l.init("2.0.0")))) == 2n : Nat}
+
+law cmds_mode_old_legacy:
+  {CM.Cmds.verdict(CM.Cmds.see(CM.Cmds.new(), CM.Cmds.o(CM.Cmds.l.init("2.0.0"))), True{}, CM.Cmds.o(CM.Cmds.l.result())) == 0n : Nat}
+
+law cmds_mode_lc:
+  {CM.Cmds.mode(CM.Cmds.see(CM.Cmds.new(), CM.Cmds.o(CM.Cmds.l.lc("u1", "queued")))) == 1n : Nat}
+
+# an old CLI answers no command: its ledger does not grow. A command is
+# forgotten once written (a ledger that knows it is legacy), and the ones
+# written before it knew go when it learns; one still being prepared stays
+law cmds_legacy_retires_sent:
+  {List.length(&2, CM.Cmd, CM.Cmds.cs(CM.Cmds.sent(CM.Cmds.accept(CM.Cmds.see(CM.Cmds.new(), CM.Cmds.o(CM.Cmds.l.init("2.0.0"))), "u1"), "u1"))) == 0n : Nat}
+
+law cmds_legacy_learned_retires:
+  {List.length(&2, CM.Cmd, CM.Cmds.cs(CM.Cmds.see(CM.Cmds.sent(CM.Cmds.accept(CM.Cmds.new(), "u1"), "u1"), CM.Cmds.o(CM.Cmds.l.init("2.0.0"))))) == 0n : Nat}
+
+law cmds_legacy_prep_stays:
+  {List.length(&2, CM.Cmd, CM.Cmds.cs(CM.Cmds.see(CM.Cmds.accept(CM.Cmds.new(), "u1"), CM.Cmds.o(CM.Cmds.l.init("2.0.0"))))) == 1n : Nat}
+
+law cmds_lifecycle_keeps_sent:
+  {List.length(&2, CM.Cmd, CM.Cmds.cs(CM.Cmds.sent(CM.Cmds.accept(CM.Cmds.see(CM.Cmds.new(), CM.Cmds.o(CM.Cmds.l.init("2.1.286"))), "u1"), "u1"))) == 1n : Nat}
+
+law cmds_legacy_same:
+  for s: M.State
+  for now: Nat
+  for thread: String
+  for line: String
+  for text: String
+  {H.Hub.agent_line.v(0n, s, now, thread, line, text) == H.Hub.agent_line(s, now, thread, line) : H.Step}
+
+# a wake is told once: a notification while the wake runs starts nothing
+law wake_act_once:
+  {CM.Cmds.verdict(CM.Cmds{[], 1n, True{}}, True{}, CM.Cmds.o(CM.Cmds.l.note())) == 2n : Nat}
+
+# Background work (model.bend's Bg ended rows, hub.bend's Bg.sync and
+# Bg.settle, the WorkSet change): a finished task stays as work until its
+# outcome reaches the agent (its notification, or the next turn's end);
+# Claude's open list ends what it no longer lists and adds nothing; the
+# rows travel to the owner's other machines as WorkSet, never as a setting
+law bg_sync_ends_absent:
+  {M.Bg.show(M.Bg.sync(M.Bg.lines("a\tx\nb\ty"), ["b"])) == M.Bg.line("a", M.Bg.ended.mark() ++ "done") ++ "\nb\ty" : String}
+
+law bg_sync_never_adds:
+  for ls: List<&2, String>
+  for +open: List<&2, String>
+  {List.length(&2, String, M.Bg.sync(ls, open)) == List.length(&2, String, ls) : Nat}
+
+law bg_updated_ends_not_drops:
+  {M.Bg.show(M.Bg.of(M.State.replay(H.Bg.system(H.Bg.demo(), "t1", 2n, CM.Cmds.o("{\"type\":\"system\",\"subtype\":\"task_updated\",\"task_id\":\"a\",\"patch\":{\"status\":\"completed\"}}")), H.Bg.demo()), "t1"))
+    == M.Bg.line("a", M.Bg.ended.mark() ++ "completed") ++ "\tc1\tsleep 8\tshell" : String}
+
+law bg_notification_drops:
+  {M.Bg.live(M.Bg.of(M.State.replay(H.Bg.system(H.Bg.demo(), "t1", 2n, CM.Cmds.o("{\"type\":\"system\",\"subtype\":\"task_notification\",\"task_id\":\"a\",\"status\":\"completed\"}")), H.Bg.demo()), "t1")) == 0n : Nat}
+
+# Claude's empty open list ends the row, but its outcome is still owed
+law bg_empty_snapshot_keeps_pending:
+  {Nat.show(M.Bg.live(M.Bg.of(M.State.replay(H.Bg.system(H.Bg.demo(), "t1", 2n, CM.Cmds.o("{\"type\":\"system\",\"subtype\":\"background_tasks_changed\",\"tasks\":[]}")), H.Bg.demo()), "t1")))
+    ++ "/" ++ Nat.show(M.Bg.running(M.Bg.of(M.State.replay(H.Bg.system(H.Bg.demo(), "t1", 2n, CM.Cmds.o("{\"type\":\"system\",\"subtype\":\"background_tasks_changed\",\"tasks\":[]}")), H.Bg.demo()), "t1"))) == "1/0" : String}
+
+law bg_turn_end_settles_ended:
+  {M.Bg.live(M.Bg.of(M.State.replay(H.Bg.settle(M.State.replay([M.WorkSet{"t1", "bg", M.Bg.line("a", M.Bg.ended.mark() ++ "done") ++ "\nb\ty", 1n}], M.State.empty()), "t1", 2n),
+    M.State.replay([M.WorkSet{"t1", "bg", M.Bg.line("a", M.Bg.ended.mark() ++ "done") ++ "\nb\ty", 1n}], M.State.empty())), "t1")) == 1n : Nat}
+
+law workset_fold_same_as_setting:
+  for s: M.State
+  for +th: String
+  for +kind: String
+  for rows: String
+  for at: Nat
+  {M.State.apply(s, M.WorkSet{th, kind, rows, at}) == M.State.apply(s, M.SettingSet{kind ++ "." ++ th, rows, at}) : M.State}
+
+# (stored with every field; the decode back is test/claude_cmds_test.bend's:
+# normalizing Change.decode's 57 arms is too slow for a law)
+law store_workset_encoded:
+  {J.Json.get_str(C.Change.encode(M.WorkSet{"t1", "bg", "a\tx", 7n}), "$", "") ++ "|" ++ J.Json.get_str(C.Change.encode(M.WorkSet{"t1", "bg", "a\tx", 7n}), "thread", "")
+    ++ "|" ++ J.Json.get_str(C.Change.encode(M.WorkSet{"t1", "bg", "a\tx", 7n}), "kind", "") ++ "|" ++ J.Json.get_str(C.Change.encode(M.WorkSet{"t1", "bg", "a\tx", 7n}), "rows", "") == "WorkSet|t1|bg|a\tx" : String}
+
+law far_workset_shared:
+  {FR.Fr.shared(H.Bg.demo(), M.WorkSet{"t1", "bg", "a\tx", 7n}) == True{} : Bool}
+
+law far_workset_mapped:
+  for +l: String
+  for +th: String
+  for +kind: String
+  for +rows: String
+  for +at: Nat
+  {FR.Fr.change(l, M.WorkSet{th, kind, rows, at}) == Some{M.WorkSet{FR.Fr.id(l, th), kind, rows, at}} : Maybe<&2, M.Change>}
+
+# a link's history starting over takes its threads' work with it
+law far_forget_drops_work:
+  {M.Setting.get(FR.Fr.forget(M.State.replay([M.WorkSet{"p1~t1", "bg", "a\tx", 1n}, M.WorkSet{"t2", "bg", "b\ty", 1n}], M.State.empty()), "p1"), "bg.p1~t1", "")
+    ++ "|" ++ M.Setting.get(FR.Fr.forget(M.State.replay([M.WorkSet{"p1~t1", "bg", "a\tx", 1n}, M.WorkSet{"t2", "bg", "b\ty", 1n}], M.State.empty()), "p1"), "bg.t2", "") == "|b\ty" : String}
+
+# a task's progress lines pass at most once in Prog.gap() seconds; the rest
+# are held (the newest of each task) and land on the server's beat once the
+# gap is over, so the newest value always lands
+law bg_progress_coalesced:
+  {Nat.show(List.length(&2, String, H.PStep.flush(H.Prog.line(100n, [], 102n, H.Prog.l1(), H.Prog.o(H.Prog.l1()))))) ++ "/" ++ Nat.show(List.length(&2, String, H.PStep.pend(H.Prog.line(100n, [], 102n, H.Prog.l1(), H.Prog.o(H.Prog.l1())))))
+    ++ "/" ++ Nat.show(List.length(&2, String, H.PStep.flush(H.Prog.line(100n, [], 105n, H.Prog.l1(), H.Prog.o(H.Prog.l1()))))) == "0/1/1" : String}
+
+law bg_progress_one_held_per_task:
+  {List.length(&2, String, H.PStep.pend(H.Prog.line(100n, H.PStep.pend(H.Prog.line(100n, [], 101n, H.Prog.l1(), H.Prog.o(H.Prog.l1()))), 102n, H.Prog.l2(), H.Prog.o(H.Prog.l2())))) == 1n : Nat}
+
+law bg_progress_beat_waits:
+  {List.length(&2, String, H.PStep.flush(H.Prog.beat(100n, [H.Prog.l1()], 103n))) == 0n : Nat}
+
+law bg_progress_latest_lands:
+  {M.Bg.show(M.Bg.of(M.State.replay(H.Queue.changes(H.Prog.flush(H.Bg.demo(), "t1", 3n, H.PStep.flush(H.Prog.beat(100n, H.PStep.pend(H.Prog.line(100n, H.PStep.pend(H.Prog.line(100n, [], 101n, H.Prog.l1(), H.Prog.o(H.Prog.l1()))), 102n, H.Prog.l2(), H.Prog.o(H.Prog.l2()))), 105n)))), H.Bg.demo()), "t1"))
+    == M.Bg.show(M.Bg.of(M.State.replay(H.Bg.system(H.Bg.demo(), "t1", 3n, H.Prog.o(H.Prog.l2())), H.Bg.demo()), "t1")) : String}
+
+law bg_progress_is_own_line:
+  {H.Prog.is(H.Prog.o(H.Prog.l1())) == True{} : Bool}
+
+# the link's projection removed by cutting the index gives what rebuilding
+# it from the kept entries gives (Fr.forget.spec)
+law far_forget_equiv:
+  {FR.Fr.forget(FR.Fr.demo.idx(), "p1") == FR.Fr.forget.spec(FR.Fr.demo.idx(), "p1") : M.State}
+
+law far_forget_equiv_none:
+  {FR.Fr.forget(FR.Fr.demo.idx(), "p9") == FR.Fr.forget.spec(FR.Fr.demo.idx(), "p9") : M.State}
+
+law prompt_background_work:
+  {Bool.and(String.contains(PM.Prompt.background(), "wakes you"), Bool.and(String.contains(PM.Prompt.background(), "poll"), String.contains(PM.Prompt.background(), "restart"))) == True{} : Bool}
+
+# One readiness check (model.bend's Work.*): a thread is done when no turn
+# runs, nothing is queued and no work is out (unfinished child tasks, its
+# background rows, ended ones included, and watched work); alerts,
+# thread_wait, settling, scratch expiry, worktree removal, the phone's
+# island, delegated tasks and bot replies all ask it
+law work_busy_counts_ended_rows:
+  {M.Work.busy(M.State.replay([M.WorkSet{"t1", "bg", M.Bg.line("a", M.Bg.ended.mark() ++ "done"), 1n}], M.State.empty()), "t1") == 1n : Nat}
+
+law work_ready_idle:
+  {M.Work.ready(H.Answer.demo(False{}), "t1") == True{} : Bool}
+
+law work_not_ready_busy:
+  {M.Work.ready(H.Answer.demo(True{}), "t1") == False{} : Bool}
+
+law notice_decide_w_idle_same:
+  for f: Bool
+  for b: Bool
+  for a: Bool
+  for p: Bool
+  for fi: Bool
+  for m: Bool
+  {NO.Notice.decide.w(0n, f, b, a, p, fi, m) == NO.Notice.decide(f, b, a, p, fi, m) : Nat}
+
+law notice_busy_quiet:
+  for n: Nat
+  for b: Bool
+  for p: Bool
+  for fi: Bool
+  for m: Bool
+  {NO.Notice.decide.w(1n+n, False{}, b, False{}, p, fi, m) == 0n : Nat}
+
+law notice_busy_fail_alerts:
+  for busy: Nat
+  for b: Bool
+  for a: Bool
+  for p: Bool
+  for fi: Bool
+  for m: Bool
+  {NO.Notice.decide.w(busy, True{}, b, a, p, fi, m) == 2n : Nat}
+
+law notice_busy_ask_kept:
+  for busy: Nat
+  for p: Bool
+  for fi: Bool
+  for m: Bool
+  {NO.Notice.decide.w(busy, False{}, True{}, True{}, p, fi, m) == 1n : Nat}
+
+law wait_busy_not_done:
+  {MC.Mcp.done.w(H.Answer.demo(True{}), "t1") == False{} : Bool}
+
+law wait_idle_done:
+  {MC.Mcp.done.w(H.Answer.demo(False{}), "t1") == True{} : Bool}
+
+law settle_waits_for_work:
+  {H.Hub.settle.go([H.Hub.thread(H.Answer.demo(True{}), "t1")], M.State.navs(H.Answer.demo(True{})), M.Work.kids.map(H.Answer.demo(True{})), H.Answer.demo(True{}), 9n, 2n) == [] : List<&2, M.Change>}
+
+law settle_without_work:
+  {H.Hub.settle.go([H.Hub.thread(H.Answer.demo(False{}), "t1")], M.State.navs(H.Answer.demo(False{})), M.Work.kids.map(H.Answer.demo(False{})), H.Answer.demo(False{}), 9n, 2n) == [M.ThreadSettled{"t1", False{}, 9n}] : List<&2, M.Change>}
+
+law scratch_busy_kept:
+  for +now: Nat
+  for +w: Nat
+  for t: M.Thread
+  for n: Nat
+  {M.Scratch.expired.w(now, w, t, 1n+n) == False{} : Bool}
+
+law worktree_busy_kept:
+  for +s: M.State
+  for +t: M.Thread
+  for +now: Nat
+  for +window: Nat
+  for n: Nat
+  {M.Worktree.drop.w(s, t, now, window, 1n+n) == False{} : Bool}
+
+law island_busy_shows:
+  {J.Json.show(J.Json.arr(Nt.Note.lines.w([H.Hub.thread(H.Answer.demo(True{}), "t1")], M.Work.kids.map(H.Answer.demo(True{})), H.Answer.demo(True{}))))
+    == "[{\"thread\":\"t1\",\"title\":\"x\",\"doing\":\"waiting on 1\"}]" : String}
+
+law task_waits_for_child_work:
+  {H.Task.finish.w(H.Task.demo(True{}), 9n, "t1", H.Step{[M.TurnChanged{"t1", M.Completed{}, 9n}], []}) == H.Step{[M.TurnChanged{"t1", M.Completed{}, 9n}], []} : H.Step}
+
+law task_ends_when_ready:
+  {H.Task.marked(H.Queue.changes(H.Task.finish.w(H.Task.demo(False{}), 9n, "t1", H.Step{[M.TurnChanged{"t1", M.Completed{}, 9n}], []})), "k1") == True{} : Bool}
+
+law task_ended_last_change:
+  {H.Task.ended.last([M.TurnChanged{"t1", M.Completed{}, 9n}, M.QueueTaken{"t1", 9n}, M.TurnChanged{"t1", M.Running{}, 9n}], "t1") == H.NotEnded{} : H.Ended}
+
+law task_failed_ends_even_busy:
+  {H.Task.marked(H.Queue.changes(H.Task.finish.w(H.Task.demo(True{}), 9n, "t1", H.Step{[M.TurnChanged{"t1", M.Failed{}, 9n}], []})), "k1") == True{} : Bool}
+
+law bot_reply_captured_once:
+  {H.Answer.out(True{}, H.Answer.demo(False{}), "t1") == [H.BotReply{"t1", "desk", "hi", "t1:" ++ Nat.show(H.Hub.seq(H.Answer.demo(False{})))}] : List<&2, H.Out>}
+
+law bot_reply_waits_for_work:
+  {H.Answer.out(True{}, H.Answer.demo(True{}), "t1") == [] : List<&2, H.Out>}
+
+law phase_failed_before_monitoring:
+  for +n: Nat
+  for q: Bool
+  {M.Phase.of(False{}, False{}, 1n+n, M.Failed{}, q) == M.PhFailed{} : M.Phase}
+
+law status_wait_f_keeps_failed:
+  for any: Bool
+  {M.Status.wait.f(any, M.StFailed{}) == M.StFailed{} : M.Status}
+
+# Durable steps: a step is one write (ST.Store.text); a delivery's
+# TaskDelivered comes after the parent's message, whose id is the task's,
+# so a restart finishes a torn delivery once (Task.repair); a torn last
+# line is left as one malformed line
+law commit_text_joins:
+  {ST.Store.text(["a", "b"]) == "a\nb\n" : String}
+
+law task_finish_delivered_last:
+  {List.head(&2, M.Change, List.reverse(&2, M.Change, H.Queue.changes(H.Task.finish(H.Task.demo(False{}), 9n, "t1", H.Step{[M.TurnChanged{"t1", M.Completed{}, 9n}], []}))))
+    == Some{M.TaskDelivered{"k1", 9n}} : Maybe<&2, M.Change>}
+
+law task_repair_delivers:
+  {H.Repair.msgs(H.Queue.changes(H.Task.repair(H.Repair.demo(0n), 9n))) == 1n : Nat}
+
+law task_repair_delivers_once:
+  {H.Task.repair(H.Repair.again(H.Repair.demo(0n), 9n), 10n) == H.Step{[], []} : H.Step}
+
+law task_repair_activates_idle:
+  {H.Queue.changes(H.Task.repair(H.Repair.demo(1n), 9n)) == [M.TurnChanged{"t0", M.Running{}, 9n}, M.TaskDelivered{"k1", 9n}] : List<&2, M.Change>}
+
+law task_repair_running_marks_only:
+  {H.Task.repair(H.Repair.demo(2n), 9n) == H.Step{[M.TaskDelivered{"k1", 9n}], []} : H.Step}
+
+law task_repair_quiet_when_done:
+  {H.Task.repair(H.Repair.demo(3n), 9n) == H.Step{[], []} : H.Step}
+
+# (the lines after it read as before: test/native/store_torn_test.bend)
+law store_torn_tail_resyncs:
+  for +rest: List<&2, String>
+  {ST.Store.changes(ST.Store.torn.demo() <> rest) == ST.Store.changes(rest) : List<&2, M.Change>}
+
+law store_torn_tail_newline:
+  {ST.Store.tail_fix([123, 34]) ++ "|" ++ ST.Store.tail_fix([123, 10]) ++ "|" ++ ST.Store.tail_fix([]) == "\n||" : String}
+
+law store_fail_names_repair:
+  {ST.Store.fail.msg("disk full", True{}) ++ "|" ++ ST.Store.fail.msg("disk full", False{}) == "disk full|disk full; the log's tail could not be repaired" : String}
+
+# torn before the task's state: the child's turn ended, so its task ends
+law task_repair_finishes_ended_child:
+  {H.Task.marked(H.Queue.changes(H.Task.repair(M.State.replay([M.TurnChanged{"t1", M.Completed{}, 5n}], H.Task.demo(False{})), 9n)), "k1") == True{} : Bool}
+
+# a child still at work keeps its task
+law task_repair_leaves_working_child:
+  {H.Task.repair(H.Task.demo(False{}), 9n) == H.Step{[], []} : H.Step}
+
+# Lost work is told, once (hub.bend's Bg.lost, Rec.lost, Hub.carry,
+# Rec.release): a restart, the agent's exit or its replacement tells the
+# agent what it lost and clears the rows in the same step; with
+# restart.continue off it is logged and the rows stay, outcome unknown; a
+# restart starts Rec.burst() threads at most, the rest are released later;
+# a carried child's task stays open for the child to finish
+law recover_lost_told:
+  {H.Hub.running(H.Hub.thread(H.Carry.after(H.Lost.demo(True{}, False{}), 10n), "t1")) == True{} : Bool}
+
+law recover_lost_clears:
+  {M.Bg.live(M.Bg.of(H.Carry.after(H.Lost.demo(True{}, False{}), 10n), "t1")) == 0n : Nat}
+
+law recover_no_work_quiet:
+  {H.Hub.recover(H.Answer.demo(False{}), 9n) == H.Step{[], []} : H.Step}
+
+law recover_lost_once:
+  {H.Lost.told(M.State.mine(H.Carry.after(H.Carry.after(H.Lost.demo(True{}, False{}), 10n), 20n), "t1")) == 1n : Nat}
+
+law lost_off_logs_and_keeps:
+  {Nat.show(M.Bg.live(M.Bg.of(H.Rec.after(H.Lost.demo(False{}, False{}), 10n), "t1"))) ++ "/" ++ M.Bg.status(Maybe.default(&2, String, List.head(&2, String, M.Bg.of(H.Rec.after(H.Lost.demo(False{}, False{}), 10n), "t1")), ""))
+    ++ "/" ++ Bool.show(H.Hub.running(H.Hub.thread(H.Carry.after(H.Lost.demo(False{}, False{}), 10n), "t1"))) == "1/unknown/False" : String}
+
+law gone_idle_told:
+  {H.Hub.running(H.Hub.thread(M.State.replay(H.Queue.changes(H.Hub.agent_gone(H.Lost.demo(True{}, False{}), 9n, "t1", 0)), H.Lost.demo(True{}, False{})), "t1")) == True{} : Bool}
+
+law gone_running_queues:
+  {M.Queue.waiting(M.State.replay(H.Queue.changes(H.Hub.agent_gone(H.Lost.demo(True{}, True{}), 9n, "t1", 0)), H.Lost.demo(True{}, True{})), "t1") == True{} : Bool}
+
+law replaced_told_once:
+  {H.Bg.lost(M.State.replay(H.Queue.changes(H.Bg.lost(H.Lost.demo(True{}, True{}), 9n, "t1", "replaced")), H.Lost.demo(True{}, True{})), 10n, "t1", "replaced") == H.Step{[], []} : H.Step}
+
+law replaced_keeps_new_rows:
+  {M.Bg.live(M.Bg.of(M.State.replay([M.WorkSet{"t1", "bg", "b2\tnew\tc2\tnew\tshell", 11n}], M.State.replay(H.Queue.changes(H.Bg.lost(H.Lost.demo(True{}, True{}), 9n, "t1", "replaced")), H.Lost.demo(True{}, True{}))), "t1")) == 1n : Nat}
+
+law carry_keeps_child_task:
+  {H.Task.marked(H.Queue.changes(H.Hub.recover(H.Task.demo(False{}), 9n)), "k1") == False{} : Bool}
+
+law carry_off_fails_child_task:
+  {H.Task.marked(H.Queue.changes(H.Hub.recover(M.State.replay([M.SettingSet{"restart.continue", "off", 2n}], H.Task.demo(False{})), 9n)), "k1") == True{} : Bool}
+
+law carry_child_result_once:
+  {H.Task.marked(H.Queue.changes(H.Task.finish.w(H.Carry.after(H.Task.demo(False{}), 9n), 30n, "t1", H.Step{[M.TurnChanged{"t1", M.Completed{}, 30n}], []})), "k1") == True{} : Bool}
+
+law rec_burst_bounded:
+  {H.Lost.running(H.Carry.after(H.Lost.many(), 10n)) == 4n : Nat}
+
+law rec_release_bounded:
+  {H.Lost.running(M.State.replay(H.Queue.changes(H.Rec.release(H.Carry.after(H.Lost.many(), 10n), 11n)), H.Carry.after(H.Lost.many(), 10n))) == 6n : Nat}
+
+law rec_release_carry_marker_on:
+  {Nat.show(H.Lost.running(H.Lost.released(True{}))) ++ "/" ++ Nat.show(List.length(&2, String, H.Resume.ids(H.Lost.released(True{})))) == "1/0" : String}
+
+law rec_release_carry_marker_off:
+  {Nat.show(H.Lost.running(H.Lost.released(False{}))) ++ "/" ++ Nat.show(List.length(&2, String, H.Resume.ids(H.Lost.released(False{})))) == "0/0" : String}
+
+law rec_release_never_drains_queue:
+  {H.Lost.taken(H.Queue.changes(H.Rec.release(H.Lost.marked(), 9n))) == False{} : Bool}
+
+law lost_text_not_carry_text:
+  for +ls: List<&2, String>
+  {String.eq(H.Lost.text(ls, "restart"), M.Carry.text()) == False{} : Bool}
+
+law update_wait_busy:
+  for +now: Nat
+  for +c: U32
+  for +id: String
+  {H.Lost.upgrades(H.Step.outs_of(H.Update.ask(True{}, now, c, id))) == 0n : Nat}
+
+law update_wait_idle:
+  for +now: Nat
+  for +c: U32
+  for +id: String
+  {H.Lost.upgrades(H.Step.outs_of(H.Update.ask(False{}, now, c, id))) == 1n : Nat}
+
+law update_wait_goes_when_done:
+  {H.Lost.upgrades(H.Step.outs_of(H.Update.due(M.State.replay([M.SettingSet{"update.wait", "5", 5n}], H.Answer.demo(False{})), 9n))) == 1n : Nat}
+
+law update_wait_holds_while_busy:
+  {H.Lost.upgrades(H.Step.outs_of(H.Update.due(M.State.replay([M.SettingSet{"update.wait", "5", 5n}], H.Answer.demo(True{})), 9n))) == 0n : Nat}
+
+# An install that finished asks the hub whether to restart (Update.ready):
+# the busy check is made then, not when the update was asked; work that
+# started during the download holds the restart (update.restart) until it
+# is done or the wait is up, and a forced update goes at once.
+law update_ready_holds_busy:
+  for +now: Nat
+  {H.Lost.restarts(H.Step.outs_of(H.Update.ready(H.Answer.demo(True{}), False{}, now))) == 0n : Nat}
+
+law update_ready_idle_restarts:
+  for +now: Nat
+  {H.Lost.restarts(H.Step.outs_of(H.Update.ready(H.Answer.demo(False{}), False{}, now))) == 1n : Nat}
+
+law update_ready_forced_restarts:
+  for +now: Nat
+  {H.Lost.restarts(H.Step.outs_of(H.Update.ready(H.Answer.demo(True{}), True{}, now))) == 1n : Nat}
+
+law update_held_goes_when_done:
+  {H.Lost.restarts(H.Step.outs_of(H.Update.held(M.State.replay([M.SettingSet{"update.restart", "5", 5n}], H.Answer.demo(False{})), 9n))) == 1n : Nat}
+
+law update_held_waits_while_busy:
+  {H.Lost.restarts(H.Step.outs_of(H.Update.held(M.State.replay([M.SettingSet{"update.restart", "5", 5n}], H.Answer.demo(True{})), 9n))) == 0n : Nat}
+
+law update_wait_late_forces:
+  {H.Lost.forced(H.Step.outs_of(H.Update.due(M.State.replay([M.SettingSet{"update.wait", "5", 5n}], H.Answer.demo(True{})), 1805n))) == 1n : Nat}
+
+law update_wait_early_not_forced:
+  {H.Lost.forced(H.Step.outs_of(H.Update.due(M.State.replay([M.SettingSet{"update.wait", "5", 5n}], H.Answer.demo(False{})), 9n))) == 0n : Nat}
+
+# Spawn generations (hub.bend's Gen.*): only the generation a thread waits
+# for adopts its pid or reports its failure; a stale process's MCP call may
+# read, never change; a message prepared for an earlier process, or
+# stopped, is not written; pid 0 and 1 are never signalled
+law kill_never_low_pid:
+  {Bool.show(H.Proc.kill.ok(0)) ++ Bool.show(H.Proc.kill.ok(1)) ++ Bool.show(H.Proc.kill.ok(4242)) == "FalseFalseTrue" : String}
+
+law spawn_gen_accepts_current:
+  {H.Gen.accepts(H.Gen.key("1790-7"), "1790-7") == True{} : Bool}
+
+law spawn_gen_drops_stale:
+  {Bool.or(H.Gen.accepts(H.Gen.key("1790-7"), "1789-3"), H.Gen.accepts(H.Gen.turn("1790-7"), "1790-7")) == False{} : Bool}
+
+# a thread stopped while its process came up has no placeholder left
+law stale_spawn_fail_quiet:
+  for +gen: String
+  {H.Gen.accepts("", gen) == False{} : Bool}
+
+law mcp_stale_gen_refused:
+  {H.Gen.refused("g1", "g2", CM.Cmds.o("{\"method\":\"tools/call\",\"params\":{\"name\":\"thread_send\"}}")) == True{} : Bool}
+
+law mcp_stale_gen_reads:
+  {Bool.or(H.Gen.refused("g1", "g2", CM.Cmds.o("{\"method\":\"tools/call\",\"params\":{\"name\":\"thread_read\"}}")),
+    Bool.or(H.Gen.refused("g2", "g2", CM.Cmds.o("{\"method\":\"tools/call\",\"params\":{\"name\":\"thread_send\"}}")),
+      H.Gen.refused("", "g2", CM.Cmds.o("{\"method\":\"tools/call\",\"params\":{\"name\":\"thread_send\"}}")))) == False{} : Bool}
+
+law prep_stale_dropped:
+  {Bool.show(H.Gen.write("g1", "g2", 1n)) ++ Bool.show(H.Gen.write("g1", "g1", 4n)) ++ Bool.show(H.Gen.write("g1", "g1", 1n)) == "FalseFalseTrue" : String}
+
+law gen_mcp_path:
+  {H.Gen.thread(H.Gen.mcp("t17-3", "1790-7")) ++ "|" ++ H.Gen.tag(H.Gen.mcp("t17-3", "1790-7")) ++ "|" ++ H.Gen.tag("t17-3") == "t17-3|1790-7|" : String}
+
+# Silence and exit (hub.bend's Quiet.*, Exit.*; utf8.bend's Lines.rest): a
+# quiet running turn is noted once, never while it waits on work; a stale
+# generation's exit changes nothing; the last line of a stream with no
+# newline is still read
+law quiet_once:
+  {Bool.show(H.Quiet.due(True{}, 0n, 700n, False{}, 0n)) ++ Bool.show(H.Quiet.due(True{}, 0n, 700n, True{}, 0n)) ++ Bool.show(H.Quiet.due(True{}, 200n, 700n, False{}, 0n)) == "TrueFalseFalse" : String}
+
+law quiet_never_when_busy:
+  for +heard: Nat
+  for +now: Nat
+  for +n: Nat
+  {H.Quiet.due(True{}, heard, now, False{}, 1n+n) == False{} : Bool}
+
+law quiet_never_idle:
+  for +heard: Nat
+  for +now: Nat
+  for said: Bool
+  for +busy: Nat
+  {H.Quiet.due(False{}, heard, now, said, busy) == False{} : Bool}
+
+law exit_stale_gen_quiet:
+  {Bool.show(H.Exit.current("g1", "g2")) ++ Bool.show(H.Exit.current("", "")) ++ Bool.show(H.Exit.current("g1", "g1")) == "FalseFalseTrue" : String}
+
+law final_partial_line_flushed:
+  {UT.Lines.rest(UT.Lines.after(UT.Lines.feed(UT.Lines.new(), UT.Utf8.encode("{\"a\":1}\n{\"type\":\"result\"}")))) == "{\"type\":\"result\"}" : String}
+
+# Watched work (hub.bend's Watch.*, mcp.bend's work_* tools): the row is
+# written before anything is launched; its end is told once, waking an
+# idle thread or waiting behind a running turn; an outcome that cannot be
+# known is never success; a cancel shows until confirmed; unwatching says
+# the work may still run; a restart watches open work again, a mirror
+# never does
+law watch_intent_before_launch:
+  {Bool.and(String.contains(M.Setting.get(H.Watch.again(H.Answer.demo(False{}), H.Watch.start(H.Answer.demo(False{}), 9n, "t1", "run", "make", "build", 0n)), "watch.t1", ""), "\tlaunching"),
+    Nat.is_eq(H.Watch.awaits(H.Step.outs_of(H.Watch.start(H.Answer.demo(False{}), 9n, "t1", "run", "make", "build", 0n))), 1n)) == True{} : Bool}
+
+law watch_end_once:
+  {H.Watch.end(H.Watch.again(H.Watch.demo(False{}), H.Watch.end(H.Watch.demo(False{}), 9n, "t1", "w-1", "exit 0", "")), 10n, "t1", "w-1", "exit 0", "") == H.Step{[], []} : H.Step}
+
+law watch_end_wakes_idle:
+  {H.Hub.running(H.Hub.thread(H.Watch.again(H.Watch.demo(False{}), H.Watch.end(H.Watch.demo(False{}), 9n, "t1", "w-1", "exit 4", "")), "t1")) == True{} : Bool}
+
+law watch_end_queues_running:
+  {M.Queue.waiting(H.Watch.again(H.Watch.demo(True{}), H.Watch.end(H.Watch.demo(True{}), 9n, "t1", "w-1", "exit 4", "")), "t1") == True{} : Bool}
+
+law watch_timeout_unknown_not_success:
+  {M.Bg.status(M.Setting.get(H.Watch.again(H.Watch.demo(False{}), H.Watch.end(H.Watch.demo(False{}), 9n, "t1", "w-1", "timeout", "")), "watch.t1", "")) == "unknown" : String}
+
+law watch_pid_identity_unknown:
+  {String.contains(H.Watch.word("gone", False{}), "outcome unknown") == True{} : Bool}
+
+law watch_cancel_keeps_until_confirmed:
+  {M.Bg.doing(M.Setting.get(H.Watch.again(H.Watch.demo(False{}), H.Watch.cancel(H.Watch.demo(False{}), 9n, "t1", "w-1")), "watch.t1", "")) == "cancelling" : String}
+
+law watch_cancel_confirmed:
+  {H.Watch.told(M.State.mine(H.Watch.again(H.Watch.again(H.Watch.demo(False{}), H.Watch.cancel(H.Watch.demo(False{}), 9n, "t1", "w-1")),
+      H.Watch.end(H.Watch.again(H.Watch.demo(False{}), H.Watch.cancel(H.Watch.demo(False{}), 9n, "t1", "w-1")), 10n, "t1", "w-1", "gone", "")), "t1"), "ended: cancelled") == True{} : Bool}
+
+# an archived or deleted thread is not woken by its watched work's end, and
+# retiring it stops its watchers
+law watch_end_retired_silent:
+  {Bool.or(H.Watch.told(M.State.mine(H.Watch.again(H.Watch.demo.archived(), H.Watch.end(H.Watch.demo.archived(), 9n, "t1", "w-1", "exit 4", "")), "t1"), "ended"),
+    H.Hub.running(H.Hub.thread(H.Watch.again(H.Watch.demo.archived(), H.Watch.end(H.Watch.demo.archived(), 9n, "t1", "w-1", "exit 4", "")), "t1"))) == False{} : Bool}
+
+law watch_retire_unwatches:
+  {H.Watch.retire(H.Watch.demo(False{}), 9n, "t1") == H.Step{[H.Watch.put("t1", 9n, [])], [H.WatchStop{"t1", "w-1", "unwatch", "make", "-"}]} : H.Step}
+
+# a watched command or path is stored whole (newlines, tabs, backslashes) and
+# read back as it was run; a row written before keeps reading as written
+law watch_target_roundtrip:
+  {H.Watch.target(H.Watch.line("w-1", "watching", "n", "run", "echo A\necho B\tc\\n\r\\", "-", 0n)) == "echo A\necho B\tc\\n\r\\" : String}
+
+law watch_target_one_line:
+  {Bool.or(String.contains(H.Watch.line("w-1", "watching", "n", "run", "a\nb\tc", "-", 0n), "a\nb"), String.contains(H.Watch.line("w-1", "watching", "n", "run", "a\nb\tc", "-", 0n), "b\tc")) == False{} : Bool}
+
+law watch_target_old_row_as_written:
+  {H.Watch.target("w-1\twatching\t\tn\twatch\trun\tsed s/a\\nb/c/ x\t-\t0") == "sed s/a\\nb/c/ x" : String}
+
+law watch_unwatch_says_may_run:
+  {String.contains(H.Watch.unwatch.text(), "may still run") == True{} : Bool}
+
+law recover_rearms_watches:
+  {H.Watch.awaits(H.Step.outs_of(H.Hub.recover(H.Watch.demo(False{}), 9n))) == 1n : Nat}
+
+law mirror_never_awaits:
+  {H.Watch.rearm(H.Watch.demo.at(False{}, "p1~t1")) == [] : List<&2, H.Out>}
+
+law prompt_background_work_b:
+  {Bool.and(String.contains(PM.Prompt.background(), "work_run"), Bool.and(String.contains(PM.Prompt.background(), "work_watch"), String.contains(PM.Prompt.background(), "Never poll"))) == True{} : Bool}
+
+# Transport (core/outbox.bend, server.bend's Wire.*/Hub.boot): every frame
+# for a client is counted and one too far behind is dropped, a writer's
+# report from an older connection changes nothing, a log goes out in
+# chunks that cover it in order, a client still taking one raises no
+# alerts and ends with the same read model as from one message, pongs are
+# rate-bounded, and a message encoded once for all sockets is the frame
+# each writer would have made
+law credit_drop_over_margin:
+  {Bool.show(OB.Cr.over(OB.Cr.offer(OB.Cr{1, 768n, 0n, 0n, 0n, False{}, False{}, 0n, 0n, 0n, False{}, []}, 0n))) ++ Bool.show(OB.Cr.over(OB.Cr{1, 768n, 0n, 0n, 0n, False{}, False{}, 0n, 0n, 0n, False{}, []}))
+    ++ Bool.show(OB.Cr.over(OB.Cr.offer(OB.Cr{1, 900n, 200n, 0n, 0n, False{}, False{}, 0n, 0n, 0n, False{}, []}, 0n))) ++ Bool.show(OB.Cr.over(OB.Cr.offer(OB.Cr.new(1, False{}, False{}, 0n), Nat.add(OB.Cr.cap(), 1n)))) == "TrueFalseFalseTrue" : String}
+
+# a live client far behind takes the log's changes as a join does, in
+# chunks, instead of being dropped for a burst
+law credit_behind_catches:
+  {Bool.show(OB.Cr.behind(OB.Cr{1, 97n, 0n, 0n, 0n, False{}, False{}, 0n, 0n, 0n, False{}, []})) ++ Bool.show(OB.Cr.behind(OB.Cr{1, 96n, 0n, 0n, 0n, False{}, False{}, 0n, 0n, 0n, False{}, []}))
+    ++ Bool.show(OB.Cr.boot(OB.Cr.catch(OB.Cr.new(1, False{}, False{}, 0n), 50n, 2n))) ++ Nat.show(OB.Cr.at(OB.Cr.catch(OB.Cr.new(1, False{}, False{}, 0n), 50n, 2n))) == "TrueFalseTrue50" : String}
+
+law credit_stale_gen_quiet:
+  for +n: Nat
+  for +b: Nat
+  {OB.Cr.drained(OB.Cr.new(2, False{}, True{}, 5n), 1, n, b) == OB.Cr.new(2, False{}, True{}, 5n) : OB.Cr}
+
+law credit_drained_counts:
+  {OB.Cr.drained(OB.Cr{2, 40n, 0n, 900n, 0n, False{}, False{}, 0n, 0n, 0n, False{}, []}, 2, 32n, 800n) == OB.Cr{2, 40n, 32n, 900n, 800n, False{}, False{}, 0n, 0n, 0n, False{}, []} : OB.Cr}
+
+law credit_drained_never_back:
+  {OB.Cr.drained(OB.Cr{2, 40n, 32n, 900n, 800n, False{}, False{}, 0n, 0n, 0n, False{}, []}, 2, 3n, 9n) == OB.Cr{2, 40n, 32n, 900n, 800n, False{}, False{}, 0n, 0n, 0n, False{}, []} : OB.Cr}
+
+law boot_room_after_drain:
+  {Bool.show(OB.Cr.room(OB.Cr{2, 80n, 64n, 2000000n, 1900000n, False{}, True{}, 0n, 0n, 0n, False{}, []})) ++ Bool.show(OB.Cr.room(OB.Cr{2, 80n, 0n, 0n, 0n, False{}, True{}, 0n, 0n, 0n, False{}, []})) == "TrueFalse" : String}
+
+# a log goes oldest first from where the client was, chunk after chunk
+law outbox_fifo:
+  {OB.Join.from(["d", "c", "b", "a"], 4n, 1n) == ["b", "c", "d"] : List<&2, String>}
+
+law join_window_same:
+  {OB.Join.window(["e", "d", "c", "b", "a"], 5n, 1n) == OB.Join.from(["e", "d", "c", "b", "a"], 5n, 1n) : List<&2, String>}
+
+law join_chunks_cover:
+  {OB.Join.chunks.at(10n, ["a", "bb", "ccc", "d", "ee"], 2n, 4n) == [["a", "bb"], ["ccc", "d"], ["ee"]] : List<&2, List<&2, String>>}
+
+law join_chunks_flat:
+  {OB.Join.flat(OB.Join.chunks.at(10n, ["a", "bb", "ccc", "d", "ee"], 2n, 4n)) == ["a", "bb", "ccc", "d", "ee"] : List<&2, String>}
+
+law join_oversized_alone:
+  {OB.Join.chunks.at(10n, ["toolong", "a", "b"], 5n, 3n) == [["toolong"], ["a", "b"]] : List<&2, List<&2, String>>}
+
+# a join frame's lines go out in byte-bounded frames: a small chunk is
+# the frame as offered; a big one is split, the later frames "boot": true
+# and the very last "boot": false when the offered frame ended the join
+law items_one_frame:
+  {OB.Items.texts("H[", ["a", "b"], "]", True{}) == ["H[a,b]"] : List<&2, String>}
+
+law items_split_by_bytes:
+  {OB.Items.texts.at("H[", ["aaa", "bb", "cccc"], "]", True{}, 5n, 4n) == ["H[aaa]", "{\"t\":\"changes\",\"boot\":true,\"items\":[bb]}", "{\"t\":\"changes\",\"boot\":false,\"items\":[cccc]}"] : List<&2, String>}
+
+law items_split_keeps_boot:
+  {OB.Items.texts.at("H[", ["aaa", "bb", "cccc"], "]", False{}, 5n, 4n) == ["H[aaa]", "{\"t\":\"changes\",\"boot\":true,\"items\":[bb]}", "{\"t\":\"changes\",\"boot\":true,\"items\":[cccc]}"] : List<&2, String>}
+
+# a log frame the writer splits says "more": true (it was the join's last as
+# offered), so the frames after it stay inside the bootstrap; one that is
+# not split stays as offered
+law items_split_marks_more:
+  {OB.Items.texts.s("L", ",i[", ",m,i[", ["aaa", "bb", "cccc"], "]", True{}, 5n, 4n) == ["L,m,i[aaa]", "{\"t\":\"changes\",\"boot\":true,\"items\":[bb]}", "{\"t\":\"changes\",\"boot\":false,\"items\":[cccc]}"] : List<&2, String>}
+
+law items_whole_not_marked:
+  {OB.Items.texts.s("L", ",i[", ",m,i[", ["a", "b"], "]", True{}, 5n, 4n) == ["L,i[a,b]"] : List<&2, String>}
+
+# a failed log write is cut back to the length before it; while that cannot
+# be done the hold keeps the length and the reason
+law store_hold_len:
+  {ST.Store.hold.len(ST.Store.hold("42", "no space")) == "42" : String}
+
+law store_hold_err:
+  {ST.Store.hold.err(ST.Store.hold("42", "no space")) == "no space" : String}
+
+law store_trunc_args:
+  {ST.Store.trunc.args("42", "/h/events.jsonl") == ["-s", "42", "/h/events.jsonl"] : List<&2, String>}
+
+law ui_chunked_join_equals_whole:
+  {U.Ui.state(U.Ui.recv(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", True{}, True{}, [C.Change.encode(M.SettingSet{"a", "1", 1n})])),
+      U.Boot.demo("changes", False{}, True{}, [C.Change.encode(M.SettingSet{"b", "2", 2n})])), U.Boot.demo("changes", False{}, False{}, [])))
+    == U.Ui.state(U.Ui.recv(U.Ui.init(0n), U.Seq.demo("log", [C.Change.encode(M.SettingSet{"a", "1", 1n}), C.Change.encode(M.SettingSet{"b", "2", 2n})]))) : M.State}
+
+law boot_on_until_last:
+  {Bool.show(U.Boot.on(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", True{}, True{}, [])))) ++ Bool.show(U.Boot.on(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", True{}, True{}, [])), U.Boot.demo("changes", False{}, False{}, []))))
+    ++ Bool.show(U.Boot.on(U.Ui.recv(U.Ui.init(0n), U.Seq.demo("log", [])))) == "TrueFalseFalse" : String}
+
+# a turn's end folded while the log still arrives (and with its last
+# chunk) is history: no alert; the same frame on a live client alerts
+law boot_no_alerts:
+  {List.append(&2, J.Json, Hb.Did.alerts(Hb.One.got(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", True{}, True{}, [C.Change.encode(M.ThreadCreated{"t1", "p1", "hi", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.TurnChanged{"t1", M.Running{}, 2n})])),
+      U.Boot.demo("changes", False{}, True{}, [C.Change.encode(M.TurnChanged{"t1", M.Completed{}, 3n})]))),
+    Hb.Did.alerts(Hb.One.got(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", True{}, True{}, [C.Change.encode(M.ThreadCreated{"t1", "p1", "hi", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.TurnChanged{"t1", M.Running{}, 2n})])),
+      U.Boot.demo("changes", False{}, False{}, [C.Change.encode(M.TurnChanged{"t1", M.Completed{}, 3n})])))) == [] : List<&2, J.Json>}
+
+law boot_done_alerts:
+  {List.length(&2, J.Json, Hb.Did.alerts(Hb.One.got(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", False{}, False{}, [C.Change.encode(M.ThreadCreated{"t1", "p1", "hi", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.TurnChanged{"t1", M.Running{}, 2n})])),
+      U.Seq.demo("changes", [C.Change.encode(M.TurnChanged{"t1", M.Completed{}, 3n})])))) == 1n : Nat}
+
+# a live client's catch-up (changes with "boot": true, no log before it)
+# is history too: no alert from it
+law boot_catchup_no_alerts:
+  {List.length(&2, J.Json, Hb.Did.alerts(Hb.One.got(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), U.Boot.demo("log", False{}, False{}, [C.Change.encode(M.ThreadCreated{"t1", "p1", "hi", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.TurnChanged{"t1", M.Running{}, 2n})])), U.Boot.demo("changes", False{}, True{}, [])),
+      U.Boot.demo("changes", False{}, True{}, [C.Change.encode(M.TurnChanged{"t1", M.Completed{}, 3n})])))) == 0n : Nat}
+
+law pong_rate_bounded:
+  {Bool.show(OB.Pong.due(1000n, 1999n)) ++ Bool.show(OB.Pong.due(1000n, 2000n)) ++ Bool.show(OB.Pong.due(0n, 999n)) == "FalseTrueFalse" : String}
+
+law wire_all_bin_eq:
+  for t: String
+  {WS.Ws.encode(2, WS.Ws.cbor.bytes(t)) == WS.Ws.cbor(t) : List<&2, U32>}
+
+# Live text (core/live.bend): a reconnect's snapshot replaces the live
+# text (never appended to it), taking it twice is taking it once, a thread
+# not in it shows none, a posted reply or an ended turn clears the hub's
+# buffer, what streamed is what a joining client shows, and an older
+# snapshot than one already taken changes nothing
+law live_snapshot_replaces:
+  {U.Ui.live.of(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{"t1"}}, J.KV{"text", J.Str{"abc"}}])), LV.Live.demo("t1", "abcdef", False{}, 0n)), "t1") == "abcdef" : String}
+
+law live_snapshot_idempotent:
+  {U.Ui.live.of(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), LV.Live.demo("t1", "abcdef", False{}, 0n)), LV.Live.demo("t1", "abcdef", False{}, 0n)), "t1") == "abcdef" : String}
+
+law live_snapshot_clears_absent:
+  {U.Ui.live.of(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{"t2"}}, J.KV{"text", J.Str{"x"}}])), LV.Live.demo("t1", "abc", False{}, 0n)), "t2") == "" : String}
+
+law live_end_clears:
+  {LV.Live.msg(LV.Live.ends([M.MessagePosted{"t1", "m:0", M.Assistant{}, "ab", 3n}], LV.Live.add(LV.Live.add(Nil{}, "t1", "a"), "t1", "b"))) == "{\"t\":\"live\",\"items\":[]}" : String}
+
+law live_turn_end_clears:
+  {LV.Live.msg(LV.Live.ends([M.TurnChanged{"t1", M.Interrupted{}, 3n}], LV.Live.add(Nil{}, "t1", "a"))) == "{\"t\":\"live\",\"items\":[]}" : String}
+
+law live_joined_exact:
+  {U.Ui.live.of(U.Ui.recv(U.Ui.init(0n), Maybe.default(&2, J.Json, J.Json.parse(LV.Live.msg(LV.Live.add(LV.Live.add(LV.Live.add(Nil{}, "t1", "ab"), "t2", "zz"), "t1", "cd"))), J.Null{})), "t1") == "abcd" : String}
+
+law live_old_gen_quiet:
+  {U.Ui.live.of(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), LV.Live.demo("t1", "new", False{}, 2n)), LV.Live.demo("t1", "old", False{}, 1n)), "t1") == "new" : String}
+
+law live_trunc_marked:
+  {U.Ui.live.of(U.Ui.recv(U.Ui.init(0n), LV.Live.demo("t1", "tail", True{}, 0n)), "t1") == "…tail" : String}
+
+# Creating a thread (client.bend's Made.*): only the hub's answer to this
+# client's own request selects the thread it made; another client's new
+# thread, a replayed log or an older request's answer selects nothing
+law want_new_ignores_other_threads:
+  {U.Ui.sel(U.Ui.recv(U.Act.ui(U.Ui.new_thread(U.Ui.init(0n), "p1")), U.Made.made("changes", "t9"))) == "" : String}
+
+law made_selects_own:
+  {U.Ui.sel(U.Ui.recv(U.Ui.recv(U.Act.ui(U.Ui.new_thread(U.Ui.init(0n), "p1")), U.Made.made("changes", "t9")), U.Made.demo("0", "t9"))) == "t9" : String}
+
+law made_selects_own_later:
+  {U.Ui.sel(U.Ui.recv(U.Ui.recv(U.Act.ui(U.Ui.new_thread(U.Ui.init(0n), "p1")), U.Made.demo("0", "t9")), U.Made.made("changes", "t9"))) == "t9" : String}
+
+law replay_cannot_select:
+  {U.Ui.sel(U.Ui.recv(U.Act.ui(U.Ui.new_thread(U.Ui.init(0n), "p1")), U.Made.made("log", "t9"))) == "" : String}
+
+law made_stale_quiet:
+  {U.Ui.sel(U.Ui.recv(U.Ui.recv(U.Act.ui(U.Ui.new_thread(U.Act.ui(U.Ui.new_thread(U.Ui.init(0n), "p1")), "p1")), U.Made.made("changes", "t9")), U.Made.demo("0", "t9"))) == "" : String}
+
+law made_fork_selects_own:
+  {U.Ui.sel(U.Ui.recv(U.Ui.recv(U.Act.ui(U.Ui.fork(U.Ui.init(0n))), U.Made.made("changes", "t9")), U.Made.demo("0", "t9"))) == "t9" : String}
+
+# The sidebar's index (client.bend's Side.ix, gathered once a frame) gives
+# what walking the state gives: rows, phases, subagent counts, the active
+# view, and work for the settle tick; phones compare only the threads a
+# frame touches and raise the same alerts
+law side_rows_ix_eq:
+  {U.Side.rows.ix(U.Side.demo(), U.Side.ix(U.Side.demo()), 100n) == U.Side.rows(U.Side.demo(), 100n) : List<&2, U.SRow>}
+
+law side_phase_ix_eq:
+  {U.Side.phases.ix(U.Ui.threads(U.Side.demo()), U.Side.ix(U.Side.demo()), U.Side.demo()) == U.Side.phases(U.Ui.threads(U.Side.demo()), U.Side.demo()) : List<&2, M.Phase>}
+
+law subs_count_ix_eq:
+  {SB.Subs.counts.ix(U.Ui.threads(U.Side.demo()), U.Side.ix(U.Side.demo()), U.Side.demo()) == SB.Subs.counts(U.Ui.threads(U.Side.demo()), U.Side.demo()) : List<&2, Nat>}
+
+law active_rows_ix_eq:
+  {U.Active.rows.ix(U.Side.demo(), U.Side.ix(U.Side.demo()), 100n, "") == U.Active.rows(U.Side.demo(), 100n, "") : List<&2, U.ARow>}
+
+law settle_ix_eq:
+  {U.Side.busies.ix(U.Ui.threads(U.Side.demo()), M.Work.kids.map(U.Side.demo()), U.Side.demo()) == U.Side.busies(U.Ui.threads(U.Side.demo()), U.Side.demo()) : List<&2, Nat>}
+
+law alerts_ids_same:
+  {Hb.Did.alerts(Hb.One.got(U.Ui.recv(U.Ui.init(0n), U.Seq.demo("log", [C.Change.encode(M.ThreadCreated{"t1", "p1", "a", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.ThreadCreated{"t2", "p1", "b", M.Local{}, "", "", "claude", "", 1n}),
+      C.Change.encode(M.ThreadCreated{"t3", "p1", "c", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.TurnChanged{"t1", M.Running{}, 2n}), C.Change.encode(M.TurnChanged{"t2", M.Running{}, 2n}), C.Change.encode(M.TurnChanged{"t3", M.Running{}, 2n})])),
+      U.Seq.demo("changes", [C.Change.encode(M.TurnChanged{"t1", M.Completed{}, 3n}), C.Change.encode(M.TurnChanged{"t3", M.Failed{}, 3n})])))
+    == Hb.Did.alerts(Hb.One.got.all(U.Ui.recv(U.Ui.init(0n), U.Seq.demo("log", [C.Change.encode(M.ThreadCreated{"t1", "p1", "a", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.ThreadCreated{"t2", "p1", "b", M.Local{}, "", "", "claude", "", 1n}),
+      C.Change.encode(M.ThreadCreated{"t3", "p1", "c", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.TurnChanged{"t1", M.Running{}, 2n}), C.Change.encode(M.TurnChanged{"t2", M.Running{}, 2n}), C.Change.encode(M.TurnChanged{"t3", M.Running{}, 2n})])),
+      U.Seq.demo("changes", [C.Change.encode(M.TurnChanged{"t1", M.Completed{}, 3n}), C.Change.encode(M.TurnChanged{"t3", M.Failed{}, 3n})]))) : List<&2, J.Json>}
+
+law alerts_ids_raise:
+  {List.length(&2, J.Json, Hb.Did.alerts(Hb.One.got(U.Ui.recv(U.Ui.init(0n), U.Seq.demo("log", [C.Change.encode(M.ThreadCreated{"t1", "p1", "a", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.ThreadCreated{"t2", "p1", "b", M.Local{}, "", "", "claude", "", 1n}),
+      C.Change.encode(M.ThreadCreated{"t3", "p1", "c", M.Local{}, "", "", "claude", "", 1n}), C.Change.encode(M.TurnChanged{"t1", M.Running{}, 2n}), C.Change.encode(M.TurnChanged{"t2", M.Running{}, 2n}), C.Change.encode(M.TurnChanged{"t3", M.Running{}, 2n})])),
+      U.Seq.demo("changes", [C.Change.encode(M.TurnChanged{"t1", M.Completed{}, 3n}), C.Change.encode(M.TurnChanged{"t3", M.Failed{}, 3n})])))) == 2n : Nat}
+
+# a push that failed gives its items back, ahead of what waited, and the
+# link holds before it goes again; one through drops them
+law far_fail_keeps_items:
+  for a: J.Json
+  for b: J.Json
+  {FR.Out.waiting(FR.Out.done(FR.Out.sent(FR.Out.add(FR.Out.new("l"), 0n, 2n, [FR.Item{1n, a}, FR.Item{2n, b}])), False{}, 2n)) == [FR.Item{1n, a}, FR.Item{2n, b}] : List<&2, FR.Item>}
+
+law far_ack_removes_batch:
+  for a: J.Json
+  {FR.Out.flight(FR.Out.done(FR.Out.sent(FR.Out.add(FR.Out.new("l"), 0n, 1n, [FR.Item{1n, a}])), True{}, 1n)) == Nil{} : List<&2, FR.Item>}
+
+law far_ack_keeps_waiting:
+  for a: J.Json
+  for b: J.Json
+  {FR.Out.waiting(FR.Out.done(FR.Out.add(FR.Out.sent(FR.Out.add(FR.Out.new("l"), 0n, 1n, [FR.Item{1n, a}])), 1n, 2n, [FR.Item{2n, b}]), True{}, 1n)) == [FR.Item{2n, b}] : List<&2, FR.Item>}
+
+# what came while the batch was out follows it again, in order, and the
+# batch is sent from where it began
+law far_retry_order:
+  for a: J.Json
+  for b: J.Json
+  {FR.Out.waiting(FR.Out.done(FR.Out.add(FR.Out.sent(FR.Out.add(FR.Out.new("l"), 4n, 5n, [FR.Item{5n, a}])), 5n, 6n, [FR.Item{6n, b}]), False{}, 5n)) == [FR.Item{5n, a}, FR.Item{6n, b}] : List<&2, FR.Item>}
+
+law far_retry_begins:
+  for a: J.Json
+  for b: J.Json
+  {FR.Out.begins(FR.Out.done(FR.Out.add(FR.Out.sent(FR.Out.add(FR.Out.new("l"), 4n, 5n, [FR.Item{5n, a}])), 5n, 6n, [FR.Item{6n, b}]), False{}, 5n)) == 4n : Nat}
+
+law far_hold_waits:
+  for a: J.Json
+  {FR.Out.due(FR.Out.done(FR.Out.sent(FR.Out.add(FR.Out.new("l"), 0n, 1n, [FR.Item{1n, a}])), False{}, 1n)) == False{} : Bool}
+
+law far_release_resends:
+  for a: J.Json
+  {FR.Out.due(FR.Out.release(FR.Out.done(FR.Out.sent(FR.Out.add(FR.Out.new("l"), 0n, 1n, [FR.Item{1n, a}])), False{}, 1n))) == True{} : Bool}
+
+law far_backoff:
+  {[FR.Out.delay(1n), FR.Out.delay(2n), FR.Out.delay(3n), FR.Out.delay(6n), FR.Out.delay(9n)] == [2n, 4n, 8n, 60n, 60n] : List<&2, Nat>}
+
+# lines the log holds that this build cannot decode give the feed a history
+# of its own, so mirrors pull it afresh
+law far_epoch_on_unknown_lines:
+  {[FR.Fr.history.body("x", 3n, 3n), FR.Fr.history.body("x", 5n, 3n)] == ["x", "x|unknown:2"] : List<&2, String>}
+
+# the hub's heartbeat draws nothing and changes nothing; a link silent for
+# longer than the limit is dead, one heard within it is not
+law hb_shows_nothing:
+  for u: U.Ui
+  {U.Ui.shows(u, J.Json.obj([J.KV{"t", J.Str{"hb"}}])) == False{} : Bool}
+
+law hubs_redraw_hb:
+  for +hs: Hb.Hubs
+  for +key: String
+  {Hb.Hubs.redraw(hs, key, J.Json.obj([J.KV{"t", J.Str{"hb"}}])) == False{} : Bool}
+
+law hb_ignored_by_fold:
+  {U.Ui.state(U.Ui.recv(U.Ui.init(0n), J.Json.obj([J.KV{"t", J.Str{"hb"}}]))) == U.Ui.state(U.Ui.init(0n)) : M.State}
+
+law alive_due:
+  {[DK.Alive.due(1000n, 41000n), DK.Alive.due(1000n, 41001n), DK.Alive.due(5n, 5n), DK.Alive.due(9n, 3n)] == [False{}, True{}, False{}, False{}] : List<&2, Bool>}
+
+# the CLI numbers each line's blocks from 0, so two text lines of one
+# message get ids of their own from the line's uuid; a line with none, and
+# every id already stored, keep "msg:n"
+law claude_text_ids_distinct:
+  for b: J.Json
+  {[H.Claude.block.k(0n, "t", "m", 0n, 1n, 0n, "aaaaaaaa-1111", b), H.Claude.block.k(0n, "t", "m", 0n, 1n, 0n, "bbbbbbbb-2222", b), H.Claude.block.k(0n, "t", "m", 0n, 1n, 0n, "", b)]
+    == [[M.MessagePosted{"t", "m:0:aaaaaaaa", M.Assistant{}, J.Json.get_str(b, "text", ""), 1n}], [M.MessagePosted{"t", "m:0:bbbbbbbb", M.Assistant{}, J.Json.get_str(b, "text", ""), 1n}], [M.MessagePosted{"t", "m:0", M.Assistant{}, J.Json.get_str(b, "text", ""), 1n}]] : List<&2, List<&2, M.Change>>}
+
+# a bot request sent again (the client's outbox after a dropped link, the
+# same `msg`) is answered ok and does nothing a second time
+law bots_say_once:
+  for live: Bool
+  for +s: M.State
+  for +now: Nat
+  for +client: U32
+  for +id: String
+  for +bot: String
+  for +text: String
+  for +msg: String
+  {BHS.Bots.say.once(True{}, msg, live, s, now, client, id, bot, text) == H.Step.outs([H.Reply.ok(client, id)]) : H.Step}
+
+law bots_post_once:
+  for +mid: String
+  for m: Maybe<&2, BOT.Room>
+  for +s: M.State
+  for +now: Nat
+  for +client: U32
+  for +id: String
+  for +text: String
+  {BHS.Bots.post.once(True{}, mid, m, s, now, client, id, text) == H.Step.outs([H.Reply.ok(client, id)]) : H.Step}
+
+law bots_tell_once:
+  for +mid: String
+  for remote: Bool
+  for +s: M.State
+  for +now: Nat
+  for +client: U32
+  for +id: String
+  for +to: String
+  for +text: String
+  {BHS.Bots.tell.once(True{}, mid, remote, s, now, client, id, to, text) == H.Step.outs([H.Reply.ok(client, id)]) : H.Step}
+# Agent containment (core/contain.bend): each agent runs in a scope with a
+# memory limit; the limit is half the machine unless set, clamped between
+# 2 GiB and 90% of it, and a test's MiB setting is taken as it is; a scope
+# that ended in an out-of-memory kill gives the turn its words. The laws
+# count in a unit that is 4 to a GiB, so no big number is normalized.
+law contain_default_half:
+  {CTN.Contain.units(64n, 0n, 0n, 4n) == 32n : Nat}
+
+law contain_clamp_min:
+  {CTN.Contain.units(10n, 0n, 0n, 4n) == 8n : Nat}
+
+law contain_clamp_max:
+  {CTN.Contain.units(64n, 100n, 0n, 4n) == 57n : Nat}
+
+law contain_set_gib:
+  {CTN.Contain.units(64n, 5n, 0n, 4n) == 20n : Nat}
+
+law contain_test_mib:
+  {CTN.Contain.units(64n, 5n, 3n, 4n) == 3n : Nat}
+
+law contain_unit_safe:
+  {CTN.Contain.unit("t/1 x", "17-9") == "bp-agent-t_1_x-17-9" : String}
+
+law contain_oom_words:
+  {CTN.Contain.exit_text(137, "oom-kill", "200M") == "agent ran out of memory (limit 200 MB)" : String}
+
+law contain_plain_exit:
+  {CTN.Contain.exit_text(3, "success", "200M") == "agent exited with code 3" : String}
+
+law contain_words_gb:
+  {CTN.Contain.words.g(12n, 4n) == "3 GB" : String}
+
+# The scope's own answer (systemctl show: Result and MemoryMax) is read in
+# the process's reader, off the hub's inbox, and gives an out-of-memory end
+# its words with the limit the scope held; any other end gives "". Bytes
+# are counted in a unit of 4 to a MiB here.
+law contain_why_oom:
+  {CTN.Contain.why.b("Result=oom-kill\nMemoryMax=800\n", 137, 4n) == "agent ran out of memory (limit 200 MB)" : String}
+
+law contain_why_plain:
+  {CTN.Contain.why.b("Result=success\nMemoryMax=800\n", 137, 4n) == "" : String}
+
+law contain_why_missing:
+  {CTN.Contain.why.b("", 137, 4n) == "" : String}
+
+# Retiring an agent stops its whole scope (what it started dies with it),
+# and a start stops the scopes a previous run left: the units `list-units`
+# names, whose thread (the name without "bp-agent-" and the generation's two
+# parts) is one of the log's.
+law contain_stop_scope:
+  {String.join(CTN.Contain.stop.args("bp-agent-t1-2-3-4"), " ") == "10 systemctl --user stop bp-agent-t1-2-3-4.scope" : String}
+
+law contain_stale_units:
+  {String.join(CTN.Contain.stale("bp-agent-t1-5-100-7.scope loaded active running [systemd-run] sleep\nother.scope loaded active running x\nbp-agent-t3-1-9-3.scope loaded failed failed z\n"), ",") == "bp-agent-t1-5-100-7,bp-agent-t3-1-9-3" : String}
+
+law contain_thread_of:
+  {CTN.Contain.thread.of("bp-agent-t17-5-100-7") == "t17-5" : String}
+
+# systemd-run expands ${VAR} in the arguments it is given, so the scope's
+# script turns that off (and, for a systemd without the flag, writes each
+# $ as $$): a prompt's dollar text reaches the agent as it is.
+law contain_no_expand:
+  {Bool.and(String.contains(CTN.Contain.script(), "--expand-environment=no"), String.contains(CTN.Contain.script(), "s/\\$/$$/g")) == True{} : Bool}
+
+# a hub stops only the scopes it started: one whose description names
+# another home is not its own
+law contain_tag_mine:
+  {CTN.Contain.stale.mine("bp-agent-t1-1-1.scope loaded active running backplane /h\nbp-agent-t2-1-1.scope loaded active running backplane /other\nbp-agent-t3-1-1.scope loaded failed failed [systemd-run] sleep 3\n", CTN.Contain.tag("/h")) == ["bp-agent-t1-1-1"] : List<&2, String>}
+
+# A streamed reply's settled prefix (client.bend's Live.head: the text up
+# to the last blank line outside a fenced block) renders, and lays out,
+# exactly as it does alone, so a window keeps it and lays out the rest.
+law live_split_fence_safe:
+  {U.Live.at("a\n\n```\nx\n\ny\n") == 3n : Nat}
+
+law live_split_fence_closed:
+  {U.Live.at("a\n\n```\nx\n\ny\n```\nz\n\nw") == 19n : Nat}
+
+law live_split_none:
+  {U.Live.at("one paragraph\nstill one") == 0n : Nat}
+
+law live_head_rest:
+  {U.Live.head("a\n\nb\n\nc") ++ U.Live.rest("a\n\nb\n\nc") == "a\n\nb\n\nc" : String}
+
+law live_prefix_exact:
+  {List.append(&2, DM.Node, DM.Md.render(U.Live.head("# T\n\nsome *words*\nand more\n\n- a\n- b\n\n1. x\n2. y\n\n| p | q |\n|---|---|\n| 1 | 2 |\n\n> quoted\n\n```\ncode\n\nmore code\n```\n\nlast\nline")),
+    DM.Md.render(U.Live.rest("# T\n\nsome *words*\nand more\n\n- a\n- b\n\n1. x\n2. y\n\n| p | q |\n|---|---|\n| 1 | 2 |\n\n> quoted\n\n```\ncode\n\nmore code\n```\n\nlast\nline"))) == DM.Md.render("# T\n\nsome *words*\nand more\n\n- a\n- b\n\n1. x\n2. y\n\n| p | q |\n|---|---|\n| 1 | 2 |\n\n> quoted\n\n```\ncode\n\nmore code\n```\n\nlast\nline") : List<&2, DM.Node>}
+
+law live_prefix_exact_open_fence:
+  {List.append(&2, DM.Node, DM.Md.render(U.Live.head("para\n\n```\nopen\n\nstill open")), DM.Md.render(U.Live.rest("para\n\n```\nopen\n\nstill open"))) == DM.Md.render("para\n\n```\nopen\n\nstill open") : List<&2, DM.Node>}
 
 # QR codes for pairing (core/qr.bend): level M's format bits for masks 0
 # and 1, version 7's information bits, as the standard tabulates them

@@ -63,7 +63,7 @@ for (const n of ["claude", "codex", "grok"]) {
   chmodSync(join(fake, n), 0o755);
 }
 
-type Hub = { name: string; home: string; port: number; proc: ReturnType<typeof Bun.spawn>; ws: WebSocket; seen: any[]; replies: Map<number, any>; info: any; n: number };
+type Hub = { name: string; home: string; port: number; proc: ReturnType<typeof Bun.spawn>; ws: WebSocket; seen: any[]; replies: Map<number, any>; info: any; n: number; hb: number };
 
 async function start(name: string): Promise<Hub> {
   const home = join(root, name);
@@ -73,7 +73,7 @@ async function start(name: string): Promise<Hub> {
     stdout: "ignore",
     stderr: "pipe",
   });
-  const h: Hub = { name, home, port, proc, ws: null as any, seen: [], replies: new Map(), info: null, n: 0 };
+  const h: Hub = { name, home, port, proc, ws: null as any, seen: [], replies: new Map(), info: null, n: 0, hb: 0 };
   for (let i = 0; i < 100; i++) {
     try {
       const r = await fetch(`http://127.0.0.1:${port}/hello`);
@@ -86,6 +86,7 @@ async function start(name: string): Promise<Hub> {
   ws.onmessage = (e) => {
     const o = JSON.parse(W.decode(new Uint8Array(e.data as ArrayBuffer)));
     for (const c of o.items ?? []) h.seen.push(c);
+    if (o.t === "hb") h.hb++;
     if (o.t === "reply") h.replies.set(Number(o.id), o);
     if (o.info) h.info = o.info;
   };
@@ -134,6 +135,13 @@ try {
   const nori = await rpc(a, "bots.create", { name: "nori" });
   check("bots.create answers a bot id", miso?.ok && typeof miso.bot === "string" && nori?.ok, [miso, nori]);
   const home = await change(a, "WorktreeSet", (c) => String(c.worktree ?? c.path ?? JSON.stringify(c)).includes(`/bots/${miso?.bot}`));
+  // the outbox sends a request again after a dropped link, with the same
+  // msg: the hub stores and wakes once, and answers both
+  const say1 = await rpc(a, "bots.say", { bot: miso.bot, text: "once only", msg: "e2e-say-1" });
+  const say2 = await rpc(a, "bots.say", { bot: miso.bot, text: "once only", msg: "e2e-say-1" });
+  await sleep(500);
+  check("bots.say with the same msg twice is answered ok both times", !!say1?.ok && !!say2?.ok, [say1, say2]);
+  check("and stored once", a.seen.filter((c) => c.$ === "MessagePosted" && c.msg === "e2e-say-1").length === 1, a.seen.filter((c) => c.msg === "e2e-say-1"));
   check("a bot's home folder becomes its thread's folder", !!home, a.seen.filter((c) => c.$ === "WorktreeSet"));
   check("the home folder is a git repository", (() => { try { return statSync(join(a.home, "bots", miso.bot, ".git")).isDirectory(); } catch { return false; } })());
 
@@ -268,6 +276,10 @@ try {
   check("alpha logs miso's answer in the person's direct room", sent?.room === posted?.room, sent ?? a.seen.filter((c) => c.$ === "RoomPosted"));
   const answered = await change(b, "RoomPosted", (c) => c.from === "miso@alpha" && c.text === answer);
   check("the answer reaches the person on beta, in the room they wrote in", answered?.room === "dm:miso@alpha:you", answered ?? b.seen.filter((c) => c.$ === "RoomPosted"));
+  // captured once, when the turn that finished the work ended
+  await sleep(1500);
+  const once = a.seen.filter((c) => c.$ === "RoomPosted" && c.from === "miso" && c.text === answer && c.room === posted?.room).length;
+  check("the answer goes back exactly once", once === 1, once);
 
   // a thread on beta mentions the bot on alpha (@name@machine): alpha's bot
   // hears it as beta's person, and its answer reaches beta's conversation
@@ -355,6 +367,8 @@ try {
     });
     check("beta's info lists alpha's bots (bots.remote)", !!remote && remote.every((x: any) => x.peer === pid && x.peerName === "alpha"), b.info?.["bots.remote"]);
   }
+  // the hub's heartbeat (every 15 s) reaches a client that asks for nothing
+  check("the hub sends a heartbeat", !!await until(20000, () => a.hb > 0 && b.hb > 0), [a.hb, b.hb]);
 } catch (e) {
   check("no exception", false, String(e));
 } finally {

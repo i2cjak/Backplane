@@ -7,7 +7,13 @@
 // fails, closes A's channel and shuts its socket. Checks B still gets the
 // turn's end and an answer to a request in time, A is dropped (its socket
 // ends), and a client reconnecting from the start gets exactly what B
-// holds. Twice.
+// holds. Twice. Then, on the log that left (thousands of big changes): a
+// slow reader joins and gets all of it a chunk at a time; a client that
+// never reads is dropped; a ping flood gets at most a pong a second; a
+// client hanging up halfway through its join and coming back from what it
+// had ends with what B holds; B's requests are answered throughout; Stop
+// during a flood lands at once; the hub's memory stays bounded over
+// dropped clients.
 //
 //   bun test/tools/stall_e2e.ts [BINARY] [WIREDIR]
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -92,7 +98,7 @@ const port = freePort();
 const proc = Bun.spawn([resolve(bin), "--home", home, "--port", String(port), "--no-tailscale"], {
   env: { ...process.env, DISPLAY: "", WAYLAND_DISPLAY: "", BACKPLANE_NO_UPDATE: "1", BACKPLANE_PEERS: "", BACKPLANE_GOOGLE_BAKE: "0", PATH: `${fake}:${process.env.PATH}` },
   stdout: "ignore",
-  stderr: "ignore",
+  stderr: process.env.HUBLOG ? Bun.file(process.env.HUBLOG) : "ignore",
 });
 
 type Client = { seen: any[]; replies: Set<number>; send: (m: string, p: object) => number; close: () => void; origin: string };
@@ -155,10 +161,78 @@ try {
     check(said.includes("EOF") || said.includes("reset"), `round ${round}: the stalled client was dropped (${said.replace(/\n/g, " | ")})`);
     await a.exited;
     const c = await connect(`?since=0`);
-    await sleep(3000);
+    await until(30000, () => (c.seen.length >= b.seen.length ? true : undefined));
+    await sleep(500);
     check(c.seen.length === b.seen.length, `round ${round}: a client from the start holds what B holds (${c.seen.length} / ${b.seen.length})`);
     c.close();
   }
+
+  // Transport under a large log
+  const wsc = resolve("test/tools/fixtures/wsclient.py");
+  const py = (args: string[]) => {
+    const p = Bun.spawn(["python3", wsc, String(port), ...args], { stdout: "pipe", stderr: "inherit" });
+    return { p, out: new Response(p.stdout).text() };
+  };
+  const rss = () => Number(/VmRSS:\s+(\d+)/.exec(readFileSync(`/proc/${proc.pid}/status`, "utf8"))?.[1] ?? 0) / 1024;
+  const rtt = async () => {
+    const t = Date.now();
+    const id = b.send("setting.set", { key: `probe.${t}`, value: "1" });
+    const ok = await until(10000, () => b.replies.has(id));
+    return ok ? Date.now() - t : 99999;
+  };
+  const total = b.seen.length;
+  const slow = py(["?since=0", "slow", "1500000"]);
+  const stall = py(["?since=0", "stall", "15"]);
+  const pings = py(["?since=" + total + "&origin=" + b.origin, "pings", "20000"]);
+  let worst = 0;
+  for (let i = 0; i < 10; i++) {
+    const r = await rtt();
+    if (process.env.HUBLOG) console.log("rtt", r);
+    worst = Math.max(worst, r);
+    await sleep(300);
+  }
+  check(worst < 1500, `requests answered while a slow join, a stalled join and a ping flood run (worst ${worst} ms)`);
+  const pong = (await pings.out).trim();
+  const np = Number(/pongs (\d+)/.exec(pong)?.[1] ?? 99);
+  check(np <= 5, `a ping flood gets at most a pong a second (${pong})`);
+  const slowSaid = (await slow.out).trim();
+  check(/done/.test(slowSaid), `a slow reader takes the whole log a chunk at a time (${slowSaid.replace(/\n/g, " | ")})`);
+  const stallSaid = (await stall.out).trim();
+  // (its join waits for it: at most about a megabyte is queued for a client
+  // with no room, so it either is dropped or gets the rest once it reads)
+  check(/EOF|reset|done/.test(stallSaid), `a joining client that does not read holds nothing up (${stallSaid.replace(/\n/g, " | ")})`);
+
+  // halfway through a join, hang up and come back from what it had
+  const h1 = await connect("?since=0");
+  await until(10000, () => h1.seen.length > 0);
+  const had = h1.seen.length, origin = h1.origin;
+  h1.close();
+  check(had < total, `a join's first frame is a chunk, not the whole log (${had} of ${total})`);
+  const h2 = await connect(`?since=${had}&origin=${origin}`);
+  const back = await until(30000, () => (had + h2.seen.length >= b.seen.length ? true : undefined));
+  check(!!back && had + h2.seen.length === b.seen.length, `a join resumed halfway ends with what B holds (${had} + ${h2.seen.length} / ${b.seen.length})`);
+  h2.close();
+
+  // Stop during a flood
+  const n3 = b.seen.filter((c) => c.$ === "ThreadCreated").length;
+  b.send("thread.create", { project: pc.id, title: "stop", env: "local", provider: "claude" });
+  const th3 = await until(10000, () => b.seen.filter((c) => c.$ === "ThreadCreated")[n3]);
+  b.send("turn.start", { thread: th3.id, text: "flood", msg: "c-stall-stop" });
+  await until(10000, () => b.seen.filter((c) => c.$ === "MessagePosted" && c.thread === th3.id).length > 200);
+  const ts = Date.now();
+  b.send("turn.interrupt", { thread: th3.id });
+  const stopped = await until(10000, () => b.seen.find((c) => c.$ === "TurnChanged" && c.thread === th3.id && /interrupted/i.test(String(c.state))));
+  check(!!stopped && Date.now() - ts < 1500, `Stop during a flood lands at once (${Date.now() - ts} ms)`);
+  await sleep(8000);
+
+  // memory over dropped clients
+  const r0 = rss();
+  for (let cyc = 0; cyc < 3; cyc++) {
+    const cs = [0, 1, 2, 3].map(() => py(["?since=0", "stall", "13"]));
+    for (const c of cs) await c.out;
+  }
+  const r1 = rss();
+  check(r1 - r0 < 400, `memory stays bounded over 12 dropped joins (${r0.toFixed(0)} -> ${r1.toFixed(0)} MB)`);
 } finally {
   proc.kill(9);
   await proc.exited;

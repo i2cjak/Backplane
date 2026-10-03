@@ -282,9 +282,11 @@ def Change.encode(c: M.Change) -> J.Json:
       Change.obj("BotWoke", [J.KV{"bot", J.Str{bot}}, J.KV{"hop", Codec.nat(hop)}, J.KV{"at", Codec.nat(at)}])
     case M.SpacePageSet{bot, html, at}:
       Change.obj("SpacePageSet", [J.KV{"bot", J.Str{bot}}, J.KV{"html", J.Str{html}}, J.KV{"at", Codec.nat(at)}])
+    case M.WorkSet{thread, kind, rows, at}:
+      Change.obj("WorkSet", [J.KV{"thread", J.Str{thread}}, J.KV{"kind", J.Str{kind}}, J.KV{"rows", J.Str{rows}}, J.KV{"at", Codec.nat(at)}])
 
 def Change.tags() -> List<&2, String>:
-  ["ProjectCreated", "ProjectRemoved", "ThreadCreated", "ThreadRenamed", "MessagePosted", "TurnChanged", "PendingChanged", "ActivityLogged", "ThreadSettled", "ThreadUnsettled", "ThreadArchived", "ThreadPinned", "ThreadDeleted", "WorktreeSet", "SessionSet", "ModesSet", "TaskDelegated", "TaskStateSet", "TaskDelivered", "SettingSet", "TurnQueued", "QueueTaken", "AskOpened", "AskClosed", "DeviceRegistered", "DeviceDropped", "ThreadSnoozed", "ThreadOrdered", "WorktreeSkipped", "ThreadMerged", "WorktreeRemoved", "ProjectOrdered", "QueueEdited", "QueueRemoved", "QueueMoved", "QueueTakenOne", "ThreadForked", "ProviderSet", "TodosSet", "UsageSet", "BotSet", "BotDeleted", "RoomSet", "RoomDeleted", "RoomPosted", "HookSet", "HookHit", "RoutineSet", "RoutineDeleted", "RoutineFired", "MemorySaved", "MemoryForgot", "SpaceSet", "PeerSet", "BotWoke", "SpacePageSet"]
+  ["ProjectCreated", "ProjectRemoved", "ThreadCreated", "ThreadRenamed", "MessagePosted", "TurnChanged", "PendingChanged", "ActivityLogged", "ThreadSettled", "ThreadUnsettled", "ThreadArchived", "ThreadPinned", "ThreadDeleted", "WorktreeSet", "SessionSet", "ModesSet", "TaskDelegated", "TaskStateSet", "TaskDelivered", "SettingSet", "TurnQueued", "QueueTaken", "AskOpened", "AskClosed", "DeviceRegistered", "DeviceDropped", "ThreadSnoozed", "ThreadOrdered", "WorktreeSkipped", "ThreadMerged", "WorktreeRemoved", "ProjectOrdered", "QueueEdited", "QueueRemoved", "QueueMoved", "QueueTakenOne", "ThreadForked", "ProviderSet", "TodosSet", "UsageSet", "BotSet", "BotDeleted", "RoomSet", "RoomDeleted", "RoomPosted", "HookSet", "HookHit", "RoutineSet", "RoutineDeleted", "RoutineFired", "MemorySaved", "MemoryForgot", "SpaceSet", "PeerSet", "BotWoke", "SpacePageSet", "WorkSet"]
 
 def Change.decode.k(i: Nat, +o: J.Json) -> Maybe<&2, M.Change>:
   match i:
@@ -400,6 +402,8 @@ def Change.decode.k(i: Nat, +o: J.Json) -> Maybe<&2, M.Change>:
       Some{M.BotWoke{J.Json.get_str(o, "bot", ""), J.Json.get_nat(o, "hop", 0n), J.Json.get_nat(o, "at", 0n)}}
     case 55n:
       Some{M.SpacePageSet{J.Json.get_str(o, "bot", ""), J.Json.get_str(o, "html", ""), J.Json.get_nat(o, "at", 0n)}}
+    case 56n:
+      Some{M.WorkSet{J.Json.get_str(o, "thread", ""), J.Json.get_str(o, "kind", ""), J.Json.get_str(o, "rows", ""), J.Json.get_nat(o, "at", 0n)}}
     case _:
       None{}
 
@@ -529,6 +533,8 @@ def Change.wire(c: M.Change) -> J.Json:
       Change.encode(M.BotWoke{bot, hop, at})
     case M.SpacePageSet{bot, html, at}:
       Change.encode(M.SpacePageSet{bot, html, at})
+    case M.WorkSet{thread, kind, rows, at}:
+      Change.encode(M.WorkSet{thread, kind, rows, at})
 
 def Change.private(+tag: String) -> Bool:
   Bool.or(String.eq(tag, "DeviceRegistered"), String.eq(tag, "DeviceDropped"))

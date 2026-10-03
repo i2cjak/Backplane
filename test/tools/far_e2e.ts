@@ -47,6 +47,11 @@ n=0
 while IFS= read -r line; do
   case "$line" in
     *'"type":"user"'*)
+      case "$line" in *'start bg work'*)
+        printf '%s\\n' '{"type":"system","subtype":"task_started","task_id":"bgx","tool_use_id":"tu_bgx","description":"sleep 60","task_type":"local_bash","is_backgrounded":true}'
+        printf '%s\\n' '{"type":"result","is_error":false,"result":"started"}'
+        continue ;;
+      esac
       case "$line" in *'hold until stopped'*)
         printf '%s\\n' '{"type":"assistant","message":{"id":"hold","content":[{"type":"text","text":"waiting for Stop"}]}}'
         continue ;;
@@ -193,6 +198,14 @@ try {
   check("ordinary thread send reaches its owner", !!psent?.ok && !!await until(8000, () => ca.seen.find((c) => c.$ === "MessagePosted" && c.thread === pt && c.text.includes("review from beta"))), psent);
   check("ordinary thread answer returns through the mirror", !!await until(8000, () => farItems(cb, link).find((c) => c.$ === "MessagePosted" && c.thread === pt && c.text === answer)));
 
+  // work the owner's agent left running travels with its thread (WorkSet),
+  // so the mirror shows it monitoring
+  await rpc(cb, "turn.start", { thread: `${link}~${pt}`, text: "start bg work", msg: "ordinary-bg", mode: "queue" });
+  const bgRow = await until(8000, () => farItems(cb, link).find((c) => c.$ === "WorkSet" && c.thread === pt && String(c.rows).includes("sleep 60")));
+  check("a yielded background task reaches the mirror", !!bgRow, farItems(cb, link).filter((c) => c.thread === pt).map((c) => c.$));
+  const doneAfter = await until(8000, () => { const ts = farItems(cb, link).filter((c) => c.$ === "TurnChanged" && c.thread === pt); return ts.at(-1)?.state === "completed" ? true : undefined; });
+  check("the mirror has the turn over with the task still at work", !!doneAfter && !farItems(cb, link).some((c) => c.$ === "WorkSet" && c.thread === pt && c.rows === ""));
+
   // Stop goes to the owner's live agent, not a process on the mirror.
   await rpc(cb, "turn.start", { thread: `${link}~${th}`, text: "hold until stopped", msg: "far-hold", mode: "queue" });
   const running = await until(8000, () => ca.seen.find((c) => c.$ === "MessagePosted" && c.msg === "far-hold"));
@@ -314,6 +327,11 @@ try {
 
   // A late old push is only a hint to pull the current authority. It
   // cannot put the old history back, or advance the new mirror to 999.
+  // (a push only counts from a machine this hub lists as the owner's, and
+  // that list is probed every 2 minutes: wait for the replacement owner, or
+  // the hub rightly refuses the push and the check sees a 403, not the epoch)
+  const listed = await until(150000, () => String(cb4.info?.machines ?? "").includes(`127.0.0.1:${pa}`));
+  check("the replacement owner is listed again", !!listed, cb4.info?.machines);
   const secret = JSON.parse(readFileSync(join(a.home, "secrets", "peers", link), "utf8")).secret;
   const delayed = JSON.stringify({ name: "alpha", epoch: oldEpoch, since: 0, head: 999, items: [{ n: 999, c: { $: "BotSet", id: miso.bot, name: "stale-history", thread: th, look: 1, at: resetAt } }] });
   const ts = Math.floor(Date.now() / 1000);

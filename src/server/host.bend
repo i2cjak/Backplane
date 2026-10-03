@@ -67,6 +67,36 @@ def Proc.kill(pid: U32, sig: U32) -> IO(Unit):
   import "./effects/host.c"
   import "./effects/host.js"
 
+# whether a child has exited, without reaping it (the reader's wait does):
+# its exit code (128 + signal when killed), or 4294967295 while it runs.
+# The JS host starts no processes, so there it is always running.
+def Proc.exited(pid: U32) -> IO(U32):
+  import "./effects/host.c"
+  import "./effects/host.js"
+
+# end our reading side: a read blocked on the socket (through any handle)
+# returns end of stream
+def Sock.shut_read(sock: Socket) -> IO(Socket):
+  import "./effects/host.c"
+  import "./effects/host.js"
+
+# a raw descriptor on the same socket (0 when none), so the hub can shut a
+# client's connection at once (Fd.shut) while its writer holds the socket
+def Sock.raw(sock: Socket) -> IO(Socket & U32):
+  import "./effects/host.c"
+  import "./effects/host.js"
+
+# shut the socket under a raw descriptor both ways, then close it (never
+# 0, 1 or 2)
+def Fd.shut(fd: U32) -> IO(Unit):
+  import "./effects/host.c"
+  import "./effects/host.js"
+
+# close a raw descriptor (never 0, 1 or 2)
+def Fd.close(fd: U32) -> IO(Unit):
+  import "./effects/host.c"
+  import "./effects/host.js"
+
 # (kind, (size, mtime)): kind 0 file, 1 dir, 2 other
 def FS.stat(path: String) -> IO(Result<&1, &1, U32 & String, U32 & U32 & U32>):
   import "./effects/host.c"

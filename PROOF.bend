@@ -645,7 +645,7 @@ def Laws.task_finish_not_ended_same(s, now, thread, cs, os, h):
   {==}
 
 def Laws.inbox_never_interrupts(s, now, from, to, role, text, h):
-  %Equal.sym(Bool, H.Hub.running(H.Hub.thread(s, to)), True{}, h) : {H.Step.outs_of(H.Hub.inbox.w(_, M.Worktree.gone(H.Hub.thread(s, to)), M.Worktree.pending(H.Hub.thread(s, to), now), s, now, from, to, role, text)) == [] : List<&2, H.Out>}
+  %Equal.sym(Bool, H.Hub.running(H.Hub.thread(s, to)), True{}, h) : {H.Step.outs_of(H.Hub.inbox.w(_, M.Worktree.gone(H.Hub.thread(s, to)), M.Worktree.pending(H.Hub.thread(s, to), now), s, now, from, to, role, text, M.Link.id(from, H.Hub.id("m", now, H.Hub.seq(s))))) == [] : List<&2, H.Out>}
   {==}
 
 law or_true_r:
@@ -2879,7 +2879,7 @@ law tl_of_k:
   for +px: U32
   for +sel: String
   for +h: {Bool.and(U32.is_eq(px0, px), Q.Eq.str(sel0, sel)) == s : Bool}
-  {L.TL.memo.of.k(s, ty, es, px, sel, L.TL.memo.make(ty, old, px0, sel0)) == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel)} : L.TLMemo}
+  {L.TL.memo.of.k(s, ty, es, px, sel, L.TL.memo.make(ty, old, px0, sel0)) == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel), L.TL.live.none()} : L.TLMemo}
 
 law tl_skip_make:
   for d: Nat
@@ -2946,9 +2946,9 @@ def tl_of_k(s, ty, es, old, px0, sel0, px, sel, h):
     case True{}:
       ep = u32_eq_sound(px0, px, and_l(U32.is_eq(px0, px), Q.Eq.str(sel0, sel), h))
       el = eq_str_sound(sel0, sel, and_r(U32.is_eq(px0, px), Q.Eq.str(sel0, sel), h))
-      %Equal.sym(U32, px0, px, ep) : {L.TLMemo{px, sel, L.TL.memo.again(es, ty, px, sel, L.TL.memo.aligned(es, ty, px, sel, L.TL.memo.make(ty, old, _, sel0)))} == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel)} : L.TLMemo}
-      %Equal.sym(String, sel0, sel, el) : {L.TLMemo{px, sel, L.TL.memo.again(es, ty, px, sel, L.TL.memo.aligned(es, ty, px, sel, L.TL.memo.make(ty, old, px, _)))} == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel)} : L.TLMemo}
-      Equal.cong(List<&2, L.TLE>, L.TLMemo, x => L.TLMemo{px, sel, x}, L.TL.memo.again(es, ty, px, sel, L.TL.memo.aligned(es, ty, px, sel, L.TL.memo.make(ty, old, px, sel))), L.TL.memo.make(ty, es, px, sel), tl_again_aligned(es, ty, old, px, sel))
+      %Equal.sym(U32, px0, px, ep) : {L.TLMemo{px, sel, L.TL.memo.again(es, ty, px, sel, L.TL.memo.aligned(es, ty, px, sel, L.TL.memo.make(ty, old, _, sel0))), L.TL.live.none()} == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel), L.TL.live.none()} : L.TLMemo}
+      %Equal.sym(String, sel0, sel, el) : {L.TLMemo{px, sel, L.TL.memo.again(es, ty, px, sel, L.TL.memo.aligned(es, ty, px, sel, L.TL.memo.make(ty, old, px, _))), L.TL.live.none()} == L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel), L.TL.live.none()} : L.TLMemo}
+      Equal.cong(List<&2, L.TLE>, L.TLMemo, x => L.TLMemo{px, sel, x, L.TL.live.none()}, L.TL.memo.again(es, ty, px, sel, L.TL.memo.aligned(es, ty, px, sel, L.TL.memo.make(ty, old, px, sel))), L.TL.memo.make(ty, es, px, sel), tl_again_aligned(es, ty, old, px, sel))
 
 def Laws.tl_memo_exact(ty, es, old, px0, sel0, px, sel):
   tl_of_k(Bool.and(U32.is_eq(px0, px), Q.Eq.str(sel0, sel)), ty, es, old, px0, sel0, px, sel, {==})
@@ -3018,7 +3018,7 @@ law tl_lines_k:
   for +px: U32
   for +pics: Map<&2, String>
   for +h: {Bool.and(U32.is_eq(px0, px), Q.Eq.str(sel0, sel)) == s : Bool}
-  {L.TL.memo.lines.k(s, ty, L.TLMemo{px0, sel0, L.TL.memo.make(ty, old, px0, sel0)}, es, st, sel, px, pics) == L.TL.entries(ty, es, st, sel, px, pics) : List<&2, L.TLine>}
+  {L.TL.memo.lines.k(s, ty, L.TLMemo{px0, sel0, L.TL.memo.make(ty, old, px0, sel0), L.TL.live.none()}, es, st, sel, px, pics) == L.TL.entries(ty, es, st, sel, px, pics) : List<&2, L.TLine>}
 
 def tl_lines_k(s, ty, es, old, px0, sel0, st, sel, px, pics, h):
   match s:
@@ -3268,7 +3268,7 @@ def Laws.picker_drops_stale(u, o):
   {==}
 
 def Laws.tl_frame_exact(ty, es, old, px0, sel0, st, sel, px, pics):
-  %Equal.sym(L.TLMemo, L.TL.memo.of(ty, es, px, sel, L.TLMemo{px0, sel0, L.TL.memo.make(ty, old, px0, sel0)}), L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel)},
+  %Equal.sym(L.TLMemo, L.TL.memo.of(ty, es, px, sel, L.TLMemo{px0, sel0, L.TL.memo.make(ty, old, px0, sel0), L.TL.live.none()}), L.TLMemo{px, sel, L.TL.memo.make(ty, es, px, sel), L.TL.live.none()},
     Laws.tl_memo_exact(ty, es, old, px0, sel0, px, sel))
     : {L.TL.memo.shown(ty, _, st, sel, px, pics) == L.TL.entries(ty, es, st, sel, px, pics) : List<&2, L.TLine>}
   tl_entries_memo(ty, es, st, sel, px, pics)
@@ -4722,8 +4722,8 @@ def Laws.link_from_plain(c, t, e):
   %Equal.sym(Bool, Char.is_eq(c, Chr{116}), False{}, e) : {M.Link.from.b(_, t) == "" : String}
   {==}
 
-def Laws.tl_memos_hit(px, sel, its, ms):
-  %Equal.sym(Bool, Q.Eq.str(sel, sel), True{}, eq_str_refl(sel)) : {L.TL.memos.pick.k(_, L.TLMemo{px, sel, its}, L.TL.memos.pick(L.TL.memos.cut(Nat.sub(L.TL.memos.max(), 1n), L.TL.memos.drop(ms, sel)), sel)) == L.TLMemo{px, sel, its} : L.TLMemo}
+def Laws.tl_memos_hit(px, sel, its, lv, ms):
+  %Equal.sym(Bool, Q.Eq.str(sel, sel), True{}, eq_str_refl(sel)) : {L.TL.memos.pick.k(_, L.TLMemo{px, sel, its, lv}, L.TL.memos.pick(L.TL.memos.cut(Nat.sub(L.TL.memos.max(), 1n), L.TL.memos.drop(ms, sel)), sel)) == L.TLMemo{px, sel, its, lv} : L.TLMemo}
   {==}
 
 law memos_cut_le:
@@ -6499,6 +6499,773 @@ def Laws.emb_note_none():
   {==}
 def Laws.emb_focus_round():
   {==}
+def Laws.cmds_foreign_result_quiet():
+  {==}
+
+def Laws.cmds_foreign_result_keeps_running():
+  {==}
+
+def Laws.cmds_result_waits_lc():
+  {==}
+
+def Laws.cmds_lc_completed_ends():
+  {==}
+
+def Laws.cmds_lc_end_completes():
+  {==}
+
+def Laws.cmds_pair_stays_running():
+  {==}
+
+def Laws.cmds_tomb_error_quiet():
+  {==}
+
+def Laws.cmds_tomb_cancel_quiet():
+  {==}
+
+def Laws.cmds_stop_then_new_error_quiet():
+  {==}
+
+def Laws.cmds_stop_then_new():
+  {==}
+
+def Laws.cmds_wake_start():
+  {==}
+
+def Laws.cmds_wake_runs():
+  {==}
+
+def Laws.cmds_wake_result_ends():
+  {==}
+
+def Laws.cmds_wake_with_queued_user():
+  {==}
+
+def Laws.cmds_tomb_started_resumes():
+  {==}
+
+def Laws.cmds_tomb_started_says():
+  {==}
+
+def Laws.cmds_prep_counts():
+  {==}
+
+def Laws.cmds_mode_version():
+  {==}
+
+def Laws.cmds_mode_old():
+  {==}
+
+def Laws.cmds_mode_old_legacy():
+  {==}
+
+def Laws.cmds_mode_lc():
+  {==}
+
+def Laws.cmds_legacy_retires_sent():
+  {==}
+
+def Laws.cmds_legacy_learned_retires():
+  {==}
+
+def Laws.cmds_legacy_prep_stays():
+  {==}
+
+def Laws.cmds_lifecycle_keeps_sent():
+  {==}
+
+def Laws.cmds_legacy_same(s, now, thread, line, text):
+  {==}
+
+def Laws.wake_act_once():
+  {==}
+
+def Laws.bg_sync_ends_absent():
+  {==}
+
+def Laws.bg_sync_never_adds(ls, open):
+  match ls:
+    case Nil{}:
+      {==}
+    case l <> t:
+      %Laws.bg_sync_never_adds(t, open) : {1n+List.length(&2, String, M.Bg.sync(t, open)) == 1n+_ : Nat}
+      {==}
+
+def Laws.bg_updated_ends_not_drops():
+  {==}
+
+def Laws.bg_notification_drops():
+  {==}
+
+def Laws.bg_empty_snapshot_keeps_pending():
+  {==}
+
+def Laws.bg_turn_end_settles_ended():
+  {==}
+
+def Laws.workset_fold_same_as_setting(s, th, kind, rows, at):
+  {==}
+
+def Laws.store_workset_encoded():
+  {==}
+
+def Laws.far_workset_shared():
+  {==}
+
+def Laws.far_workset_mapped(l, th, kind, rows, at):
+  {==}
+
+def Laws.far_forget_drops_work():
+  {==}
+
+def Laws.bg_progress_coalesced():
+  {==}
+
+def Laws.bg_progress_one_held_per_task():
+  {==}
+
+def Laws.bg_progress_beat_waits():
+  {==}
+
+def Laws.bg_progress_latest_lands():
+  {==}
+
+def Laws.bg_progress_is_own_line():
+  {==}
+
+def Laws.far_forget_equiv():
+  {==}
+
+def Laws.far_forget_equiv_none():
+  {==}
+
+def Laws.prompt_background_work():
+  {==}
+
+def Laws.work_busy_counts_ended_rows():
+  {==}
+
+def Laws.work_ready_idle():
+  {==}
+
+def Laws.work_not_ready_busy():
+  {==}
+
+def Laws.notice_decide_w_idle_same(f, b, a, p, fi, m):
+  {==}
+
+def Laws.notice_busy_quiet(n, b, p, fi, m):
+  {==}
+
+def Laws.notice_busy_fail_alerts(busy, b, a, p, fi, m):
+  match busy:
+    case 0n:
+      {==}
+    case 1n+k:
+      {==}
+
+def Laws.notice_busy_ask_kept(busy, p, fi, m):
+  match busy:
+    case 0n:
+      {==}
+    case 1n+k:
+      {==}
+
+def Laws.wait_busy_not_done():
+  {==}
+
+def Laws.wait_idle_done():
+  {==}
+
+def Laws.settle_waits_for_work():
+  {==}
+
+def Laws.settle_without_work():
+  {==}
+
+def Laws.scratch_busy_kept(now, w, t, n):
+  and_false_r(M.Scratch.expired(now, w, t))
+
+def Laws.worktree_busy_kept(s, t, now, window, n):
+  and_false_r(M.Worktree.drop(s, t, now, window))
+
+def Laws.island_busy_shows():
+  {==}
+
+def Laws.task_waits_for_child_work():
+  {==}
+
+def Laws.task_ends_when_ready():
+  {==}
+
+def Laws.task_ended_last_change():
+  {==}
+
+def Laws.task_failed_ends_even_busy():
+  {==}
+
+def Laws.bot_reply_captured_once():
+  {==}
+
+def Laws.bot_reply_waits_for_work():
+  {==}
+
+def Laws.phase_failed_before_monitoring(n, q):
+  {==}
+
+def Laws.status_wait_f_keeps_failed(any):
+  {==}
+
+def Laws.commit_text_joins():
+  {==}
+
+def Laws.task_finish_delivered_last():
+  {==}
+
+def Laws.task_repair_delivers():
+  {==}
+
+def Laws.task_repair_delivers_once():
+  {==}
+
+def Laws.task_repair_activates_idle():
+  {==}
+
+def Laws.task_repair_running_marks_only():
+  {==}
+
+def Laws.task_repair_quiet_when_done():
+  {==}
+
+def Laws.store_torn_tail_resyncs(rest):
+  {==}
+
+def Laws.store_torn_tail_newline():
+  {==}
+
+def Laws.store_fail_names_repair():
+  {==}
+
+def Laws.task_repair_finishes_ended_child():
+  {==}
+
+def Laws.task_repair_leaves_working_child():
+  {==}
+
+def Laws.recover_lost_told():
+  {==}
+
+def Laws.recover_lost_clears():
+  {==}
+
+def Laws.recover_no_work_quiet():
+  {==}
+
+def Laws.recover_lost_once():
+  {==}
+
+def Laws.lost_off_logs_and_keeps():
+  {==}
+
+def Laws.gone_idle_told():
+  {==}
+
+def Laws.gone_running_queues():
+  {==}
+
+def Laws.replaced_told_once():
+  {==}
+
+def Laws.replaced_keeps_new_rows():
+  {==}
+
+def Laws.carry_keeps_child_task():
+  {==}
+
+def Laws.carry_off_fails_child_task():
+  {==}
+
+def Laws.carry_child_result_once():
+  {==}
+
+def Laws.rec_burst_bounded():
+  {==}
+
+def Laws.rec_release_bounded():
+  {==}
+
+def Laws.rec_release_carry_marker_on():
+  {==}
+
+def Laws.rec_release_carry_marker_off():
+  {==}
+
+def Laws.rec_release_never_drains_queue():
+  {==}
+
+def Laws.update_wait_busy(now, c, id):
+  {==}
+
+def Laws.update_wait_idle(now, c, id):
+  {==}
+
+def Laws.update_wait_goes_when_done():
+  {==}
+
+def Laws.update_wait_holds_while_busy():
+  {==}
+
+def Laws.update_ready_holds_busy(now):
+  {==}
+
+def Laws.update_ready_idle_restarts(now):
+  {==}
+
+def Laws.update_ready_forced_restarts(now):
+  {==}
+
+def Laws.update_held_goes_when_done():
+  {==}
+
+def Laws.update_held_waits_while_busy():
+  {==}
+
+def Laws.update_wait_late_forces():
+  {==}
+
+def Laws.update_wait_early_not_forced():
+  {==}
+
+def Laws.lost_text_not_carry_text(ls):
+  {==}
+
+def Laws.kill_never_low_pid():
+  {==}
+
+def Laws.spawn_gen_accepts_current():
+  {==}
+
+def Laws.spawn_gen_drops_stale():
+  {==}
+
+def Laws.stale_spawn_fail_quiet(gen):
+  {==}
+
+def Laws.mcp_stale_gen_refused():
+  {==}
+
+def Laws.mcp_stale_gen_reads():
+  {==}
+
+def Laws.prep_stale_dropped():
+  {==}
+
+def Laws.gen_mcp_path():
+  {==}
+
+def Laws.quiet_once():
+  {==}
+
+def Laws.quiet_never_when_busy(heard, now, n):
+  {==}
+
+def Laws.quiet_never_idle(heard, now, said, busy):
+  match said:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Laws.exit_stale_gen_quiet():
+  {==}
+
+def Laws.final_partial_line_flushed():
+  {==}
+
+def Laws.watch_intent_before_launch():
+  {==}
+
+def Laws.watch_end_once():
+  {==}
+
+def Laws.watch_end_wakes_idle():
+  {==}
+
+def Laws.watch_end_queues_running():
+  {==}
+
+def Laws.watch_timeout_unknown_not_success():
+  {==}
+
+def Laws.watch_pid_identity_unknown():
+  {==}
+
+def Laws.watch_cancel_keeps_until_confirmed():
+  {==}
+
+def Laws.watch_cancel_confirmed():
+  {==}
+
+def Laws.watch_end_retired_silent():
+  {==}
+
+def Laws.watch_retire_unwatches():
+  {==}
+
+def Laws.watch_target_roundtrip():
+  {==}
+
+def Laws.watch_target_one_line():
+  {==}
+
+def Laws.watch_target_old_row_as_written():
+  {==}
+
+def Laws.watch_unwatch_says_may_run():
+  {==}
+
+def Laws.recover_rearms_watches():
+  {==}
+
+def Laws.mirror_never_awaits():
+  {==}
+
+def Laws.prompt_background_work_b():
+  {==}
+
+def Laws.credit_drop_over_margin():
+  {==}
+
+def Laws.credit_stale_gen_quiet(n, b):
+  {==}
+
+def Laws.credit_drained_counts():
+  {==}
+
+def Laws.credit_drained_never_back():
+  {==}
+
+def Laws.boot_room_after_drain():
+  {==}
+
+def Laws.outbox_fifo():
+  {==}
+
+def Laws.join_chunks_cover():
+  {==}
+
+def Laws.join_chunks_flat():
+  {==}
+
+def Laws.join_oversized_alone():
+  {==}
+
+def Laws.items_one_frame():
+  {==}
+
+def Laws.items_split_by_bytes():
+  {==}
+
+def Laws.items_split_keeps_boot():
+  {==}
+
+def Laws.items_split_marks_more():
+  {==}
+
+def Laws.items_whole_not_marked():
+  {==}
+
+def Laws.store_hold_len():
+  {==}
+
+def Laws.store_hold_err():
+  {==}
+
+def Laws.store_trunc_args():
+  {==}
+
+def Laws.ui_chunked_join_equals_whole():
+  {==}
+
+def Laws.boot_on_until_last():
+  {==}
+
+def Laws.boot_no_alerts():
+  {==}
+
+def Laws.boot_done_alerts():
+  {==}
+
+def Laws.boot_catchup_no_alerts():
+  {==}
+
+def Laws.pong_rate_bounded():
+  {==}
+
+def Laws.wire_all_bin_eq(t):
+  {==}
+
+def Laws.credit_behind_catches():
+  {==}
+
+def Laws.join_window_same():
+  {==}
+
+def Laws.live_snapshot_replaces():
+  {==}
+
+def Laws.live_snapshot_idempotent():
+  {==}
+
+def Laws.live_snapshot_clears_absent():
+  {==}
+
+def Laws.live_end_clears():
+  {==}
+
+def Laws.live_turn_end_clears():
+  {==}
+
+def Laws.live_joined_exact():
+  {==}
+
+def Laws.live_old_gen_quiet():
+  {==}
+
+def Laws.live_trunc_marked():
+  {==}
+
+def Laws.want_new_ignores_other_threads():
+  {==}
+
+def Laws.made_selects_own():
+  {==}
+
+def Laws.made_selects_own_later():
+  {==}
+
+def Laws.replay_cannot_select():
+  {==}
+
+def Laws.made_stale_quiet():
+  {==}
+
+def Laws.made_fork_selects_own():
+  {==}
+
+def Laws.side_rows_ix_eq():
+  {==}
+
+def Laws.side_phase_ix_eq():
+  {==}
+
+def Laws.subs_count_ix_eq():
+  {==}
+
+def Laws.active_rows_ix_eq():
+  {==}
+
+def Laws.settle_ix_eq():
+  {==}
+
+def Laws.alerts_ids_same():
+  {==}
+
+def Laws.alerts_ids_raise():
+  {==}
+
+def Laws.far_fail_keeps_items(a, b):
+  {==}
+
+def Laws.far_ack_removes_batch(a):
+  {==}
+
+def Laws.far_ack_keeps_waiting(a, b):
+  {==}
+
+def Laws.far_retry_order(a, b):
+  {==}
+
+def Laws.far_retry_begins(a, b):
+  {==}
+
+def Laws.far_hold_waits(a):
+  {==}
+
+def Laws.far_release_resends(a):
+  {==}
+
+def Laws.far_backoff():
+  {==}
+
+def Laws.far_epoch_on_unknown_lines():
+  {==}
+
+def Laws.hb_shows_nothing(u):
+  {==}
+
+def Laws.hubs_redraw_hb(hs, key):
+  {==}
+
+def Laws.hb_ignored_by_fold():
+  {==}
+
+def Laws.alive_due():
+  {==}
+
+def Laws.claude_text_ids_distinct(b):
+  {==}
+
+def Laws.bots_say_once(live, s, now, client, id, bot, text, msg):
+  {==}
+
+def Laws.bots_post_once(mid, m, s, now, client, id, text):
+  {==}
+
+def Laws.bots_tell_once(mid, remote, s, now, client, id, to, text):
+  {==}
+def Laws.contain_default_half():
+  {==}
+
+def Laws.contain_clamp_min():
+  {==}
+
+def Laws.contain_clamp_max():
+  {==}
+
+def Laws.contain_set_gib():
+  {==}
+
+def Laws.contain_test_mib():
+  {==}
+
+def Laws.contain_unit_safe():
+  {==}
+
+def Laws.contain_oom_words():
+  {==}
+
+def Laws.contain_plain_exit():
+  {==}
+
+def Laws.contain_words_gb():
+  {==}
+
+def Laws.contain_no_expand():
+  {==}
+def Laws.contain_tag_mine():
+  {==}
+
+def Laws.contain_stop_scope():
+  {==}
+
+def Laws.contain_stale_units():
+  {==}
+
+def Laws.contain_thread_of():
+  {==}
+
+def Laws.contain_why_oom():
+  {==}
+
+def Laws.contain_why_plain():
+  {==}
+
+def Laws.contain_why_missing():
+  {==}
+
+def Laws.live_split_fence_safe():
+  {==}
+
+def Laws.live_split_fence_closed():
+  {==}
+
+def Laws.live_split_none():
+  {==}
+
+def Laws.live_head_rest():
+  {==}
+
+def Laws.live_prefix_exact():
+  {==}
+
+def Laws.live_prefix_exact_open_fence():
+  {==}
+
+# A streamed reply's layout: the settled prefix's blocks, a gap and the
+# tail's blocks are the whole's blocks (the window keeps the prefix's)
+law tl_append_assoc:
+  for a: List<&2, L.TLine>
+  for +b: List<&2, L.TLine>
+  for +c: List<&2, L.TLine>
+  {List.append(&2, L.TLine, List.append(&2, L.TLine, a, b), c) == List.append(&2, L.TLine, a, List.append(&2, L.TLine, b, c)) : List<&2, L.TLine>}
+
+def tl_append_assoc(a, b, c):
+  match a:
+    case Nil{}:
+      {==}
+    case +p <> +pt:
+      Equal.cong(List<&2, L.TLine>, List<&2, L.TLine>, l => p <> l, List.append(&2, L.TLine, List.append(&2, L.TLine, pt, b), c),
+        List.append(&2, L.TLine, pt, List.append(&2, L.TLine, b, c)), tl_append_assoc(pt, b, c))
+
+law dm_append_nil:
+  for xs: List<&2, DM.Node>
+  {List.append(&2, DM.Node, xs, Nil{}) == xs : List<&2, DM.Node>}
+
+def dm_append_nil(xs):
+  match xs:
+    case Nil{}:
+      {==}
+    case +p <> +pt:
+      Equal.cong(List<&2, DM.Node>, List<&2, DM.Node>, l => p <> l, List.append(&2, DM.Node, pt, Nil{}), pt, dm_append_nil(pt))
+
+law tl_blocks_append:
+  for +hs: List<&2, DM.Node>
+  for +ty: L.Ty
+  for +px: U32
+  for +h: DM.Node
+  for +t: DM.Node
+  for +ts: List<&2, DM.Node>
+  {L.TL.blocks(ty, List.append(&2, DM.Node, h <> hs, t <> ts), px) == List.append(&2, L.TLine, L.TL.blocks(ty, h <> hs, px), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, t <> ts, px)) : List<&2, L.TLine>}
+
+def tl_blocks_append(hs, ty, px, h, t, ts):
+  match hs:
+    case Nil{}:
+      {==}
+    case +m <> +mr:
+      Equal.trans(List<&2, L.TLine>,
+        List.append(&2, L.TLine, L.TL.block(ty, h, px), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, List.append(&2, DM.Node, m <> mr, t <> ts), px)),
+        List.append(&2, L.TLine, L.TL.block(ty, h, px), L.TLine{"", 0, 4, "", 0} <> List.append(&2, L.TLine, L.TL.blocks(ty, m <> mr, px), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, t <> ts, px))),
+        List.append(&2, L.TLine, List.append(&2, L.TLine, L.TL.block(ty, h, px), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, m <> mr, px)), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, t <> ts, px)),
+        Equal.cong(List<&2, L.TLine>, List<&2, L.TLine>, l => List.append(&2, L.TLine, L.TL.block(ty, h, px), L.TLine{"", 0, 4, "", 0} <> l),
+          L.TL.blocks(ty, List.append(&2, DM.Node, m <> mr, t <> ts), px),
+          List.append(&2, L.TLine, L.TL.blocks(ty, m <> mr, px), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, t <> ts, px)),
+          tl_blocks_append(mr, ty, px, m, t, ts)),
+        Equal.sym(List<&2, L.TLine>, List.append(&2, L.TLine, List.append(&2, L.TLine, L.TL.block(ty, h, px), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, m <> mr, px)), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, t <> ts, px)),
+          List.append(&2, L.TLine, L.TL.block(ty, h, px), L.TLine{"", 0, 4, "", 0} <> List.append(&2, L.TLine, L.TL.blocks(ty, m <> mr, px), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, t <> ts, px))),
+          tl_append_assoc(L.TL.block(ty, h, px), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, m <> mr, px), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, t <> ts, px))))
+
+# the prefix kept and the tail laid out after it is the whole's layout
+law live_cat_exact:
+  for +hs: List<&2, DM.Node>
+  for +ty: L.Ty
+  for +px: U32
+  for +text: String
+  for +ts: List<&2, DM.Node>
+  {L.TL.live.cat(ty, L.TL.live.fresh.k(ty, text, hs, px), ts, px) == L.TL.blocks(ty, List.append(&2, DM.Node, hs, ts), px) : List<&2, L.TLine>}
+
+def live_cat_exact(hs, ty, px, text, ts):
+  match hs:
+    case Nil{}:
+      {==}
+    case +h <> +hr:
+      match ts:
+        case Nil{}:
+          Equal.sym(List<&2, L.TLine>, L.TL.blocks(ty, List.append(&2, DM.Node, h <> hr, Nil{}), px), L.TL.blocks(ty, h <> hr, px),
+            Equal.cong(List<&2, DM.Node>, List<&2, L.TLine>, ns => L.TL.blocks(ty, ns, px), List.append(&2, DM.Node, h <> hr, Nil{}), h <> hr, dm_append_nil(h <> hr)))
+        case +t <> +tr:
+          Equal.sym(List<&2, L.TLine>, L.TL.blocks(ty, List.append(&2, DM.Node, h <> hr, t <> tr), px),
+            List.append(&2, L.TLine, L.TL.blocks(ty, h <> hr, px), L.TLine{"", 0, 4, "", 0} <> L.TL.blocks(ty, t <> tr, px)), tl_blocks_append(hr, ty, px, h, t, tr))
 def Laws.qr_format_m():
   {==}
 def Laws.qr_format_m1():

@@ -204,6 +204,10 @@ def Prompt.orchestration.k(may: Bool, +models: String) -> String:
 def Prompt.orchestration(may: Bool, +models: String) -> String:
   "<orchestration>" ++ Prompt.orchestration.k(may, models) ++ "</orchestration>"
 
+# how to wait for work that runs on (laws prompt_background_work*)
+def Prompt.background() -> String:
+  "<background_work>Backplane wakes you itself when an Agent, background shell or monitor task ends. End your turn instead of polling, sleeping or checking in a loop. After a restart you are told what was lost. Start long or detached work with the backplane MCP tool `work_run`, or register what you already started with `work_watch`, then end your turn: Backplane wakes you with the outcome. Never poll or sleep-wait. You and every job you start run under a memory limit: past it the kernel ends your process tree, nothing else, so keep builds lean. To use another model, prefer `delegate_task`.</background_work>"
+
 # Claude Code arguments
 # ---------------------
 

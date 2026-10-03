@@ -218,15 +218,19 @@ static void __attribute__((constructor)) sock_send_bytes_use(void) {
 
 #ifdef CID_SOCK_SEND_UNTIL
 
-// Like Sock.send_bytes, with one deadline for the whole frame: a peer that
-// stops reading cannot hold the writer past it. The deadline (in io_tick
-// units) sits in the first 8 bytes of w->data; the frame follows. A send
-// that fails or runs out of time shuts the socket both ways, so its reader
-// sees the end too and the client leaves.
+// Like Sock.send_bytes, with a deadline: a peer that stops reading cannot
+// hold the writer past it. The deadline is renewed after every write that
+// made progress, so a slow reader that keeps reading is never cut off,
+// only one that stalls for the whole span. The deadline and the span (both
+// in io_tick units) sit in the first 16 bytes of w->data; the frame
+// follows. A send that fails or runs out of time shuts the socket both
+// ways, so its reader sees the end too and the client leaves.
 static Term sock_send_until_more(Env e, IoWork* w) {
   int fd = (int)w->hand;
   u64 deadline;
+  u64 span;
   memcpy(&deadline, w->data, sizeof deadline);
+  memcpy(&span, w->data + sizeof deadline, sizeof span);
   while (w->code == 0 && (u64)w->made < w->size) {
     ssize_t n = host_write(fd, w->data + w->made, w->size - (u64)w->made);
     if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
@@ -237,6 +241,10 @@ static Term sock_send_until_more(Env e, IoWork* w) {
       return io_wait_on(w, fd, POLLOUT, deadline, sock_send_until_more);
     }
     w->made += io_sys_end(w, n);
+    if (n > 0) {
+      deadline = io_tick() + span;
+      memcpy(w->data, &deadline, sizeof deadline);
+    }
   }
   if (w->code != 0) {
     shutdown(fd, SHUT_RDWR);
@@ -249,13 +257,15 @@ static Term sock_send_until_more(Env e, IoWork* w) {
 Term sock_send_until_run(Env e, Term* f, IoWork* w) {
   u64  cap = 256;
   Term xs  = f[1];
-  u64  deadline = io_tick() + (u64)f[2] * 1000000ull;
+  u64  span = (u64)f[2] * 1000000ull;
+  u64  deadline = io_tick() + span;
   w->hand = (intptr_t)io_hand_v(f[0]);
   w->code = 0;
-  w->size = sizeof deadline;
-  w->made = sizeof deadline;
+  w->size = sizeof deadline + sizeof span;
+  w->made = sizeof deadline + sizeof span;
   w->data = io_mem(malloc(cap));
   memcpy(w->data, &deadline, sizeof deadline);
+  memcpy(w->data + sizeof deadline, &span, sizeof span);
   while (term_aux(xs) == CID_CON) {
     Term fb[2];
     spare_free(e, cls_fit(2), ctr_take(e, xs, 2, fb));
@@ -505,6 +515,103 @@ Term proc_wait_run(Env e, Term* f, IoWork* w) {
 
 static void __attribute__((constructor)) proc_wait_use(void) {
   io_eff(CID_PROC_WAIT, proc_wait_run, 0);
+}
+
+#endif
+
+#ifdef CID_PROC_EXITED
+
+// Proc.exited: the exit code of a child that has exited (left unreaped:
+// WNOWAIT), 4294967295 while it runs; one already reaped reads 255.
+Term proc_exited_run(Env e, Term* f, IoWork* w) {
+  siginfo_t si;
+  memset(&si, 0, sizeof si);
+  int r = waitid(P_PID, (id_t)(uint32_t)f[0], &si, WEXITED | WNOHANG | WNOWAIT);
+  uint32_t code;
+  if (r < 0) {
+    code = 255;
+  } else if (si.si_pid == 0) {
+    code = 4294967295u;
+  } else {
+    code = si.si_code == CLD_EXITED ? (uint32_t)si.si_status : 128u + (uint32_t)si.si_status;
+  }
+  return (Term)code;
+}
+
+static void __attribute__((constructor)) proc_exited_use(void) {
+  io_eff(CID_PROC_EXITED, proc_exited_run, 0);
+}
+
+#endif
+
+#ifdef CID_SOCK_SHUT_READ
+
+// Ends our reading side: a read blocked on this socket returns 0.
+Term sock_shut_read_run(Env e, Term* f, IoWork* w) {
+  int fd = (int)io_hand_v(f[0]);
+  shutdown(fd, SHUT_RD);
+  return io_hand(fd);
+}
+
+static void __attribute__((constructor)) sock_shut_read_use(void) {
+  io_eff(CID_SOCK_SHUT_READ, sock_shut_read_run, 0);
+}
+
+#endif
+
+#ifdef CID_SOCK_RAW
+
+// A raw descriptor on the same socket (a dup, close-on-exec), for the hub
+// to shut a client's connection at once from outside its writer
+// (Fd.shut); 0 when none could be made.
+Term sock_raw_run(Env e, Term* f, IoWork* w) {
+  int fd  = (int)io_hand_v(f[0]);
+  int got = dup(fd);
+  if (got >= 0) {
+    fcntl(got, F_SETFD, FD_CLOEXEC);
+  }
+  return io_tup(e, io_hand(fd), (Term)(uint32_t)(got < 3 ? 0 : got));
+}
+
+static void __attribute__((constructor)) sock_raw_use(void) {
+  io_eff(CID_SOCK_RAW, sock_raw_run, 0);
+}
+
+#endif
+
+#ifdef CID_FD_SHUT
+
+// Shuts the socket under a raw descriptor both ways (every handle on it:
+// a writer blocked on it fails, its reader reads the end) and closes the
+// descriptor. Never 0, 1 or 2.
+Term fd_shut_run(Env e, Term* f, IoWork* w) {
+  int fd = (int)(uint32_t)f[0];
+  if (fd > 2) {
+    shutdown(fd, SHUT_RDWR);
+    close(fd);
+  }
+  return host_unit();
+}
+
+static void __attribute__((constructor)) fd_shut_use(void) {
+  io_eff(CID_FD_SHUT, fd_shut_run, 0);
+}
+
+#endif
+
+#ifdef CID_FD_CLOSE
+
+// Closes a raw descriptor (never 0, 1 or 2); the socket stays as it is.
+Term fd_close_run(Env e, Term* f, IoWork* w) {
+  int fd = (int)(uint32_t)f[0];
+  if (fd > 2) {
+    close(fd);
+  }
+  return host_unit();
+}
+
+static void __attribute__((constructor)) fd_close_use(void) {
+  io_eff(CID_FD_CLOSE, fd_close_run, 0);
 }
 
 #endif

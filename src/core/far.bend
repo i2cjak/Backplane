@@ -140,6 +140,8 @@ def Fr.change(+l: String, c: M.Change) -> Maybe<&2, M.Change>:
       Some{M.SpaceSet{Fr.id(l, bot), spec, at}}
     case M.SpacePageSet{+bot, html, at}:
       Some{M.SpacePageSet{Fr.id(l, bot), html, at}}
+    case M.WorkSet{+thread, kind, rows, at}:
+      Some{M.WorkSet{Fr.id(l, thread), kind, rows, at}}
     case _:
       None{}
 
@@ -271,6 +273,8 @@ def Fr.shared(+s: M.State, c: M.Change) -> Bool:
       True{}
     case M.SpacePageSet{_, _, _}:
       True{}
+    case M.WorkSet{+thread, _, _, _}:
+      Fr.thread.shared(s, thread)
     case _:
       False{}
 
@@ -471,17 +475,130 @@ def Fr.world(w: BT.World, +prefix: String) -> BT.World:
       BT.World{Fr.map(BT.Bot, bs, prefix), rs, ps, hs, Fr.map(BT.Routine, ro, prefix), Fr.map(BT.Mem, ms, prefix), pe,
         Fr.map(String, sp, prefix), Fr.map(BT.Hops, ho, prefix), Fr.map(Nat, ta, prefix), Fr.map(BT.Page, pg, prefix)}
 
-def Fr.ext(bw: List<&2, M.Ext>, +prefix: String, es: List<&2, M.Entry>) -> List<&2, M.Ext>:
+def Fr.ext.spec(bw: List<&2, M.Ext>, +prefix: String, es: List<&2, M.Entry>) -> List<&2, M.Ext>:
   [M.Ext{Fr.world(M.Ext.world(M.Ext.of(bw)), prefix), Fr.index(List.reverse(&2, M.Entry, es), Map.new(&2, List<&2, M.Entry>))}]
 
-def Fr.forget(s: M.State, +link: String) -> M.State:
+# The index without the link's entries, without walking the rest. An entry
+# is filed (M.Idx.post) under its thread, under its sender's key when
+# another thread sent it, under the links when a message, and under
+# "@steps:<thread>" when a step; only those lists can hold a removed entry,
+# so only they are cut (each at most once), and a list left empty goes
+# (law far_forget_equiv, against Fr.forget.spec's rebuild).
+def Fr.keys.step(step: Bool, +th: String, +m: Map<&2, Bool>) -> Map<&2, Bool>:
+  match step:
+    case True{}:
+      Map.set(&2, Bool, m, M.Idx.steps.key(th), True{})
+    case False{}:
+      m
+
+def Fr.keys.link(msg: Bool, +m: Map<&2, Bool>) -> Map<&2, Bool>:
+  match msg:
+    case True{}:
+      Map.set(&2, Bool, m, M.Idx.links(), True{})
+    case False{}:
+      m
+
+def Fr.keys.sent(sent: Bool, msg: Bool, +from: String, +m: Map<&2, Bool>) -> Map<&2, Bool>:
+  match sent:
+    case True{}:
+      Fr.keys.link(msg, Map.set(&2, Bool, m, from, True{}))
+    case False{}:
+      m
+
+# the keys an entry is filed under, added to m
+def Fr.keys.of(+e: M.Entry, +m: Map<&2, Bool>) -> Map<&2, Bool>:
+  +th = M.Idx.thread(e)
+  +from = M.Link.from(M.Idx.id(e))
+  Fr.keys.step(M.Idx.is_step(e), th,
+    Fr.keys.sent(Bool.and(Bool.not(String.is_empty(from)), Bool.not(String.eq(from, th))), M.Idx.is_msg(e), from, Map.set(&2, Bool, m, th, True{})))
+
+def Fr.keys.one(hit: Bool, +e: M.Entry, +m: Map<&2, Bool>) -> Map<&2, Bool>:
+  match hit:
+    case True{}:
+      Fr.keys.of(e, m)
+    case False{}:
+      m
+
+# the keys the link's entries in a list are filed under
+def Fr.keys.list(es: List<&2, M.Entry>, +prefix: String, m: Map<&2, Bool>) -> Map<&2, Bool>:
+  match es:
+    case Nil{}:
+      m
+    case +e <> t:
+      Fr.keys.list(t, prefix, Fr.keys.one(String.starts_with(M.Idx.thread(e), prefix), e, m))
+
+def Fr.keys.at(hit: Bool, es: List<&2, M.Entry>, +prefix: String, m: Map<&2, Bool>) -> Map<&2, Bool>:
+  match hit:
+    case True{}:
+      Fr.keys.list(es, prefix, m)
+    case False{}:
+      m
+
+# every list filed under one of the link's threads
+def Fr.keys.go(ks: List<&2, String>, +by: Map<&2, List<&2, M.Entry>>, +prefix: String, m: Map<&2, Bool>) -> Map<&2, Bool>:
+  match ks:
+    case Nil{}:
+      m
+    case +k <> t:
+      Fr.keys.go(t, by, prefix, Fr.keys.at(String.starts_with(k, prefix), M.Idx.get(by, k), prefix, m))
+
+def Fr.by.put(empty: Bool, by: Map<&2, List<&2, M.Entry>>, +k: String, xs: List<&2, M.Entry>) -> Map<&2, List<&2, M.Entry>>:
+  match empty:
+    case True{}:
+      Map.del(&2, List<&2, M.Entry>, by, k)
+    case False{}:
+      Map.set(&2, List<&2, M.Entry>, by, k, xs)
+
+def Fr.by.cut.k(+by: Map<&2, List<&2, M.Entry>>, +k: String, +xs: List<&2, M.Entry>) -> Map<&2, List<&2, M.Entry>>:
+  Fr.by.put(List.is_empty(&2, M.Entry, xs), by, k, xs)
+
+def Fr.by.cut(ks: List<&2, String>, +by: Map<&2, List<&2, M.Entry>>, +prefix: String) -> Map<&2, List<&2, M.Entry>>:
+  match ks:
+    case Nil{}:
+      by
+    case +k <> t:
+      Fr.by.cut(t, Fr.by.cut.k(by, k, Fr.entries.go(M.Idx.get(by, k), prefix, Nil{})), prefix)
+
+def Fr.by(+by: Map<&2, List<&2, M.Entry>>, +prefix: String) -> Map<&2, List<&2, M.Entry>>:
+  Fr.by.cut(Map.keys(&2, Bool, Fr.keys.go(Map.keys(&2, List<&2, M.Entry>, by), by, prefix, Map.new(&2, Bool))), by, prefix)
+
+def Fr.ext(bw: List<&2, M.Ext>, +prefix: String) -> List<&2, M.Ext>:
+  +x = M.Ext.of(bw)
+  [M.Ext{Fr.world(M.Ext.world(x), prefix), Fr.by(M.Ext.by(x), prefix)}]
+
+# the settings a link's things leave behind: the work their threads had
+# (WorkSet's bg.<link>~... and watch.<link>~...); the rest stay
+def Fr.settings(+sg: Map<&2, String>, +prefix: String) -> Map<&2, String>:
+  Fr.map(String, Fr.map(String, sg, "bg." ++ prefix), "watch." ++ prefix)
+
+def Fr.forget.spec(s: M.State, +link: String) -> M.State:
   match s:
     case M.State{ps, ts, +es, n, tk, sg, qu, ak, dv, +nv, bw}:
       +prefix = link ++ "~"
       +kept = Fr.entries.go(es, prefix, Nil{})
-      M.State{Fr.map(M.Project, ps, prefix), Fr.map(M.Thread, ts, prefix), kept, n, Fr.map(M.Task, tk, prefix), sg,
+      M.State{Fr.map(M.Project, ps, prefix), Fr.map(M.Thread, ts, prefix), kept, n, Fr.map(M.Task, tk, prefix), Fr.settings(sg, prefix),
         Fr.map(List<&2, M.QItem>, qu, prefix), Fr.map(M.Ask, ak, prefix), dv,
-        Map.del(&2, M.Nav, Fr.map(M.Nav, nv, prefix), Fr.nav(link)), Fr.ext(bw, prefix, kept)}
+        Map.del(&2, M.Nav, Fr.map(M.Nav, nv, prefix), Fr.nav(link)), Fr.ext.spec(bw, prefix, kept)}
+
+
+# the link's projection removed in one pass over its threads (the index
+# is cut, not rebuilt; Fr.forget.spec is the rebuild, law far_forget_equiv)
+def Fr.forget(s: M.State, +link: String) -> M.State:
+  match s:
+    case M.State{ps, ts, +es, n, tk, sg, qu, ak, dv, +nv, bw}:
+      +prefix = link ++ "~"
+      M.State{Fr.map(M.Project, ps, prefix), Fr.map(M.Thread, ts, prefix), Fr.entries.go(es, prefix, Nil{}), n, Fr.map(M.Task, tk, prefix), Fr.settings(sg, prefix),
+        Fr.map(List<&2, M.QItem>, qu, prefix), Fr.map(M.Ask, ak, prefix), dv,
+        Map.del(&2, M.Nav, Fr.map(M.Nav, nv, prefix), Fr.nav(link)), Fr.ext(bw, prefix)}
+
+# a state with a link's threads, steps and messages in both directions
+def Fr.demo.idx() -> M.State:
+  M.State.replay([M.ThreadCreated{"t1", "p1", "A", M.Local{}, "", "", "claude", "", 1n}, M.ThreadCreated{"p1~t1", "p1~p", "B", M.Local{}, "", "", "claude", "", 1n},
+    M.ThreadCreated{"p1~t2", "p1~p", "C", M.Local{}, "", "", "claude", "", 1n}, M.ThreadCreated{"p2~t1", "p2~p", "D", M.Local{}, "", "", "claude", "", 1n},
+    M.MessagePosted{"t1", "m1", M.User{}, "a", 2n}, M.MessagePosted{"p1~t1", "m2", M.User{}, "b", 3n}, M.ActivityLogged{"p1~t1", "s1", "step", "kicad", "x", 4n},
+    M.ActivityLogged{"t1", "s2", "step", "kicad", "y", 5n}, M.MessagePosted{"t1", M.Link.id("p1~t1", "7"), M.User{}, "hi", 6n},
+    M.MessagePosted{"p1~t2", M.Link.id("t1", "8"), M.User{}, "yo", 7n}, M.MessagePosted{"p2~t1", M.Link.id("p1~t2", "9"), M.User{}, "x", 8n},
+    M.MessagePosted{"p1~t2", "m3", M.Assistant{}, "c", 9n}, M.MessagePosted{"p2~t1", "m4", M.Assistant{}, "d", 10n}], M.State.empty())
 
 def Fr.epoch.nav(+link: String) -> String:
   "epoch~" ++ link
@@ -592,6 +709,44 @@ def In.msg(i: In) -> String:
   match i:
     case In{+l, +n, +h, xs, a, +e}:
       Fr.msg.epoch(l, n, a, 0n, h, xs, e)
+
+# A mirror for a client that is joining goes a chunk at a time (at most
+# In.most() items, after its item `after`): each says the range it covers
+# by sequence (since = the last chunk's end, to = its own; the last one
+# ends at the mirror's head), so a client folds each once, in order, and a
+# live batch that came first is never undone (core/outbox.bend)
+type FC is Data:
+  FC{text: String, next: Nat, done: Bool}
+
+def In.most() -> Nat:
+  500n
+
+def FC.last(xs: List<&2, Item>, +d: Nat) -> Nat:
+  match xs:
+    case Nil{}:
+      d
+    case Item{n, _} <> Nil{}:
+      n
+    case _ <> t:
+      FC.last(t, d)
+
+def FC.of(done: Bool, +l: String, +nm: String, a: Bool, +h: Nat, +after: Nat, +xs: List<&2, Item>, +e: String) -> FC:
+  match done:
+    case True{}:
+      FC{Fr.msg.epoch(l, nm, a, after, h, xs, e), h, True{}}
+    case False{}:
+      FC{Fr.msg.epoch(l, nm, a, after, FC.last(xs, h), xs, e), FC.last(xs, h), False{}}
+
+def In.chunk.k(i: In, +after: Nat, +ys: List<&2, Item>) -> FC:
+  match i:
+    case In{+l, +nm, +h, _, a, +e}:
+      FC.of(Nat.is_le(List.length(&2, Item, ys), In.most()), l, nm, a, h, after, List.take(&2, Item, ys, In.most()), e)
+
+# the next chunk of a mirror, after its item `after`
+def In.chunk(+i: In, +after: Nat) -> FC:
+  match i:
+    case In{_, _, _, xs, _, _}:
+      In.chunk.k(i, after, Fr.fresh(xs, after))
 
 # Mirrors by link
 # ---------------
@@ -858,6 +1013,13 @@ def Page.json(p: Page) -> String:
     case Page{h, xs, m}:
       J.Json.show(J.Json.obj([J.KV{"head", J.Json.nat(h)}, J.KV{"items", J.Json.arr(Fr.items.json(xs))}, J.KV{"more", J.Json.bool(m)}]))
 
+# What the history's identity is made of: the log's first line, and, when
+# the log holds lines this build does not decode (a newer build wrote them:
+# `len` lines against `seq` changes), how many, so the feed's numbering
+# (by changes) starts a history of its own and mirrors pull it afresh.
+def Fr.history.body(+first: String, +len: Nat, +seq: Nat) -> String:
+  Bool.pick(String, Nat.is_eq(len, seq), first, first ++ "|unknown:" ++ Nat.show(Nat.sub(len, seq)))
+
 # Pushing to a linked machine
 # ---------------------------
 # One push at a time per link. A batch says it follows the last push that
@@ -866,15 +1028,20 @@ def Page.json(p: Page) -> String:
 # start, so the other end, missing what failed, finds the gap and pulls.
 # Batches that come while one is out wait, merged, for it to end.
 
+# A batch out is kept (`flight`, and where it began, `ffrom`) until the
+# other end answers. A failure puts it back ahead of what waited, and the
+# link holds (`hold`) for a backoff (2, 4 ... 60 s, `Out.delay`) on its
+# own timer before it goes again; an answer through drops it.
+
 type Out is Data:
-  Out{link: String, acked: Nat, clean: Bool, busy: Bool, from: Nat, to: Nat, items: List<&2, Item>}
+  Out{link: String, acked: Nat, clean: Bool, busy: Bool, from: Nat, to: Nat, items: List<&2, Item>, flight: List<&2, Item>, ffrom: Nat, hold: Bool, fails: Nat}
 
 def Out.new(+link: String) -> Out:
-  Out{link, 0n, False{}, False{}, 0n, 0n, Nil{}}
+  Out{link, 0n, False{}, False{}, 0n, 0n, Nil{}, Nil{}, 0n, False{}, 0n}
 
 def Out.link(o: Out) -> String:
   match o:
-    case Out{l, _, _, _, _, _, _}:
+    case Out{l, _, _, _, _, _, _, _, _, _, _}:
       l
 
 # a batch to send: what it follows, where it ends, its items
@@ -883,10 +1050,10 @@ type Send is Data:
 
 def Out.add.k(empty: Bool, o: Out, +from: Nat, +to: Nat, xs: List<&2, Item>) -> Out:
   match empty o:
-    case True{} Out{l, a, c, b, f, _, ys}:
-      Out{l, a, c, b, f, to, ys}
-    case False{} Out{l, a, c, b, f, _, +ys}:
-      Out{l, a, c, b, Bool.pick(Nat, List.is_empty(&2, Item, ys), from, f), to, List.append(&2, Item, ys, xs)}
+    case True{} Out{l, a, c, b, f, _, ys, fl, ff, h, n}:
+      Out{l, a, c, b, f, to, ys, fl, ff, h, n}
+    case False{} Out{l, a, c, b, f, _, +ys, fl, ff, h, n}:
+      Out{l, a, c, b, Bool.pick(Nat, List.is_empty(&2, Item, ys), from, f), to, List.append(&2, Item, ys, xs), fl, ff, h, n}
 
 # a commit that took the log from `from` to `to`, with what it shares
 def Out.add(o: Out, +from: Nat, +to: Nat, +xs: List<&2, Item>) -> Out:
@@ -894,24 +1061,96 @@ def Out.add(o: Out, +from: Nat, +to: Nat, +xs: List<&2, Item>) -> Out:
 
 def Out.next.k(go: Bool, o: Out) -> Maybe<&2, Send> & Out:
   match go o:
-    case True{} Out{+l, +a, +c, _, +f, +t, xs}:
-      (Some{Send{l, Bool.pick(Nat, c, a, f), t, xs}}, Out{l, a, c, True{}, f, t, Nil{}})
+    case True{} Out{+l, +a, +c, _, +f, +t, +xs, _, _, h, n}:
+      (Some{Send{l, Bool.pick(Nat, c, a, f), t, xs}}, Out{l, a, c, True{}, f, t, Nil{}, xs, f, h, n})
     case False{} _:
       (None{}, o)
 
-# the push to start now, if one is due (none out, something waiting)
+# the push to start now, if one is due (none out, not holding, something waiting)
 def Out.next(o: Out) -> Maybe<&2, Send> & Out:
   match o:
-    case Out{l, a, c, +b, f, t, +xs}:
-      Out.next.k(Bool.and(Bool.not(b), Bool.not(List.is_empty(&2, Item, xs))), Out{l, a, c, b, f, t, xs})
+    case Out{l, a, c, +b, f, t, +xs, fl, ff, +h, n}:
+      Out.next.k(Bool.and(Bool.and(Bool.not(b), Bool.not(h)), Bool.not(List.is_empty(&2, Item, xs))), Out{l, a, c, b, f, t, xs, fl, ff, h, n})
 
-# the push out ended: through (up to `to`), or not
+# the push out ended: through (up to `to`), or not (its items go back first)
 def Out.done(o: Out, ok: Bool, +to: Nat) -> Out:
   match o ok:
-    case Out{l, _, _, _, f, t, xs} True{}:
-      Out{l, to, True{}, False{}, f, t, xs}
-    case Out{l, a, _, _, f, t, xs} False{}:
-      Out{l, a, False{}, False{}, f, t, xs}
+    case Out{l, _, _, _, f, t, xs, +_fl, _, _, _} True{}:
+      Out{l, to, True{}, False{}, f, t, xs, Nil{}, 0n, False{}, 0n}
+    case Out{l, a, _, _, f, t, xs, fl, ff, _, n} False{}:
+      Out{l, a, False{}, False{}, Bool.pick(Nat, List.is_empty(&2, Item, fl), f, ff), t, List.append(&2, Item, fl, xs), Nil{}, 0n, True{}, 1n+n}
+
+# the state after the push due now was started (what the laws read)
+def Out.sent.k(m: Maybe<&2, Send>, p: Out) -> Out:
+  match m:
+    case Some{_}:
+      p
+    case None{}:
+      p
+
+def Out.sent.p(r: Maybe<&2, Send> & Out) -> Out:
+  (m, p) = r
+  Out.sent.k(m, p)
+
+def Out.sent(o: Out) -> Out:
+  Out.sent.p(Out.next(o))
+
+# a push is due now
+def Out.due.k(m: Maybe<&2, Send>, p: Out) -> Bool:
+  match m p:
+    case Some{_} _:
+      True{}
+    case None{} _:
+      False{}
+
+def Out.due.p(r: Maybe<&2, Send> & Out) -> Bool:
+  (m, p) = r
+  Out.due.k(m, p)
+
+def Out.due(o: Out) -> Bool:
+  Out.due.p(Out.next(o))
+
+# the hold ended (its timer fired)
+def Out.release(o: Out) -> Out:
+  match o:
+    case Out{l, a, c, b, f, t, xs, fl, ff, _, n}:
+      Out{l, a, c, b, f, t, xs, fl, ff, False{}, n}
+
+def Out.holding(o: Out) -> Bool:
+  match o:
+    case Out{_, _, _, _, _, _, _, _, _, +h, _}:
+      h
+
+def Out.waiting(o: Out) -> List<&2, Item>:
+  match o:
+    case Out{_, _, _, _, _, _, +xs, _, _, _, _}:
+      xs
+
+def Out.flight(o: Out) -> List<&2, Item>:
+  match o:
+    case Out{_, _, _, _, _, _, _, +fl, _, _, _}:
+      fl
+
+def Out.fails(o: Out) -> Nat:
+  match o:
+    case Out{_, _, _, _, _, _, _, _, _, _, +n}:
+      n
+
+def Out.begins(o: Out) -> Nat:
+  match o:
+    case Out{_, _, _, _, +f, _, _, _, _, _, _}:
+      f
+
+# seconds to hold after `n` failures in a row: 2, 4, 8 ... 60
+def Out.delay.go(n: Nat, +d: Nat) -> Nat:
+  match n:
+    case 0n:
+      d
+    case 1n+k:
+      Out.delay.go(k, Bool.pick(Nat, Nat.is_ge(d, 32n), 60n, (d * 2n : Nat)))
+
+def Out.delay(+n: Nat) -> Nat:
+  Out.delay.go(Nat.sub(n, 1n), 2n)
 
 def Outs.get(os: List<&2, Out>, +link: String) -> Out:
   match os:

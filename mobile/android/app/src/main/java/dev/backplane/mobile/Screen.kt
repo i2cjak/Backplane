@@ -104,6 +104,8 @@ data class SubStep(val kind: String, val text: String)
 data class SubRow(
     val id: String, val agent: Boolean, val title: String, val who: String, val state: String, val doing: String,
     val live: Boolean, val open: Boolean, val n: Int, val steps: List<SubStep>, val act: String, val value: String,
+    // the action a Stop sends with the row's id ("" for no Stop)
+    val cancel: String = "",
 )
 // word: "3 at work" or "3 done"; open: the rows show (done, it folds to its
 // head); a tap on the head sends act with value
@@ -425,7 +427,8 @@ private fun thread(o: JSONObject) = threadOf(o).copy(
         Subs(u.optString("busy"), u.optJSONArray("rows").map {
             SubRow(it.optString("id"), it.optBoolean("agent"), it.optString("title"), it.optString("who"), it.optString("state"),
                 it.optString("doing"), it.optBoolean("live"), it.optBoolean("open"), it.optInt("n"),
-                it.optJSONArray("steps").map { st -> SubStep(st.optString("kind"), st.optString("text")) }, it.optString("act"), it.optString("value"))
+                it.optJSONArray("steps").map { st -> SubStep(st.optString("kind"), st.optString("text")) }, it.optString("act"), it.optString("value"),
+                it.optString("cancel"))
         }, u.optString("word"), u.optBoolean("open", true), u.optString("act"), u.optString("value"))
     },
     asks = o.optJSONArray("asks").map { a ->

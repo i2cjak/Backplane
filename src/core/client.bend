@@ -1,4 +1,5 @@
 import Base
+import ./live.bend as LV
 import ./json.bend as J
 import ./model.bend as M
 import ./codec.bend as C
@@ -160,12 +161,11 @@ def Ui.decode.go(xs: List<&2, J.Json>, acc: List<&2, M.Change>) -> List<&2, M.Ch
 def Ui.decode(xs: List<&2, J.Json>) -> List<&2, M.Change>:
   List.reverse(&2, M.Change, Ui.decode.go(xs, Nil{}))
 
-# what a change means for the page beyond the read model: a new thread we
-# asked for gets selected; a finished reply ends its live text
+# what a change means for the page beyond the read model: a finished
+# reply ends its live text (a new thread is selected by the hub's answer
+# to the request that made it, Made.reply, never by its arrival)
 def Ui.see(u: Ui, c: M.Change) -> Ui:
   match u c:
-    case Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, True{}, er, note, nf, ob, tr} M.ThreadCreated{+id, _, _, _, _, _, _, _, _}:
-      Ui{st, id, dr, live, op, on, now, ad, pa, v, rid, False{}, er, note, nf, ob, tr}
     case Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr} M.MessagePosted{+thread, _, M.Assistant{}, _, _}:
       Ui{st, sel, dr, Map.set(&2, String, live, thread, ""), op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
     case Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr} M.TurnChanged{+thread, M.Completed{}, _}:
@@ -413,6 +413,93 @@ def Ui.seq(u: Ui) -> Nat:
     case Ui{st, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, tr}:
       M.State.seq(st)
 
+def Ui.live.put(r: Map<&2, String> & Map<&2, String>, u: Ui) -> Ui:
+  (lv, nf) = r
+  match u:
+    case Ui{st, sel, dr, _, op, on, now, ad, pa, v, rid, w, er, note, _, ob, tr}:
+      Ui{st, sel, dr, lv, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
+
+# a hub's snapshot of every thread's streamed text ({"t":"live"}, when this
+# client is live again after a join): it replaces the live text, so a
+# reconnect shows a reply once and whole (core/live.bend; laws live_*)
+def Ui.live.set(u: Ui, +o: J.Json) -> Ui:
+  match u:
+    case Ui{st, sel, dr, +live, op, on, now, ad, pa, v, rid, w, er, note, +nf, ob, tr}:
+      Ui.live.put(LV.Live.set(o, live, nf), Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr})
+
+# Splitting a streamed reply (laws live_prefix_exact, live_split_fence_safe)
+# -------------------------------------------------------------------------
+# The markdown parser ends every block at a blank line (Md.bstep) except
+# inside a fenced code block, so the text up to the last blank line outside
+# a fence renders to exactly the nodes it renders to alone: it is settled,
+# and a client lays it out once and keeps it, laying out only what follows.
+
+def Live.fenced(+l: String) -> Bool:
+  String.starts_with(String.trim_start(l), "```")
+
+def Live.blank(+l: String) -> Bool:
+  String.is_empty(String.trim(l))
+
+# a fence line flips whether the next lines are inside code
+def Live.flip(fl: Bool, fence: Bool) -> Bool:
+  match fl fence:
+    case True{} True{}:
+      False{}
+    case True{} False{}:
+      True{}
+    case False{} _:
+      fence
+
+# a blank line outside code ends the settled text at `end`
+def Live.split.best(bl: Bool, fence: Bool, +end: Nat, +best: Nat) -> Nat:
+  match bl fence:
+    case True{} False{}:
+      end
+    case _ _:
+      best
+
+def Live.split.go(ls: List<&2, String>, +fence: Bool, +off: Nat, +best: Nat) -> Nat:
+  match ls:
+    case Nil{}:
+      best
+    case +l <> t:
+      Live.split.go(t, Live.flip(Live.fenced(l), fence), Nat.add(off, Nat.add(String.length(l), 1n)),
+        Live.split.best(Live.blank(l), fence, Nat.add(off, Nat.add(String.length(l), 1n)), best))
+
+# the characters of the settled prefix (0: none yet)
+def Live.at(+text: String) -> Nat:
+  Live.split.go(DF.Diff.lines(text), False{}, 0n, 0n)
+
+# the first n characters, tail-recursive (String.take is not, and a reply
+# runs to hundreds of kilobytes)
+def Live.take(+n: Nat, s: String, acc: String) -> String:
+  match n s:
+    case 0n _:
+      String.reverse(acc)
+    case 1n+k SNil{}:
+      String.reverse(acc)
+    case 1n+k SCon{c, t}:
+      Live.take(k, t, SCon{c, acc})
+
+def Live.head.k(+text: String, +n: Nat) -> String:
+  Live.take(n, text, SNil{})
+
+def Live.rest.k(+text: String, +n: Nat) -> String:
+  String.drop(text, n)
+
+# the settled prefix and the text after it: head ++ rest is the text
+def Live.head(+text: String) -> String:
+  Live.head.k(text, Live.at(text))
+
+def Live.rest(+text: String) -> String:
+  Live.rest.k(text, Live.at(text))
+
+# the live text a thread shows
+def Ui.live.of(u: Ui, +thread: String) -> String:
+  match u:
+    case Ui{_, _, _, live, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      Str.get(live, thread)
+
 def Ui.delta(u: Ui, +thread: String, text: String) -> Ui:
   match u:
     case Ui{st, sel, dr, +live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
@@ -609,6 +696,23 @@ def KiCad.ipc.note(+nf: Map<&2, String>) -> String:
 def Update.line(+nf: Map<&2, String>, +note: String) -> String:
   Bool.pick(String, Update.packaged(nf), "Updated by its package.", Bool.pick(String, String.is_empty(note), "Up to date, checked hourly.", note))
 
+# an update the hub holds back while threads work (hub.bend's Update.*):
+# how many it waits for (0: none, or not waiting)
+def Update.waits(+st: M.State) -> Nat:
+  Bool.pick(Nat, Bool.and(String.is_empty(M.Setting.get(st, "update.wait", "")), String.is_empty(M.Setting.get(st, "update.restart", ""))), 0n, M.Work.threads(st))
+
+def Update.waits.line(+n: Nat, +nf: Map<&2, String>, +note: String) -> String:
+  Bool.pick(String, Nat.is_eq(n, 0n), Update.line(nf, note), "Update waits for " ++ Nat.show(n) ++ Bool.pick(String, Nat.is_eq(n, 1n), " thread", " threads") ++ " to finish their work.")
+
+# the version row's line, with the wait
+def Update.line.w(+st: M.State, +nf: Map<&2, String>, +note: String) -> String:
+  Update.waits.line(Update.waits(st), nf, note)
+
+# which button the version row shows: 0 none (a packaged install),
+# 1 install an update offered, 2 check now, 3 update now (one waiting)
+def Update.btn(+st: M.State, +nf: Map<&2, String>, +note: String) -> Nat:
+  Bool.pick(Nat, Update.packaged(nf), 0n, Bool.pick(Nat, Nat.is_gt(Update.waits(st), 0n), 3n, Bool.pick(Nat, String.starts_with(note, "update "), 1n, 2n)))
+
 # an update notice: a version to offer, or the progress of one being applied
 def Ui.update(u: Ui, +o: J.Json) -> Ui:
   match u:
@@ -802,6 +906,15 @@ def Ui.also(a: Act, more: List<&2, Cmd>) -> Act:
 def Ui.msg_id(+cid: String, +now: Nat, +rid: Nat) -> String:
   "c" ++ cid ++ Nat.show(now) ++ "-" ++ Nat.show(rid)
 
+# a kept request that names itself (`msg`, as a sent message does): the
+# outbox sends it again after a dropped link, and the hub, seeing the
+# same id, stores and does it once (bots.say, bots.post, bots.tell)
+def Ui.rpc.keep.msg(u: Ui, +m: String, +p: List<&2, J.KV>) -> Act:
+  match u:
+    case Ui{st, sel, dr, live, op, on, +now, ad, pa, v, +rid, w, er, note, +nf, ob, tr}:
+      Ui.rpc.keep(Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}, m,
+        List.append(&2, J.KV, p, [J.KV{"msg", J.Str{Ui.msg_id(Str.get(nf, "cid"), now, rid)}}]))
+
 # Follow-ups
 # ----------
 # While a turn runs, a message either waits in the queue or steers the
@@ -888,17 +1001,6 @@ def Ui.send.t(u: Ui, text: String, +mode: String) -> Act:
     case Ui{st, +sel, dr, live, op, on, +now, ad, pa, v, +rid, w, er, note, +nf, ob, tr}:
       Ui.also(Ui.rpc.keep(Ui{st, sel, Map.set(&2, String, Map.set(&2, String, dr, sel, ""), "@att:" ++ sel, ""), live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr},
         "turn.start", [J.KV{"thread", J.Str{sel}}, J.KV{"text", J.Str{text}}, J.KV{"msg", J.Str{Ui.msg_id(Str.get(nf, "cid"), now, rid)}}, J.KV{"mode", J.Str{mode}}]), List.append(&2, Cmd, Draft.keep(sel, ""), [Scroll{}]))
-
-def Ui.new_thread(u: Ui, +pid: String) -> Act:
-  match u:
-    case Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, _, er, note, nf, ob, tr}:
-      Ui.rpc(Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, True{}, er, note, nf, ob, tr}, "thread.create", [J.KV{"project", J.Str{pid}}, J.KV{"title", J.Str{"New thread"}}])
-
-# a fork of the selected thread; the new thread is selected when it comes
-def Ui.fork(u: Ui) -> Act:
-  match u:
-    case Ui{st, +sel, dr, live, op, on, now, ad, pa, v, rid, _, er, note, nf, ob, tr}:
-      Ui.rpc(Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, True{}, er, note, nf, ob, tr}, "thread.fork", [J.KV{"thread", J.Str{sel}}])
 
 # the add form shut (the folder goes to Proj.adding)
 def Ui.add_project(u: Ui) -> Ui:
@@ -1014,7 +1116,7 @@ def Ui.actions() -> List<&2, String>:
    "mech", "mech-part", "mech-3d", "mech-refresh", "mech-renders", "mech-render", "view-kind", "view-sheet", "view-layer",
    "attach-up", "attach-end",
    "hist-go", "hist-prev", "hist-next", "hist-first", "hist-last", "hist-play", "hist-tick", "hist-diff", "hist-live", "hist-jump",
-   "hist-show", "cmp", "cmp-pick", "cmp-close", "cmp-side", "cmp-shut", "key-add", "key-del", "fm", "fm-cd", "fm-up", "fm-open", "pdf-page", "fm-page"]
+   "hist-show", "cmp", "cmp-pick", "cmp-close", "cmp-side", "cmp-shut", "key-add", "key-del", "fm", "fm-cd", "fm-up", "fm-open", "pdf-page", "fm-page", "update-now", "work-cancel", "task-cancel"]
 
 # Reading the client state
 # ------------------------
@@ -1335,6 +1437,86 @@ def PSlot.rows(xs: List<&2, PSlot>) -> List<&2, SRow>:
     case PSlot{_, r} <> t:
       r <> PSlot.rows(t)
 
+# The sidebar's index
+# -------------------
+# What every row of a frame asks of the whole state, gathered once per
+# frame (or phone screen) in grouped passes and never kept: each thread's
+# open asks, each parent's unfinished child tasks, and the threads of each
+# project in the order the state lists them. Side.*.ix answer from it what
+# Side.* answer by walking the state (laws side_*_ix_eq, subs_count_ix_eq).
+
+type SIx is Data:
+  SIx{by: Map<&2, List<&2, M.Thread>>, asks: Map<&2, List<&2, M.Ask>>, kids: Map<&2, Nat>}
+
+def SIx.push.k(r: Map<&2, List<&2, M.Thread>> & List<&2, M.Thread>, +k: String, t: M.Thread) -> Map<&2, List<&2, M.Thread>>:
+  (m, xs) = r
+  Map.set(&2, List<&2, M.Thread>, m, k, t <> xs)
+
+def SIx.pid(t: M.Thread) -> String:
+  match t:
+    case M.Thread{_, p, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      p
+
+def SIx.push(m: Map<&2, List<&2, M.Thread>>, +t: M.Thread) -> Map<&2, List<&2, M.Thread>>:
+  SIx.push.k(Map.get(List<&2, M.Thread>, Nil{}, m, SIx.pid(t)), SIx.pid(t), t)
+
+# threads by project, each list in the order given (walked from the end)
+def SIx.by.go(ts: List<&2, M.Thread>, m: Map<&2, List<&2, M.Thread>>) -> Map<&2, List<&2, M.Thread>>:
+  match ts:
+    case Nil{}:
+      m
+    case +t <> rest:
+      SIx.by.go(rest, SIx.push(m, t))
+
+def SIx.ask.k(r: Map<&2, List<&2, M.Ask>> & List<&2, M.Ask>, +k: String, a: M.Ask) -> Map<&2, List<&2, M.Ask>>:
+  (m, xs) = r
+  Map.set(&2, List<&2, M.Ask>, m, k, a <> xs)
+
+def SIx.ask(open: Bool, m: Map<&2, List<&2, M.Ask>>, +th: String, a: M.Ask) -> Map<&2, List<&2, M.Ask>>:
+  match open:
+    case True{}:
+      SIx.ask.k(Map.get(List<&2, M.Ask>, Nil{}, m, th), th, a)
+    case False{}:
+      m
+
+def SIx.asks.go(as: List<&2, M.Ask>, m: Map<&2, List<&2, M.Ask>>) -> Map<&2, List<&2, M.Ask>>:
+  match as:
+    case Nil{}:
+      m
+    case M.Ask{i, +th, k, t, d, o, +op, an} <> rest:
+      SIx.asks.go(rest, SIx.ask(op, m, th, M.Ask{i, th, k, t, d, o, op, an}))
+
+# the index of a state (Kids.keep: delegated children live under their
+# parent, not in their project)
+def Side.ix(+st: M.State) -> SIx:
+  SIx{SIx.by.go(List.reverse(&2, M.Thread, Kids.keep(Ui.threads(st), Kids.set(st))), Map.new(&2, List<&2, M.Thread>)),
+    SIx.asks.go(List.reverse(&2, M.Ask, M.Asks.all(st)), Map.new(&2, List<&2, M.Ask>)), M.Work.kids.map(st)}
+
+def SIx.list.k(r: Map<&2, List<&2, M.Thread>> & List<&2, M.Thread>) -> List<&2, M.Thread>:
+  (_, xs) = r
+  xs
+
+def SIx.mine(+ix: SIx, +pid: String) -> List<&2, M.Thread>:
+  match ix:
+    case SIx{by, _, _}:
+      SIx.list.k(Map.get(List<&2, M.Thread>, Nil{}, by, pid))
+
+def SIx.asks.k(r: Map<&2, List<&2, M.Ask>> & List<&2, M.Ask>) -> List<&2, M.Ask>:
+  (_, xs) = r
+  xs
+
+# a thread's open asks
+def SIx.open(+ix: SIx, +th: String) -> List<&2, M.Ask>:
+  match ix:
+    case SIx{_, as, _}:
+      SIx.asks.k(Map.get(List<&2, M.Ask>, Nil{}, as, th))
+
+# a parent's unfinished child tasks
+def SIx.kids(+ix: SIx, +th: String) -> Nat:
+  match ix:
+    case SIx{_, _, ks}:
+      M.Work.kids.at.k(Map.get(Nat, 0n, ks, th))
+
 def Side.latest(ts: List<&2, M.Thread>, +acc: Nat) -> Nat:
   match ts:
     case Nil{}:
@@ -1355,6 +1537,17 @@ def Side.rows.go(ps: List<&2, M.Project>, +ts: List<&2, M.Thread>, +navs: Map<&2
       Nil{}
     case M.Project{+id, ti, r, +c, +rm} <> t:
       Side.rows.k(rm, M.Project{id, ti, r, c, rm}, M.Thread.filter_project(ts, id), c, navs, now, M.Nav.project_key(navs, id), Side.rows.go(t, ts, navs, now))
+
+def Side.rows.go.ix(ps: List<&2, M.Project>, +ix: SIx, +navs: Map<&2, M.Nav>, +now: Nat) -> List<&2, PSlot>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case M.Project{+id, ti, r, +c, +rm} <> t:
+      Side.rows.k(rm, M.Project{id, ti, r, c, rm}, SIx.mine(ix, id), c, navs, now, M.Nav.project_key(navs, id), Side.rows.go.ix(t, ix, navs, now))
+
+# Side.sorted from the index
+def Side.sorted.ix(+st: M.State, +ix: SIx, +now: Nat) -> List<&2, SRow>:
+  PSlot.rows(List.sort(~PSlot, ~PSlot.before, Side.rows.go.ix(Ui.projects(st), ix, M.State.navs(st), now)))
 
 # the projects by order key, then latest activity, their threads on
 # shelves (delegated child threads live under their parent instead)
@@ -1424,6 +1617,10 @@ def SGroups.all(g: SGroups) -> List<&2, SRow>:
 def Side.rows(+st: M.State, +now: Nat) -> List<&2, SRow>:
   SGroups.all(Side.groups(Side.sorted(st, now), now))
 
+# Side.rows from the index (law side_rows_ix_eq)
+def Side.rows.ix(+st: M.State, +ix: SIx, +now: Nat) -> List<&2, SRow>:
+  SGroups.all(Side.groups(Side.sorted.ix(st, ix, now), now))
+
 # Finding a project: while the sidebar's search is open (the "psearch"
 # flag) it shows only the projects whose name fuzzy-matches the query, form
 # field "pq" ("@f.pq"); an empty query keeps them all (law find_empty_keeps)
@@ -1457,6 +1654,10 @@ def Find.q(+op: Map<&2, Bool>, +dr: Map<&2, String>) -> String:
 # the projects the sidebar shows, in order
 def Side.shown(+st: M.State, +now: Nat, +q: String) -> List<&2, SRow>:
   Find.rows(Side.rows(st, now), q)
+
+# Side.shown from the index
+def Side.shown.ix(+st: M.State, +ix: SIx, +now: Nat, +q: String) -> List<&2, SRow>:
+  Find.rows(Side.rows.ix(st, ix, now), q)
 
 def Side.ids(ts: List<&2, M.Thread>) -> List<&2, String>:
   match ts:
@@ -2326,7 +2527,7 @@ def Asks.kind(as: List<&2, M.Ask>, +k: String) -> Bool:
 # (a thread's open asks are looked up once: a row asks three questions of
 # them, and the sidebar has a row a thread)
 def Side.status.k(+st: M.State, +id: String, turn: M.TurnState, +pending: Nat, +as: List<&2, M.Ask>) -> M.Status:
-  M.Status.wait(Bool.not(List.is_empty(&2, String, M.Bg.of(st, id))), M.Status.of(Bool.or(Nat.is_gt(pending, 0n), Asks.kind(as, "approval")),
+  M.Status.wait.f(Nat.is_gt(M.Work.rows(st, id), 0n), M.Status.of(Bool.or(Nat.is_gt(pending, 0n), Asks.kind(as, "approval")),
     Bool.or(Asks.kind(as, "input"), Asks.kind(as, "plan")), turn,
     M.Queue.waiting(st, id)))
 
@@ -2346,13 +2547,30 @@ def Side.live(ts: List<&2, M.Task>) -> Nat:
 # what the line at the end of a thread's timeline says (M.Phase.of has the order)
 def Side.phase.k(+st: M.State, +id: String, turn: M.TurnState, +pending: Nat, +as: List<&2, M.Ask>) -> M.Phase:
   M.Phase.of(Bool.or(Nat.is_gt(pending, 0n), Asks.kind(as, "approval")),
-    Bool.or(Asks.kind(as, "input"), Asks.kind(as, "plan")), Nat.add(Side.live(Tasks.of(st, id)), List.length(&2, String, M.Bg.of(st, id))), turn,
+    Bool.or(Asks.kind(as, "input"), Asks.kind(as, "plan")), Nat.add(Side.live(Tasks.of(st, id)), M.Work.rows(st, id)), turn,
     M.Queue.waiting(st, id))
 
 def Side.phase(+st: M.State, t: M.Thread) -> M.Phase:
   match t:
     case M.Thread{+id, _, _, _, _, turn, +pending, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
       Side.phase.k(st, id, turn, pending, Asks.open(st, id))
+
+# Side.status from the index
+def Side.status.ix(+ix: SIx, +st: M.State, t: M.Thread) -> M.Status:
+  match t:
+    case M.Thread{+id, _, _, _, _, turn, +pending, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      Side.status.k(st, id, turn, pending, SIx.open(ix, id))
+
+def Side.phase.ix.k(+st: M.State, +ix: SIx, +id: String, turn: M.TurnState, +pending: Nat, +as: List<&2, M.Ask>) -> M.Phase:
+  M.Phase.of(Bool.or(Nat.is_gt(pending, 0n), Asks.kind(as, "approval")),
+    Bool.or(Asks.kind(as, "input"), Asks.kind(as, "plan")), Nat.add(SIx.kids(ix, id), M.Work.rows(st, id)), turn,
+    M.Queue.waiting(st, id))
+
+# Side.phase from the index (law side_phase_ix_eq)
+def Side.phase.ix(+ix: SIx, +st: M.State, t: M.Thread) -> M.Phase:
+  match t:
+    case M.Thread{+id, _, _, _, _, turn, +pending, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      Side.phase.ix.k(st, ix, id, turn, pending, SIx.open(ix, id))
 
 # when a thread's snooze ends (0: not snoozed)
 def Side.until(+st: M.State, +id: String) -> Nat:
@@ -2372,6 +2590,35 @@ def Ui.scratch_set(u: Ui, +k: String, v: String) -> Ui:
   match u:
     case Ui{st, sel, dr, live, op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}:
       Ui{st, sel, Map.set(&2, String, dr, k, v), live, op, on, now, ad, pa, ve, rid, w, er, note, nf, ob, tr}
+
+# Creating a thread
+# -----------------
+# New Thread, Fork and adding a project ask the hub for a thread; the hub
+# answers with the thread it made ({"t":"reply", "thread"}: Reply.made).
+# Only that answer selects it, and only on the hub and connection that
+# asked ("@want.new" holds the request's id, "@want.new.at" where it went):
+# another client's new thread, a replayed log or an older request's
+# answer selects nothing (laws want_new_*, made_*, replay_cannot_select).
+
+def Made.at(+u: Ui) -> String:
+  Ui.info(u, "local.machine") ++ "|" ++ Ui.info(u, "local.generation")
+
+def Made.rid(u: Ui) -> Nat:
+  match u:
+    case Ui{_, _, _, _, _, _, _, _, _, _, rid, _, _, _, _, _, _}:
+      rid
+
+# the next request is one that makes a thread
+def Made.want(+u: Ui) -> Ui:
+  Ui.scratch_set(Ui.scratch_set(u, "@want.new", Nat.show(Made.rid(u))), "@want.new.at", Made.at(u))
+
+def Ui.new_thread(u: Ui, +pid: String) -> Act:
+  Ui.rpc(Made.want(u), "thread.create", [J.KV{"project", J.Str{pid}}, J.KV{"title", J.Str{"New thread"}}])
+
+# a fork of the selected thread; the new thread is selected when the
+# hub's answer names it
+def Ui.fork(+u: Ui) -> Act:
+  Ui.rpc(Made.want(u), "thread.fork", [J.KV{"thread", J.Str{Ui.sel(u)}}])
 
 # State put back from a cache (a page's saved log, a phone's saved state)
 # is not this connection's: only a live log sets "@sync" again (Ui.reset),
@@ -2461,6 +2708,13 @@ def Active.live(ts: List<&2, M.Thread>, +st: M.State, +pid: String, +pt: String,
     case +t <> r:
       Active.live(r, st, pid, pt, ARow{Urg.key(Side.phase(st, t), Active.pinned(t)), Active.activity(t), t, pid, pt, False{}} <> acc)
 
+def Active.live.ix(ts: List<&2, M.Thread>, +st: M.State, +ix: SIx, +pid: String, +pt: String, acc: List<&2, ARow>) -> List<&2, ARow>:
+  match ts:
+    case Nil{}:
+      acc
+    case +t <> r:
+      Active.live.ix(r, st, ix, pid, pt, ARow{Urg.key(Side.phase.ix(ix, st, t), Active.pinned(t)), Active.activity(t), t, pid, pt, False{}} <> acc)
+
 def Active.keep(keep: Bool, r: ARow, acc: List<&2, ARow>) -> List<&2, ARow>:
   match keep:
     case True{}:
@@ -2487,6 +2741,15 @@ def Active.gather(rs: List<&2, SRow>, +st: M.State, +now: Nat, acc: AParts) -> A
         case AParts{l, f}:
           Active.gather(t, st, now, AParts{Active.live(p, st, id, ti, Active.live(a, st, id, ti, l)), Active.settled(se, now, id, ti, f)})
 
+def Active.gather.ix(rs: List<&2, SRow>, +st: M.State, +ix: SIx, +now: Nat, acc: AParts) -> AParts:
+  match rs:
+    case Nil{}:
+      acc
+    case SRow{_, M.Project{+id, +ti, _, _, _}, M.Shelves{p, a, se, _, _}} <> t:
+      match acc:
+        case AParts{l, f}:
+          Active.gather.ix(t, st, ix, now, AParts{Active.live.ix(p, st, ix, id, ti, Active.live.ix(a, st, ix, id, ti, l)), Active.settled(se, now, id, ti, f)})
+
 def Active.match(+q: String, r: ARow) -> Bool:
   match r:
     case ARow{_, _, +t, _, +pt, _}:
@@ -2507,6 +2770,52 @@ def Active.all(g: AParts) -> List<&2, ARow>:
 # the active view's rows, top to bottom (laws active_*)
 def Active.rows(+st: M.State, +now: Nat, +q: String) -> List<&2, ARow>:
   Active.find(Active.all(Active.gather(Side.rows(st, now), st, now, AParts{Nil{}, Nil{}})), q)
+
+# A state for the index's laws: two projects, a running thread with an
+# approval open, one waiting on input with a pending tool, a delegated
+# child at work under a third, a finished child under the first, a
+# closed plan
+def Side.demo() -> M.State:
+  M.State.replay([M.ProjectCreated{"p1", "One", "/a", 1n}, M.ProjectCreated{"p2", "Two", "/b", 2n},
+    M.ThreadCreated{"t1", "p1", "A", M.Local{}, "", "", "claude", "", 3n}, M.ThreadCreated{"t2", "p1", "B", M.Local{}, "", "", "claude", "", 4n},
+    M.ThreadCreated{"t3", "p2", "C", M.Local{}, "", "", "claude", "", 5n}, M.ThreadCreated{"t4", "p2", "D", M.Local{}, "", "", "claude", "", 6n},
+    M.ThreadCreated{"t5", "p1", "E", M.Local{}, "", "", "claude", "", 7n},
+    M.TurnChanged{"t1", M.Running{}, 8n}, M.TurnChanged{"t3", M.Completed{}, 9n}, M.PendingChanged{"t2", 1n, 10n},
+    M.TaskDelegated{"k1", "t3", "t4", 1n, "claude", "", 11n}, M.TaskDelegated{"k2", "t1", "t5", 1n, "claude", "", 12n}, M.TaskStateSet{"k2", M.TaskDone{}, "ok", 13n},
+    M.AskOpened{"a1", "t1", "approval", "Bash", "ls", "", 14n}, M.AskOpened{"a2", "t2", "input", "", "?", "", 15n}, M.AskOpened{"a3", "t3", "plan", "", "p", "", 16n},
+    M.AskClosed{"a3", "yes", 17n}], M.State.empty())
+
+def Side.phases(ts: List<&2, M.Thread>, +st: M.State) -> List<&2, M.Phase>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case +t <> rest:
+      Side.phase(st, t) <> Side.phases(rest, st)
+
+def Side.phases.ix(ts: List<&2, M.Thread>, +ix: SIx, +st: M.State) -> List<&2, M.Phase>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case +t <> rest:
+      Side.phase.ix(ix, st, t) <> Side.phases.ix(rest, ix, st)
+
+def Side.busies(ts: List<&2, M.Thread>, +st: M.State) -> List<&2, Nat>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case +t <> rest:
+      M.Work.busy(st, M.Thread.id(t)) <> Side.busies(rest, st)
+
+def Side.busies.ix(ts: List<&2, M.Thread>, +kids: Map<&2, Nat>, +st: M.State) -> List<&2, Nat>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case +t <> rest:
+      M.Work.busy.at(kids, st, M.Thread.id(t)) <> Side.busies.ix(rest, kids, st)
+
+# Active.rows from the index (law active_rows_ix_eq)
+def Active.rows.ix(+st: M.State, +ix: SIx, +now: Nat, +q: String) -> List<&2, ARow>:
+  Active.find(Active.all(Active.gather.ix(Side.rows.ix(st, ix, now), st, ix, now, AParts{Nil{}, Nil{}})), q)
 
 def Active.ids(rs: List<&2, ARow>) -> List<&2, String>:
   match rs:
@@ -3013,7 +3322,7 @@ def Ui.want_new(u: Ui, b: Bool) -> Ui:
 # a folder added or made as a project: the hub starts a thread there with
 # it (Hub.project_add), and this client goes to it
 def Proj.adding(+u: Ui, m: String, +path: String) -> Act:
-  Proj.rpc(Ui.want_new(Ui.info_set(u, "proj.err", ""), True{}), m, [J.KV{"path", J.Str{path}}])
+  Proj.rpc(Made.want(Ui.info_set(u, "proj.err", "")), m, [J.KV{"path", J.Str{path}}])
 
 def Proj.mine(+u: Ui, +o: J.Json) -> Bool:
   Bool.and(Bool.not(String.is_empty(Ui.scratch(u, "@proj.rid"))), String.eq(J.Json.as_raw(J.Json.get(o, "id"), ""), Ui.scratch(u, "@proj.rid")))
@@ -3698,8 +4007,18 @@ def Fm.act(i: Nat, +u: Ui, +value: String) -> Act:
     case 4n:
       Pdf.ask(u, Ui.view_get(u, "view.path"), value)
     # (the window shows a long folder a page at a time: the first row shown)
-    case _:
+    case 5n:
       Act{Ui.info_set(u, "fm.top:" ++ Ui.sel(u), value), Nil{}}
+    # (an update held back while threads work goes now)
+    case 6n:
+      Ui.rpc(u, "update.now", Nil{})
+    # (a Subagents row's Stop: SB.Subs.cancel)
+    case 7n:
+      Ui.rpc(u, "work.cancel", [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"id", J.Str{value}}])
+    case 8n:
+      Ui.rpc(u, "task.cancel", [J.KV{"child", J.Str{value}}])
+    case _:
+      Act{u, Nil{}}
 
 # A listed entry as every client shows it: its name, what a tap sends, its
 # size (files), and its kind ("folder", "board", "schematic", "3d",
@@ -4340,7 +4659,7 @@ def Bots.say.clear(u: Ui) -> Ui:
       Ui{st, sel, Map.set(&2, String, Map.set(&2, String, dr, sel, ""), "@att:" ++ sel, ""), live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
 
 def Bots.say(u: Ui, +bot: String, text: String) -> Act:
-  Ui.also(Ui.rpc.keep(Bots.say.clear(u), "bots.say", [J.KV{"bot", J.Str{bot}}, J.KV{"text", J.Str{text}}]), [Scroll{}])
+  Ui.also(Ui.rpc.keep.msg(Bots.say.clear(u), "bots.say", [J.KV{"bot", J.Str{bot}}, J.KV{"text", J.Str{text}}]), [Scroll{}])
 
 def Ui.send.b(empty: Bool, b: Maybe<&2, BT.Bot>, u: Ui, text: String, +mode: String) -> Act:
   match empty b:
@@ -4567,7 +4886,7 @@ def Bots.room.post.k(empty: Bool, +u: Ui) -> Act:
     case True{}:
       Act{u, Nil{}}
     case False{}:
-      Ui.also(Ui.rpc.keep(Ui.scratch_set(u, "@f.rpost", ""), "bots.post", [J.KV{"room", J.Str{Ui.scratch(u, "@room")}}, J.KV{"text", J.Str{Bots.field(u, "rpost")}}]), [Scroll{}])
+      Ui.also(Ui.rpc.keep.msg(Ui.scratch_set(u, "@f.rpost", ""), "bots.post", [J.KV{"room", J.Str{Ui.scratch(u, "@room")}}, J.KV{"text", J.Str{Bots.field(u, "rpost")}}]), [Scroll{}])
 
 def Bots.room.post(+u: Ui) -> Act:
   Bots.room.post.k(String.is_empty(String.trim(Bots.field(u, "rpost"))), u)
@@ -4577,7 +4896,7 @@ def Bots.remote.send.k(empty: Bool, +u: Ui) -> Act:
     case True{}:
       Act{u, Nil{}}
     case False{}:
-      Ui.also(Ui.rpc.keep(Ui.scratch_set(u, "@f.rtext", ""), "bots.tell", [J.KV{"to", J.Str{Ui.scratch(u, "@remote")}}, J.KV{"text", J.Str{Bots.field(u, "rtext")}}]), [Scroll{}])
+      Ui.also(Ui.rpc.keep.msg(Ui.scratch_set(u, "@f.rtext", ""), "bots.tell", [J.KV{"to", J.Str{Ui.scratch(u, "@remote")}}, J.KV{"text", J.Str{Bots.field(u, "rtext")}}]), [Scroll{}])
 
 def Bots.remote.send(+u: Ui) -> Act:
   Bots.remote.send.k(String.is_empty(String.trim(Bots.field(u, "rtext"))), u)
@@ -5602,9 +5921,43 @@ def Bots.reply(+o: J.Json, +u: Ui) -> Ui:
     Bots.reply.put(o, "secret", "@hook.secret", Bots.reply.put(o, "hook", "@hook.id",
       Bots.reply.put(o, "token", "@hook.token", Bots.reply.put(o, "tokenHook", "@hook.tokfor", Bots.reply.put(o, "tokenUrl", "@hook.tokurl", Bots.reply.bot(o, u))))))))))))
 
+# A thread request uses the same binding as a bot request.
+def Want.thread(+u: Ui, id: String) -> Ui:
+  Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, "@bot.want", ""), "@thread.want", id), "@want.hub", Ui.info(u, "local.machine")), "@want.gen", Ui.info(u, "local.generation"))
+
+def Made.got(go: Bool, u: Ui, +th: String) -> Ui:
+  match go:
+    case True{}:
+      Want.thread(u, th)
+    case False{}:
+      u
+
+def Made.take(mine: Bool, +o: J.Json, +u: Ui) -> Ui:
+  match mine:
+    case True{}:
+      Made.got(Bool.and(Bool.and(J.Json.get_bool(o, "ok", False{}), Bool.not(String.is_empty(J.Json.get_str(o, "thread", "")))), String.eq(Ui.scratch(u, "@want.new.at"), Made.at(u))),
+        Ui.scratch_set(Ui.scratch_set(u, "@want.new", ""), "@want.new.at", ""), J.Json.get_str(o, "thread", ""))
+    case False{}:
+      u
+
+# the answer to this client's newest request for a thread: the thread it
+# names is wanted (selected now if here, else when it arrives); a failure
+# or a hub too old to name it selects nothing; any other answer leaves
+# the want alone
+def Made.reply(+o: J.Json, +u: Ui) -> Ui:
+  Made.take(Bool.and(Bool.not(String.is_empty(Ui.scratch(u, "@want.new"))), String.eq(J.Json.as_raw(J.Json.get(o, "id"), ""), Ui.scratch(u, "@want.new"))), o, u)
+
+# a hub's answer naming the thread a request made (for laws)
+def Made.demo(+id: String, +thread: String) -> J.Json:
+  J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{id}}, J.KV{"ok", J.Flag{True{}}}, J.KV{"thread", J.Str{thread}}])
+
+# a thread made by someone, as a frame of log changes (for laws)
+def Made.made(+t: String, +th: String) -> J.Json:
+  Seq.demo(t, [C.Change.encode(M.ThreadCreated{th, "p1", "New thread", M.Local{}, "", "", "claude", "", 1n})])
+
 # an answer: its request leaves the outbox; a diff opens the diff view
 def Ui.reply(u: Ui, +o: J.Json) -> Ui:
-  Bots.reply(o, Proj.reply(o, Btw.reply(Ui.reply.skills(u, o), o)))
+  Made.reply(o, Bots.reply(o, Proj.reply(o, Btw.reply(Ui.reply.skills(u, o), o))))
 
 # A link's threads and bots (far.bend): its batch folded into the read
 # model under this hub's ids, and whether it answered ("far.away.<link>")
@@ -5677,12 +6030,10 @@ def Ui.recv.k(i: Nat, u: Ui, +o: J.Json) -> Ui:
       Voice.recv(u, o)
     case 9n:
       Ui.far(u, o)
+    case 10n:
+      Ui.live.set(u, o)
     case _:
       u
-
-# A thread request uses the same binding as a bot request.
-def Want.thread(+u: Ui, id: String) -> Ui:
-  Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(u, "@bot.want", ""), "@thread.want", id), "@want.hub", Ui.info(u, "local.machine")), "@want.gen", Ui.info(u, "local.generation"))
 
 def Want.rebind(bound: Bool, u: Ui, +generation: String) -> Ui:
   match bound:
@@ -5755,9 +6106,66 @@ def Ui.join(log: Bool, u: Ui) -> Ui:
     case False{}:
       u
 
+# Joining in chunks: a hub sends a long log a chunk at a time, the first
+# ("log") saying "more", the last ("changes") "boot": false. Until then
+# the client is still catching up ("@boot" in the scratch): what it folds
+# is history, so nothing compares it for alerts (mobile/hubs.bend's
+# One.got) (laws boot_no_alerts, ui_chunked_join_equals_whole)
+def Boot.ends(m: Maybe<&2, J.Json>) -> Bool:
+  match m:
+    case Some{J.Flag{False{}}}:
+      True{}
+    case _:
+      False{}
+
+def Boot.end(ends: Bool, u: Ui) -> Ui:
+  match ends:
+    case True{}:
+      Ui.scratch_set(u, "@boot", "")
+    case False{}:
+      u
+
+# a changes frame with "boot": true starts (or goes on with) a catch-up:
+# a live client that fell behind takes its log's changes this way, with
+# no "log" frame saying "more" before them
+def Boot.begins(m: Maybe<&2, J.Json>) -> Bool:
+  match m:
+    case Some{J.Flag{True{}}}:
+      True{}
+    case _:
+      False{}
+
+def Boot.begin(begins: Bool, u: Ui) -> Ui:
+  match begins:
+    case True{}:
+      Ui.scratch_set(u, "@boot", "1")
+    case False{}:
+      u
+
+def Boot.mark(i: Nat, u: Ui, +o: J.Json) -> Ui:
+  match i:
+    case 0n:
+      Ui.scratch_set(u, "@boot", Bool.pick(String, J.Json.get_bool(o, "more", False{}), "1", ""))
+    case 1n:
+      Boot.begin(Boot.begins(J.Json.get(o, "boot")), Boot.end(Boot.ends(J.Json.get(o, "boot")), u))
+    case _:
+      u
+
+# a chunk of a join (for laws): a log saying more, a changes with boot
+def Boot.demo(+t: String, +more: Bool, +boot: Bool, xs: List<&2, J.Json>) -> J.Json:
+  J.Json.obj([J.KV{"t", J.Str{t}}, J.KV{"more", J.Json.bool(more)}, J.KV{"boot", J.Json.bool(boot)}, J.KV{"items", J.Json.arr(xs)}])
+
+# whether the client is still taking a log in chunks
+def Boot.on(+u: Ui) -> Bool:
+  String.eq(Ui.scratch(u, "@boot"), "1")
+
+# a message folded in, and the join's progress noted
+def Ui.recv.b(+i: Nat, u: Ui, +o: J.Json) -> Ui:
+  Boot.mark(i, Ui.recv.k(i, u, o), o)
+
 # A message can resolve a want only against the installed destination.
 def Ui.recv(+u: Ui, +o: J.Json) -> Ui:
-  Ui.reselect(Ui.sel(u), Bots.wanted(Ui.join(String.eq(J.Json.get_str(o, "t", ""), "log"), Ui.recv.k(C.Codec.pos(["log", "changes", "delta", "reply", "update", "view", "term", "info", "voice", "far"], J.Json.get_str(o, "t", "")), u, o))))
+  Ui.reselect(Ui.sel(u), Bots.wanted(Ui.join(String.eq(J.Json.get_str(o, "t", ""), "log"), Ui.recv.b(C.Codec.pos(["log", "changes", "delta", "reply", "update", "view", "term", "info", "voice", "far", "live"], J.Json.get_str(o, "t", "")), u, o))))
 
 # The cache contains home and at most one linked hub; each slot keeps its
 # read model and machine info (including the log origin) together.
@@ -5892,8 +6300,16 @@ def Ui.shows.k(delta: Bool, +sel: String, +o: J.Json) -> Bool:
 # another thread's delta asks for no frame (with fifty agents streaming,
 # a frame per delta kept the window drawing all the time; laws
 # shows_other_delta, shows_own_delta, shows_changes)
+def Ui.shows.t(beat: Bool, +u: Ui, +o: J.Json) -> Bool:
+  match beat:
+    case True{}:
+      False{}
+    case False{}:
+      Ui.shows.k(String.eq(J.Json.get_str(o, "t", ""), "delta"), Ui.sel(u), o)
+
+# (a heartbeat, {"t":"hb"}, draws nothing: law hb_shows_nothing)
 def Ui.shows(+u: Ui, +o: J.Json) -> Bool:
-  Ui.shows.k(String.eq(J.Json.get_str(o, "t", ""), "delta"), Ui.sel(u), o)
+  Ui.shows.t(String.eq(J.Json.get_str(o, "t", ""), "hb"), u, o)
 
 # a message from the server, with what to send: a (re)connection (the
 # server's log arrives first on each) sends the outbox again, so nothing

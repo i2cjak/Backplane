@@ -52,6 +52,16 @@ def Note.seen(ts: List<&2, M.Thread>) -> List<&2, Seen>:
     case M.Thread{id, _, _, _, _, turn, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _} <> t:
       Seen{id, Note.running(turn)} <> Note.seen(t)
 
+# what was seen of only the threads a frame touches (any other thread's
+# turn cannot change, so it raises nothing either way: law
+# alerts_ids_same)
+def Note.seen.ids(ids: List<&2, String>, +st: M.State) -> List<&2, Seen>:
+  match ids:
+    case Nil{}:
+      Nil{}
+    case +id <> t:
+      Seen{id, M.State.running.k(M.State.thread.get(st, id))} <> Note.seen.ids(t, st)
+
 def Note.was.k(hit: Bool, r: Bool, acc: Bool) -> Bool:
   match hit:
     case True{}:
@@ -243,3 +253,46 @@ def Note.alerts.st(ts: List<&2, M.Thread>, +seen: List<&2, Seen>, +st: M.State, 
       Nil{}
     case M.Thread{+id, _, title, _, _, turn, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _} <> t:
       Note.alert(Note.kind(Note.was(seen, id), turn), id, title, st, M.State.mine(st, id), desk, Note.alerts.st(t, seen, st, desk))
+
+# The island with the work threads wait on (model.bend's Work.busy): a
+# thread whose turn ended with a subagent, background shell or watched
+# work still out stays on it, "waiting on N", so the Live Activity (iOS)
+# and the live service (Android) last until the work is done (law
+# island_busy_shows; Note.busy and island_idle_empty keep the running-only
+# rule they state)
+def Note.waiting(+n: Nat) -> String:
+  "waiting on " ++ Nat.show(n)
+
+def Note.one.w(running: Bool, +busy: Nat, +id: String, +title: String, +es: List<&2, M.Entry>) -> List<&2, J.Json>:
+  match running:
+    case True{}:
+      Note.one(True{}, id, title, es)
+    case False{}:
+      Bool.pick(List<&2, J.Json>, Nat.is_gt(busy, 0n),
+        [J.Json.obj([J.KV{"thread", J.Json.str(id)}, J.KV{"title", J.Json.str(Note.line(title, 60n))}, J.KV{"doing", J.Json.str(Note.waiting(busy))}])], Nil{})
+
+# (kids: M.Work.kids.map, the child tasks counted once per screen)
+def Note.lines.w(ts: List<&2, M.Thread>, +kids: Map<&2, Nat>, +st: M.State) -> List<&2, J.Json>:
+  match ts:
+    case Nil{}:
+      Nil{}
+    case M.Thread{+id, _, title, _, _, turn, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _} <> t:
+      List.append(&2, J.Json, Note.one.w(Note.running(turn), M.Work.busy.at(kids, st, id), id, title, M.State.mine(st, id)), Note.lines.w(t, kids, st))
+
+def Note.island.w(ts: List<&2, M.Thread>, +st: M.State) -> J.Json:
+  Note.island.k(Note.lines.w(ts, M.Work.kids.map(st), st))
+
+def Note.busy.k(running: Bool, +busy: Nat) -> Bool:
+  match running:
+    case True{}:
+      True{}
+    case False{}:
+      Nat.is_gt(busy, 0n)
+
+# whether any thread runs or waits on work
+def Note.busy.st(ts: List<&2, M.Thread>, +st: M.State) -> Bool:
+  match ts:
+    case Nil{}:
+      False{}
+    case M.Thread{+id, _, _, _, _, turn, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _} <> t:
+      Bool.or(Note.busy.k(Note.running(turn), M.Work.busy(st, id)), Note.busy.st(t, st))

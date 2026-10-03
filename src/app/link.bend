@@ -5,6 +5,7 @@ import ../core/http.bend as W
 import ../core/utf8.bend as U
 import ../core/json.bend as J
 import ../core/cbor.bend as CB
+import ../core/desk.bend as DK
 
 # Resolution and TCP connect share a bounded deadline. The byte poll
 # keeps any binary frame that arrives with the HTTP upgrade head intact.
@@ -136,22 +137,29 @@ def Link.frame(g: Maybe<&2, W.Got>, s: Socket, +out: Chan(S.Wire), k: Socket -> 
     case None{}:
       k(s, Nil{})
 
-def Link.got(r: Socket & Result<&1, &1, U32 & String, List<&2, U32>>, k: Socket -> List<&2, U32> -> IO(Unit), +out: Chan(S.Wire)) -> IO(Unit):
+# the link is dead when nothing at all (a heartbeat included) arrives for
+# Alive.limit() ms: the wait is bounded, and a timeout hangs up like a
+# closed socket (the window decides whether to try again)
+def Link.got(r: Socket & Result<&1, &1, U32 & String, Maybe<&2, List<&2, U32>>>, k: Socket -> List<&2, U32> -> IO(Unit), +out: Chan(S.Wire)) -> IO(Unit):
   (s, res) = r
   match res:
-    case Done{Nil{}}:
+    case Done{Some{Nil{}}}:
       do IO<Unit>:
         Socket.close(s)
         Link.down(out, "")
-    case Done{bs}:
+    case Done{Some{bs}}:
       k(s, bs)
+    case Done{None{}}:
+      do IO<Unit>:
+        Socket.close(s)
+        Link.down(out, "no word from that machine for 40 seconds: reconnecting")
     case Fail{_}:
       do IO<Unit>:
         Socket.close(s)
         Link.down(out, "")
 
 def Link.more(s: Socket, +out: Chan(S.Wire), k: Socket -> List<&2, U32> -> IO(Unit)) -> IO(Unit):
-  IO.bind(Socket & Result<&1, &1, U32 & String, List<&2, U32>>, Unit, H.Sock.recv_bytes(s, 262144), r => Link.got(r, k, out))
+  IO.bind(Socket & Result<&1, &1, U32 & String, Maybe<&2, List<&2, U32>>>, Unit, Link.poll(s, U32.from_nat(DK.Alive.limit())), r => Link.got(r, k, out))
 
 # with the whole frame in: cut it out and go on with what follows
 def Link.cut(ready: Bool, s: Socket, +front: List<&2, U32>, back: List<&2, List<&2, U32>>, +have: Nat, +need: Nat, +out: Chan(S.Wire),
@@ -270,7 +278,7 @@ def Link.connected(r: Result<&1, &1, U32 & String, Socket>, +url: String, since:
 
 def Link.joined(m: Maybe<&1, S.Msg>, +url: String, +inbox: Chan(S.Msg)) -> IO(Unit):
   match m:
-    case Some{S.Join{_, out, since, origin}}:
+    case Some{S.Join{_, out, since, origin, _, _}}:
       IO.bind(Result<&1, &1, U32 & String, Socket>, Unit, Link.connect(Link.host(url), Link.port(url), 5000), r => Link.connected(r, url, since, origin, inbox, out))
     case _:
       IO.pure(Unit, Unit{})

@@ -155,6 +155,10 @@ def Fwd.got(m: Maybe<&1, S.Wire>, +q: Chan(ShellMsg), +tag: String, k: Unit -> I
       do IO<Unit>:
         ok : Bool <- Chan.send(ShellMsg, q, FromHubSt{tag, st, h})
         k(Unit{})
+    case Some{S.WItems{hd, pl, _, xs, tl, _}}:
+      do IO<Unit>:
+        ok : Bool <- Chan.send(ShellMsg, q, FromHub{tag, hd ++ pl ++ String.join(xs, ",") ++ tl})
+        k(Unit{})
     case Some{_}:
       k(Unit{})
     case None{}:
@@ -162,13 +166,35 @@ def Fwd.got(m: Maybe<&1, S.Wire>, +q: Chan(ShellMsg), +tag: String, k: Unit -> I
         ok : Bool <- Chan.send(ShellMsg, q, Gone{tag})
         return Unit{}
 
+# every 32 frames the hub hears how many this client took (its credit,
+# core/outbox.bend); a link to another hub ignores it (that hub's own
+# writer reports)
+def Fwd.told(due: Bool, +hub: Chan(S.Msg), +gen: U32, +n: Nat) -> IO(Unit):
+  match due:
+    case True{}:
+      do IO<Unit>:
+        ok : Bool <- Chan.send(S.Msg, hub, S.Drained{0, gen, n, 0n})
+        return Unit{}
+    case False{}:
+      IO.pure(Unit, Unit{})
+
+def Fwd.counted(+hub: Chan(S.Msg), +gen: U32, +n: Nat, k: Unit -> IO(Unit)) -> IO(Unit):
+  IO.bind(Unit, Unit, Fwd.told(Nat.is_eq(Nat.mod(n, 32n), 0n), hub, gen, n), k)
+
 # a hub's messages for client 0, tagged with the connection
-def Fwd.loop(fuel: Nat, +out: Chan(S.Wire), +q: Chan(ShellMsg), +tag: String) -> IO(Unit):
+def Fwd.loop(fuel: Nat, +out: Chan(S.Wire), +q: Chan(ShellMsg), +tag: String, +hub: Chan(S.Msg), +gen: U32, +n: Nat) -> IO(Unit):
   match fuel:
     case 0n:
       IO.pure(Unit, Unit{})
     case 1n+f:
-      IO.bind(Maybe<&1, S.Wire>, Unit, Chan.recv(S.Wire, out), m => Fwd.got(m, q, tag, u => Fwd.loop(f, out, q, tag)))
+      IO.bind(Maybe<&1, S.Wire>, Unit, Chan.recv(S.Wire, out), m => Fwd.got(m, q, tag, u => Fwd.counted(hub, gen, 1n+n, u2 => Fwd.loop(f, out, q, tag, hub, gen, 1n+n))))
+
+# a connection's generation for client 0 (the window joins again under
+# the same id; the hub tells the joins apart by this)
+def Fwd.gen() -> IO(U32):
+  do IO<U32>:
+    t : U32 <- PS.Perf.us()
+    return U32.or(t, 1)
 
 # the next frame after wait ms (0: at once, behind what is queued)
 def Timer.once(+q: Chan(ShellMsg), +wait: Nat) -> IO(Unit):
@@ -583,8 +609,9 @@ def Shell.hub(local: Bool, +home: Chan(S.Msg), +url: String, +lo: String) -> IO(
 def Shell.joined(+i2: Chan(S.Msg), +q: Chan(ShellMsg), +tag: String, since: Nat, origin: String) -> IO(Unit):
   do IO<Unit>:
     +out : Chan(S.Wire) <- Chan.new(S.Wire, 8192)
-    ok : Bool <- Chan.send(S.Msg, i2, S.Join{0, out, since, origin})
-    IO.spawn(Unit, Fwd.loop(S.Fuel.forever(), out, q, tag))
+    +gen : U32 <- Fwd.gen()
+    ok : Bool <- Chan.send(S.Msg, i2, S.Join{0, out, since, origin, gen, 0})
+    IO.spawn(Unit, Fwd.loop(S.Fuel.forever(), out, q, tag, i2, gen, 0n))
 
 # Save the departing installed state before an input step replaces it.
 # The list behind Tie bounds both retained read models and record arity.
@@ -2013,8 +2040,8 @@ def Shell.fonts(m: Maybe<&1, L.Ty>) -> IO(L.Ty):
 
 # the first join: the in-process hub hands its state over (JoinHere); a
 # hub joined over a link sends its log like any other machine's
-def Shell.join.first(+inbox: Chan(S.Msg), +out: Chan(S.Wire), +lo: String) -> IO(Bool):
-  Bool.pick(IO(Bool), String.is_empty(lo), Chan.send(S.Msg, inbox, S.JoinHere{0, out}), Chan.send(S.Msg, inbox, S.Join{0, out, 0n, ""}))
+def Shell.join.first(+inbox: Chan(S.Msg), +out: Chan(S.Wire), +lo: String, +gen: U32) -> IO(Bool):
+  Bool.pick(IO(Bool), String.is_empty(lo), Chan.send(S.Msg, inbox, S.JoinHere{0, out, gen}), Chan.send(S.Msg, inbox, S.Join{0, out, 0n, "", gen, 0}))
 
 def Shell.twin(r: Window & Window, +inbox: Chan(S.Msg), +drafts: String, +fq: Chan(L.Ty), +lo: String) -> IO(Unit):
   (ev, pw) = r
@@ -2022,9 +2049,10 @@ def Shell.twin(r: Window & Window, +inbox: Chan(S.Msg), +drafts: String, +fq: Ch
     +q : Chan(ShellMsg) <- Chan.new(ShellMsg, 8192)
     +out : Chan(S.Wire) <- Chan.new(S.Wire, 8192)
     t : U32 <- H.Clock.epoch()
-    ok : Bool <- Shell.join.first(inbox, out, lo)
+    +gen : U32 <- Fwd.gen()
+    ok : Bool <- Shell.join.first(inbox, out, lo, gen)
     IO.spawn(Unit, Pump.loop(S.Fuel.forever(), ev, q))
-    IO.spawn(Unit, Fwd.loop(S.Fuel.forever(), out, q, "#0"))
+    IO.spawn(Unit, Fwd.loop(S.Fuel.forever(), out, q, "#0", inbox, gen, 0n))
     got : Maybe<&1, L.Ty> <- Chan.recv(L.Ty, fq)
     ty : L.Ty <- Shell.fonts(got)
     ui : U.Ui <- Drafts.load(U.Ui.info_set(U.Ui.init(U32.to_nat(t)), "local.hub", lo), drafts)

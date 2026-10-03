@@ -84,6 +84,7 @@ def main() -> IO(Unit):
     C.Check.str("deleted once its window passed", dels(old), "True")
     C.Check.str("and its folder goes", outs(old), "stop gone:t1 scratch-gone:t1")
     C.Check.str("pinned is kept", dels(H.Hub.tick(state(List.append(&2, M.Change, base(), [M.ThreadPinned{"t1", True{}, 13n}])), week)), "False")
+    C.Check.str("one waiting on work is kept", dels(H.Hub.tick(state(List.append(&2, M.Change, base(), [M.WorkSet{"t1", "bg", "b1\tsleep\tc1\tsleep\tshell", 13n}])), week)), "False")
     C.Check.str("days setting", dels(H.Hub.tick(state(List.append(&2, M.Change, base(), [M.SettingSet{"scratch.days", "1", 13n}])), Nat.add(12n, 86400n))), "True")
     C.Check.str("gone is not swept again", dels(H.Hub.tick(state(List.append(&2, M.Change, base(), [M.ThreadDeleted{"t1", 13n}])), week)), "False")
     +gt : H.Step = give(base(), "/give >board look at this")

@@ -305,12 +305,62 @@ def One.got.seen(a: U.Act) -> U.Act:
 # a frame from the hub, and the alerts it raised
 # (streamed text ends no turn: it raises none, and nothing is compared;
 # every other message, far ones included, is: law alerts_none_for_delta)
+def One.got.b2(booting: Bool, +seen: List<&2, N.Seen>, a: U.Act) -> Did:
+  match booting:
+    case True{}:
+      Did{a, Nil{}}
+    case False{}:
+      One.got.k(seen, a)
+
+# a frame of a log still arriving in chunks (or its last) is history: it
+# raises no alert; the next frame compares against all of it (law
+# boot_no_alerts)
+def One.got.b(booting: Bool, +seen: List<&2, N.Seen>, +a: U.Act) -> Did:
+  match booting:
+    case True{}:
+      Did{a, Nil{}}
+    case False{}:
+      One.got.b2(U.Boot.on(U.Act.ui(a)), seen, a)
+
+# the threads a frame of log changes touches (each item's "thread", and
+# "id" for a thread made)
+def One.ids.one(+x: String, +acc: List<&2, String>) -> List<&2, String>:
+  Bool.pick(List<&2, String>, String.is_empty(x), acc, x <> acc)
+
+def One.ids.k(+t: String, +i: String, +acc: List<&2, String>) -> List<&2, String>:
+  One.ids.one(i, One.ids.one(t, acc))
+
+def One.ids(xs: List<&2, J.Json>, acc: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      acc
+    case +x <> rest:
+      One.ids(rest, One.ids.k(J.Json.get_str(x, "thread", ""), J.Json.get_str(x, "id", ""), acc))
+
+# what was seen before a frame: for log changes only the threads they
+# touch (the phone compared every thread after every frame); for anything
+# else (a log, a far batch) every thread
+def One.seen.k(changes: Bool, +u: U.Ui, +o: J.Json) -> List<&2, N.Seen>:
+  match changes:
+    case True{}:
+      N.Note.seen.ids(One.ids(J.Json.elems(J.Json.get_obj(o, "items")), Nil{}), S.Mob.st(u))
+    case False{}:
+      N.Note.seen(U.Ui.threads(S.Mob.st(u)))
+
+def One.seen(+u: U.Ui, +o: J.Json) -> List<&2, N.Seen>:
+  One.seen.k(String.eq(J.Json.get_str(o, "t", ""), "changes"), u, o)
+
 def One.got.d(delta: Bool, +u: U.Ui, +o: J.Json) -> Did:
   match delta:
     case True{}:
       Did{One.got.seen(U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o)), Nil{}}
     case False{}:
-      One.got.k(N.Note.seen(U.Ui.threads(S.Mob.st(u))), One.got.seen(U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o)))
+      One.got.b(U.Boot.on(u), One.seen(u, o), One.got.seen(U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o)))
+
+# the same comparing every thread (the spec One.got.d keeps to: law
+# alerts_ids_same)
+def One.got.all(+u: U.Ui, +o: J.Json) -> Did:
+  One.got.b(U.Boot.on(u), N.Note.seen(U.Ui.threads(S.Mob.st(u))), One.got.seen(U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o)))
 
 def One.got(+u: U.Ui, +o: J.Json) -> Did:
   One.got.d(String.eq(J.Json.get_str(o, "t", ""), "delta"), u, o)
@@ -588,8 +638,16 @@ def Hubs.redraw.k(delta: Bool, +hs: Hubs, +key: String, +o: J.Json) -> Bool:
 # whether the phone builds a screen for a frame from hub key: any message
 # from any paired hub can change the merged sidebar and the island; only
 # streamed text is held to Hubs.shows (laws hubs_redraw_*)
+def Hubs.redraw.t(beat: Bool, +hs: Hubs, +key: String, +o: J.Json) -> Bool:
+  match beat:
+    case True{}:
+      False{}
+    case False{}:
+      Hubs.redraw.k(String.eq(J.Json.get_str(o, "t", ""), "delta"), hs, key, o)
+
+# (a heartbeat builds none: law hubs_redraw_hb)
 def Hubs.redraw(+hs: Hubs, +key: String, +o: J.Json) -> Bool:
-  Hubs.redraw.k(String.eq(J.Json.get_str(o, "t", ""), "delta"), hs, key, o)
+  Hubs.redraw.t(String.eq(J.Json.get_str(o, "t", ""), "hb"), hs, key, o)
 
 def Hubs.list(hs: Hubs) -> List<&2, Hub>:
   match hs:
@@ -1111,9 +1169,9 @@ def Hubs.fold.settled(p: U.AParts, +hs: List<&2, Hub>, +from: String) -> Nat:
 def Hubs.fold.count(older: Bool, h: Maybe<&2, Hub>, +hs: List<&2, Hub>, +from: String) -> Nat:
   match older h:
     case True{} Some{Hub{_, U.Ui{+st, _, +dr, _, +o, _, +now, _, _, _, _, _, _, _, _, _, _}}}:
-      Hubs.fold.older(U.Side.groups(U.Side.shown(st, now, U.Find.q(o, dr)), now), hs, from)
+      Hubs.fold.older(U.Side.groups(U.Side.shown.ix(st, U.Side.ix(st), now, U.Find.q(o, dr)), now), hs, from)
     case False{} Some{Hub{_, U.Ui{+st, _, +dr, _, +o, _, +now, _, _, _, _, _, _, _, _, _, _}}}:
-      Hubs.fold.settled(U.Active.parts(U.Active.rows(st, now, U.Find.q(o, dr))), hs, from)
+      Hubs.fold.settled(U.Active.parts(U.Active.rows.ix(st, U.Side.ix(st), now, U.Find.q(o, dr))), hs, from)
     case _ None{}:
       0n
 

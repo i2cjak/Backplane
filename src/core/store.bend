@@ -68,3 +68,84 @@ def Store.changes(ls: List<&2, String>) -> List<&2, M.Change>:
       Nil{}
     case +l <> t:
       Store.change(J.Json.parse(l), Store.changes(t))
+
+# Writing
+# -------
+# A step's lines go to the log in one write (the server's Hub.commit), so a
+# crash tears at most the step being written; Task.repair (hub.bend)
+# finishes a delivery torn that way. A log whose last line was torn ends
+# without a newline: the next write starts on a line of its own, so the
+# fragment stays one malformed line that Store.step leaves out (laws
+# commit_text_joins, store_torn_tail_resyncs).
+
+# a step's lines, each ended by a newline
+def Store.text(ls: List<&2, String>) -> String:
+  match ls:
+    case Nil{}:
+      ""
+    case l <> t:
+      l ++ "\n" ++ Store.text(t)
+
+def Store.last.go(bs: List<&2, U32>, +last: U32) -> U32:
+  match bs:
+    case Nil{}:
+      last
+    case +b <> t:
+      Store.last.go(t, b)
+
+# what to write before a log's first new line: a newline when its last
+# byte (read at start-up) is not one
+def Store.tail_fix(bs: List<&2, U32>) -> String:
+  match bs:
+    case Nil{}:
+      ""
+    case +b <> t:
+      Bool.pick(String, U32.is_eq(Store.last.go(t, b), 10), "", "\n")
+
+# a failed write may have left a cut line: the log is closed off with a
+# newline before anything else is written, and the failure says when that
+# did not work either
+def Store.fail.msg(err: String, repaired: Bool) -> String:
+  match repaired:
+    case True{}:
+      err
+    case False{}:
+      err ++ "; the log's tail could not be repaired"
+
+# A write that fails is taken back: the log is cut to the length it had
+# before the step (Store.trunc.args, run by the server), so no complete line
+# of it stays on disk unfolded and no torn one is joined by a later write.
+# When that cannot be done the hub holds the length and the reason
+# (Store.hold) and commits nothing until the cut works; its error says so.
+def Store.hold(len: String, err: String) -> String:
+  len ++ "\t" ++ err
+
+def Store.hold.first(+ps: List<&2, String>) -> String:
+  match ps:
+    case n <> _:
+      n
+    case Nil{}:
+      ""
+
+def Store.hold.rest(+ps: List<&2, String>) -> String:
+  match ps:
+    case _ <> t:
+      String.join(t, "\t")
+    case Nil{}:
+      ""
+
+def Store.hold.len(+h: String) -> String:
+  Store.hold.first(String.split(h, '\t'))
+
+def Store.hold.err(+h: String) -> String:
+  Store.hold.rest(String.split(h, '\t'))
+
+def Store.trunc.args(len: String, path: String) -> List<&2, String>:
+  ["-s", len, path]
+
+def Store.held.msg(+h: String) -> String:
+  "the log could not be written and its failed write could not be taken back (" ++ Store.hold.err(h) ++ "); nothing is saved until it is"
+
+# a line cut by a crash (the laws' example)
+def Store.torn.demo() -> String:
+  "{\"$\":\"ProjectRem"

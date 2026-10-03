@@ -111,9 +111,66 @@ def doings(ls: List<&2, String>) -> List<&2, String>:
 def doing(+es: List<&2, M.Change>) -> String:
   String.join(doings(M.Bg.of(state(es), "t100-1")), "|")
 
+def prog1() -> String:
+  "{\"type\":\"system\",\"subtype\":\"task_progress\",\"task_id\":\"a847\",\"description\":\"Sleep 1\"}"
+
+def prog2() -> String:
+  "{\"type\":\"system\",\"subtype\":\"task_progress\",\"task_id\":\"a847\",\"description\":\"Sleep 2\"}"
+
+def updated() -> List<&2, M.Change>:
+  after(progressed(), 105n, "{\"type\":\"system\",\"subtype\":\"task_updated\",\"task_id\":\"a847\",\"patch\":{\"status\":\"completed\"}}")
+
+def texts(es: List<&2, M.Entry>) -> List<&2, String>:
+  match es:
+    case Nil{}:
+      Nil{}
+    case M.Msg{_, _, _, +t, _} <> rest:
+      t <> texts(rest)
+    case _ <> rest:
+      texts(rest)
+
+def head(ls: List<&2, String>) -> String:
+  Maybe.default(&2, String, List.head(&2, String, ls), "")
+
+# delegation two deep: root t0's task k1 runs on t1, whose task k2 runs on t2
+def tree() -> List<&2, M.Change>:
+  [M.ProjectCreated{"p1", "P", "/r/board", 50n}, M.ThreadCreated{"t0", "p1", "root", M.Local{}, "", "", "claude", "", 50n},
+   M.ThreadCreated{"t1", "p1", "child", M.Local{}, "", "", "claude", "", 50n}, M.ThreadCreated{"t2", "p1", "grandchild", M.Local{}, "", "", "claude", "", 50n},
+   M.TaskDelegated{"k1", "t0", "t1", 1n, "claude", "", 51n}, M.TaskStateSet{"k1", M.TaskRunning{}, "", 51n},
+   M.TaskDelegated{"k2", "t1", "t2", 2n, "claude", "", 52n}, M.TaskStateSet{"k2", M.TaskRunning{}, "", 52n},
+   M.MessagePosted{"t2", "g1", M.User{}, "do it", 52n}, M.TurnChanged{"t1", M.Running{}, 52n}, M.TurnChanged{"t2", M.Running{}, 52n}]
+
+def said(+th: String, +text: String) -> String:
+  "{\"type\":\"assistant\",\"message\":{\"id\":\"m-" ++ th ++ "-" ++ text ++ "\",\"content\":[{\"type\":\"text\",\"text\":\"" ++ text ++ "\"}]}}"
+
+def result() -> String:
+  "{\"type\":\"result\",\"is_error\":false,\"result\":\"ok\"}"
+
+# a thread's turn ends with its answer
+def ends(+es: List<&2, M.Change>, +now: Nat, +th: String, +text: String) -> H.Step:
+  H.Hub.agent_line(state(List.append(&2, M.Change, es, H.Queue.changes(H.Hub.agent_line(state(es), now, th, said(th, text))))), Nat.add(now, 1n), th, result())
+
+def after.end(+es: List<&2, M.Change>, +now: Nat, +th: String, +text: String) -> List<&2, M.Change>:
+  List.append(&2, M.Change, List.append(&2, M.Change, es, H.Queue.changes(H.Hub.agent_line(state(es), now, th, said(th, text)))), H.Queue.changes(ends(es, now, th, text)))
+
+def marked(+es: List<&2, M.Change>, +id: String) -> String:
+  Bool.show(H.Task.marked(es, id))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     C.Check.str("started", doing(started()), "Run bash command and report output")
+    C.Check.str("a failed turn shows failed, work or not", phase(List.append(&2, M.Change, shell(), [M.TurnChanged{"t100-1", M.Failed{}, 103n}])) ++ "/" ++ status(List.append(&2, M.Change, shell(), [M.TurnChanged{"t100-1", M.Failed{}, 103n}])), "Failed/failed")
+    # child -> grandchild -> root: each task ends only once its thread is done
+    +c1 : List<&2, M.Change> = after.end(tree(), 60n, "t1", "waiting on t2")
+    C.Check.str("a child with its own child at work: its task stays open", marked(H.Queue.changes(ends(tree(), 60n, "t1", "waiting on t2")), "k1"), "False")
+    +g1 : List<&2, M.Change> = after.end(c1, 70n, "t2", "grandchild result")
+    C.Check.str("the grandchild ends: its task ends", marked(H.Queue.changes(ends(c1, 70n, "t2", "grandchild result")), "k2"), "True")
+    C.Check.str("and the child hears it", Bool.show(String.contains(H.Task.last(state(g1), "t1") ++ M.Queue.of(state(g1), "t1") ++ String.join(texts(M.State.mine(state(g1), "t1")), "|"), "grandchild result")), "True")
+    +r1 : List<&2, M.Change> = after.end(List.append(&2, M.Change, g1, [M.TurnChanged{"t1", M.Running{}, 80n}]), 81n, "t1", "child result")
+    C.Check.str("the child ends after: its task ends", marked(H.Queue.changes(ends(List.append(&2, M.Change, g1, [M.TurnChanged{"t1", M.Running{}, 80n}]), 81n, "t1", "child result")), "k1"), "True")
+    C.Check.str("and the root hears the child's result", Bool.show(String.contains(String.join(texts(M.State.mine(state(r1), "t0")), "|"), "child result")), "True")
+    +q1 : List<&2, M.Change> = List.append(&2, M.Change, tree(), [M.TaskStateSet{"k2", M.TaskDone{}, "", 55n}, M.TaskDelivered{"k2", 55n}, M.TurnQueued{"t1", "q9", "one more thing", 56n}])
+    C.Check.str("a child with a queued follow-up: its task stays open", marked(H.Queue.changes(ends(q1, 60n, "t1", "first answer")), "k1"), "False")
     C.Check.str("its steps stay off the thread", entries(stepped(), "t100-1"), entries(started(), "t100-1"))
     C.Check.str("its steps go to its log", entries(stepped(), M.Bg.log("t100-1")), "3")
     C.Check.str("at work: open with its steps", rows(stepped()), "toolu_1|Run bash command and report output|running|Run bash command and report output|open|2|2;")
@@ -143,10 +200,21 @@ def main() -> IO(Unit):
     C.Check.str("the shell ends: ready", status(after(shell.done(), 105n, "{\"type\":\"system\",\"subtype\":\"task_notification\",\"task_id\":\"b3\",\"status\":\"completed\"}")), "ready")
     C.Check.str("a shell moved to the background past its timeout is listed", doing(moved()), "Background shell")
     C.Check.str("moved, the turn over: monitoring", phase(List.append(&2, M.Change, moved(), [M.TurnChanged{"t100-1", M.Completed{}, 104n}])), "Monitoring 1 task")
-    C.Check.str("moved, then done", doing(after(moved(), 105n, "{\"type\":\"system\",\"subtype\":\"task_updated\",\"task_id\":\"b5\",\"patch\":{\"status\":\"completed\",\"end_time\":1}}")), "")
+    C.Check.str("moved, then done: ended, its outcome owed", M.Bg.status(head(M.Bg.of(state(after(moved(), 105n, "{\"type\":\"system\",\"subtype\":\"task_updated\",\"task_id\":\"b5\",\"patch\":{\"status\":\"completed\",\"end_time\":1}}")), "t100-1"))), "completed")
     C.Check.str("a monitor is listed", doing(after(made(), 102n, "{\"type\":\"system\",\"subtype\":\"task_started\",\"task_id\":\"b4\",\"description\":\"CI\",\"task_type\":\"monitor_mcp\"}")), "CI")
     C.Check.str("ended", doing(ended()), "")
     C.Check.str("ready after", status(ended()), "ready")
-    C.Check.str("updated to completed ends it", doing(after(progressed(), 105n, "{\"type\":\"system\",\"subtype\":\"task_updated\",\"task_id\":\"a847\",\"patch\":{\"status\":\"completed\"}}")), "")
+    C.Check.str("updated to completed ends it", M.Bg.status(head(M.Bg.of(state(updated()), "t100-1"))), "completed")
+    C.Check.str("an ended row shows finished, reporting", rows(updated()), "toolu_1|Run bash command and report output|reporting|finished, reporting|open|0|0;")
+    C.Check.str("an ended row is still work", phase(updated()), "Monitoring 1 task")
+    C.Check.str("progress leaves an ended row", M.Bg.status(head(M.Bg.of(state(after(updated(), 106n, "{\"type\":\"system\",\"subtype\":\"task_progress\",\"task_id\":\"a847\",\"description\":\"late\"}")), "t100-1"))), "completed")
+    C.Check.str("its notification takes it", doing(after(updated(), 106n, "{\"type\":\"system\",\"subtype\":\"task_notification\",\"task_id\":\"a847\",\"tool_use_id\":\"toolu_1\",\"status\":\"completed\"}")), "")
+    C.Check.str("gone from the open list: ended", M.Bg.status(head(M.Bg.of(state(after(progressed(), 105n, "{\"type\":\"system\",\"subtype\":\"background_tasks_changed\",\"tasks\":[{\"task_id\":\"zz\"}]}")), "t100-1"))), "done")
+    C.Check.str("still on the open list: at work", doing(after(progressed(), 105n, "{\"type\":\"system\",\"subtype\":\"background_tasks_changed\",\"tasks\":[{\"task_id\":\"a847\"}]}")), "Running Sleep for 20 seconds")
+    C.Check.str("the open list adds nothing", doing(after(made(), 105n, "{\"type\":\"system\",\"subtype\":\"background_tasks_changed\",\"tasks\":[{\"task_id\":\"a847\"}]}")), "")
+    C.Check.str("progress within the gap is held", Nat.show(List.length(&2, String, H.PStep.flush(H.Prog.line(100n, [], 102n, prog1(), H.Prog.o(prog1()))))), "0")
+    C.Check.str("progress after the gap goes through", Nat.show(List.length(&2, String, H.PStep.flush(H.Prog.line(100n, [], 105n, prog1(), H.Prog.o(prog1()))))), "1")
+    C.Check.str("the held newest lands on the beat", doing(List.append(&2, M.Change, done(), H.Queue.changes(H.Prog.flush(state(done()), "t100-1", 106n, H.PStep.flush(H.Prog.beat(100n, H.PStep.pend(H.Prog.line(100n, H.PStep.pend(H.Prog.line(100n, [], 101n, prog1(), H.Prog.o(prog1()))), 102n, prog2(), H.Prog.o(prog2()))), 106n)))))), "Sleep 2")
+    C.Check.str("a beat inside the gap lands nothing", Nat.show(List.length(&2, String, H.PStep.flush(H.Prog.beat(100n, [prog1()], 103n)))), "0")
     C.Check.str("exit clears", doing(List.append(&2, M.Change, progressed(), H.Queue.changes(H.Hub.agent_gone(state(progressed()), 107n, "t100-1", 0)))), "")
-    C.Check.str("restart clears", doing(List.append(&2, M.Change, progressed(), H.Queue.changes(H.Hub.recover(state(progressed()), 107n)))), "")
+    C.Check.str("restart tells the agent and clears", M.Bg.show(M.Bg.of(H.Carry.after(state(progressed()), 107n), "t100-1")), "")

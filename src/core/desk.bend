@@ -197,3 +197,24 @@ def Desk.due(+last: String, +last_at: String, +thread: String, +focused: Bool, +
 
 def Desk.params(+thread: String, focused: Bool) -> List<&2, J.KV>:
   [J.KV{"thread", J.Str{thread}}, J.KV{"focused", J.Flag{focused}}]
+
+# Heartbeat
+# ---------
+# The hub sends {"t":"hb"} every Alive.every() ms through the same path as
+# every other frame, so a link that carries nothing at all for longer than
+# Alive.limit() ms is dead (a half-open socket shows no error): the client
+# closes it and reconnects from its sequence (Alive.due, all four clients).
+# The frame carries nothing and every client's fold leaves it alone.
+
+def Alive.every() -> Nat:
+  15000n
+
+def Alive.limit() -> Nat:
+  40000n
+
+def Alive.frame() -> String:
+  J.Json.show(J.Json.obj([J.KV{"t", J.Str{"hb"}}]))
+
+# whether a link last heard from at `last` is dead at `now` (ms)
+def Alive.due(+last: Nat, +now: Nat) -> Bool:
+  Nat.is_gt(Nat.sub(now, last), Alive.limit())
