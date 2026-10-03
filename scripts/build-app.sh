@@ -49,8 +49,16 @@ CC=${CC:-clang}
 export CC
 work="build/cc/$(basename "$out")"
 mkdir -p "$work"
-# bend's own emit runs on every core; keep it polite too
-nice -n 19 $pin bend "$src" -o "$work/all.c" >/dev/null
+# bend's own emit runs on every core; keep it polite too. Its C is the
+# same on every platform (effects choose with #ifdef), so it may be made
+# on another machine: BACKPLANE_EMIT_ONLY=1 stops after writing it, and
+# BACKPLANE_PREBUILT=1 compiles the one already there
+if [ "${BACKPLANE_PREBUILT:-}" = 1 ] && [ -f "$work/all.c" ]; then
+  echo "prebuilt $work/all.c"
+else
+  nice -n 19 $pin bend "$src" -o "$work/all.c" >/dev/null
+fi
+[ "${BACKPLANE_EMIT_ONLY:-}" = 1 ] && { echo "$work/all.c"; exit 0; }
 n=$(nice -n 19 python3 scripts/cc-split.py "$work/all.c" "$work" "$(( jobs * 2 ))")
 rm -f "$work"/u*.o
 # the baked Google client, read from .env without running it

@@ -4,8 +4,11 @@
 # through the hub's own codec, built here from test/wire.
 set -eu
 cd "$(dirname "$0")/.."
-rm -rf build/wire
-bend test/wire/index.html -o build/wire > /dev/null
+# (made already when the build was split: scripts/build.sh emit)
+if [ "${BACKPLANE_PREBUILT:-}" != 1 ] || [ ! -d build/wire ]; then
+  rm -rf build/wire
+  bend test/wire/index.html -o build/wire > /dev/null
+fi
 run() {
   bin=$1 port=$2
   home=$(mktemp -d)
