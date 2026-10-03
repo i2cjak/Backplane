@@ -22,6 +22,7 @@ import ./gh.bend as GH
 import ./term.bend as TM
 import ./plot.bend as PV
 import ../core/agent.bend as AG
+import ../core/port.bend as PT
 import ../core/tailnet.bend as TN
 import ../core/images.bend as IM
 import ../core/links.bend as LK
@@ -1645,10 +1646,10 @@ def FsJob.path.sh() -> String:
 
 # a folder that exists and can be opened, printed resolved (symlinks too)
 def FsJob.dir.sh() -> String:
-  "[ -e \"$d\" ] || { echo \"no such folder: $d\"; exit 2; }; d=$(realpath -e -- \"$d\"); [ -d \"$d\" ] || { echo \"not a folder: $d\"; exit 2; }; [ -r \"$d\" ] && [ -x \"$d\" ] || { echo \"cannot open: $d\"; exit 2; }; "
+  "[ -e \"$d\" ] || { echo \"no such folder: $d\"; exit 2; }; [ -d \"$d\" ] || { echo \"not a folder: $d\"; exit 2; }; [ -r \"$d\" ] && [ -x \"$d\" ] && d=$(cd -P -- \"$d\" && pwd -P) || { echo \"cannot open: $d\"; exit 2; }; "
 
 def FsJob.list.sh() -> String:
-  "exec 2>&1; set -e; " ++ FsJob.path.sh() ++ FsJob.dir.sh() ++ "echo \"$d\"; find \"$d\" -mindepth 1 -maxdepth 1 -type d -printf '%f\\n' 2>/dev/null | LC_ALL=C sort | head -n 5000"
+  "exec 2>&1; set -e; " ++ FsJob.path.sh() ++ FsJob.dir.sh() ++ "echo \"$d\"; find \"$d\" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sed 's|^.*/||' | LC_ALL=C sort | head -n 5000"
 
 # a new folder (and any missing parents); an existing one is refused
 def FsJob.mkdir.sh() -> String:
@@ -1662,7 +1663,7 @@ def FsJob.resolve.sh() -> String:
 # projects), five levels down at most; other hidden folders, node_modules
 # and other file systems are skipped, and it gives up after five seconds
 def FsJob.find.sh() -> String:
-  "exec 2>/dev/null; echo \"$HOME\"; timeout 5 find \"$HOME\" -xdev -mindepth 1 -maxdepth 5 \\( -type d \\( -name node_modules -o \\( -name '.*' ! -name .backplane \\) \\) -prune \\) -o \\( -type d -name .backplane -printf '%h\\n' -prune \\) -o \\( -name .backplane.json -printf '%h\\n' \\) | grep -vxF \"$HOME\" | LC_ALL=C sort -u | head -n 500; true"
+  "exec 2>/dev/null; " ++ PT.Port.tmo() ++ "echo \"$HOME\"; tmo 5 find \"$HOME\" -xdev -mindepth 1 -maxdepth 5 \\( -type d \\( -name node_modules -o \\( -name '.*' ! -name .backplane \\) \\) -prune \\) -o \\( -type d -name .backplane -print -prune \\) -o \\( -name .backplane.json -print \\) | sed 's|/[^/]*$||' | grep -vxF \"$HOME\" | LC_ALL=C sort -u | head -n 500; true"
 
 def FsJob.strs(ls: List<&2, String>) -> List<&2, J.Json>:
   match ls:
@@ -1894,7 +1895,7 @@ def MergeJob.got(r: P.Ran, +inbox: Chan(Msg), +lines: String) -> IO(Unit):
       IO.pure(Unit, Unit{})
 
 def MergeJob.run(+inbox: Chan(Msg), +root: String, +lines: String) -> IO(Unit):
-  IO.bind(P.Ran, Unit, GH.GhRun.run(root, "timeout", ["30", "gh", "pr", "list", "--state", "merged", "--limit", "100", "--json", "headRefName,url"], ["30", "gh", "pr", "list", "--state", "merged", "--limit", "100", "--json", "headRefName,url"]),
+  IO.bind(P.Ran, Unit, GH.GhRun.run(root, "sh", PT.Port.timeout(["30", "gh", "pr", "list", "--state", "merged", "--limit", "100", "--json", "headRefName,url"]), PT.Port.timeout(["30", "gh", "pr", "list", "--state", "merged", "--limit", "100", "--json", "headRefName,url"])),
     r => MergeJob.got(r, inbox, lines))
 
 def GitJob.text.k(+inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +what: String, +r: String) -> IO(Unit):
@@ -1944,7 +1945,7 @@ def OneShot.spawned(r: Result<&1, &1, U32 & String, U32 & Socket>, +input: Strin
 
 # the writer's answer to one text under a system prompt, in /tmp
 def OneShot.run(+tx: AG.Tx, +system: String, +input: String) -> IO(String):
-  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, String, H.Proc.spawn("timeout", AG.OneShot.args(tx, system), "/tmp", 0),
+  IO.bind(Result<&1, &1, U32 & String, U32 & Socket>, String, H.Proc.spawn("sh", PT.Port.timeout(AG.OneShot.args(tx, system)), "/tmp", 0),
     r => OneShot.spawned(r, AG.OneShot.input(AG.Tx.provider(tx), system, input), AG.Tx.provider(tx)))
 
 # a thread's first message: the writer titles it, and the hub keeps the
@@ -3755,7 +3756,7 @@ def Machines.loop(fuel: Nat, +inbox: Chan(Msg), +port: U32, +extra: String, +las
       IO.pure(Unit, Unit{})
     case 1n+f:
       do IO<Unit>:
-        st : P.Ran <- P.Proc.run("sh", ["-c", "command -v tailscale >/dev/null && timeout 10 tailscale status --json"], "/")
+        st : P.Ran <- P.Proc.run("sh", ["-c", (PT.Port.tmo() ++ "command -v tailscale >/dev/null && tmo 10 tailscale status --json")], "/")
         found : String <- Machines.ask(Tailnet.out(st), port, extra)
         now : String <- Machines.tell(inbox, found, last)
         IO.sleep(Machines.every())
@@ -3820,7 +3821,7 @@ def Models.claude() -> List<&2, String>:
 # Claude Code's own model list (what its /model picker offers): asked with
 # an `initialize` control request, answered before any model is called
 def Claude.probe.sh() -> String:
-  "command -v claude >/dev/null || exit 1; printf '%s\\n' '{\"type\":\"control_request\",\"request_id\":\"models\",\"request\":{\"subtype\":\"initialize\"}}' | timeout 30 claude -p --input-format stream-json --output-format stream-json --verbose 2>/dev/null | grep -m1 '\"control_response\"'"
+  (PT.Port.tmo() ++ "command -v claude >/dev/null || exit 1; printf '%s\\n' '{\"type\":\"control_request\",\"request_id\":\"models\",\"request\":{\"subtype\":\"initialize\"}}' | tmo 30 claude -p --input-format stream-json --output-format stream-json --verbose 2>/dev/null | grep -m1 '\"control_response\"'")
 
 # the models in a probe's answer ([] when it failed or is too old)
 def Claude.listed(r: P.Ran) -> List<&2, J.Json>:
@@ -4173,11 +4174,11 @@ def Models.detect(+user: String) -> IO(Found):
     cl : P.Ran <- P.Proc.run("sh", ["-c", "command -v claude"], "/")
     cx : P.Ran <- P.Proc.run("sh", ["-c", "command -v codex"], "/")
     +cache : String <- K.Io.text(user ++ "/.codex/models_cache.json")
-    +gk : P.Ran <- P.Proc.run("sh", ["-c", "command -v grok >/dev/null && timeout 15 grok models"], "/")
+    +gk : P.Ran <- P.Proc.run("sh", ["-c", (PT.Port.tmo() ++ "command -v grok >/dev/null && tmo 15 grok models")], "/")
     pc : P.Ran <- P.Proc.run("sh", ["-c", Claude.probe.sh()], "/")
-    vc : P.Ran <- P.Proc.run("sh", ["-c", "timeout 10 claude --version"], "/")
-    vx : P.Ran <- P.Proc.run("sh", ["-c", "timeout 10 codex --version"], "/")
-    vg : P.Ran <- P.Proc.run("sh", ["-c", "timeout 10 grok --version"], "/")
+    vc : P.Ran <- P.Proc.run("sh", ["-c", (PT.Port.tmo() ++ "tmo 10 claude --version")], "/")
+    vx : P.Ran <- P.Proc.run("sh", ["-c", (PT.Port.tmo() ++ "tmo 10 codex --version")], "/")
+    vg : P.Ran <- P.Proc.run("sh", ["-c", (PT.Port.tmo() ++ "tmo 10 grok --version")], "/")
     +xs : List<&2, J.Json> = Claude.listed(pc)
     return Models.found(Claude.models(Main.has(cl), xs), Models.on(Main.has(cx), Models.codex(cache)), Models.grok(gk),
       J.Json.obj([J.KV{"claude", Claude.about(About.cli(vc), xs)}, J.KV{"codex", About.one(About.cli(vx), About.codex(cache))}, J.KV{"grok", About.one(About.cli(vg), About.grok(gk))}]))
@@ -4956,7 +4957,7 @@ def Bot.ran(r: P.Ran) -> String:
 def Bot.serve(on: Bool) -> IO(P.Ran):
   match on:
     case True{}:
-      P.Proc.run("sh", ["-c", "command -v tailscale >/dev/null && timeout 5 tailscale serve status --json"], "/")
+      P.Proc.run("sh", ["-c", (PT.Port.tmo() ++ "command -v tailscale >/dev/null && tmo 5 tailscale serve status --json")], "/")
     case False{}:
       IO.pure(P.Ran, P.Ran{1, ""})
 
@@ -5269,7 +5270,7 @@ def Watch.unit(+id: String) -> String:
   "bp-" ++ id
 
 def Watch.launch.sh() -> String:
-  "d=$1; c=$2; cmd=$3; u=$4; l=$5\npid_id() { q=$1; if [ -r \"/proc/$q/stat\" ]; then b=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); st=$(sed 's/^.*) //' \"/proc/$q/stat\" | cut -d' ' -f20); echo \"$b:$st\"; elif ps -p \"$q\" >/dev/null 2>&1; then ps -o lstart= -p \"$q\" | tr -s ' ' '_'; fi; }\nmkdir -p \"$d\" || { echo gone; exit 0; }\n[ -e \"$d/code\" ] && { echo running; exit 0; }\nif [ -e \"$d/started\" ]; then { [ -e \"$d/out\" ] || [ -e \"$d/how\" ] || systemctl --user is-active --quiet \"$u\" 2>/dev/null; } && { echo running; exit 0; }; fi\nprintf '%s\\n' \"$cmd\" > \"$d/cmd\"\n{ printf ': > \"%s/out\"\\n' \"$d\"; printf 'cd \"%s\" || exit 127\\n' \"$c\"; printf 'sh \"%s/cmd\" > \"%s/out\" 2>&1\\n' \"$d\" \"$d\"; printf 'echo $? > \"%s/code.tmp\" && mv \"%s/code.tmp\" \"%s/code\"\\n' \"$d\" \"$d\" \"$d\"; } > \"$d/run.sh\"\n: > \"$d/started\"\nif command -v systemd-run >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then\n  if systemd-run --user --quiet --collect --unit=\"$u\" ${l:+\"--property=MemoryMax=$l\" --property=MemorySwapMax=0} sh \"$d/run.sh\" >/dev/null 2>&1; then systemctl --user show -p InvocationID --value \"$u\" > \"$d/inv\" 2>/dev/null; echo unit > \"$d/how\"; echo running; exit 0; fi\nfi\nsetsid nohup sh \"$d/run.sh\" >/dev/null 2>&1 < /dev/null &\necho $! > \"$d/pid\"\npid_id $! > \"$d/pidid\"\necho pid > \"$d/how\"\necho running\n"
+  "d=$1; c=$2; cmd=$3; u=$4; l=$5\npid_id() { q=$1; if [ -r \"/proc/$q/stat\" ]; then b=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); st=$(sed 's/^.*) //' \"/proc/$q/stat\" | cut -d' ' -f20); echo \"$b:$st\"; elif ps -p \"$q\" >/dev/null 2>&1; then ps -o lstart= -p \"$q\" | tr -s ' ' '_'; fi; }\nmkdir -p \"$d\" || { echo gone; exit 0; }\n[ -e \"$d/code\" ] && { echo running; exit 0; }\nif [ -e \"$d/started\" ]; then { [ -e \"$d/out\" ] || [ -e \"$d/how\" ] || systemctl --user is-active --quiet \"$u\" 2>/dev/null; } && { echo running; exit 0; }; fi\nprintf '%s\\n' \"$cmd\" > \"$d/cmd\"\n{ printf ': > \"%s/out\"\\n' \"$d\"; printf 'cd \"%s\" || exit 127\\n' \"$c\"; printf 'sh \"%s/cmd\" > \"%s/out\" 2>&1\\n' \"$d\" \"$d\"; printf 'echo $? > \"%s/code.tmp\" && mv \"%s/code.tmp\" \"%s/code\"\\n' \"$d\" \"$d\" \"$d\"; } > \"$d/run.sh\"\n: > \"$d/started\"\nif command -v systemd-run >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then\n  if systemd-run --user --quiet --collect --unit=\"$u\" ${l:+\"--property=MemoryMax=$l\" --property=MemorySwapMax=0} sh \"$d/run.sh\" >/dev/null 2>&1; then systemctl --user show -p InvocationID --value \"$u\" > \"$d/inv\" 2>/dev/null; echo unit > \"$d/how\"; echo running; exit 0; fi\nfi\nif command -v setsid >/dev/null 2>&1; then setsid nohup sh \"$d/run.sh\" >/dev/null 2>&1 < /dev/null &\nelse perl -MPOSIX -e 'POSIX::setsid(); exec {$ARGV[0]} @ARGV or exit 127' nohup sh \"$d/run.sh\" >/dev/null 2>&1 < /dev/null &\nfi\necho $! > \"$d/pid\"\npid_id $! > \"$d/pidid\"\necho pid > \"$d/how\"\necho running\n"
 
 def Watch.check.sh() -> String:
   "k=$1; t=$2; id=$3; d=$4; u=$5\ncase $k in\nrun)\n  [ -e \"$d/stop\" ] && { echo stop; exit 0; }\n  [ -e \"$d/code\" ] && { echo \"done $(cat \"$d/code\")\"; exit 0; }\n  how=$(cat \"$d/how\" 2>/dev/null)\n  if [ \"$how\" != pid ]; then systemctl --user is-active --quiet \"$u\" && { echo running; exit 0; }\n  else p=$(cat \"$d/pid\" 2>/dev/null); [ -n \"$p\" ] && kill -0 \"$p\" 2>/dev/null && { echo running; exit 0; }; fi\n  [ -e \"$d/code\" ] && { echo \"done $(cat \"$d/code\")\"; exit 0; }\n  echo gone ;;\nunit)\n  [ -e \"$d/stop\" ] && { echo stop; exit 0; }\n  s=$(systemctl --user show -p ActiveState --value \"$t\" 2>/dev/null); r=$(systemctl --user show -p ExecMainStatus --value \"$t\" 2>/dev/null); n=$(systemctl --user show -p InvocationID --value \"$t\" 2>/dev/null)\n  [ \"$id\" = - ] && [ -n \"$n\" ] && echo \"ident $n\"\n  [ \"$id\" != - ] && [ -n \"$n\" ] && [ \"$n\" != \"$id\" ] && { echo gone; exit 0; }\n  case $s in active|activating|deactivating|reloading) echo running ;; inactive|failed) [ -n \"$n\" ] && echo \"done ${r:-0}\" || echo gone ;; *) echo gone ;; esac ;;\npid)\n  [ -e \"$d/stop\" ] && { echo stop; exit 0; }\n  if [ -r \"/proc/$t/stat\" ]; then b=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null); st=$(sed 's/^.*) //' \"/proc/$t/stat\" | cut -d' ' -f20); n=\"$b:$st\"\n  elif ps -p \"$t\" >/dev/null 2>&1; then n=$(ps -o lstart= -p \"$t\" | tr -s ' ' '_')\n  else echo gone; exit 0; fi\n  [ \"$id\" = - ] && { echo \"ident $n\"; echo running; exit 0; }\n  [ \"$n\" = \"$id\" ] && echo running || echo gone ;;\nfile)\n  [ -e \"$d/stop\" ] && { echo stop; exit 0; }\n  [ -f \"$t\" ] && grep -qF \"$id\" \"$t\" 2>/dev/null && { echo found; exit 0; }\n  echo running ;;\n*) echo gone ;;\nesac\n"
@@ -7563,7 +7564,7 @@ def Conn.head(fuel: Nat, s: Socket, +buf: List<&2, U32>, +web: String, +id: U32,
 def Accept.whois(r: Socket & String, +owner: String, +id: U32, +web: String, +inbox: Chan(Msg), +token: String) -> IO(Unit):
   (s, ip) = r
   do IO<Unit>:
-    w : P.Ran <- P.Proc.run("timeout", ["--kill-after=1", "5", "tailscale", "whois", "--json", ip], "/")
+    w : P.Ran <- P.Proc.run("sh", PT.Port.timeout(["5", "tailscale", "whois", "--json", ip]), "/")
     Conn.head(64n, s, Nil{}, web, id, inbox, TN.Tailnet.trusts(owner, TN.Tailnet.login(Tailnet.out(w))), token)
 
 def Accept.trust(ask: Bool, s: Socket, +owner: String, +id: U32, +web: String, +inbox: Chan(Msg), +trusted: Bool, +token: String) -> IO(Unit):

@@ -1,4 +1,5 @@
 import Base
+import ../core/port.bend as PT
 import ./host.bend as H
 import ./proc.bend as P
 import ../core/json.bend as J
@@ -579,7 +580,7 @@ def Bn.url.here(tailnet: Bool, +host: String, +port: U32) -> IO(String):
   match tailnet:
     case True{}:
       do IO<String>:
-        r : P.Ran <- P.Proc.run("sh", ["-c", "command -v tailscale >/dev/null && timeout 5 tailscale status --json"], "/")
+        r : P.Ran <- P.Proc.run("sh", ["-c", (PT.Port.tmo() ++ "command -v tailscale >/dev/null && tmo 5 tailscale status --json")], "/")
         +name : String = Bn.dns(r)
         return Bool.pick(String, String.is_empty(name), Bn.at(host, port), Bn.at(name, port))
     case False{}:
