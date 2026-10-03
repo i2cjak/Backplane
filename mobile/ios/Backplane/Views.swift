@@ -35,6 +35,12 @@ struct RootView: View {
                     if let t = model.screen?.tour { TourSheet(model: model, tour: t) }
                 }
                 .task(id: "\(model.screen?.tour != nil)|\(pairing)") { await tourWait() }
+                // the island tapped while several threads work: which to open
+                .confirmationDialog(model.screen?.island.headline ?? "", isPresented: $model.picking, titleVisibility: .visible) {
+                    ForEach(model.screen?.island.lines ?? [], id: \.thread) { l in
+                        Button(l.title.isEmpty ? l.doing : l.title) { model.act("select", l.thread) }
+                    }
+                }
         } else {
             ProgressView()
         }

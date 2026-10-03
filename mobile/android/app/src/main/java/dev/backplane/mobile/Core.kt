@@ -52,6 +52,8 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
     // the same entry shown twice scrolls twice
     var jump by mutableStateOf<Jump?>(null)
         private set
+    // the live status tapped while several threads work: which one to open
+    var picking by mutableStateOf(false)
     // a jump waiting for a screen that holds its entry (the jump opens folds
     // and pages first), and how many more screens it waits
     private var jumping: String? = null
@@ -235,7 +237,8 @@ class Core(private val app: Application) : Application.ActivityLifecycleCallback
     fun attach(data: ByteArray, name: String) {
         if (data.isEmpty()) return
         val s = screen ?: return
-        val thread = s.thread?.id ?: return
+        // the hub's own id: over several hubs the screen names it "<hub>|<id>"
+        val thread = s.thread?.id?.substringAfterLast('|') ?: return
         val l = links.firstOrNull { Pairing.key(it) == s.hub } ?: links.firstOrNull() ?: return
         val key = "%08x".format(SecureRandom().nextInt())
         fun q(v: String) = java.net.URLEncoder.encode(v, "UTF-8").replace("+", "%20")

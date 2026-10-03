@@ -38,7 +38,12 @@ type Out is Data:
   # run one Codex turn (a process per turn; `session` resumes)
   CodexTurn{thread: String, cwd: String, model: String, session: String, runtime: M.RuntimeMode, text: String}
   GrokTurn{thread: String, cwd: String, model: String, session: String, runtime: M.RuntimeMode, text: String}
+  # a turn ended: "completed", "failed", or "stopped" (Stop, archive,
+  # delete: no alert, but the phones' island still hears of it)
   TurnEnded{thread: String, state: String}
+  # the phones' island (Live Activity) is pushed again, no alert: a turn
+  # started or changed, a thread went (Island.outs)
+  IslandSync{}
   AskAnswered{id: String, answer: String}
   Git{client: U32, id: String, job: String, thread: String, cwd: String, a: String, b: String}
   TermOp{op: String, thread: String, cwd: String, data: List<&2, U32>, cols: U32, rows: U32}
@@ -80,6 +85,48 @@ def Step.none() -> Step:
 
 def Step.outs(os: List<&2, Out>) -> Step:
   Step{Nil{}, os}
+
+# The phones' island
+# ------------------
+# A phone in the background hears of its island only by push. Every step
+# that moves a turn (a start, an end, a stop, recovery at start) or takes a
+# thread away (archive, delete) ends with an IslandSync, unless it already
+# tells the server a turn ended (TurnEnded pushes the island with its
+# alert), so the Live Activity never shows a thread working that is not
+# (laws island_sync_*).
+
+def Island.touch(cs: List<&2, M.Change>) -> Bool:
+  match cs:
+    case Nil{}:
+      False{}
+    case M.TurnChanged{_, _, _} <> _:
+      True{}
+    case M.ThreadArchived{_, _, _} <> _:
+      True{}
+    case M.ThreadDeleted{_, _} <> _:
+      True{}
+    case _ <> t:
+      Island.touch(t)
+
+def Island.told(os: List<&2, Out>) -> Bool:
+  match os:
+    case Nil{}:
+      False{}
+    case TurnEnded{_, _} <> _:
+      True{}
+    case _ <> t:
+      Island.told(t)
+
+def Island.outs.k(due: Bool, os: List<&2, Out>) -> List<&2, Out>:
+  match due:
+    case True{}:
+      List.append(&2, Out, os, [IslandSync{}])
+    case False{}:
+      os
+
+# a step's outputs, with the island pushed after them when the step moved it
+def Island.outs(+cs: List<&2, M.Change>, +os: List<&2, Out>) -> List<&2, Out>:
+  Island.outs.k(Bool.and(Island.touch(cs), Bool.not(Island.told(os))), os)
 
 # Replies
 # -------
@@ -2640,11 +2687,13 @@ def Retire.answers(as: List<&2, M.Ask>, +th: String) -> List<&2, Out>:
     case +a <> t:
       Retire.answer(Retire.hit(a, th), Retire.id(a), Retire.answers(t, th))
 
-# a turn still running ends as interrupted, and its task with it
+# a turn still running ends as interrupted, and its task with it; the
+# server is told, so a phone's Live Activity drops it (law
+# retire_stop_tells)
 def Retire.turn(run: Bool, +s: M.State, +now: Nat, +th: String, st: Step) -> Step:
   match run:
     case True{}:
-      Task.finish(s, now, th, Step.before([M.TurnChanged{th, M.Interrupted{}, now}], Nil{}, st))
+      Task.finish(s, now, th, Step.before([M.TurnChanged{th, M.Interrupted{}, now}], [TurnEnded{th, "stopped"}], st))
     case False{}:
       st
 
@@ -4157,6 +4206,16 @@ def Demo.switched() -> M.State:
 # a step applied as the server does (with the pending counts it moves)
 def Retire.after(+s: M.State, st: Step) -> M.State:
   M.State.replay(Pend.fix(s, Queue.changes(st)), s)
+
+# whether a step tells the server thread th's turn was stopped (for laws)
+def Ended.stopped(os: List<&2, Out>, +th: String) -> Bool:
+  match os:
+    case Nil{}:
+      False{}
+    case TurnEnded{+t, +state} <> r:
+      Bool.or(Bool.and(String.eq(t, th), String.eq(state, "stopped")), Ended.stopped(r, th))
+    case _ <> r:
+      Ended.stopped(r, th)
 
 # thread.archive (or thread.delete: i 12n) of "t1" (for laws)
 def Retire.request(i: Nat, +s: M.State) -> Step:

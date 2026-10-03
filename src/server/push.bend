@@ -10,7 +10,8 @@ import ./host.bend as H
 import ./proc.bend as P
 
 # Phone notifications (APNs alerts and Live Activity updates). The hub
-# calls Push.turn_ended once for every turn that completes or fails, off
+# calls Push.turn_ended once for every turn that completes, fails or is
+# stopped (a stop alerts no one: it comes as seen), off
 # its own thread (the server spawns it), with the state as it was when the
 # turn ended. `state` is "completed" or "failed"; `seen` says a desk (the
 # window, a web page) is watching the thread, so no alert goes out
@@ -264,9 +265,15 @@ def Island.end(ends: Bool, +now: Nat) -> List<&2, J.KV>:
     case False{}:
       [J.KV{"event", J.Str{"update"}}]
 
+# how long an island holds without word from its hub (seconds): a busy hub
+# pushes it at least hourly (Push.island.beat), so one that went quiet
+# longer is down, and iOS marks its Live Activity stale (the widget dims it)
+def Island.fresh() -> Nat:
+  10800n
+
 def Island.payload(ends: Bool, +now: Nat, cs: J.Json) -> String:
   J.Json.show(J.Json.obj([J.KV{"aps", J.Json.obj(List.concat(&2, J.KV, [
-    [J.KV{"timestamp", J.Num{Nat.show(now)}}],
+    [J.KV{"timestamp", J.Num{Nat.show(now)}}, J.KV{"stale-date", J.Num{Nat.show(Nat.add(now, Island.fresh()))}}],
     Island.end(ends, now),
     [J.KV{"content-state", cs}]]))}]))
 
@@ -416,7 +423,7 @@ def Push.key(+n: NO.Notice) -> String:
 def Push.held.k(none: Bool, +thread: String) -> IO(Unit):
   match none:
     case True{}:
-      IO.print_err("backplane: push alert held for " ++ thread ++ " (a desk is watching it, or a room exchange already told the person)")
+      IO.print_err("backplane: push alert held for " ++ thread ++ " (a desk is watching it, it was stopped, or a room exchange already told the person)")
     case False{}:
       IO.pure(Unit, Unit{})
 
@@ -478,6 +485,60 @@ def Push.start(+home: String, +st: M.State, +thread: String, +state: String, see
     +phones : Bool = Push.any(Push.devices(st))
     Push.ready(Bool.and(has, Bool.and(phones, Bool.not(Bool.or(String.is_empty(key), Bool.or(String.is_empty(kid), String.is_empty(team)))))),
       phones, home, st, thread, state, seen, key, kid, team)
+
+# The island alone (hub.bend's IslandSync, and the hourly beat while any
+# thread works): every running thread, no alert. "@island" is no thread
+# (no id has '@'), so none is left out and no device's thread matches it
+def Push.island.send(+home: String, +st: M.State, +key: String, +kid: String, +team: String) -> IO(List<&2, String>):
+  do IO<List<&2, String>>:
+    +dir : String = home ++ "/tmp"
+    mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(dir)
+    m : Result<&1, &1, U32 & String, Unit> <- H.FS.chmod(dir, 448)
+    t : U32 <- H.Clock.epoch()
+    +now : Nat = U32.to_nat(t)
+    +prefix : String = "push-" ++ Nat.show(now) ++ "-island"
+    +jwt : String <- Jwt.sign(key, dir, prefix, Jwt.input(kid, team, now))
+    base : String <- Push.env("BACKPLANE_APNS_URL")
+    +others : List<&2, M.Thread> = Island.others(st, "@island")
+    +job : Job = Job{dir, base, jwt, now, "@island", "", Island.state(others), List.is_empty(&2, M.Thread, others), ""}
+    Push.gate(String.is_empty(jwt), Push.devices(st), job, prefix)
+
+# only where an island can be: a configured key and a phone's Live
+# Activity registered (nothing is said otherwise: a turn's end says it)
+def Push.island.ready(ok: Bool, +home: String, +st: M.State, +key: String, +kid: String, +team: String) -> IO(List<&2, String>):
+  match ok:
+    case True{}:
+      Push.island.send(home, st, key, kid, team)
+    case False{}:
+      IO.pure(List<&2, String>, Nil{})
+
+def Push.activity(d: M.Device) -> Bool:
+  match d:
+    case M.Device{_, +platform, +kind, _, _, _, _}:
+      Nat.is_eq(Push.kind(platform, kind), 2n)
+
+def Push.activities(ds: List<&2, M.Device>) -> Bool:
+  match ds:
+    case Nil{}:
+      False{}
+    case d <> t:
+      Bool.or(Push.activity(d), Push.activities(t))
+
+def Push.island.start(+home: String, +st: M.State, +key: String, +kid: String, +team: String) -> IO(List<&2, String>):
+  do IO<List<&2, String>>:
+    has : Bool <- Push.exists(key)
+    Push.island.ready(Bool.and(has, Bool.and(Push.activities(Push.devices(st)), Bool.not(Bool.or(String.is_empty(key), Bool.or(String.is_empty(kid), String.is_empty(team)))))),
+      home, st, key, kid, team)
+
+# the island pushed alone; answers the tokens APNs reported dead
+def Push.island.dead(+home: String, +st: M.State) -> IO(List<&2, String>):
+  Push.island.start(home, st, M.Setting.get(st, "push.apns.key", ""), M.Setting.get(st, "push.apns.keyid", ""), M.Setting.get(st, "push.apns.team", ""))
+
+# whether the hourly beat is due (the hub's minute tick, in the first 90
+# seconds of an hour: a tick late by a few seconds still lands in one) and
+# any thread works
+def Push.island.beat(+st: M.State, +now: Nat) -> Bool:
+  Bool.and(Nat.is_lt(Nat.mod(now, 3600n), 90n), Bool.not(List.is_empty(&2, M.Thread, Island.others(st, "@island"))))
 
 # every push for a turn that ended; answers the tokens APNs reported dead
 def Push.turn_ended.dead(+home: String, +st: M.State, +thread: String, +state: String, seen: Bool) -> IO(List<&2, String>):

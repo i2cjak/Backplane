@@ -11,6 +11,9 @@ final class IslandController {
     private var activity: Activity<IslandAttributes>?
     private var last: IslandAttributes.ContentState?
     private let register: (String, String) -> Void
+    // with no word for this long iOS marks it stale (the hubs push at least
+    // hourly while any thread works: push.bend's Island.fresh)
+    private var stale: Date { Date().addingTimeInterval(3 * 3600) }
 
     // register(kind, token): "activity" for this activity, "start" for
     // starting one by push (iOS 17.2+)
@@ -36,7 +39,7 @@ final class IslandController {
         if activity == nil, s.running > 0 {
             guard foreground, ActivityAuthorizationInfo().areActivitiesEnabled else { return }
             do {
-                let a = try Activity.request(attributes: IslandAttributes(), content: .init(state: s, staleDate: nil), pushType: .token)
+                let a = try Activity.request(attributes: IslandAttributes(), content: .init(state: s, staleDate: stale), pushType: .token)
                 activity = a
                 last = s
                 watch(a)
@@ -45,10 +48,14 @@ final class IslandController {
             }
             return
         }
-        guard let a = activity, s != last else { return }
+        // against what the activity shows now (a hub's push may have changed
+        // it since), and again whenever its stale date draws near
+        guard let a = activity else { return }
+        let due = (a.content.staleDate ?? .distantFuture) < Date().addingTimeInterval(2 * 3600)
+        guard s != a.content.state || due else { return }
         last = s
         if s.running > 0 {
-            Task { await a.update(.init(state: s, staleDate: nil)) }
+            Task { await a.update(.init(state: s, staleDate: stale)) }
         } else {
             activity = nil
             Task { await a.end(.init(state: s, staleDate: nil), dismissalPolicy: .after(.now + 15 * 60)) }

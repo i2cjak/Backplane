@@ -3836,9 +3836,22 @@ def Ui.reply.att.k(done: Bool, failed: Bool, +thread: String, +path: String, u: 
     case False{} False{}:
       u
 
+def Att.last(xs: List<&2, String>, +acc: String) -> String:
+  match xs:
+    case Nil{}:
+      acc
+    case +x <> t:
+      Att.last(t, x)
+
+# a thread's own id: a phone over several hubs names it "<hub>|<id>" (no
+# thread id has '|'), and the hub answers with the name it was sent; the
+# upload was marked under the hub's own id (law upload_thread_local)
+def Att.local(+t: String) -> String:
+  Att.last(String.split(t, '|'), t)
+
 def Ui.reply.att(+r: J.Json, +ok: Bool, u: Ui) -> Ui:
   Ui.reply.att.k(Bool.not(String.is_empty(J.Json.get_str(r, "attached", ""))), Bool.and(Bool.not(ok), J.Json.get_bool(r, "upload", False{})),
-    J.Json.get_str(r, "thread", ""), J.Json.get_str(r, "attached", ""), u)
+    Att.local(J.Json.get_str(r, "thread", "")), J.Json.get_str(r, "attached", ""), u)
 
 # The viewer's Files tab (core/fm.bend): a folder the hub listed is kept
 # per thread (fm.list:<t>, and fm.dir:<t> the folder it is), and a PDF's

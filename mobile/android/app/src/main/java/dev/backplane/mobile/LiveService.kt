@@ -103,7 +103,7 @@ class LiveService : Service() {
 
     private fun notification(i: Island): Notification {
         val body = text(i)
-        return NotificationCompat.Builder(this, Notes.LIVE)
+        val b = NotificationCompat.Builder(this, Notes.LIVE)
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle(i.headline)
             .setContentText(body.substringBefore('\n'))
@@ -114,10 +114,15 @@ class LiveService : Service() {
             .setSilent(true)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .setContentIntent(Notes.open(this, i.lines.singleOrNull()?.thread ?: "", ID))
+            // one thread opens it; several, the app asks which
+            .setContentIntent(i.lines.singleOrNull()?.let { Notes.open(this, it.thread, ID) } ?: Notes.pick(this, ID))
             // Android 16: ask to be promoted to a status-bar chip
             // (Notification.EXTRA_REQUEST_PROMOTED_ONGOING; compileSdk 35 lacks it)
             .addExtras(Bundle().apply { putBoolean("android.requestPromotedOngoing", true) })
-            .build()
+        // expanded, each thread (up to three) is a button that opens it
+        if (i.lines.size > 1) i.lines.take(3).forEachIndexed { k, l ->
+            b.addAction(0, l.title.ifEmpty { l.doing }, Notes.open(this, l.thread, ID + 1 + k))
+        }
+        return b.build()
     }
 }

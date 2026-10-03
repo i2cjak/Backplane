@@ -1,5 +1,6 @@
 import PhotosUI
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 // The pieces of a thread and the sheets over it. Every label, value and
@@ -143,12 +144,61 @@ struct ChipView: View {
     }
 }
 
+// a message's text where any part of it can be selected (UITextView: a
+// SwiftUI Text only copies whole); Copy All takes it whole
+private struct SelectableText: UIViewRepresentable {
+    let text: String
+
+    func makeUIView(context: Context) -> UITextView {
+        let v = UITextView()
+        v.isEditable = false
+        v.isSelectable = true
+        v.font = .preferredFont(forTextStyle: .body)
+        v.adjustsFontForContentSizeCategory = true
+        v.textContainerInset = UIEdgeInsets(top: 16, left: 12, bottom: 16, right: 12)
+        v.backgroundColor = .clear
+        return v
+    }
+
+    func updateUIView(_ v: UITextView, context: Context) {
+        if v.text != text { v.text = text }
+    }
+}
+
+struct SelectSheet: View {
+    let model: AppModel
+    let text: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            SelectableText(text: text)
+                .navigationTitle("Select Text")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Copy All") { model.act("copy", text) } }
+                    ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                }
+        }
+    }
+}
+
 struct EntryRow: View {
     let model: AppModel
     let entry: Entry
     let show: (Shown) -> Void
+    @State private var selecting = false
+
+    @ViewBuilder private var menu: some View {
+        Button("Copy", systemImage: "doc.on.doc") { model.act("copy", entry.text) }
+        Button("Select Text", systemImage: "selection.pin.in.out") { selecting = true }
+    }
 
     var body: some View {
+        row.sheet(isPresented: $selecting) { SelectSheet(model: model, text: entry.text) }
+    }
+
+    @ViewBuilder private var row: some View {
         switch entry.kind {
         case "user":
             VStack(alignment: .trailing, spacing: 6) {
@@ -156,7 +206,7 @@ struct EntryRow: View {
                     Text(entry.text)
                         .padding(.horizontal, 14).padding(.vertical, 10)
                         .background(Color.accentColor.opacity(0.15), in: .rect(cornerRadius: 18))
-                        .contextMenu { Button("Copy", systemImage: "doc.on.doc") { model.act("copy", entry.text) } }
+                        .contextMenu { menu }
                 }
                 ForEach(entry.attachments ?? [], id: \.self) { ChipView(model: model, chip: $0, show: show) }
             }
@@ -167,7 +217,7 @@ struct EntryRow: View {
                 MarkdownView(blocks: entry.blocks ?? [])
                 ForEach(entry.images ?? [], id: \.self) { Thumb(model: model, url: $0.url, show: show) }
             }
-            .contextMenu { Button("Copy", systemImage: "doc.on.doc") { model.act("copy", entry.text) } }
+            .contextMenu { menu }
         case "fold":
             Button { model.act("fold", entry.value ?? "") } label: {
                 HStack(spacing: 6) {

@@ -14,6 +14,9 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     val scrolls get() = core.scrolls
     val jump get() = core.jump
     val plots get() = core.plots
+    var picking
+        get() = core.picking
+        set(v) { core.picking = v }
 
     fun pair(text: String) = core.pair(text)
     fun unpair(key: String) = core.unpair(key)

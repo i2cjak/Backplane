@@ -2989,6 +2989,9 @@ def Hub.drop_dead(ts: List<&2, String>, +inbox: Chan(Msg)) -> IO(Unit):
     case t <> rest:
       IO.bind(Bool, Unit, Chan.send(Msg, inbox, Rpc{0, PU.Push.drop_request(t)}), _ => Hub.drop_dead(rest, inbox))
 
+def Hub.island(+home: String, st: M.State, +inbox: Chan(Msg)) -> IO(Unit):
+  IO.bind(List<&2, String>, Unit, PU.Push.island.dead(home, st), ds => Hub.drop_dead(ds, inbox))
+
 def Hub.phone(+home: String, st: M.State, +thread: String, +state: String, seen: Bool, +inbox: Chan(Msg)) -> IO(Unit):
   IO.bind(List<&2, String>, Unit, PU.Push.turn_ended.dead(home, st, thread, state, seen), ds => Hub.drop_dead(ds, inbox))
 
@@ -3002,6 +3005,15 @@ def Desk.tell.go(quiet: Bool, +n: NO.Notice, +cl: List<&2, Client>, +c: U32, +st
 
 def Desk.tell.k(+n: NO.Notice, +cl: List<&2, Client>, +c: U32, +st: M.State, +thread: String, +state: String) -> IO(List<&2, Client>):
   Desk.tell.go(String.is_empty(NO.Notice.kind(n)), n, cl, c, st, thread, state)
+
+# a stopped turn (Stop, archive, delete) is no news to a desk; the phones'
+# island still hears of it (as one a desk sees: no alert, only the update)
+def Desk.to.stop(stop: Bool, m: Maybe<&2, U32>) -> Maybe<&2, U32>:
+  match stop:
+    case True{}:
+      None{}
+    case False{}:
+      m
 
 # a turn's end as a desktop notification, on the desk used last, when it
 # is news (core/notice.bend, as for phones) and no desk watches the thread
@@ -6211,11 +6223,17 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{st, f, ls, cl, as, inbox, cfg, note} B.DeskLook{+client, +thread, +focused}:
       Hub.desk(Hub{st, f, ls, cl, as, inbox, cfg, note}, client, thread, focused)
+    # the island alone, off the hub loop (its push's own process)
+    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.IslandSync{}:
+      do IO<Hub>:
+        IO.spawn(Unit, Hub.island(Cfg.home(cfg), st, inbox))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case Hub{+st, f, ls, +cl, as, +inbox, +cfg, note} B.TurnEnded{+thread, +state}:
       do IO<Hub>:
         +now : Nat <- Now.nat()
-        +seen : Bool = DK.Desk.seen(Clients.looks(cl), thread, now)
-        cl2 : List<&2, Client> <- Desk.tell(DK.Desk.to(Clients.looks(cl), thread, now), cl, st, thread, state)
+        +stop : Bool = String.eq(state, "stopped")
+        +seen : Bool = Bool.or(stop, DK.Desk.seen(Clients.looks(cl), thread, now))
+        cl2 : List<&2, Client> <- Desk.tell(Desk.to.stop(stop, DK.Desk.to(Clients.looks(cl), thread, now)), cl, st, thread, state)
         IO.spawn(Unit, Hub.phone(Cfg.home(cfg), st, thread, state, seen, inbox))
         Self.post(inbox, Release{})
         return Hub{st, f, ls, cl2, as, inbox, cfg, note}
@@ -6573,8 +6591,8 @@ def Hub.step.k(p: M.State & Hub, cs: List<&2, M.Change>, os: List<&2, B.Out>) ->
 # its effects run; answers whether it was stored
 def Hub.step.ok(h: Hub, s: B.Step) -> IO(Hub & Bool):
   match s:
-    case B.Step{cs, os}:
-      Hub.step.k(Hub.state(h), cs, os)
+    case B.Step{+cs, +os}:
+      Hub.step.k(Hub.state(h), cs, B.Island.outs(cs, os))
 
 def Hub.step.drop(r: Hub & Bool) -> Hub:
   (h, _) = r
@@ -8031,6 +8049,23 @@ def Hub.quiet(h: Hub, +now: Nat) -> IO(Hub):
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       Hub.quiet.k(Quiet.all(as, st, now, Quieted{Nil{}, Nil{}}), Hub{st, f, ls, cl, Nil{}, inbox, cfg, note})
 
+def Hub.quiet.beat.k(due: Bool, h: Hub, +now: Nat) -> IO(Hub):
+  match due h:
+    case True{} Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, Hub.island(Cfg.home(cfg), st, inbox))
+        Hub.quiet(Hub{st, f, ls, cl, as, inbox, cfg, note}, now)
+    case False{} _:
+      Hub.quiet(h, now)
+
+# the minute's tick; once an hour while any thread works, the phones'
+# island is pushed again, so it is never left to go stale (push.bend's
+# Island.fresh)
+def Hub.quiet.beat(h: Hub, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.quiet.beat.k(PU.Push.island.beat(st, now), Hub{st, f, ls, cl, as, inbox, cfg, note}, now)
+
 # Beat: a thread's held progress lines land once B.Prog.gap() seconds have
 # passed since its last write (B.Prog.beat), so the newest always shows
 type Beated is Data:
@@ -8212,7 +8247,7 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
     case AgentExited{thread, gen, code}:
       Hub.exited(h, thread, gen, code)
     case Silence{}:
-      Hub.quiet(h, now)
+      Hub.quiet.beat(h, now)
     case Beat{}:
       Hub.beat(h, now)
     case WatchLaunched{thread, id}:
