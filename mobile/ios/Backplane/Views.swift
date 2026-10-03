@@ -1043,7 +1043,6 @@ enum Presented {
     @MainActor static var none: Bool {
         let root = UIApplication.shared.connectedScenes
             .compactMap { ($0 as? UIWindowScene)?.keyWindow?.rootViewController }.first
-        guard let top = root?.presentedViewController else { return true }
-        return top.isBeingDismissed
+        return root?.presentedViewController == nil
     }
 }
