@@ -14,9 +14,17 @@
 # real headers without root:
 #   apt-get download libfreetype-dev && dpkg -x libfreetype-dev_*.deb ~/.local/ft
 #   (headers in ~/.local/ft/usr/include/freetype2; compare offsetof values)
+#
+# A macOS runner's 7 GB is too little for bend's emit, so releases split
+# the build (.github/workflows/release.yml): `scripts/build.sh emit` on
+# Linux writes what is the same everywhere (the web client, the server's C
+# and test/wire for smoke.sh), and `BACKPLANE_PREBUILT=1 scripts/build.sh`
+# on the Mac compiles it.
 set -eu
 cd "$(dirname "$0")/.."
-for f in src/web/app.bend src/server/main.bend src/app/main.bend; do
+mode=${1:-all}
+pre=${BACKPLANE_PREBUILT:-}
+[ "$pre" = 1 ] || for f in src/web/app.bend src/server/main.bend src/app/main.bend; do
   out=$(bend "$f" --check-only 2>&1) || { echo "$out"; exit 1; }
   case $out in *"All terms check"*) ;; *) echo "$out"; exit 1 ;; esac
 done
@@ -28,12 +36,24 @@ fi
 if [ -n "${BACKPLANE_VERSION:-}" ]; then
   printf 'import Base\n\n# The running build'"'"'s version (stamped by scripts/build.sh).\n\ndef Version.current() -> String:\n  "%s"\n' "${BACKPLANE_VERSION#v}" > src/core/version.bend
 fi
-rm -rf dist
-mkdir -p dist build
-bend src/web/index.html -o dist/web
-cp src/web/sw.js dist/web/sw.js
-# precompressed copies: the server sends these to browsers that take gzip
-for f in dist/web/*.js dist/web/*.css dist/web/*.html; do gzip -9 -k -n -f "$f"; done
+if [ "$pre" = 1 ]; then
+  [ -f dist/web/index.html ] || { echo "BACKPLANE_PREBUILT: no dist/web (scripts/build.sh emit)"; exit 1; }
+  find dist -mindepth 1 -maxdepth 1 ! -name web -exec rm -rf {} +
+else
+  rm -rf dist
+  mkdir -p dist
+  bend src/web/index.html -o dist/web
+  cp src/web/sw.js dist/web/sw.js
+  # precompressed copies: the server sends these to browsers that take gzip
+  for f in dist/web/*.js dist/web/*.css dist/web/*.html; do gzip -9 -k -n -f "$f"; done
+fi
+mkdir -p build
+if [ "$mode" = emit ]; then
+  BACKPLANE_EMIT_ONLY=1 scripts/build-app.sh src/server/main.bend dist/backplane-serve
+  rm -rf build/wire
+  bend test/wire/index.html -o build/wire > /dev/null
+  exit 0
+fi
 # native binaries compile split in parallel, at low priority
 # (scripts/build-app.sh; BACKPLANE_JOBS caps the compiles)
 scripts/build-app.sh src/server/main.bend dist/backplane-serve

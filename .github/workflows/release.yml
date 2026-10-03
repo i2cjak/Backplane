@@ -39,8 +39,7 @@ jobs:
         include:
           - { target: linux-x64,    os: ubuntu-24.04 }
           - { target: linux-arm64,  os: ubuntu-24.04-arm }
-          # no X11 on a Mac: scripts/build.sh builds it as hub + web UI
-          - { target: darwin-arm64, os: macos-15 }
+          # darwin-arm64 is the two jobs below
     runs-on: ${{ matrix.os }}
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
@@ -84,7 +83,6 @@ jobs:
       - run: scripts/smoke.sh
       - run: scripts/package.sh "$TAG" "${{ matrix.target }}"
       - run: scripts/package-linux.sh "$TAG" "${{ matrix.target }}"
-        if: runner.os == 'Linux'
       - uses: actions/upload-artifact@v4
         with:
           name: backplane-${{ matrix.target }}
@@ -92,6 +90,60 @@ jobs:
             dist/backplane-*.tar.gz
             dist/backplane-*.AppImage
             dist/backplane_*.deb
+
+  # macOS: the hub and web UI as `backplane` (no X11, so no window). bend's
+  # emit of the server takes over 8 GB, which a macOS runner (7 GB) spends
+  # hours swapping through, and its C is the same on every platform: a
+  # Linux runner emits it with the web client, the Mac compiles it.
+  emit-darwin:
+    name: Emit darwin-arm64
+    needs: [laws]
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: ./.github/actions/setup-bend
+      - run: BACKPLANE_VERSION="$TAG" scripts/build.sh emit
+      - uses: actions/upload-artifact@v4
+        with:
+          name: darwin-arm64-emitted
+          retention-days: 1
+          path: |
+            dist/web
+            build/cc/backplane-serve/all.c
+            build/wire
+
+  build-darwin:
+    name: Build darwin-arm64
+    needs: [emit-darwin]
+    runs-on: macos-15
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      BACKPLANE_PREBUILT: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: ./.github/actions/setup-bend
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/download-artifact@v4
+        with:
+          name: darwin-arm64-emitted
+          path: .
+      - run: clang --version
+      - run: BACKPLANE_VERSION="$TAG" scripts/build.sh
+        env:
+          BACKPLANE_GOOGLE_CLIENT_ID: ${{ secrets.BACKPLANE_GOOGLE_CLIENT_ID }}
+          BACKPLANE_GOOGLE_CLIENT_SECRET: ${{ secrets.BACKPLANE_GOOGLE_CLIENT_SECRET }}
+      - run: scripts/smoke.sh
+      - run: scripts/package.sh "$TAG" darwin-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backplane-darwin-arm64
+          path: dist/backplane-*.tar.gz
 
   android:
     name: Build Android
@@ -119,7 +171,7 @@ jobs:
 
   publish:
     name: Publish
-    needs: [build, android]
+    needs: [build, build-darwin, android]
     runs-on: ubuntu-24.04
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
@@ -131,6 +183,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: out
+          pattern: backplane-*
           merge-multiple: true
       - name: Checksums and installer
         run: |
