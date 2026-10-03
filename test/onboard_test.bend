@@ -2,6 +2,7 @@ import Base
 import ./check.bend as C
 import ../src/core/onboard.bend as OB
 import ../src/core/tools.bend as TO
+import ../src/core/tailnet.bend as TN
 import ../src/core/model.bend as M
 import ../src/core/client.bend as U
 import ../src/mobile/screen.bend as S
@@ -52,6 +53,10 @@ def done() -> U.Ui:
 # the info a hub sends for Settings' Tailscale row
 def tn(+t: String, +pair: String) -> Map<&2, String>:
   Map.set(&2, String, Map.set(&2, String, Map.set(&2, String, Map.new(&2, String), "tailnet", t), "listen", "127.0.0.1:3787"), "pair", pair)
+
+# the same from a hub that reports its tailnet state
+def tt(+state: String, +t: String, +pair: String) -> Map<&2, String>:
+  Map.set(&2, String, tn(t, pair), "tailscale", state)
 
 def at(u: U.Ui) -> String:
   Nat.show(U.Tour.at(u))
@@ -112,6 +117,11 @@ def main() -> IO(Unit):
     C.Check.str("tailscale off: the flag", U.Tail.label(tn("off", "")) ++ "|" ++ U.Tail.note(tn("off", "")), "Tailscale: off|Listening on 127.0.0.1:3787 only: started with --no-tailscale.")
     C.Check.str("tailscale not connected: no pairing link", U.Tail.label(tn("on", "")) ++ "|" ++ U.Tail.note(tn("on", "")), "Tailscale: not connected|Listening on 127.0.0.1:3787 only. Sign in to Tailscale, then restart Backplane.")
     C.Check.str("tailscale up: a pairing link", U.Tail.label(tn("on", "http://x/#token=t")) ++ "|" ++ U.Tail.label(tn("https", "https://x/#token=t")), "Tailscale: on|Tailscale: https")
+    C.Check.str("a hub reachable on the tailnet with no pairing link (--host 0.0.0.0)", U.Tail.label(tt("reachable", "on", "")) ++ "|" ++ U.Tail.note(tt("reachable", "on", "")), "Tailscale: on|Also on your tailnet: your own devices get in, others need the pairing token.")
+    C.Check.str("a hub that found no tailscale", U.Tail.label(tt("unavailable", "on", "")) ++ "|" ++ U.Tail.note(tt("unavailable", "on", "http://x/#token=t")), "Tailscale: not connected|Listening on 127.0.0.1:3787 only. Sign in to Tailscale, then restart Backplane.")
+    C.Check.str("a hub still looking", U.Tail.label(tt("checking", "on", "")), "Tailscale: checking")
+    C.Check.str("a hub with the flag", U.Tail.label(tt("off", "off", "")), "Tailscale: off")
+    C.Check.str("the tailnet report keeps both", TN.Tailnet.report.state(TN.Tailnet.report("reachable", "http://x")) ++ "|" ++ TN.Tailnet.report.link(TN.Tailnet.report("reachable", "http://x")) ++ "|" ++ TN.Tailnet.report.state("") ++ "|" ++ TN.Tailnet.report.link("") ++ "|" ++ TN.Tailnet.report.link(TN.Tailnet.report("unavailable", "")), "reachable|http://x|||")
     # the words
     C.Check.str("the buttons are named by tools.bend's labels", Bool.show(Bool.and(Bool.and(holds(OB.Ob.body(0n, "7", 3n), TO.Tools.label(TO.Tools.settle(False{}))), holds(OB.Ob.body(0n, "7", 3n), TO.Tools.label(TO.Tools.snooze(False{}, "", "")))),
       Bool.and(Bool.and(String.starts_with(TO.Tools.label(TO.Tools.fork()), "Fork"), holds(OB.Ob.body(0n, "7", 3n), "Fork starts")), holds(OB.Ob.body(1n, "7", 3n), TO.Tools.label(TO.Tools.panel(False{})))))), "True")
@@ -134,4 +144,8 @@ def main() -> IO(Unit):
     # the phones' screen
     C.Check.str("phone screen carries the tour", J.Json.get_str(J.Json.get_obj(S.Mob.screen(fresh()), "tour"), "title", ""), "Welcome to Backplane")
     C.Check.str("phone body is the phone's", Bool.show(holds(J.Json.get_str(J.Json.get_obj(S.Mob.screen(act(fresh(), "ob-next")), "tour"), "body", ""), "folder-plus")), "True")
+    C.Check.str("phone screen holds the tour while Settings is up", J.Json.show(J.Json.get_obj(S.Mob.screen(U.Ui.flag_on(fresh(), "settings")), "tour")), "null")
+    C.Check.str("phone screen holds the tour while Find is up", J.Json.show(J.Json.get_obj(S.Mob.screen(U.Ui.flag_on(fresh(), "palette")), "tour")), "null")
+    C.Check.str("phone screen holds the tour while a row menu is up", J.Json.show(J.Json.get_obj(S.Mob.screen(U.Ui.scratch_set(fresh(), "@menu", "r:t1")), "tour")), "null")
+    C.Check.str("phone screen shows the tour again once Settings is shut", J.Json.get_str(J.Json.get_obj(S.Mob.screen(U.Ui.flag_off(U.Ui.flag_on(fresh(), "settings"), "settings")), "tour"), "title", ""), "Welcome to Backplane")
     C.Check.str("phone screen has none once done", J.Json.show(J.Json.get_obj(S.Mob.screen(done()), "tour")), "null")

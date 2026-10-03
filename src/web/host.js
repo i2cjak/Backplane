@@ -581,12 +581,14 @@ document.addEventListener("keydown", (e) => {
 // the page: the page behind is inert, focus stays in the dialog (Tab goes
 // round its buttons), the keys that mean something go through app.bend's
 // tour_key (a repeat does nothing), every other key, ctrl/meta combination,
-// paste and drop is stopped, and a focused button does its own action. The
-// key that ended it is eaten until it is let go, so holding Enter through
-// Done never reaches the composer behind.
+// paste and drop is stopped, and a focused button does its own action. Every
+// key pressed while it is up (by KeyboardEvent.code, modified ones too) has
+// its repeats dropped after it closes, until the key is let go or pressed
+// afresh, so holding Enter through Done never reaches the composer behind.
 let tourFocus = null; // where the keyboard was when the dialog came up
 let tourOn = false;
 const tourEaten = new Set();
+let tourDrop = "";
 function tourSync() {
   const tour = document.querySelector(".tour");
   const app = document.querySelector(".app");
@@ -613,11 +615,17 @@ function tourSync() {
 document.addEventListener("keydown", (e) => {
   const tour = document.querySelector(".tour");
   if (!tour) {
-    // the key that closed it, still held
-    if (tourEaten.has(e.key)) { e.preventDefault(); e.stopImmediatePropagation(); }
+    // a key pressed while it was up, still held: its repeats are dropped
+    // (its keypress and input with them) until it is let go or pressed afresh
+    if (tourEaten.has(e.code)) {
+      if (e.repeat) { tourDrop = e.code; e.preventDefault(); e.stopImmediatePropagation(); return; }
+      tourEaten.delete(e.code);
+    }
+    tourDrop = "";
     return;
   }
   if (e.isComposing) return;
+  tourEaten.add(e.code);
   e.stopImmediatePropagation();
   if (e.ctrlKey || e.metaKey || e.altKey) { e.preventDefault(); return; }
   if (e.key === "Tab") {
@@ -631,19 +639,21 @@ document.addEventListener("keydown", (e) => {
   const onButton = document.activeElement instanceof HTMLButtonElement && tour.contains(document.activeElement);
   // Enter or Space on a focused button is that button's (the click does it)
   if (onButton && (e.key === "Enter" || e.key === " ")) {
-    tourEaten.add(e.key);
     if (e.repeat) e.preventDefault();
     return;
   }
   e.preventDefault();
   if (!act || e.repeat) return;
-  tourEaten.add(e.key);
   dispatch(act, "");
 }, true);
-document.addEventListener("keyup", (e) => { tourEaten.delete(e.key); }, true);
-window.addEventListener("blur", () => tourEaten.clear());
-for (const ev of ["paste", "drop", "dragover", "beforeinput", "cut"]) {
-  document.addEventListener(ev, (e) => { if (document.querySelector(".tour")) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+document.addEventListener("keyup", (e) => {
+  tourEaten.delete(e.code);
+  if (tourDrop === e.code) tourDrop = "";
+}, true);
+for (const ev of ["paste", "drop", "dragover", "beforeinput", "cut", "keypress"]) {
+  document.addEventListener(ev, (e) => {
+    if (document.querySelector(".tour") || (tourDrop && (ev === "beforeinput" || ev === "keypress"))) { e.preventDefault(); e.stopImmediatePropagation(); }
+  }, true);
 }
 
 // Lightbox

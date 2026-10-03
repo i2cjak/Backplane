@@ -87,7 +87,7 @@ def Ob.phone(+k: Nat) -> Bool:
 # folder ("local", Hub.env.of); Settings shows whether each agent program is
 # found, not whether it is signed in; the API keys' file is the hub user's,
 # and agents are only told not to print it; Tailscale is looked for when
-# Backplane starts and Settings says which of on, not connected or off
+# Backplane starts and Settings says which of on, not connected or off, as the hub reports it
 # (client.bend's Tail.*). The thread buttons are tools.bend's, named by
 # their labels (test/onboard_test.bend ties them).
 def Ob.body.0(+k: Nat) -> String:
@@ -129,7 +129,7 @@ def Ob.body.7(+k: Nat) -> String:
 def Ob.body.8(+k: Nat) -> String:
   Bool.pick(String, Ob.phone(k),
     "On the hub's computer open Settings, Pairing link, QR code. Here, Hubs, Scan QR code pairs it. This phone needs Tailscale on the same tailnet. A browser can open a hub's web address too.",
-    "To pair a phone, install Tailscale on it and join the same tailnet. Then open Settings, Pairing link, QR code and scan it with the Backplane app or the phone's camera. The link appears once Settings says Tailscale: on. A browser on a tailnet device can open this hub's web address too.")
+    "To pair a phone, install Tailscale on it and join the same tailnet. Then open Settings, Pairing link, QR code and scan it with the Backplane app or the phone's camera. Settings shows the link when Backplane has one. A browser on a tailnet device can open this hub's web address too.")
 
 def Ob.body(+k: Nat, +d: String, i: Nat) -> String:
   match i:

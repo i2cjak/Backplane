@@ -525,26 +525,34 @@ def Update.packaged(+nf: Map<&2, String>) -> Bool:
 def Pair.link(+nf: Map<&2, String>) -> String:
   Str.get(nf, "pair")
 
-# Tailscale in Settings, for every client: "off" is the flag (started with
-# --no-tailscale); otherwise it is up only once the hub listens on the
-# tailnet, which is when it has a pairing link ("pair"); else Tailscale was
-# not installed or signed in when Backplane started
-def Tail.off(+nf: Map<&2, String>) -> Bool:
-  String.eq(Str.get(nf, "tailnet"), "off")
+# Tailscale in Settings, for every client. The hub says what it found (info
+# "tailscale": off for --no-tailscale, checking, unavailable when Tailscale
+# gave no address or the bind failed, reachable when the hub answers on its
+# tailnet address, even without a pairing link of its own, as with
+# --host 0.0.0.0). A hub too old to say ("tailscale" missing) is read the old
+# way: up only once it has a pairing link ("pair").
+def Tail.told(+nf: Map<&2, String>) -> String:
+  Bool.pick(String, String.is_empty(Str.get(nf, "tailscale")),
+    Bool.pick(String, String.eq(Str.get(nf, "tailnet"), "off"), "off", Bool.pick(String, String.is_empty(Pair.link(nf)), "unavailable", "reachable")),
+    Str.get(nf, "tailscale"))
 
-def Tail.up(+nf: Map<&2, String>) -> Bool:
-  Bool.not(String.is_empty(Pair.link(nf)))
+def Tail.state.of(+t: String, +nf: Map<&2, String>) -> String:
+  Bool.pick(String, String.eq(t, "reachable"), Str.get(nf, "tailnet"), Bool.pick(String, String.eq(t, "unavailable"), "not connected", t))
 
 def Tail.state(+nf: Map<&2, String>) -> String:
-  Bool.pick(String, Tail.off(nf), "off", Bool.pick(String, Tail.up(nf), Str.get(nf, "tailnet"), "not connected"))
+  Tail.state.of(Tail.told(nf), nf)
 
 def Tail.label(+nf: Map<&2, String>) -> String:
   "Tailscale: " ++ Tail.state(nf)
 
+def Tail.note.of(+t: String, +nf: Map<&2, String>) -> String:
+  Bool.pick(String, String.eq(t, "off"), "Listening on " ++ Str.get(nf, "listen") ++ " only: started with --no-tailscale.",
+    Bool.pick(String, String.eq(t, "reachable"), "Also on your tailnet: your own devices get in, others need the pairing token.",
+      Bool.pick(String, String.eq(t, "unavailable"), "Listening on " ++ Str.get(nf, "listen") ++ " only. Sign in to Tailscale, then restart Backplane.",
+        "Looking for Tailscale.")))
+
 def Tail.note(+nf: Map<&2, String>) -> String:
-  Bool.pick(String, Tail.off(nf), "Listening on " ++ Str.get(nf, "listen") ++ " only: started with --no-tailscale.",
-    Bool.pick(String, Tail.up(nf), "Also on your tailnet: your own devices get in, others need the pairing token.",
-      "Listening on " ++ Str.get(nf, "listen") ++ " only. Sign in to Tailscale, then restart Backplane."))
+  Tail.note.of(Tail.told(nf), nf)
 
 def Pair.note(+link: String) -> String:
   Bool.pick(String, String.is_empty(link), "Shown once Backplane listens on your tailnet.", link)

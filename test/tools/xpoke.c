@@ -12,11 +12,14 @@
 //   xpoke holdx KEY MS     the same for a server without detectable repeat: each
 //                          repeat is a release and a press with the same time
 //   xpoke down KEY / up KEY  one press / one release
+//   xpoke xdown KEY / xup KEY / xhold KEY MS   the same through the XTest extension (the
+//                          server's own key state and auto-repeat, which XQueryKeymap sees)
 //   xpoke blur / focus     the window loses / gets the input focus
 // Build: cc -I<x11 include> test/tools/xpoke.c -o build/xpoke -lX11
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <stdio.h>
+#include <dlfcn.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -66,6 +69,18 @@ static void hold(Display* d, Window w, KeySym ks, int ms, int synth) {
   }
   usleep(30000);
   kev(d, w, ks, KeyRelease, t + 30);
+}
+
+// real key events from the server's XTest extension (libXtst, loaded here: no header needed)
+static void xtest(Display* d, KeySym ks, int press) {
+  static int (*fake)(Display*, unsigned, int, unsigned long);
+  if (!fake) {
+    void* h = dlopen("libXtst.so.6", RTLD_NOW);
+    fake = h ? (int (*)(Display*, unsigned, int, unsigned long))dlsym(h, "XTestFakeKeyEvent") : NULL;
+    if (!fake) { fprintf(stderr, "no libXtst\n"); exit(1); }
+  }
+  fake(d, XKeysymToKeycode(d, ks), press, 0);
+  XFlush(d);
 }
 
 static void button(Display* d, Window w, int x, int y, unsigned b) {
@@ -121,6 +136,14 @@ int main(int argc, char** argv) {
     kev(d, w, XStringToKeysym(argv[2]), KeyPress, 1000);
   } else if (!strcmp(argv[1], "up") && argc == 3) {
     kev(d, w, XStringToKeysym(argv[2]), KeyRelease, 1000);
+  } else if (!strcmp(argv[1], "xdown") && argc == 3) {
+    xtest(d, XStringToKeysym(argv[2]), 1);
+  } else if (!strcmp(argv[1], "xup") && argc == 3) {
+    xtest(d, XStringToKeysym(argv[2]), 0);
+  } else if (!strcmp(argv[1], "xhold") && argc == 4) {
+    xtest(d, XStringToKeysym(argv[2]), 1);
+    usleep((useconds_t)atoi(argv[3]) * 1000);
+    xtest(d, XStringToKeysym(argv[2]), 0);
   } else if (!strcmp(argv[1], "blur") && argc == 2) {
     XSetInputFocus(d, DefaultRootWindow(d), RevertToNone, CurrentTime);
   } else if (!strcmp(argv[1], "focus") && argc == 2) {

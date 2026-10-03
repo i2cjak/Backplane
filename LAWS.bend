@@ -4683,27 +4683,32 @@ law onboard_head_settings:
   {U.Tour.target(0n, OnbUi.step(U.Ui.flag_on(OnbUi.thread(), "settings"), "m3")) == "" : String}
 
 # keys pressed while the tour is up stay quarantined until let go, however
-# the tour closes; losing the focus drops them
+# the tour closes, until their release
 def OnbN.n() -> N.Nui:
   N.Nui.init(U.Ui.init(1n), 800, 600)
 
 law held_set_has:
-  {N.Held.has(N.Nui.ui(N.Held.set(OnbN.n(), 65293)), 65293) == True{} : Bool}
+  {N.Held.has(N.Nui.ui(N.Held.set(OnbN.n(), 36)), 36) == True{} : Bool}
 
 law held_other_key:
-  {N.Held.has(N.Nui.ui(N.Held.set(OnbN.n(), 65293)), 97) == False{} : Bool}
+  {N.Held.has(N.Nui.ui(N.Held.set(OnbN.n(), 36)), 38) == False{} : Bool}
 
 law held_let_frees:
-  {N.Held.has(N.Nui.ui(N.Held.let(N.Held.set(OnbN.n(), 65293), 65293)), 65293) == False{} : Bool}
+  {N.Held.has(N.Nui.ui(N.Held.let(N.Held.set(OnbN.n(), 36), 36)), 36) == False{} : Bool}
 
-law held_blur_frees:
-  {N.Held.has(N.Nui.ui(N.Held.clear(N.Held.set(OnbN.n(), 65293))), 65293) == False{} : Bool}
+# with nothing in quarantine every key press and release goes through as it
+# always did
+law held_empty_passes_press:
+  {N.Nui.event.t(False{}, OnbN.n(), W.WKey{97, 97, 0, True{}, 38}) == N.Nui.event.go(False{}, OnbN.n(), W.WKey{97, 97, 0, True{}, 38}) : N.Step}
+
+law held_empty_passes_release:
+  {N.Nui.event.t(False{}, OnbN.n(), W.WKey{97, 0, 0, False{}, 38}) == N.Nui.event.go(False{}, N.Held.let(OnbN.n(), 38), W.WKey{97, 0, 0, False{}, 38}) : N.Step}
 
 law held_none_at_first:
-  {N.Held.has(N.Nui.ui(OnbN.n()), 65293) == False{} : Bool}
+  {N.Held.has(N.Nui.ui(OnbN.n()), 36) == False{} : Bool}
 
 law held_swallowed_without_tour:
-  {N.Nui.event.t(False{}, N.Held.set(OnbN.n(), 65293), W.WKey{65293, 0, 0, True{}}) == N.Step{N.Held.set(OnbN.n(), 65293), Nil{}, False{}} : N.Step}
+  {N.Nui.event.t(False{}, N.Held.set(OnbN.n(), 36), W.WKey{65293, 0, 0, True{}, 36}) == N.Step{N.Held.set(OnbN.n(), 36), Nil{}, False{}} : N.Step}
 
 # the wheel over the tour's card scrolls two lines a notch within what
 # overflows

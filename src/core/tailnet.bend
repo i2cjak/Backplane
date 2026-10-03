@@ -24,6 +24,21 @@ def Tailnet.trusts(+owner: String, +login: String) -> Bool:
 def Tailnet.link(+base: String, +token: String) -> String:
   base ++ "/#token=" ++ token
 
+# What the hub knows of its tailnet side, one string: the state ("" not yet
+# known, "unavailable" tailscale gave no address or the bind failed,
+# "reachable" the hub answers on its tailnet address, through its own
+# listener or because its main one already covers it), a newline, then the
+# pairing link ("" while there is none). The two are separate facts: a hub
+# started with --host 0.0.0.0 is reachable and has no pairing link.
+def Tailnet.report(+state: String, +link: String) -> String:
+  state ++ "\n" ++ link
+
+def Tailnet.report.state(+r: String) -> String:
+  Maybe.default(&2, String, List.head(&2, String, String.split(r, '\n')), "")
+
+def Tailnet.report.link(+r: String) -> String:
+  Maybe.default(&2, String, List.head(&2, String, List.drop(&2, String, String.split(r, '\n'), 1n)), "")
+
 # A machine a client can switch to
 type Machine is Data:
   Machine{name: String, ip: String, online: Bool}

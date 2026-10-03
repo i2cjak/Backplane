@@ -6634,7 +6634,10 @@ def Laws.held_other_key():
 def Laws.held_let_frees():
   {==}
 
-def Laws.held_blur_frees():
+def Laws.held_empty_passes_press():
+  {==}
+
+def Laws.held_empty_passes_release():
   {==}
 
 def Laws.held_none_at_first():

@@ -221,12 +221,11 @@ fun App(m: AppModel) {
         dismissButton = { TextButton(onClick = { removed = true; m.act("proj-keep") }) { Text(r.no) } },
     )
     // the first-run tour (core/onboard.bend): the same as iOS, dismissing it
-    // (Back, a tap outside) is Skip; it waits while anything else is
-    // presented (Settings, Find, Hubs, a menu, a dialog, a form), so two
-    // never ask at once
+    // (Back, a tap outside) is Skip. The screen model has no step while Bend
+    // knows of another overlay; the app adds the hubs screen and every
+    // dialog it shows itself (Overlay: a picture, a diff, a confirmation)
     s.tour?.let { t ->
-        val free = !pairing && s.settings == null && s.find == null && s.rowMenu == null && d == null && rn == null && r == null &&
-            s.folders == null && s.newBot == null && s.newRoom == null
+        val free = !pairing && Overlay.n == 0
         if (free) AlertDialog(
             onDismissRequest = { m.act("ob-skip") },
             title = {

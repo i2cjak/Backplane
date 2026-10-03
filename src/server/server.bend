@@ -684,11 +684,16 @@ def Info.kicad(rt: K.Rt) -> List<&2, J.KV>:
 def Info.qr(+lk: String) -> String:
   QR.Qr.text(QR.Qr.link(lk))
 
+# the tailnet side as clients are told it ("tailscale"): off (the flag),
+# checking (no answer yet), unavailable, or reachable
+def Info.tailscale(tn: Bool, +st: String) -> String:
+  Bool.pick(String, tn, Bool.pick(String, String.is_empty(st), "checking", st), "off")
+
 def Info.net(n: Net) -> List<&2, J.KV>:
   match n:
-    case Net{tn, hs, _, ms, _, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, +lk, fc}:
+    case Net{+tn, hs, _, ms, _, rt, brx, pkx, tmx, mc, pvx, bnx, mgd, +lk, fc}:
       List.append(&2, J.KV, [J.KV{"models", J.Str{ms}}, J.KV{"machines", J.Str{mc}}, J.KV{"bots.remote", J.Str{BN.Bn.dir(bnx)}}, J.KV{"tailnet", J.Str{Bool.pick(String, tn, Bool.pick(String, hs, "https", "on"), "off")}},
-        J.KV{"update", J.Str{Bool.pick(String, mgd, "package", "releases")}}, J.KV{"pair", J.Str{lk}}, J.KV{"pair.qr", J.Str{Info.qr(lk)}}, J.KV{"freecad", J.Str{fc}}], Info.kicad(rt))
+        J.KV{"update", J.Str{Bool.pick(String, mgd, "package", "releases")}}, J.KV{"pair", J.Str{TN.Tailnet.report.link(lk)}}, J.KV{"pair.qr", J.Str{Info.qr(TN.Tailnet.report.link(lk))}}, J.KV{"tailscale", J.Str{Info.tailscale(tn, TN.Tailnet.report.state(lk))}}, J.KV{"freecad", J.Str{fc}}], Info.kicad(rt))
 
 # what this machine runs, for the settings screen and the model picker
 def Hub.info(c: Cfg) -> J.Json:
@@ -2058,7 +2063,7 @@ def Tailnet.https.k(none: Bool, +name: String, +token: String, +inbox: Chan(Msg)
     case False{}:
       do IO<Unit>:
         IO.print("Backplane over HTTPS on your tailnet: " ++ TN.Tailnet.link("https://" ++ name, token))
-        ok : Bool <- Chan.send(Msg, inbox, LinkFound{TN.Tailnet.link("https://" ++ name, token)})
+        ok : Bool <- Chan.send(Msg, inbox, LinkFound{TN.Tailnet.report("reachable", TN.Tailnet.link("https://" ++ name, token))})
         return Unit{}
 
 def Tailnet.https(on: Bool, +port: U32, +token: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -5843,34 +5848,45 @@ def Accept.loop(fuel: Nat, l: Listener, +id: U32, +web: String, +inbox: Chan(Msg
       IO.bind(Listener & Result<&1, &1, U32 & String, Socket>, Unit, TCP.accept(l),
         r => Accept.got(r, id, web, inbox, trusted, token, owner, l2 => Accept.loop(f, l2, (id + 1 : U32), web, inbox, trusted, token, owner)))
 
-def Tailnet.listened(r: Result<&1, &1, U32 & String, Listener>, +ip: String, +port: U32, +web: String, +inbox: Chan(Msg), +token: String) -> IO(Unit):
+# the tailnet address answers when the main listener already covers it
+# (--host 0.0.0.0, or the address itself): the extra bind then fails by design
+def Tailnet.covered(+host: String, +ip: String) -> Bool:
+  Bool.or(String.eq(host, "0.0.0.0"), String.eq(host, ip))
+
+def Tailnet.listened(r: Result<&1, &1, U32 & String, Listener>, +host: String, +ip: String, +port: U32, +web: String, +inbox: Chan(Msg), +token: String) -> IO(Unit):
   match r:
     case Done{l}:
       do IO<Unit>:
         w : P.Ran <- P.Proc.run("tailscale", ["whois", "--json", ip], "/")
         +owner : String = TN.Tailnet.login(Tailnet.out(w))
         IO.print("Backplane on your tailnet: http://" ++ ip ++ ":" ++ U32.show(port) ++ "/ (" ++ Bool.pick(String, String.is_empty(owner), "pairing token " ++ token, owner ++ "'s devices, or pairing token " ++ token) ++ ")")
-        ok : Bool <- Chan.send(Msg, inbox, LinkFound{TN.Tailnet.link("http://" ++ ip ++ ":" ++ U32.show(port), token)})
+        ok : Bool <- Chan.send(Msg, inbox, LinkFound{TN.Tailnet.report("reachable", TN.Tailnet.link("http://" ++ ip ++ ":" ++ U32.show(port), token))})
         IO.spawn(Unit, Accept.loop(Fuel.forever(), l, 2147483648, web, inbox, False{}, token, owner))
     case Fail{_}:
-      Log.info("could not listen on the tailnet address " ++ ip)
+      do IO<Unit>:
+        Log.info("could not listen on the tailnet address " ++ ip)
+        ok : Bool <- Chan.send(Msg, inbox, LinkFound{TN.Tailnet.report(Bool.pick(String, Tailnet.covered(host, ip), "reachable", "unavailable"), "")})
+        return Unit{}
 
-def Tailnet.listen.k(none: Bool, +ip: String, +port: U32, +web: String, +inbox: Chan(Msg), +token: String) -> IO(Unit):
+def Tailnet.listen.k(none: Bool, +host: String, +ip: String, +port: U32, +web: String, +inbox: Chan(Msg), +token: String) -> IO(Unit):
   match none:
     case True{}:
-      Log.info("tailscale is not up (tailscale ip -4 gave nothing)")
+      do IO<Unit>:
+        Log.info("tailscale is not up (tailscale ip -4 gave nothing)")
+        ok : Bool <- Chan.send(Msg, inbox, LinkFound{TN.Tailnet.report("unavailable", "")})
+        return Unit{}
     case False{}:
-      IO.bind(Result<&1, &1, U32 & String, Listener>, Unit, H.Net.listen(ip, port), r => Tailnet.listened(r, ip, port, web, inbox, token))
+      IO.bind(Result<&1, &1, U32 & String, Listener>, Unit, H.Net.listen(ip, port), r => Tailnet.listened(r, host, ip, port, web, inbox, token))
 
 # listen on the tailnet address too (clients there need the token), and
 # serve HTTPS through `tailscale serve` when asked
-def Tailnet.start(n: Net, +port: U32, +web: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Tailnet.start(n: Net, +host: String, +port: U32, +web: String, +inbox: Chan(Msg)) -> IO(Unit):
   match n:
     case Net{True{}, https, +token, _, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}:
       do IO<Unit>:
         r : P.Ran <- P.Proc.run("tailscale", ["ip", "-4"], "")
         +ip : String = Tailnet.first(r)
-        Tailnet.listen.k(String.is_empty(ip), ip, port, web, inbox, token)
+        Tailnet.listen.k(String.is_empty(ip), host, ip, port, web, inbox, token)
         Tailnet.https(https, port, token, inbox)
     case Net{False{}, _, _, _, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}:
       IO.pure(Unit, Unit{})
@@ -6223,7 +6239,7 @@ def Listen.up(l: Listener, +web: String, +inbox: Chan(Msg), +cfg: Cfg, +addr: St
   do IO<Unit>:
     Log.info("web server on: " ++ addr)
     IO.spawn(Unit, Accept.loop(Fuel.forever(), l, 1, web, inbox, True{}, Net.token(Cfg.net(cfg)), ""))
-    Tailnet.start(Cfg.net(cfg), Cfg.port(cfg), web, inbox)
+    Tailnet.start(Cfg.net(cfg), Cfg.host(cfg), Cfg.port(cfg), web, inbox)
     Machines.start(inbox, Cfg.port(cfg))
 
 def Listen.got(r: Result<&1, &1, U32 & String, Listener>, +web: String, +inbox: Chan(Msg), +cfg: Cfg, +addr: String, k: Unit -> IO(Unit)) -> IO(Unit):
@@ -6255,7 +6271,7 @@ def Main.headless(h: Hub, +inbox: Chan(Msg), +cfg: Cfg, front: Chan(Msg) -> IO(U
 def Main.serve(l: Listener, h: Hub, +web: String, +inbox: Chan(Msg), +cfg: Cfg, front: Chan(Msg) -> IO(Unit)) -> IO(Unit):
   do IO<Unit>:
     IO.spawn(Unit, Accept.loop(Fuel.forever(), l, 1, web, inbox, True{}, Net.token(Cfg.net(cfg)), ""))
-    Tailnet.start(Cfg.net(cfg), Cfg.port(cfg), web, inbox)
+    Tailnet.start(Cfg.net(cfg), Cfg.host(cfg), Cfg.port(cfg), web, inbox)
     IO.spawn(Unit, Ticker.loop(Fuel.forever(), inbox))
     Refresh.start(inbox, cfg)
     Machines.start(inbox, Cfg.port(cfg))

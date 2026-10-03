@@ -224,7 +224,7 @@ def keys(s: String) -> List<&2, W.WinEv>:
     case SNil{}:
       Nil{}
     case SCon{Chr{+c}, t}:
-      W.WKey{c, c, 0, True{}} <> keys(t)
+      W.WKey{c, c, 0, True{}, 0} <> keys(t)
 
 def warm(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +n0: N.Nui, +ms: Nat) -> Kept:
   +n = based(MA.Shell.stamp(n0, ms), ms)

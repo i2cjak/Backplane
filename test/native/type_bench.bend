@@ -125,7 +125,7 @@ def key(cs: String, +ty: L.Ty, +cats: Map<&2, CA.CatF>, k: Kept, t: Times) -> IO
     case SCon{Chr{+c}, rest} Kept{+n0, memo0, fr0}:
       do IO<Times>:
         +t0 : Nat <- IO.now()
-        +n1 : N.Nui = prepared(step_nui(N.Nui.event(n0, W.WKey{c, c, 0, True{}})), t0)
+        +n1 : N.Nui = prepared(step_nui(N.Nui.event(n0, W.WKey{c, c, 0, True{}, 0})), t0)
         +t1 : Nat <- IO.now()
         +memo : L.TLMemo = L.Lay.memo(ty, n1, memo0)
         +t2 : Nat <- IO.now()

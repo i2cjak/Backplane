@@ -2819,9 +2819,9 @@ def Nui.desk.reset(+n: Nui) -> Nui:
 # one window event
 def Nui.event(+n: Nui, e: W.WinEv) -> Step:
   match e:
-    case W.WKey{+code, text, +mods, True{}}:
+    case W.WKey{+code, text, +mods, True{}, _}:
       Hint.key(Hint.down(Hint.get(n), code, mods), n, code, text, mods)
-    case W.WKey{+code, _, _, False{}}:
+    case W.WKey{+code, _, _, False{}, _}:
       Hint.up(code, n)
     case W.WBlur{}:
       Hint.blur(n)
@@ -2940,7 +2940,7 @@ def Lbx.key(esc: Bool, +n: Nui) -> Step:
 # one window event while the lightbox is up
 def Lbx.event(+n: Nui, e: W.WinEv) -> Step:
   match e:
-    case W.WKey{+code, _, _, True{}}:
+    case W.WKey{+code, _, _, True{}, _}:
       Lbx.key(U32.is_eq(code, Key.escape()), n)
     case W.WButton{+x, +y, 1, True{}}:
       Lbx.step(n, LB.Lb.press(Lbx.get(n), U32.to_nat(x), U32.to_nat(y), Lbx.box(n), Nui.ms_of(n)))
@@ -2990,13 +2990,13 @@ def Nui.event.lb(open: Bool, +n: Nui, e: W.WinEv) -> Step:
 # one of its buttons ("ob-" hits in layout.bend's Lay.tour) acts, and nothing
 # else gets through but the window's own events: a resize, an expose, focus
 # lost or gained (so "@blur" stays true to the window), and the quit.
-# Every key pressed while the tour is up is held in quarantine until it is
-# let go, whichever way the tour closes (a button, Esc, the hub saying done,
-# a lost connection): a press of a held key, a repeat included, does nothing
-# at all, so a key held through Done never reaches the composer. "@q.<keysym>"
-# says "k" + the generation ("@qg") it was pressed in; losing the focus
-# starts a new generation (the release may never come). win.c reports a
-# release with the keysym its press had, and none between repeats.
+# Every physical key (keycode) pressed while the tour is up is held in
+# quarantine until its release, whichever way the tour closes (a button, Esc,
+# the hub saying done, a lost connection): a press of a held key, a repeat
+# included, does nothing at all, so a key held through Done never reaches the
+# composer ("@q.<keycode>"). win.c tells real releases from a server's
+# repeat pairs and, when the window gets the focus back, reports the releases
+# it missed; a blur itself keeps the quarantine.
 def Tour.key(+name: String, +n: Nui) -> Step:
   Bool.pick(Step, String.is_empty(name), Step{n, Nil{}, False{}}, Nui.act(n, name, ""))
 
@@ -3024,7 +3024,7 @@ def Tour.wheel(m: Maybe<&2, Hit>, +n: Nui, up: Bool) -> Step:
 
 def Tour.event(+n: Nui, e: W.WinEv) -> Step:
   match e:
-    case W.WKey{+code, _, _, True{}}:
+    case W.WKey{+code, _, _, True{}, _}:
       Tour.key(OB.Ob.sym(code), n)
     case W.WButton{+x, +y, 1, True{}}:
       Tour.press(Hit.find(Nui.hits(n), x, y), n)
@@ -3043,42 +3043,32 @@ def Tour.event(+n: Nui, e: W.WinEv) -> Step:
     case _:
       Step{n, Nil{}, False{}}
 
-# the key an event presses (0: not a key press) or lets go
+# the physical key (keycode) an event presses (0: not a key press) or lets go
 def Held.press(e: W.WinEv) -> U32:
   match e:
-    case W.WKey{+c, _, _, True{}}:
-      c
+    case W.WKey{_, _, _, True{}, +k}:
+      k
     case _:
       0
 
 def Held.rel(e: W.WinEv) -> U32:
   match e:
-    case W.WKey{+c, _, _, False{}}:
-      c
+    case W.WKey{_, _, _, False{}, +k}:
+      k
     case _:
       0
 
-def Held.mark(+c: U32) -> String:
-  "@q." ++ U32.show(c)
+def Held.mark(+k: U32) -> String:
+  "@q." ++ U32.show(k)
 
-def Held.tag(+u: U.Ui) -> String:
-  "k" ++ U.Ui.scratch(u, "@qg")
+def Held.has(+u: U.Ui, +k: U32) -> Bool:
+  Bool.not(String.is_empty(U.Ui.scratch(u, Held.mark(k))))
 
-def Held.has(+u: U.Ui, +c: U32) -> Bool:
-  String.eq(U.Ui.scratch(u, Held.mark(c)), Held.tag(u))
+def Held.set(+n: Nui, +k: U32) -> Nui:
+  Nui.with_ui(n, U.Ui.scratch_set(Nui.ui(n), Held.mark(k), "1"))
 
-def Held.set(+n: Nui, +c: U32) -> Nui:
-  +u = Nui.ui(n)
-  Nui.with_ui(n, U.Ui.scratch_set(u, Held.mark(c), Held.tag(u)))
-
-def Held.let(+n: Nui, +c: U32) -> Nui:
-  +u = Nui.ui(n)
-  Nui.with_ui(n, U.Ui.scratch_set(u, Held.mark(c), ""))
-
-# a new generation: nothing is held any more
-def Held.clear(+n: Nui) -> Nui:
-  +u = Nui.ui(n)
-  Nui.with_ui(n, U.Ui.scratch_set(u, "@qg", Nat.show(1n+Maybe.default(&2, Nat, Nat.read(U.Ui.scratch(u, "@qg")), 0n))))
+def Held.let(+n: Nui, +k: U32) -> Nui:
+  Nui.with_ui(n, U.Ui.scratch_set(Nui.ui(n), Held.mark(k), ""))
 
 def Nui.event.go(tour: Bool, +n: Nui, e: W.WinEv) -> Step:
   match tour:
@@ -3106,15 +3096,8 @@ def Nui.event.t.k(press: Bool, +tour: Bool, +c: U32, +r: U32, +n: Nui, e: W.WinE
     case False{}:
       Nui.event.go(tour, Bool.pick(Nui, U32.is_ne(r, 0), Held.let(n, r), n), e)
 
-def Held.fresh(+n: Nui, e: W.WinEv) -> Nui:
-  match e:
-    case W.WBlur{}:
-      Held.clear(n)
-    case _:
-      n
-
 def Nui.event.t(tour: Bool, +n: Nui, +e: W.WinEv) -> Step:
-  Nui.event.t.k(U32.is_ne(Held.press(e), 0), tour, Held.press(e), Held.rel(e), Held.fresh(n, e), e)
+  Nui.event.t.k(U32.is_ne(Held.press(e), 0), tour, Held.press(e), Held.rel(e), n, e)
 
 # a paste or a drop while the tour is up goes nowhere (the window's own
 # clipboard and drop reads still happen in main.bend)
