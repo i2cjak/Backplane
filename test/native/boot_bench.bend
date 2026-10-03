@@ -127,7 +127,7 @@ def keys(cs: String, +ty: L.Ty, k: Kept) -> IO(Kept):
     case SNil{}:
       IO.pure(Kept, k)
     case SCon{Chr{+c}, rest}:
-      IO.bind(Kept, Kept, step("key", W.WKey{c, c, 0, True{}}, ty, k), k2 => keys(rest, ty, k2))
+      IO.bind(Kept, Kept, step("key", W.WKey{c, c, 0, True{}, 0}, ty, k), k2 => keys(rest, ty, k2))
 
 def wheels(+i: Nat, +dir: U32, +ty: L.Ty, k: Kept) -> IO(Kept):
   match i:

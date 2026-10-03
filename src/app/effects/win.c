@@ -36,6 +36,7 @@
   X(XPending, int, (Display*)) \
   X(XEventsQueued, int, (Display*, int)) \
   X(XNextEvent, int, (Display*, XEvent*)) \
+  X(XQueryKeymap, int, (Display*, char[32])) \
   X(XLookupString, int, (XKeyEvent*, char*, int, KeySym*, XComposeStatus*)) \
   X(XCreateImage, XImage*, (Display*, Visual*, unsigned, int, int, char*, unsigned, unsigned, int, int)) \
   X(XPutImage, int, (Display*, Drawable, GC, XImage*, int, int, int, int, unsigned, unsigned)) \
@@ -52,6 +53,12 @@
 #define WIN_PTR(name, ret, args) static ret (*x_##name) args;
 WIN_FNS(WIN_PTR)
 
+// a key held down sends presses with no releases between (so a repeat can
+// be told from a new press); a server without it sends a release and a
+// press of the same key at the same time for each repeat (win_pump asks the
+// server whether the key is still down and, if so, drops the release)
+static Bool (*x_detect_repeat)(Display*, Bool, Bool*);
+
 static int win_load(void) {
   static int state = 0;
   if (state != 0) {
@@ -65,6 +72,7 @@ static int win_load(void) {
 #define WIN_SYM(name, ret, args) \
   if ((x_##name = (ret (*) args)dlsym(lib, #name)) == NULL) { return 0; }
   WIN_FNS(WIN_SYM)
+  x_detect_repeat = (Bool (*)(Display*, Bool, Bool*))dlsym(lib, "XkbSetDetectableAutoRepeat");
   state = 1;
   return 1;
 }
@@ -98,6 +106,10 @@ typedef struct {
   int       dnd_ok;
   char*     drop;
   u64       drop_len;
+  // keys: whether the server sends repeats as bare presses, and the keysym
+  // each key (by keycode) went down as (0: up), so its release says the same
+  int       detect;
+  KeySym    down[256];
 } AppWin;
 
 static void win_push(AppWin* a, u32 kind, u32 p, u32 q, u32 r, u32 s) {
@@ -415,6 +427,26 @@ static void win_dropped(AppWin* a, Atom prop) {
   }
 }
 
+// whether the server has the key (by keycode) down now
+static int win_key_down(AppWin* a, unsigned kc) {
+  char km[32];
+  x_XQueryKeymap(a->dpy, km);
+  return (km[kc >> 3] >> (kc & 7)) & 1;
+}
+
+// the focus is back: a key that went down in this window and is up now was
+// let go while the window could not hear, so report its release
+static void win_keys_missed(AppWin* a) {
+  char km[32];
+  x_XQueryKeymap(a->dpy, km);
+  for (unsigned kc = 0; kc < 256; kc++) {
+    if (a->down[kc] != 0 && !((km[kc >> 3] >> (kc & 7)) & 1)) {
+      win_push(a, 0, (u32)a->down[kc], 0, 0, kc << 1);
+      a->down[kc] = 0;
+    }
+  }
+}
+
 static void win_pump(AppWin* a) {
   while (x_XPending(a->dpy) > 0) {
     XEvent ev;
@@ -423,9 +455,21 @@ static void win_pump(AppWin* a) {
       case KeyPress:
       case KeyRelease: {
         KeySym sym = 0;
+        unsigned kc = ev.xkey.keycode & 255;
+        if (ev.type == KeyRelease && !a->detect && win_key_down(a, kc)) {
+          // a repeat on a server without detectable repeat: the key is
+          // still down, so this release is no release
+          break;
+        }
         u32 text = win_text(&ev.xkey, &sym);
+        if (ev.type == KeyPress) {
+          a->down[kc] = sym;
+        } else if (a->down[kc] != 0) {
+          sym = a->down[kc];
+          a->down[kc] = 0;
+        }
         win_push(a, 0, (u32)sym, ev.type == KeyPress ? text : 0,
-          win_mods(ev.xkey.state), ev.type == KeyPress);
+          win_mods(ev.xkey.state), (ev.type == KeyPress ? 1u : 0u) | (kc << 1));
         break;
       }
       case ButtonPress:
@@ -450,6 +494,7 @@ static void win_pump(AppWin* a) {
         win_push(a, 11, 0, 0, 0, 0);
         break;
       case FocusIn:
+        win_keys_missed(a);
         win_push(a, 12, 0, 0, 0, 0);
         break;
       case ConfigureNotify:
@@ -586,6 +631,13 @@ Term win_open_run(Env e, Term* f, IoWork* w) {
     x_XChangeProperty(dpy, a->win, a->dnd_aware, XA_ATOM, 32, PropModeReplace,
       (unsigned char*)&xdnd_version, 1);
     x_XStoreName(dpy, a->win, title);
+    // (BACKPLANE_NO_DETECTABLE_REPEAT leaves it unasked, to try the
+    // fallback on a server that supports it)
+    if (x_detect_repeat != NULL && getenv("BACKPLANE_NO_DETECTABLE_REPEAT") == NULL) {
+      Bool got = False;
+      Bool ok = x_detect_repeat(dpy, True, &got);
+      a->detect = ok && got;
+    }
     win_icon(dpy, a->win);
     x_XSelectInput(dpy, a->win, KeyPressMask | KeyReleaseMask | ButtonPressMask
       | ButtonReleaseMask | PointerMotionMask | StructureNotifyMask | ExposureMask

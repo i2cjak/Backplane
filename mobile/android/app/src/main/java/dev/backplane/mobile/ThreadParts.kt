@@ -103,9 +103,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -279,10 +281,26 @@ fun Thumb(m: AppModel, path: String, show: (String) -> Unit) {
     }
 }
 
+// how many dialogs the app shows on its own, outside the screen model (a
+// picture opened large, a diff sheet, a confirmation): the first-run tour
+// waits until there are none. Each one calls Overlaid() while it is shown.
+object Overlay {
+    var n by mutableIntStateOf(0)
+}
+
+@Composable
+fun Overlaid() {
+    DisposableEffect(Unit) {
+        Overlay.n++
+        onDispose { Overlay.n-- }
+    }
+}
+
 // pinch to zoom, drag to pan, double-tap to zoom in or back, the cross (or
 // back) closes it
 @Composable
 fun Lightbox(url: String, close: () -> Unit) {
+    Overlaid()
     Dialog(close, DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         var scale by remember { mutableFloatStateOf(1f) }
         var offset by remember { mutableStateOf(Offset.Zero) }
@@ -551,6 +569,7 @@ private fun Sheet(
 ) {
     if (inline) SheetBody(title, close, closeLabel, bar, onBar, actions, content)
     else Dialog(close, DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Overlaid()
         SheetBody(title, close, closeLabel, bar, onBar, actions, content)
     }
 }
@@ -601,6 +620,7 @@ fun DiffSheet(m: AppModel, d: Diff) {
             }
         }
     }
+    if (reverting) Overlaid()
     if (reverting) AlertDialog(
         onDismissRequest = { reverting = false },
         title = { Text("Put the files back as they were when this thread began?") },

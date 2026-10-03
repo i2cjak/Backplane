@@ -220,6 +220,30 @@ fun App(m: AppModel) {
         },
         dismissButton = { TextButton(onClick = { removed = true; m.act("proj-keep") }) { Text(r.no) } },
     )
+    // the first-run tour (core/onboard.bend): the same as iOS, dismissing it
+    // (Back, a tap outside) is Skip. The screen model has no step while Bend
+    // knows of another overlay; the app adds the hubs screen and every
+    // dialog it shows itself (Overlay: a picture, a diff, a confirmation)
+    s.tour?.let { t ->
+        val free = !pairing && Overlay.n == 0
+        if (free) AlertDialog(
+            onDismissRequest = { m.act("ob-skip") },
+            title = {
+                Column {
+                    Text(t.counter, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(t.title)
+                }
+            },
+            text = { Column(Modifier.verticalScroll(rememberScrollState())) { Text(t.body) } },
+            confirmButton = { TextButton(onClick = { m.act("ob-next") }) { Text(t.next) } },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { m.act("ob-skip") }) { Text(t.skip) }
+                    if (!t.first) TextButton(onClick = { m.act("ob-back") }) { Text(t.back) }
+                }
+            },
+        )
+    }
     s.settings?.let { SettingsSheet(m, it) }
     s.find?.let { FindSheet(m, it) }
     // a row's, a project's or (in a thread) a file link's menu

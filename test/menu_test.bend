@@ -92,7 +92,7 @@ def main() -> IO(Unit):
     +n4 : N.Nui = again(ty, ev(n3, W.WButton{700, 200, 1, True{}}))
     C.Check.str("a press off it closes it", Bool.show(U.Ui.flag(N.Nui.ui(n4), "models")), "False")
     C.Check.str("and its box is gone", value(N.Nui.hits(n4), "menu"), "")
-    +n5 : N.Nui = again(ty, ev(again(ty, act(n4, "flag", "models")), W.WKey{65307, 0, 0, True{}}))
+    +n5 : N.Nui = again(ty, ev(again(ty, act(n4, "flag", "models")), W.WKey{65307, 0, 0, True{}, 0}))
     C.Check.str("Esc closes it", Bool.show(U.Ui.flag(N.Nui.ui(n5), "models")), "False")
     # a short window: the models scroll
     +s0 : N.Nui = again(ty, act(again(ty, N.Nui.init(ui(), 1000, 420)), "flag", "models"))

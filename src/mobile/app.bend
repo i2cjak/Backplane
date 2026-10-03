@@ -140,6 +140,9 @@ def offer(+hs: H.Hubs) -> String:
 def online(+hs: H.Hubs, +key: String, b: Bool) -> H.HAct:
   H.Hubs.online(hs, key, b)
 
+def stale(hs: H.Hubs) -> H.Hubs:
+  H.Hubs.stale(hs)
+
 def tick(+hs: H.Hubs, now: Nat) -> H.HAct:
   H.Hubs.tick(hs, now)
 

@@ -19,6 +19,7 @@ import ../core/bot.bend as BT
 import ../core/perf.bend as PF
 import ../core/hist.bend as HS
 import ../core/emb.bend as EM
+import ../core/onboard.bend as OB
 
 # The native window's state around the shared client state (Ui): size,
 # pointer, scroll, focus and the composer caret. Input is pure: an event
@@ -2818,9 +2819,9 @@ def Nui.desk.reset(+n: Nui) -> Nui:
 # one window event
 def Nui.event(+n: Nui, e: W.WinEv) -> Step:
   match e:
-    case W.WKey{+code, text, +mods, True{}}:
+    case W.WKey{+code, text, +mods, True{}, _}:
       Hint.key(Hint.down(Hint.get(n), code, mods), n, code, text, mods)
-    case W.WKey{+code, _, _, False{}}:
+    case W.WKey{+code, _, _, False{}, _}:
       Hint.up(code, n)
     case W.WBlur{}:
       Hint.blur(n)
@@ -2939,7 +2940,7 @@ def Lbx.key(esc: Bool, +n: Nui) -> Step:
 # one window event while the lightbox is up
 def Lbx.event(+n: Nui, e: W.WinEv) -> Step:
   match e:
-    case W.WKey{+code, _, _, True{}}:
+    case W.WKey{+code, _, _, True{}, _}:
       Lbx.key(U32.is_eq(code, Key.escape()), n)
     case W.WButton{+x, +y, 1, True{}}:
       Lbx.step(n, LB.Lb.press(Lbx.get(n), U32.to_nat(x), U32.to_nat(y), Lbx.box(n), Nui.ms_of(n)))
@@ -2984,13 +2985,143 @@ def Nui.event.lb(open: Bool, +n: Nui, e: W.WinEv) -> Step:
     case False{}:
       Lbx.pressed(n, e)
 
+# The first-run tour (core/onboard.bend) is modal: Enter and the right
+# arrow go on, the left arrow goes back, Esc ends it (OB.Ob.sym), a press on
+# one of its buttons ("ob-" hits in layout.bend's Lay.tour) acts, and nothing
+# else gets through but the window's own events: a resize, an expose, focus
+# lost or gained (so "@blur" stays true to the window), and the quit.
+# Every physical key (keycode) pressed while the tour is up is held in
+# quarantine until its release, whichever way the tour closes (a button, Esc,
+# the hub saying done, a lost connection): a press of a held key, a repeat
+# included, does nothing at all, so a key held through Done never reaches the
+# composer ("@q.<keycode>"). win.c tells real releases from a server's
+# repeat pairs and, when the window gets the focus back, reports the releases
+# it missed; a blur itself keeps the quarantine.
+def Tour.key(+name: String, +n: Nui) -> Step:
+  Bool.pick(Step, String.is_empty(name), Step{n, Nil{}, False{}}, Nui.act(n, name, ""))
+
+def Tour.press(m: Maybe<&2, Hit>, +n: Nui) -> Step:
+  match m:
+    case Some{Hit{_, _, _, _, +a, _}}:
+      Bool.pick(Step, Bool.and(String.starts_with(a, "ob-"), Bool.not(String.eq(a, "ob-scroll"))), Nui.act(n, a, ""), Step{n, Nil{}, False{}})
+    case None{}:
+      Step{n, Nil{}, False{}}
+
+# the wheel over the card scrolls its words two lines a notch, kept within
+# what overflows (the card's hit says how many lines that is)
+def Tour.scroll(+cur: Nat, +mx: Nat, up: Bool) -> Nat:
+  Bool.pick(Nat, up, Bool.pick(Nat, Nat.is_lt(cur, 2n), 0n, Nat.sub(cur, 2n)), Bool.pick(Nat, Nat.is_lt(mx, Nat.add(cur, 2n)), mx, Nat.add(cur, 2n)))
+
+def Tour.wheel.k(+n: Nui, +v: String, up: Bool) -> Step:
+  Step{Nui.with_ui(n, U.Ui.scratch_set(Nui.ui(n), "@tour.sc", Nat.show(Tour.scroll(Maybe.default(&2, Nat, Nat.read(U.Ui.scratch(Nui.ui(n), "@tour.sc")), 0n), Maybe.default(&2, Nat, Nat.read(v), 0n), up)))), Nil{}, True{}}
+
+def Tour.wheel(m: Maybe<&2, Hit>, +n: Nui, up: Bool) -> Step:
+  match m:
+    case Some{Hit{_, _, _, _, +a, +v}}:
+      Bool.pick(Step, String.eq(a, "ob-scroll"), Tour.wheel.k(n, v, up), Step{n, Nil{}, False{}})
+    case None{}:
+      Step{n, Nil{}, False{}}
+
+def Tour.event(+n: Nui, e: W.WinEv) -> Step:
+  match e:
+    case W.WKey{+code, _, _, True{}, _}:
+      Tour.key(OB.Ob.sym(code), n)
+    case W.WButton{+x, +y, 1, True{}}:
+      Tour.press(Hit.find(Nui.hits(n), x, y), n)
+    case W.WWheel{+x, +y, +dir}:
+      Tour.wheel(Hit.find(Nui.hits(n), x, y), n, U32.is_eq(dir, 0))
+    case W.WBlur{}:
+      Hint.blur(n)
+    case W.WFocus{}:
+      Nui.focused(n)
+    case W.WSize{w, h}:
+      Nui.resize(n, w, h)
+    case W.WExpose{}:
+      Step{n, Nil{}, True{}}
+    case W.WQuit{}:
+      Step{n, [NQuit{}], False{}}
+    case _:
+      Step{n, Nil{}, False{}}
+
+# the physical key (keycode) an event presses (0: not a key press) or lets go
+def Held.press(e: W.WinEv) -> U32:
+  match e:
+    case W.WKey{_, _, _, True{}, +k}:
+      k
+    case _:
+      0
+
+def Held.rel(e: W.WinEv) -> U32:
+  match e:
+    case W.WKey{_, _, _, False{}, +k}:
+      k
+    case _:
+      0
+
+def Held.mark(+k: U32) -> String:
+  "@q." ++ U32.show(k)
+
+def Held.has(+u: U.Ui, +k: U32) -> Bool:
+  Bool.not(String.is_empty(U.Ui.scratch(u, Held.mark(k))))
+
+def Held.set(+n: Nui, +k: U32) -> Nui:
+  Nui.with_ui(n, U.Ui.scratch_set(Nui.ui(n), Held.mark(k), "1"))
+
+def Held.let(+n: Nui, +k: U32) -> Nui:
+  Nui.with_ui(n, U.Ui.scratch_set(Nui.ui(n), Held.mark(k), ""))
+
+def Nui.event.go(tour: Bool, +n: Nui, e: W.WinEv) -> Step:
+  match tour:
+    case True{}:
+      Tour.event(n, e)
+    case False{}:
+      Nui.event.lb(Lbx.on(n), n, e)
+
+# a key held in quarantine does nothing; while the tour is up a key
+# pressed joins it
+def Nui.event.press.k(drop: Bool, +tour: Bool, +c: U32, +n: Nui, e: W.WinEv) -> Step:
+  match drop:
+    case True{}:
+      Step{n, Nil{}, False{}}
+    case False{}:
+      Nui.event.go(tour, Bool.pick(Nui, tour, Held.set(n, c), n), e)
+
+def Nui.event.press(+tour: Bool, +c: U32, +n: Nui, e: W.WinEv) -> Step:
+  Nui.event.press.k(Held.has(Nui.ui(n), c), tour, c, n, e)
+
+def Nui.event.t.k(press: Bool, +tour: Bool, +c: U32, +r: U32, +n: Nui, e: W.WinEv) -> Step:
+  match press:
+    case True{}:
+      Nui.event.press(tour, c, n, e)
+    case False{}:
+      Nui.event.go(tour, Bool.pick(Nui, U32.is_ne(r, 0), Held.let(n, r), n), e)
+
+def Nui.event.t(tour: Bool, +n: Nui, +e: W.WinEv) -> Step:
+  Nui.event.t.k(U32.is_ne(Held.press(e), 0), tour, Held.press(e), Held.rel(e), n, e)
+
+# a paste or a drop while the tour is up goes nowhere (the window's own
+# clipboard and drop reads still happen in main.bend)
+def Nui.paste.m(tour: Bool, +n: Nui, +text: String) -> Step:
+  match tour:
+    case True{}:
+      Step{n, Nil{}, False{}}
+    case False{}:
+      Nui.paste(n, text)
+
+def Nui.drop.m(tour: Bool, +n: Nui, +text: String) -> Step:
+  match tour:
+    case True{}:
+      Step{n, Nil{}, False{}}
+    case False{}:
+      Nui.drop(n, text)
+
 # every event of a batch, in order
 def Nui.events(es: List<&2, W.WinEv>, s: Step) -> Step:
   match es s:
     case Nil{} _:
       s
     case e <> t Step{+n, cs, d}:
-      Nui.events(t, Step.merge(Step{n, cs, d}, Nui.event.lb(Lbx.on(n), n, e)))
+      Nui.events(t, Step.merge(Step{n, cs, d}, Nui.event.t(U.Tour.on(Nui.ui(n)), n, e)))
 
 # The performance overlay
 # -----------------------

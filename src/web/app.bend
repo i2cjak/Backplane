@@ -7,6 +7,7 @@ import ../core/cbor.bend as C
 import ../core/attach.bend as AT
 import ../core/lightbox.bend as LB
 import ./cat.bend as WC
+import ../core/onboard.bend as OB
 
 # What host.js calls. Everything the page decides happens behind these.
 
@@ -81,6 +82,11 @@ def desk(u: U.Ui, focused: Bool, now: Nat) -> U.Act:
 
 def online(u: U.Ui, b: Bool) -> U.Ui:
   U.Ui.online(u, b)
+
+# the saved log put back on load is not a connection's: nothing is synced
+# until the hub's own log arrives
+def unsync(u: U.Ui) -> U.Ui:
+  U.Ui.unsync(u)
 
 def tick(u: U.Ui, now: Nat) -> U.Ui:
   U.Ui.tick(u, now)
@@ -178,3 +184,7 @@ def lb_busy(lb: LB.Lb, now: Nat) -> Bool:
 
 def lb_css(lb: LB.Lb, b: LB.LbBox, now: Nat) -> String:
   LB.Lb.css(lb, b, now)
+
+# the tour's action for a key while its dialog is up ("" for any other)
+def tour_key(key: String) -> String:
+  OB.Ob.dom(key)
