@@ -39,8 +39,8 @@ jobs:
         include:
           - { target: linux-x64,    os: ubuntu-24.04 }
           - { target: linux-arm64,  os: ubuntu-24.04-arm }
-          # macOS is on hold; scripts/build.sh builds it as hub + web server
-          # - { target: darwin-arm64, os: macos-15 }
+          # no X11 on a Mac: scripts/build.sh builds it as hub + web UI
+          - { target: darwin-arm64, os: macos-15 }
     runs-on: ${{ matrix.os }}
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
@@ -84,6 +84,7 @@ jobs:
       - run: scripts/smoke.sh
       - run: scripts/package.sh "$TAG" "${{ matrix.target }}"
       - run: scripts/package-linux.sh "$TAG" "${{ matrix.target }}"
+        if: runner.os == 'Linux'
       - uses: actions/upload-artifact@v4
         with:
           name: backplane-${{ matrix.target }}
@@ -157,7 +158,11 @@ jobs:
           set -eu
           pre=""
           case "$TAG" in *-*) pre="--prerelease" ;; esac
-          notes="Install: curl -fsSL https://github.com/${{ github.repository }}/releases/latest/download/install.sh | sh"
+          # each release's installer installs that release (latest/ never
+          # names a prerelease, so a nightly's must be its own)
+          notes="Linux (x64, arm64) and macOS (Apple silicon; the hub and web UI at http://127.0.0.1:3787, no native window yet).
+
+          Install: \`curl -fsSL https://github.com/${{ github.repository }}/releases/download/$TAG/install.sh | sh\`"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" out/* --clobber
           else

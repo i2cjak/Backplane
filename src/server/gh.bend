@@ -1,6 +1,7 @@
 import Base
 import ./proc.bend as P
 import ../core/gh.bend as G
+import ../core/port.bend as PT
 
 # Running gh as the right GitHub account (src/core/gh.bend decides which).
 # With one account (or none, or a token already in the environment) gh
@@ -21,7 +22,7 @@ def GhRun.plain(+cmd: String, +args: List<&2, String>, +cwd: String) -> IO(P.Ran
   P.Proc.run("env", List.append(&2, String, GhRun.quiet(), cmd <> args), cwd)
 
 def GhRun.as.sh() -> String:
-  "h=$1 u=$2 v=$3; shift 3; t=$(timeout 20 gh auth token --hostname \"$h\" --user \"$u\" 2>/dev/null) && [ -n \"$t\" ] || exit 97; export \"$v=$t\" GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 GIT_TERMINAL_PROMPT=0; exec \"$@\""
+  (PT.Port.tmo() ++ "h=$1 u=$2 v=$3; shift 3; t=$(tmo 20 gh auth token --hostname \"$h\" --user \"$u\" 2>/dev/null) && [ -n \"$t\" ] || exit 97; export \"$v=$t\" GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 GIT_TERMINAL_PROMPT=0; exec \"$@\"")
 
 # cmd with the account's token (exit 97: gh has no token for it)
 def GhRun.as(+cwd: String, +host: String, +user: String, +cmd: String, +args: List<&2, String>) -> IO(P.Ran):
@@ -58,7 +59,7 @@ def GhRun.try(us: List<&2, String>, first: Bool, +cwd: String, +host: String, +c
       IO.bind(P.Ran, P.Ran, GhRun.as(cwd, host, u, cmd, args), r => GhRun.next(r, first, cwd, u, _ => GhRun.try(t, False{}, cwd, host, cmd, args, plain)))
 
 def GhRun.accounts(+cwd: String, +host: String) -> IO(List<&2, G.GhAcct>):
-  IO.bind(P.Ran, List<&2, G.GhAcct>, GhRun.plain("timeout", ["20", "gh", "auth", "status", "--hostname", host], cwd),
+  IO.bind(P.Ran, List<&2, G.GhAcct>, GhRun.plain("sh", PT.Port.timeout(["20", "gh", "auth", "status", "--hostname", host]), cwd),
     r => IO.pure(List<&2, G.GhAcct>, G.Gh.accounts(GhRun.text(r), host)))
 
 def GhRun.saved(+cwd: String) -> IO(String):
