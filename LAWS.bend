@@ -2250,6 +2250,39 @@ law interrupt_ends_child_task:
 law gone_closes_approval:
   {H.Pend.open(M.Asks.all(H.Retire.after(H.Rec.demo(M.Running{}), H.Hub.agent_gone(H.Rec.demo(M.Running{}), 9n, "t1", 1))), "t1") == 0n : Nat}
 
+# Stop, archive and delete of a running turn tell the server, so the
+# phones' Live Activity drops it (the hub pushes the island); an idle
+# thread tells nothing
+law retire_stop_tells:
+  {H.Ended.stopped(H.Step.outs_of(H.Hub.interrupt(H.Rec.demo(M.Running{}), 9n, 0, "r", "t1")), "t1") == True{} : Bool}
+
+law archive_running_tells:
+  {H.Ended.stopped(H.Step.outs_of(H.Retire.request(7n, H.Rec.demo(M.Running{}))), "t1") == True{} : Bool}
+
+law delete_running_tells:
+  {H.Ended.stopped(H.Step.outs_of(H.Retire.request(12n, H.Rec.demo(M.Running{}))), "t1") == True{} : Bool}
+
+law archive_idle_tells_nothing:
+  {H.Ended.stopped(H.Step.outs_of(H.Retire.request(7n, H.Rec.demo(M.Completed{}))), "t1") == False{} : Bool}
+
+# a turn that starts (or changes any way the step does not report as
+# ended), an archive or a delete pushes the phones' island; a step that
+# reports the end pushes it with the alert, not twice; nothing else does
+law island_sync_on_start:
+  {H.Island.outs([M.TurnChanged{"t1", M.Running{}, 1n}], []) == [H.IslandSync{}] : List<&2, H.Out>}
+
+law island_sync_on_archive:
+  {H.Island.outs([M.ThreadArchived{"t1", True{}, 1n}], []) == [H.IslandSync{}] : List<&2, H.Out>}
+
+law island_sync_on_delete:
+  {H.Island.outs([M.ThreadDeleted{"t1", 1n}], []) == [H.IslandSync{}] : List<&2, H.Out>}
+
+law island_sync_not_twice:
+  {H.Island.outs([M.TurnChanged{"t1", M.Interrupted{}, 1n}], [H.TurnEnded{"t1", "stopped"}]) == [H.TurnEnded{"t1", "stopped"}] : List<&2, H.Out>}
+
+law island_sync_quiet:
+  {H.Island.outs([M.ThreadRenamed{"t1", "x", 1n}], []) == [] : List<&2, H.Out>}
+
 law retire_answers_empty:
   {H.Retire.answers(M.Asks.all(H.Rec.demo(M.Running{})), "t1") == [H.AskAnswered{"a1", ""}] : List<&2, H.Out>}
 
@@ -4767,6 +4800,21 @@ law worktree_busy_kept:
 law island_busy_shows:
   {J.Json.show(J.Json.arr(Nt.Note.lines.w([H.Hub.thread(H.Answer.demo(True{}), "t1")], M.Work.kids.map(H.Answer.demo(True{})), H.Answer.demo(True{}))))
     == "[{\"thread\":\"t1\",\"title\":\"x\",\"doing\":\"waiting on 1\"}]" : String}
+
+# an archived thread is never on the phones' island, running or not
+law island_gone_hidden:
+  {Nt.Note.lines.w(U.Ui.threads(M.State.replay([M.ThreadArchived{"t1", True{}, 3n}], H.Rec.demo(M.Running{}))), M.Work.kids.map(H.Rec.demo(M.Running{})),
+    M.State.replay([M.ThreadArchived{"t1", True{}, 3n}], H.Rec.demo(M.Running{}))) == [] : List<&2, J.Json>}
+
+# a phone's upload ends under the thread it started in, though the phone
+# named it with its hub ("<hub>|<id>"): the reply's thread is read as the
+# hub's own id, so the spinner clears and the path joins that thread
+# (test/attach_test.bend runs it through the client)
+law upload_thread_local:
+  {U.Att.local("h:1|t1") == "t1" : String}
+
+law upload_thread_plain:
+  {U.Att.local("t1") == "t1" : String}
 
 law task_waits_for_child_work:
   {H.Task.finish.w(H.Task.demo(True{}), 9n, "t1", H.Step{[M.TurnChanged{"t1", M.Completed{}, 9n}], []}) == H.Step{[M.TurnChanged{"t1", M.Completed{}, 9n}], []} : H.Step}

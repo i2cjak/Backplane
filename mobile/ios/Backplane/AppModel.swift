@@ -25,6 +25,8 @@ final class AppModel {
     private(set) var links: [String] = UserDefaults.standard.stringArray(forKey: "links")
         ?? UserDefaults.standard.string(forKey: "link").map { [$0] } ?? []
     private(set) var screen: Screen?
+    // the island tapped while several threads work: which one to open
+    var picking = false
     // the board viewer's plots, which come straight from the socket
     let plots = PlotStore()
     // the composer's text, owned here so typing never waits on Bend
@@ -249,8 +251,10 @@ final class AppModel {
     // the file as the body (no base64, no pieces through the engine); the
     // hub's answer goes back as "attach-end", as an attach.put's would
     func attach(_ data: Data, name: String) {
-        guard !data.isEmpty, let s = screen, let thread = s.thread?.id,
+        guard !data.isEmpty, let s = screen, let named = s.thread?.id,
               let l = links.first(where: { Pairing.key($0) == s.hub }) ?? links.first else { return }
+        // the hub's own id: over several hubs the screen names it "<hub>|<id>"
+        let thread = named.split(separator: "|").last.map(String.init) ?? named
         let key = String(format: "%08x", UInt32.random(in: 0 ... UInt32.max))
         guard let url = Pairing.http(l, path: "/attach", query: [URLQueryItem(name: "thread", value: thread),
                                                                  URLQueryItem(name: "key", value: key), URLQueryItem(name: "name", value: name)]) else { return }
@@ -354,8 +358,11 @@ final class AppModel {
     func open(_ url: URL) {
         guard url.scheme == "backplane" else { return }
         if url.host == "open" {
-            let id = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "thread" }?.value ?? ""
+            let q = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let id = q.first { $0.name == "thread" }?.value ?? ""
             if !id.isEmpty { act("select", id) }
+            // the island with several threads: pick one (backplane://open?pick=1)
+            else if q.contains(where: { $0.name == "pick" }), (screen?.island.lines.count ?? 0) > 1 { picking = true }
         } else {
             pair(url.absoluteString)
         }

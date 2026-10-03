@@ -46,6 +46,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PushPin
@@ -341,20 +342,51 @@ fun ChipView(m: AppModel, c: Chip, show: (String) -> Unit) {
     }
 }
 
+// a message's long press: Copy takes it whole, Select text opens it where
+// any part of it can be selected and copied
+@Composable
+private fun MessageMenu(m: AppModel, text: String, open: Boolean, close: () -> Unit) {
+    var selecting by remember { mutableStateOf(false) }
+    DropdownMenu(expanded = open, onDismissRequest = close) {
+        DropdownMenuItem(text = { Text("Copy") }, onClick = { close(); m.act("copy", text) })
+        DropdownMenuItem(text = { Text("Select text") }, onClick = { close(); selecting = true })
+    }
+    if (selecting) {
+        Overlaid()
+        AlertDialog(
+            onDismissRequest = { selecting = false },
+            text = {
+                SelectionContainer {
+                    Text(text, Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), style = MaterialTheme.typography.bodyLarge)
+                }
+            },
+            confirmButton = { TextButton(onClick = { selecting = false }) { Text("Done") } },
+            dismissButton = { TextButton(onClick = { m.act("copy", text) }) { Text("Copy all") } },
+        )
+    }
+}
+
 @Composable
 fun EntryRow(m: AppModel, e: Entry, show: (String) -> Unit) {
+    var menu by remember(e.text) { mutableStateOf(false) }
     when (e.kind) {
         "user" -> Column(Modifier.fillMaxWidth().padding(start = 48.dp), horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (e.text.isNotEmpty()) Surface(
-                color = MaterialTheme.colorScheme.primaryContainer,
-                shape = MaterialTheme.shapes.large,
-                modifier = Modifier.combinedClickableCompat(onLong = { m.act("copy", e.text) }) {},
-            ) { Text(e.text, Modifier.padding(horizontal = 14.dp, vertical = 10.dp), style = MaterialTheme.typography.bodyLarge) }
+            if (e.text.isNotEmpty()) Box {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = MaterialTheme.shapes.large,
+                    modifier = Modifier.combinedClickableCompat(onLong = { menu = true }) {},
+                ) { Text(e.text, Modifier.padding(horizontal = 14.dp, vertical = 10.dp), style = MaterialTheme.typography.bodyLarge) }
+                MessageMenu(m, e.text, menu) { menu = false }
+            }
             for (c in e.attachments) ChipView(m, c, show)
         }
         "assistant" -> Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Markdown(e.blocks, Modifier.fillMaxWidth().combinedClickableCompat(onLong = { m.act("copy", e.text) }) {})
+            Box {
+                Markdown(e.blocks, Modifier.fillMaxWidth().combinedClickableCompat(onLong = { menu = true }) {})
+                MessageMenu(m, e.text, menu) { menu = false }
+            }
             for (i in e.images) Thumb(m, i.url, show)
         }
         "fold" -> Row(Modifier.fillMaxWidth().clickable { m.act("fold", e.value) }.padding(vertical = 2.dp),

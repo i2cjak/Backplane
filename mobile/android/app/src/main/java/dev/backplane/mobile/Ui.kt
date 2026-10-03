@@ -220,6 +220,28 @@ fun App(m: AppModel) {
         },
         dismissButton = { TextButton(onClick = { removed = true; m.act("proj-keep") }) { Text(r.no) } },
     )
+    // the live status tapped while several threads work: which to open
+    if (m.picking && s.island.lines.size > 1) {
+        Overlaid()
+        AlertDialog(
+            onDismissRequest = { m.picking = false },
+            title = { Text(s.island.headline) },
+            text = {
+                Column {
+                    s.island.lines.forEach { l ->
+                        TextButton(onClick = { m.picking = false; m.act("select", l.thread) }, modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.fillMaxWidth()) {
+                                Text(l.title.ifEmpty { l.doing }, maxLines = 1)
+                                Text(l.doing, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, maxLines = 1)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { m.picking = false }) { Text("Cancel") } },
+        )
+    } else if (m.picking) m.picking = false
     // the first-run tour (core/onboard.bend): the same as iOS, dismissing it
     // (Back, a tap outside) is Skip. The screen model has no step while Bend
     // knows of another overlay; the app adds the hubs screen and every

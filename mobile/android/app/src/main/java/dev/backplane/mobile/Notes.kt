@@ -18,6 +18,8 @@ object Notes {
     const val TURNS = "turns"
     const val LIVE = "live"
     const val EXTRA_THREAD = "dev.backplane.mobile.thread"
+    // the live status tapped while several threads work: the app asks which
+    const val EXTRA_PICK = "dev.backplane.mobile.pick"
 
     fun channels(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
@@ -36,6 +38,14 @@ object Notes {
         val i = Intent(ctx, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         if (thread.isNotEmpty()) i.putExtra(EXTRA_THREAD, thread)
+        return PendingIntent.getActivity(ctx, code, i, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    }
+
+    // opens the app asking which working thread to show
+    fun pick(ctx: Context, code: Int): PendingIntent {
+        val i = Intent(ctx, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .putExtra(EXTRA_PICK, true)
         return PendingIntent.getActivity(ctx, code, i, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 

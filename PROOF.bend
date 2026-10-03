@@ -4238,6 +4238,33 @@ def Laws.interrupt_ends_child_task():
 def Laws.gone_closes_approval():
   {==}
 
+def Laws.retire_stop_tells():
+  {==}
+
+def Laws.archive_running_tells():
+  {==}
+
+def Laws.delete_running_tells():
+  {==}
+
+def Laws.archive_idle_tells_nothing():
+  {==}
+
+def Laws.island_sync_on_start():
+  {==}
+
+def Laws.island_sync_on_archive():
+  {==}
+
+def Laws.island_sync_on_delete():
+  {==}
+
+def Laws.island_sync_not_twice():
+  {==}
+
+def Laws.island_sync_quiet():
+  {==}
+
 def Laws.retire_answers_empty():
   {==}
 
@@ -6690,6 +6717,15 @@ def Laws.worktree_busy_kept(s, t, now, window, n):
   and_false_r(M.Worktree.drop(s, t, now, window))
 
 def Laws.island_busy_shows():
+  {==}
+
+def Laws.island_gone_hidden():
+  {==}
+
+def Laws.upload_thread_local():
+  {==}
+
+def Laws.upload_thread_plain():
   {==}
 
 def Laws.task_waits_for_child_work():
