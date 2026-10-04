@@ -8,6 +8,7 @@
 import App from "./app.bend";
 import * as Solid from "./solid.js";
 import * as Plot2d from "./plot2d.js";
+import * as Wire from "./wire.js";
 
 // JSON <-> Bend Json
 // ------------------
@@ -171,6 +172,11 @@ const cid = (() => {
   }
   return c;
 })();
+
+// the wire's dictionaries (core/cbor.bend), for wire.js
+const listOf = (l) => { const out = []; for (let x = l; x && x.$ === "Con"; x = x.tail) out.push(x.head); return out; };
+const KEYS = listOf(App.cbor_keys());
+const WORDS = listOf(App.cbor_words());
 
 let ui = App.page(App.init(now(), cid), location.origin);
 // opened from another hub to show one of this machine's bots ("#bot=<name>")
@@ -955,13 +961,15 @@ function connect() {
       else if (o) Plot2d.got(o, at);
       return;
     }
-    const j = App.wire_in(toList(bytes));
+    // decoded here, straight into Bend's Json tree (wire.js): Bend's own
+    // decoder walked a list cell per byte, most of a long log's load
+    const j = Wire.cbor(bytes, KEYS, WORDS);
     // another thread's streamed text draws nothing and is not kept: only
     // the log and its changes are, and the page renders when the message
     // shows or gives commands
     const t = App.kind(j);
     const vis = App.shows(ui, j);
-    if (t === "log" || t === "changes") keep(JSON.parse(App.show(j)));
+    if (t === "log" || t === "changes") keep(Wire.plain(j));
     const r = App.recv(ui, j);
     ui = r.ui;
     let acts = false;

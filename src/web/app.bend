@@ -106,6 +106,13 @@ def origin(u: U.Ui) -> String:
   U.Ui.info(u, "origin")
 
 # The wire: CBOR bytes in and out (the host only moves them)
+# the wire's dictionaries, for host.js's own decoder (wire.js)
+def cbor_keys() -> List<&2, String>:
+  C.Cbor.keys()
+
+def cbor_words() -> List<&2, String>:
+  C.Cbor.words()
+
 def wire_in(bs: List<&2, U32>) -> J.Json:
   Maybe.default(&2, J.Json, C.Cbor.decode(bs), J.Null{})
 
