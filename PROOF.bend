@@ -7526,3 +7526,9 @@ def Laws.refs_machine_word():
 
 def Laws.refs_colon_after_stays_here():
   {==}
+
+def Laws.mate_loopback_lower_asks():
+  {==}
+
+def Laws.mate_loopback_higher_waits():
+  {==}

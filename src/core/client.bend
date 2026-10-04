@@ -4857,8 +4857,18 @@ def Mate.linked(ps: List<&2, BT.Peer>, +n: String, +url: String, +domain: String
 # whether this hub (at `me`) asks the machine called n at url: it is not
 # this one, this one's address is the lower (so of two hubs one asks),
 # neither link nor setting says otherwise
+# this hub's address as the other side of the comparison sees it: a hub
+# reached on this machine's loopback (BACKPLANE_PEERS) is compared with
+# this one's loopback address on its port, never its tailnet one, or both
+# would find themselves the lower and both would ask
+def Mate.local(+url: String) -> Bool:
+  Bool.or(String.eq(Far.host(url), "127.0.0.1"), String.eq(Far.host(url), "localhost"))
+
+def Mate.me(+me: String, +url: String) -> String:
+  Bool.pick(String, Mate.local(url), "http://127.0.0.1:" ++ Far.port(me), me)
+
 def Mate.wants(+n: String, +url: String, +ps: List<&2, BT.Peer>, +s: M.State, +me: String, +domain: String) -> Bool:
-  Bool.and(Bool.and(Bool.and(Bool.not(String.is_empty(url)), Bool.not(String.is_empty(me))), LV.Live.cmp.lt(String.cmp(me, url))),
+  Bool.and(Bool.and(Bool.and(Bool.not(String.is_empty(url)), Bool.not(String.is_empty(me))), LV.Live.cmp.lt(String.cmp(Mate.me(me, url), url))),
     Bool.and(Bool.not(Mate.off(s, n)), Bool.not(Mate.linked(ps, n, url, domain))))
 
 def Mate.due.k(go: Bool, +n: String, +url: String, rest: List<&2, MRow>) -> List<&2, MRow>:
@@ -4902,6 +4912,12 @@ def Mate.answer(+j: J.Json, +ps: List<&2, BT.Peer>, +s: M.State, +n: String, +ur
 def Mate.demo(+me: String) -> J.Json:
   J.Json.obj([J.KV{"self", J.Json.obj([J.KV{"name", J.Str{"laptop"}}, J.KV{"url", J.Str{me}}, J.KV{"domain", J.Str{"t.ts.net"}}])},
     J.KV{"peers", J.Json.arr([J.Json.obj([J.KV{"name", J.Str{"desk"}}, J.KV{"url", J.Str{"http://100.2.0.1:3787"}}, J.KV{"version", J.Str{"1"}}])])}])
+
+# two hubs on one machine, each named in the other's BACKPLANE_PEERS: this
+# one on `port` (its tailnet address in "self"), the other on 4002 (for laws)
+def Mate.demo.lo(+port: String) -> J.Json:
+  J.Json.obj([J.KV{"self", J.Json.obj([J.KV{"name", J.Str{"box"}}, J.KV{"url", J.Str{"http://100.9.0.1:" ++ port}}, J.KV{"domain", J.Str{"t.ts.net"}}])},
+    J.KV{"peers", J.Json.arr([J.Json.obj([J.KV{"name", J.Str{"127.0.0.1"}}, J.KV{"url", J.Str{"http://127.0.0.1:4002"}}, J.KV{"version", J.Str{"1"}}, J.KV{"named", J.Flag{True{}}}])])}])
 
 # Settings' machines: each of the owner's other machines this hub found,
 # whether it syncs with it ("sync.<name>": on unless "off"), and how that

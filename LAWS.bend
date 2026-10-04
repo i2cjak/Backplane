@@ -5815,3 +5815,11 @@ law refs_machine_word:
 
 law refs_colon_after_stays_here:
   {RF.Refs.x.word("fix:") == False{} : Bool}
+
+# two hubs on one machine compare their loopback addresses, so exactly
+# one of them asks: 4001 asks 4002, and 4003 does not ask 4002
+law mate_loopback_lower_asks:
+  {U.Mate.due(False{}, U.Mate.demo.lo("4001"), Nil{}, M.State.empty()) == [U.MRow{"127.0.0.1", "http://127.0.0.1:4002", True{}}] : List<&2, U.MRow>}
+
+law mate_loopback_higher_waits:
+  {U.Mate.due(False{}, U.Mate.demo.lo("4003"), Nil{}, M.State.empty()) == Nil{} : List<&2, U.MRow>}
