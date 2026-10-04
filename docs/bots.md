@@ -205,6 +205,7 @@ you type:
 |---|---|---|
 | `@name`, `@name@machine` | a bot, here or on a linked machine | the bot is woken (hop 0) with the message and the thread it came from; it can `thread_read` it and answer with `thread_send` |
 | `>slug` | a thread | the agent is told the thread's id, project and summary |
+| `>machine:slug` | a thread on another of the owner's machines | the agent is told what it is and where; `thread_read` reads it |
 | `%slug` | a project | the agent is told the project's id, folder and summary |
 | `#slug` | a group chat | the message is posted in the room |
 
@@ -221,6 +222,19 @@ machine's link id when its name could mean another, `Refs.fars`); sent,
 the bot hears the message as the person's, with the thread's title, which
 it cannot read, and answers in the person's conversation with it
 (`Bots.mention.far`, the same room `bots.tell` writes in).
+
+Threads synced from the owner's other machines (below, "Threads
+elsewhere") are offered as `>machine:slug`, the machine by its name as a
+slug (`Refs.x.*`); their rows start with the machine's name, which a query
+matches too, and `>machine:` alone offers only that machine's threads. A
+`>machine:slug` never names a thread here (`>fix: it fails` still names
+`fix`: a slug must follow the colon, laws `refs_machine_word`,
+`refs_colon_after_stays_here`). The hub has no read model of other
+machines' threads, only its mirror of each, so `src/core/xref.bend` folds
+the one mirror a word names when it must: for the agent's
+`<references>` block (server.bend's `Far.turn`, around `Bots.turn`), and
+for `thread_read` on a `<link>~<id>` (`Xref.read`, answered from the
+mirror, before the MCP call reaches the hub).
 
 The menu (`Refs.offer` in `src/core/refs.bend`) ranks by how well the
 query matches the slug or name (fuzzy), a query of three or more letters
@@ -591,6 +605,39 @@ owner's (`Far.own` in server.bend: the machines list; laws `far_*_stay_home`).
   its cached mirror stays visible until then. Direct paired-owner Active rows and focused thread/bot headers keep the machine name too; an offline owner is marked away, and an already-marked mirror keeps its original title. When the paired owner differs from
   the focused hub, its machine badge remains visible. Hidden Older and Settled
   counts also drop duplicates.
+- Pairing. The owner's machines link by themselves; nobody pastes an
+  invite (`Mate.*` in client.bend). Every two minutes a hub lists the
+  tailnet's online machines of its owner that answer `GET /hello`
+  (`Machines.*`), and each minute it asks those it is not linked to and
+  whose address is above its own (so of two hubs exactly one asks) with
+  `POST /bots/pair?name=<its name>&url=<its address>`. Only the owner's
+  own devices may call it (the tailnet listener's `tailscale whois`, the
+  same trust as the websocket); the answer is a fresh invite, joined like
+  a pasted one (`BotJob.join`), unless the asker is none of the machines
+  the hub found (403: its link could not reach back), sync with it is off
+  (403) or a live link already reaches it (409). A hub started with
+  `--no-tailscale` still lists the tailnet machines to switch to but pairs
+  only with hubs `BACKPLANE_PEERS` names (`named`), so a throwaway hub
+  never links itself to real ones. Laws `mate_*`; `test/tools/far_e2e.ts`
+  pairs its two hubs this way.
+- Choosing. Settings, Your machines (all four clients, `Mate.rows`) lists
+  each machine found, how its sync goes (linking, in sync, catching up N
+  projects, away) and On/Off: the setting `sync.<name>`. Off, nothing is
+  pushed to it or taken from it (`Far.own`), it is not asked to pair, it
+  is refused if it asks, and its projects leave the sidebar
+  (`Side.projs`, law `mate_off_hidden`).
+- Catching up. A pull's answer carries the owner's catalog: every project
+  it shares, with its title, latest activity and the number of its last
+  shared change (`Fr.catalog`; the feed keeps each project's number as it
+  grows, `Fh.lasts`). The mirroring hub tells clients and keeps it for
+  those that join later (`Fh.cat`, the mirror's last chunk). A client
+  lists every project at once, in its place (a project not arrived yet
+  stands in with its title and activity), and marks each still catching
+  up while the link's head is short of its number (`wait~<id>`,
+  `Fr.syncing`): faded, titled "Board · desk (syncing)", on all four
+  clients through `Label.title`/`Label.syncing` and the phones' `quiet`.
+  Projects that have arrived work meanwhile, and nothing pops in or moves.
+  Laws `far_catalog_*`, `far_scope_*`.
 - Not mirrored: streamed text while a far turn runs (its messages arrive as
   they are posted), file viewers for far project threads, and a bot's browser.
 
