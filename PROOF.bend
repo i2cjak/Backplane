@@ -7514,3 +7514,9 @@ def Laws.far_scope_thread():
 
 def Laws.far_scope_project():
   {==}
+
+def Laws.mate_unnamed_without_tailnet():
+  {==}
+
+def Laws.mate_answer_stranger():
+  {==}

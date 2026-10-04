@@ -1141,6 +1141,11 @@ def Feed.lines(f: Feed) -> List<&2, Line>:
     case Feed{ls, _}:
       ls
 
+def Feed.lasts(f: Feed) -> Map<&2, Nat>:
+  match f:
+    case Feed{_, la}:
+      la
+
 def Fr.feed.step.k(sh: Bool, +p: String, +n: Nat, +text: String, f: Feed) -> Feed:
   match sh f:
     case True{} Feed{ls, la}:

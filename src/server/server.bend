@@ -3675,14 +3675,14 @@ def Machines.every() -> U32:
 
 # a hub that may be there: a name and its base URL
 type Cand is Data:
-  Cand{name: String, url: String}
+  Cand{name: String, url: String, named: Bool}
 
 def Machines.cands(ms: List<&2, TN.Machine>, +port: U32) -> List<&2, Cand>:
   match ms:
     case Nil{}:
       Nil{}
     case TN.Machine{n, ip, _} <> t:
-      Cand{n, "http://" ++ ip ++ ":" ++ U32.show(port)} <> Machines.cands(t, port)
+      Cand{n, "http://" ++ ip ++ ":" ++ U32.show(port), False{}} <> Machines.cands(t, port)
 
 def Machines.name(+url: String) -> String:
   Maybe.default(&2, String, List.head(&2, String, String.split(Bool.pick(String, String.starts_with(url, "http://"), String.drop(url, 7n), url), ':')), url)
@@ -3692,7 +3692,7 @@ def Machines.static.k(blank: Bool, +u: String, rest: List<&2, Cand>) -> List<&2,
     case True{}:
       rest
     case False{}:
-      Cand{Machines.name(u), u} <> rest
+      Cand{Machines.name(u), u, True{}} <> rest
 
 # hubs named in BACKPLANE_PEERS ("http://host:port,..."), for machines
 # that are not on the tailnet
@@ -3707,7 +3707,7 @@ def Machines.urls(cs: List<&2, Cand>) -> List<&2, String>:
   match cs:
     case Nil{}:
       Nil{}
-    case Cand{_, u} <> t:
+    case Cand{_, u, _} <> t:
       ("'" ++ u ++ "'") <> Machines.urls(t)
 
 # ask every hub at once; each answer is "<url> <byte> <byte> ...": /hello
@@ -3722,14 +3722,16 @@ def Machines.answer(ls: List<&2, String>, +url: String) -> String:
     case +l <> t:
       Bool.pick(String, String.starts_with(l, url ++ " "), String.drop(l, Nat.add(String.length(url), 1n)), Machines.answer(t, url))
 
-def Machines.keep(+v: String, +n: String, +url: String, +rest: List<&2, J.Json>) -> List<&2, J.Json>:
+# (named: one from BACKPLANE_PEERS, the only kind a hub started with
+# --no-tailscale pairs with: UC.Mate.due)
+def Machines.keep(+v: String, +n: String, +url: String, named: Bool, +rest: List<&2, J.Json>) -> List<&2, J.Json>:
   Bool.pick(List<&2, J.Json>, String.is_empty(v), rest,
-    J.Json.obj([J.KV{"name", J.Str{n}}, J.KV{"url", J.Str{url}}, J.KV{"version", J.Str{v}}]) <> rest)
+    J.Json.obj([J.KV{"name", J.Str{n}}, J.KV{"url", J.Str{url}}, J.KV{"version", J.Str{v}}, J.KV{"named", J.Json.bool(named)}]) <> rest)
 
 def Machines.one(+c: Cand, +ls: List<&2, String>, rest: List<&2, J.Json>) -> List<&2, J.Json>:
   match c:
-    case Cand{+n, +u}:
-      Machines.keep(TN.Hello.version(TN.Hello.bytes(Machines.answer(ls, u))), n, u, rest)
+    case Cand{+n, +u, named}:
+      Machines.keep(TN.Hello.version(TN.Hello.bytes(Machines.answer(ls, u))), n, u, named, rest)
 
 def Machines.list(cs: List<&2, Cand>, +ls: List<&2, String>) -> List<&2, J.Json>:
   match cs:
@@ -6937,7 +6939,7 @@ def Hub.pair(h: Hub) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
       do IO<Hub>:
-        Pair.go(UC.Mate.due(Far.machines(cfg), BO.World.peers(M.State.bots(st)), st), inbox, cfg)
+        Pair.go(UC.Mate.due(Cfg.tailnet(cfg), Far.machines(cfg), BO.World.peers(M.State.bots(st)), st), inbox, cfg)
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
 
 # Routines keep their minute cadence; the ticker's first message also
@@ -7278,8 +7280,9 @@ def Hub.bot_http.job(h: Hub, +kind: String, +arg: String, +peer: String, +ts: St
 
 # POST /bots/pair?name=<its name>&url=<its address>: one of the owner's
 # own machines (trusted: Tailscale vouches, as for the websocket) asks to
-# link; the answer is a fresh invite ({"invite"}), unless sync with it is
-# off here (403) or a live link already reaches it (409)
+# link; the answer is a fresh invite ({"invite"}), unless it is none of
+# the machines this hub found (403: the link could not reach back), sync
+# with it is off here (403) or a live link already reaches it (409)
 def Pair.invited(ok: Bool, +code: String, +reply: Chan(List<&2, U32>)) -> IO(Unit):
   match ok:
     case True{}:
@@ -7304,6 +7307,8 @@ def Hub.bot.pair.k(i: Nat, h: Hub, +reply: Chan(List<&2, U32>)) -> IO(Hub):
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case 1n _:
       Hub.answer(h, reply, W.Http.text("403 Forbidden", "sync with that machine is off here"))
+    case 3n _:
+      Hub.answer(h, reply, W.Http.text("403 Forbidden", "not one of the machines this hub found"))
     case _ _:
       Hub.answer(h, reply, W.Http.text("409 Conflict", "already linked"))
 

@@ -5744,22 +5744,30 @@ law tour_scroll_none:
 # lower address asks a machine of the owner's it is not linked to; never
 # one already linked, never one sync is off with, never from the higher
 law mate_lower_asks:
-  {U.Mate.due(U.Mate.demo("http://100.1.0.1:3787"), Nil{}, M.State.empty()) == [U.MRow{"desk", "http://100.2.0.1:3787", True{}}] : List<&2, U.MRow>}
+  {U.Mate.due(True{}, U.Mate.demo("http://100.1.0.1:3787"), Nil{}, M.State.empty()) == [U.MRow{"desk", "http://100.2.0.1:3787", True{}}] : List<&2, U.MRow>}
 
 law mate_higher_waits:
-  {U.Mate.due(U.Mate.demo("http://100.3.0.1:3787"), Nil{}, M.State.empty()) == Nil{} : List<&2, U.MRow>}
+  {U.Mate.due(True{}, U.Mate.demo("http://100.3.0.1:3787"), Nil{}, M.State.empty()) == Nil{} : List<&2, U.MRow>}
 
 law mate_linked_never_asks:
-  {U.Mate.due(U.Mate.demo("http://100.1.0.1:3787"), [BOT.Peer{"p1", "desk", "http://desk.t.ts.net:3787", 0n, False{}}], M.State.empty()) == Nil{} : List<&2, U.MRow>}
+  {U.Mate.due(True{}, U.Mate.demo("http://100.1.0.1:3787"), [BOT.Peer{"p1", "desk", "http://desk.t.ts.net:3787", 0n, False{}}], M.State.empty()) == Nil{} : List<&2, U.MRow>}
 
 law mate_off_never_asks:
-  {U.Mate.due(U.Mate.demo("http://100.1.0.1:3787"), Nil{}, M.State.setting(M.State.empty(), "sync.desk", "off")) == Nil{} : List<&2, U.MRow>}
+  {U.Mate.due(True{}, U.Mate.demo("http://100.1.0.1:3787"), Nil{}, M.State.setting(M.State.empty(), "sync.desk", "off")) == Nil{} : List<&2, U.MRow>}
 
 law mate_no_self_never_asks:
-  {U.Mate.due(U.Mate.demo(""), Nil{}, M.State.empty()) == Nil{} : List<&2, U.MRow>}
+  {U.Mate.due(True{}, U.Mate.demo(""), Nil{}, M.State.empty()) == Nil{} : List<&2, U.MRow>}
 
-# the machine asked answers an invite, unless sync with the asker is off
-# there or a live link already reaches it
+# a hub without its own tailnet pairs only with machines BACKPLANE_PEERS
+# names, never with the owner's tailnet machines it lists
+law mate_unnamed_without_tailnet:
+  {U.Mate.due(False{}, U.Mate.demo("http://100.1.0.1:3787"), Nil{}, M.State.empty()) == Nil{} : List<&2, U.MRow>}
+
+# the machine asked answers an invite, unless the asker is none of the
+# machines it found, sync with it is off there or a live link reaches it
+law mate_answer_stranger:
+  {U.Mate.answer(U.Mate.demo("http://100.3.0.1:3787"), Nil{}, M.State.empty(), "desk", "http://127.0.0.1:9999") == 3n : Nat}
+
 law mate_answer_invites:
   {U.Mate.answer(U.Mate.demo("http://100.3.0.1:3787"), Nil{}, M.State.empty(), "desk", "http://desk.t.ts.net:3787") == 0n : Nat}
 

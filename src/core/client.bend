@@ -4868,23 +4868,35 @@ def Mate.due.k(go: Bool, +n: String, +url: String, rest: List<&2, MRow>) -> List
     case False{}:
       rest
 
-def Mate.due.go(ms: List<&2, J.Json>, +ps: List<&2, BT.Peer>, +s: M.State, +me: String, +domain: String) -> List<&2, MRow>:
+def Mate.due.go(ms: List<&2, J.Json>, +tailnet: Bool, +ps: List<&2, BT.Peer>, +s: M.State, +me: String, +domain: String) -> List<&2, MRow>:
   match ms:
     case Nil{}:
       Nil{}
     case +m <> t:
-      Mate.due.k(Mate.wants(J.Json.get_str(m, "name", ""), J.Json.get_str(m, "url", ""), ps, s, me, domain),
-        J.Json.get_str(m, "name", ""), J.Json.get_str(m, "url", ""), Mate.due.go(t, ps, s, me, domain))
+      Mate.due.k(Bool.and(Bool.or(tailnet, J.Json.get_bool(m, "named", False{})), Mate.wants(J.Json.get_str(m, "name", ""), J.Json.get_str(m, "url", ""), ps, s, me, domain)),
+        J.Json.get_str(m, "name", ""), J.Json.get_str(m, "url", ""), Mate.due.go(t, tailnet, ps, s, me, domain))
 
-# the machines (the switcher's JSON) this hub should ask to pair now
-def Mate.due(+j: J.Json, +ps: List<&2, BT.Peer>, +s: M.State) -> List<&2, MRow>:
-  Mate.due.go(J.Json.elems(J.Json.get_obj(j, "peers")), ps, s, J.Json.get_str(J.Json.get_obj(j, "self"), "url", ""), J.Json.get_str(J.Json.get_obj(j, "self"), "domain", ""))
+# the machines (the switcher's JSON) this hub should ask to pair now. A
+# hub started with --no-tailscale (tailnet False) still lists the owner's
+# tailnet machines to switch to, but pairs only with those BACKPLANE_PEERS
+# names ("named"): a throwaway hub never links itself to the real ones.
+def Mate.due(+tailnet: Bool, +j: J.Json, +ps: List<&2, BT.Peer>, +s: M.State) -> List<&2, MRow>:
+  Mate.due.go(J.Json.elems(J.Json.get_obj(j, "peers")), tailnet, ps, s, J.Json.get_str(J.Json.get_obj(j, "self"), "url", ""), J.Json.get_str(J.Json.get_obj(j, "self"), "domain", ""))
+
+def Mate.known(m: Maybe<&2, String>) -> Bool:
+  match m:
+    case Some{+u}:
+      Bool.not(String.is_empty(u))
+    case None{}:
+      False{}
 
 # what this hub answers a machine that asks to pair: 0 an invite, 1 no
-# (sync with it is off here), 2 no (a live link already reaches it)
+# (sync with it is off here), 2 no (a live link already reaches it), 3 no
+# (it is none of the machines this hub found: a link must reach back)
 def Mate.answer(+j: J.Json, +ps: List<&2, BT.Peer>, +s: M.State, +n: String, +url: String) -> Nat:
-  Bool.pick(Nat, Mate.off(s, n), 1n,
-    Bool.pick(Nat, Mate.linked(ps, n, url, J.Json.get_str(J.Json.get_obj(j, "self"), "domain", "")), 2n, 0n))
+  Bool.pick(Nat, Bool.not(Mate.known(Far.machine(j, n, url))), 3n,
+    Bool.pick(Nat, Mate.off(s, n), 1n,
+      Bool.pick(Nat, Mate.linked(ps, n, url, J.Json.get_str(J.Json.get_obj(j, "self"), "domain", "")), 2n, 0n)))
 
 # the owner's machines as a hub at `me` found them: one other, "desk" (for laws)
 def Mate.demo(+me: String) -> J.Json:
