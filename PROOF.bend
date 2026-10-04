@@ -7520,3 +7520,9 @@ def Laws.mate_unnamed_without_tailnet():
 
 def Laws.mate_answer_stranger():
   {==}
+
+def Laws.refs_machine_word():
+  {==}
+
+def Laws.refs_colon_after_stays_here():
+  {==}

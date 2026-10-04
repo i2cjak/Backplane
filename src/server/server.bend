@@ -33,6 +33,7 @@ import ../core/boot.bend as BT
 import ../core/store.bend as ST
 import ./botnet.bend as BN
 import ../core/far.bend as FR
+import ../core/xref.bend as XR
 import ../core/client.bend as UC
 import ../core/bothub.bend as BH
 import ../core/bot.bend as BO
@@ -4696,26 +4697,31 @@ def Bot.request(m: Maybe<&2, J.Json>, +st: M.State, +now: Nat, +client: U32, +te
 # Memory reaches only the agent: a bot's turn text gets its <memory>
 # block here, after the timeline kept the text as it was sent
 
-def Bot.line.k(m: Maybe<&2, J.Json>, +st: M.State, +now: Nat, +thread: String, +line: String) -> String:
+# a turn's text for its agent (bothub.bend's Bots.turn), with a block
+# naming the threads on the owner's other machines it names (xref.bend)
+def Far.turn(+cfg: Cfg, +st: M.State, +now: Nat, +thread: String, +text: String) -> String:
+  BH.Bots.turn(st, now, thread, text) ++ XR.Xref.block(text, FR.Fh.ins(BN.Bn.far(Cfg.bn(cfg))))
+
+def Bot.line.k(m: Maybe<&2, J.Json>, +cfg: Cfg, +st: M.State, +now: Nat, +thread: String, +line: String) -> String:
   match m:
     case Some{+o}:
-      Bool.pick(String, String.eq(J.Json.get_str(o, "type", ""), "user"), B.Claude.user.u(BH.Bots.turn(st, now, thread, Mention.user_text(o)), J.Json.get_str(o, "uuid", "")), line)
+      Bool.pick(String, String.eq(J.Json.get_str(o, "type", ""), "user"), B.Claude.user.u(Far.turn(cfg, st, now, thread, Mention.user_text(o)), J.Json.get_str(o, "uuid", "")), line)
     case None{}:
       line
 
 # a Claude stream-json line for a bot's thread: a user message gets the memory
-def Bot.line(bot: Bool, +st: M.State, +now: Nat, +thread: String, +line: String) -> String:
+def Bot.line(bot: Bool, +cfg: Cfg, +st: M.State, +now: Nat, +thread: String, +line: String) -> String:
   match bot:
     case True{}:
-      Bot.line.k(J.Json.parse(line), st, now, thread, line)
+      Bot.line.k(J.Json.parse(line), cfg, st, now, thread, line)
     case False{}:
       line
 
 # a Claude message with images carries its text in the job's `a`
-def Bot.attach(claude: Bool, +st: M.State, +now: Nat, +thread: String, +a: String) -> String:
+def Bot.attach(claude: Bool, +cfg: Cfg, +st: M.State, +now: Nat, +thread: String, +a: String) -> String:
   match claude:
     case True{}:
-      BH.Bots.turn(st, now, thread, a)
+      Far.turn(cfg, st, now, thread, a)
     case False{}:
       a
 
@@ -6212,7 +6218,7 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note} B.AgentSend{+thread, +line}:
       do IO<Hub>:
         +now : Nat <- Now.nat()
-        +l1 : String = Bot.line(Bool.or(BO.World.is_bot_thread(M.State.bots(st), thread), RF.Refs.maybe(line)), st, now, thread, line)
+        +l1 : String = Bot.line(Bool.or(BO.World.is_bot_thread(M.State.bots(st), thread), RF.Refs.maybe(line)), cfg, st, now, thread, line)
         +l2 : String <- EmbNote.claude(EmbNote.user(l1), cfg, st, thread, l1)
         Line.skills(String.contains(l2, "$"), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, l2, B.Hub.cwd(st, B.Hub.thread(st, thread)))
     case Hub{st, f, ls, cl, +as, inbox, cfg, note} B.AgentStop{+thread}:
@@ -6230,7 +6236,7 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
     case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.CodexTurn{+thread, +cwd, +model, +session, r, text}:
       do IO<Hub>:
         +now : Nat <- Now.nat()
-        +t2 : String = BH.Bots.turn(st, now, thread, text)
+        +t2 : String = Far.turn(cfg, st, now, thread, text)
         +g : String = Hub.gen(st, now)
         IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Codex.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, g, inbox)))
         Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
@@ -6241,7 +6247,7 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
     case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.GrokTurn{+thread, +cwd, +model, +session, r, +text}:
       do IO<Hub>:
         +now : Nat <- Now.nat()
-        +t2 : String = BH.Bots.turn(st, now, thread, text)
+        +t2 : String = Far.turn(cfg, st, now, thread, text)
         +g : String = Hub.gen(st, now)
         IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Grok.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, g, inbox)))
         Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
@@ -6299,7 +6305,7 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
     case Hub{+st, f, ls, cl, +as, +inbox, +cfg, note} B.Git{+client, +id, +job, +thread, +cwd, +a, +b}:
       do IO<Hub>:
         +now : Nat <- Now.nat()
-        Media.run(AG.Text.of(st), job, inbox, client, id, thread, cwd, Bot.attach(String.eq(job, "attach.claude"), st, now, thread, a), b, Cfg.home(cfg), Net.managed(Cfg.net(cfg)), Agents.gen(as, thread))
+        Media.run(AG.Text.of(st), job, inbox, client, id, thread, cwd, Bot.attach(String.eq(job, "attach.claude"), cfg, st, now, thread, a), b, Cfg.home(cfg), Net.managed(Cfg.net(cfg)), Agents.gen(as, thread))
         return Claude.prep(Bool.and(String.eq(job, "attach.claude"), Bool.not(String.is_empty(b))), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, b)
     case Hub{st, f, ls, cl, as, inbox, +cfg, note} B.AskAnswered{+ask, +answer}:
       do IO<Hub>:
@@ -7944,8 +7950,19 @@ def Hub.mcp.tr(tr: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +rep
     case False{}:
       Hub.mcp.route(Preview.is(o), h, thread, o, body, reply, now)
 
+# thread_read on a thread on another of the owner's machines: read from
+# this hub's mirror of it (xref.bend)
+def Hub.mcp.x(x: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match x h:
+    case True{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        sent : Bool <- Chan.send(String, reply, XR.Xref.read(o, FR.Fh.ins(BN.Bn.far(Cfg.bn(cfg)))))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case False{} _:
+      Hub.mcp.tr(TermRead.is(o), h, thread, o, body, reply, now)
+
 def Hub.mcp(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
-  Hub.mcp.tr(TermRead.is(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{})), h, thread, Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), body, reply, now)
+  Hub.mcp.x(XR.Xref.read.is(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{})), h, thread, Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), body, reply, now)
 
 def Msg.kind(m: Msg) -> String:
   match m:

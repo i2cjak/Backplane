@@ -5807,3 +5807,11 @@ law far_scope_thread:
 
 law far_scope_project:
   {FR.Fr.scope(M.State.empty(), M.ProjectCreated{"p2", "x", "/x", 1n}) == "p2" : String}
+
+# a thread on another of the owner's machines is `>machine:slug`; a word
+# ending in ':' still names a thread here (`>fix: it fails`)
+law refs_machine_word:
+  {RF.Refs.x.word("desk:fix-perf") == True{} : Bool}
+
+law refs_colon_after_stays_here:
+  {RF.Refs.x.word("fix:") == False{} : Bool}

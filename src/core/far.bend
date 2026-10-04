@@ -1604,6 +1604,12 @@ def Fr.file.done(i: In) -> In:
 def Fr.file.read(+text: String, +link: String, +name: String) -> In:
   Fr.file.done(Fr.file.scan(String.lines(text), In.new(link, name)))
 
+# what a mirror holds, oldest first
+def In.items(i: In) -> List<&2, Item>:
+  match i:
+    case In{_, _, _, xs, _, _}:
+      xs
+
 def In.name.of(i: In) -> String:
   match i:
     case In{_, n, _, _, _, _}:
