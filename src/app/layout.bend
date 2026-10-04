@@ -433,8 +433,9 @@ def Look.open(open: Bool, +ty: Ty, +st: M.State, +id: String, +rm: Bool, +c: D.C
 def Lay.project(+ty: Ty, r: U.SRow, +quiet: Bool, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String, +c: D.Clip, +y: U32) -> Col:
   match r:
     case U.SRow{_, M.Project{+id, title, _, _, _}, M.Shelves{pinned, active, settled, hidden, snoozed}}:
-      Lay.col.cat(Out.all([Out{Ty.text(ty, 2n, Ty.fit(ty, 2n, U.Label.title(st, id, title), 180), c, 38, (y + 4 : U32), 28, Bool.pick(U32, quiet, T.Th.faint(), T.Th.dim())), [Lay.hit(0, y, 228, 32, "project", id)]},
-          Out{Lay.icon(ty, BG.Badge.icon(st, id), c, 14, (y + 10 : U32), Bool.pick(U32, quiet, T.Th.faint(), BG.Badge.rgb_of(st, id))), [Lay.hit(12, (y + 4 : U32), 24, 28, "look", id)]},
+      +fade = Bool.or(quiet, U.Label.syncing(st, id))
+      Lay.col.cat(Out.all([Out{Ty.text(ty, 2n, Ty.fit(ty, 2n, U.Label.title(st, id, title), 180), c, 38, (y + 4 : U32), 28, Bool.pick(U32, fade, T.Th.faint(), T.Th.dim())), [Lay.hit(0, y, 228, 32, "project", id)]},
+          Out{Lay.icon(ty, BG.Badge.icon(st, id), c, 14, (y + 10 : U32), Bool.pick(U32, fade, T.Th.faint(), BG.Badge.rgb_of(st, id))), [Lay.hit(12, (y + 4 : U32), 24, 28, "look", id)]},
           Out{Lay.icon(ty, "plus", c, 236, (y + 10 : U32), T.Th.faint()), [Lay.hit(230, (y + 4 : U32), 28, 28, "new-thread", id)]}]),
         Lay.col.then(Look.open(String.eq(look, id), ty, st, id, String.eq(rm, id), c, (y + 32 : U32)), y0 =>
         Lay.col.then(Lay.rows(ty, pinned, ix, st, sel, now, False{}, c, y0), y1 =>
@@ -2936,6 +2937,29 @@ def Set.pair(+ty: Ty, +info: Map<&2, String>, +on: Bool, +x: U32, +w: U32, +y: U
     Bool.pick(Out, U.Pair.qr.ready(info), Lay.chip(ty, (x + w - 16 - cw - 6 - Lay.button.w(ty, "QR code") : U32), (y + 10 : U32), "QR code", on, "flag", "pairqr"), Out.none())])
 
 # the first-run tour again (core/onboard.bend: action "ob-open")
+# Your machines (U.Mate.rows): what the hub found of the owner's other
+# machines, each with how its sync goes and On/Off ("sync.<name>")
+def Set.mates.rows(rs: List<&2, U.MateRow>, +ty: Ty, +x: U32, +w: U32, +y: U32) -> List<&2, Out>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case U.MateRow{+nm, +note, +on, +key} <> t:
+      Out.all([Set.row.r(ty, nm, note, x, y, w, (Lay.button.w(ty, "On") + Lay.button.w(ty, "Off") + 22 : U32)),
+        Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Off") - 6 - Lay.button.w(ty, "On") : U32), (y + 12 : U32), "On", String.eq(on, "on"), "setting", key ++ "=on"),
+        Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Off") : U32), (y + 12 : U32), "Off", String.eq(on, "off"), "setting", key ++ "=off")]) <> Set.mates.rows(t, ty, x, w, (y + 52 : U32))
+
+# the section's height, its head included
+def Set.mates.h(+n: S.Nui) -> U32:
+  (32 + 66 + U32.from_nat(List.length(&2, U.MateRow, U.Mate.rows(S.Nui.ui(n)))) * 52 + 24 : U32)
+
+def Set.mates(+ty: Ty, +n: S.Nui, +x: U32, +w: U32, +y: U32) -> Out:
+  +u = S.Nui.ui(n)
+  Out.all([
+    Set.head(ty, U.Mate.title(), x, y),
+    Set.card(x, (y + 32 : U32), w, (Set.mates.h(n) - 56 : U32)),
+    Set.row(ty, "Sync", U.Mate.lead(u), x, (y + 34 : U32), w),
+    Out.all(Set.mates.rows(U.Mate.rows(u), ty, x, w, (y + 86 : U32)))])
+
 def Set.tour(+ty: Ty, +x: U32, +w: U32, +y: U32) -> Out:
   +bw = Lay.button.w(ty, "Show the tour")
   Out.all([
@@ -2957,7 +2981,7 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
   +er = {(Set.rows(ty, tms, (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32)) * 34 : U32) : U32}
   +ey = {(202 + er : U32) : U32}
   +fy = {(ey + 46 : U32) : U32}
-  +total = {(1156 + dy + fy + Set.voice.h(ty, n, x, w) + Set.keys.h(n) + 132 : U32) : U32}
+  +total = {(1156 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + 132 : U32) : U32}
   +off = {U32.min(raw, U32.dim(total, h)) : U32}
   +b = {(0 - off : U32) : U32}
   +b2 = {(b + 128 : U32) : U32}
@@ -3015,8 +3039,9 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Nightly") - 6 - Lay.button.w(ty, "Stable") : U32), (b2 + 946 + dy + fy : U32), "Stable", Bool.not(String.eq(M.Setting.get(st, "update.channel", "stable"), "nightly")), "setting", "update.channel=stable"),
     Lay.chip(ty, (x + w - 16 - Lay.button.w(ty, "Nightly") : U32), (b2 + 946 + dy + fy : U32), "Nightly", String.eq(M.Setting.get(st, "update.channel", "stable"), "nightly"), "setting", "update.channel=nightly"),
     Set.voice(ty, st, n, x, w, (b2 + 1010 + dy + fy : U32)),
-    Set.keys(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) : U32)),
-    Set.tour(ty, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.keys.h(n) + 16 : U32))])),
+    Set.mates(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) : U32)),
+    Set.keys(ty, n, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) : U32)),
+    Set.tour(ty, x, w, (b2 + 1010 + dy + fy + Set.voice.h(ty, n, x, w) + Set.mates.h(n) + Set.keys.h(n) + 16 : U32))])),
     Out{List.append(&2, R.Op, [D.Draw.rect(D.Clip.all(), x0, 0, (x1 - x0 : U32), 51, T.Th.bg(), 255), D.Draw.rect(D.Clip.all(), x0, 51, (x1 - x0 : U32), 1, T.Th.line(), 255)],
       Ty.text(ty, 0n, "Settings", D.Clip.all(), (x0 + 24 : U32), 0, 52, T.Th.text())), Nil{}},
     Lay.button(ty, D.Clip.all(), (x1 - 16 - Lay.button.w(ty, "Close") : U32), 12, "Close", T.Th.soft(), "flag", "settings"),

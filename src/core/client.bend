@@ -76,6 +76,22 @@ type Act is Data:
 def Label.title(+st: M.State, +id: String, title: String) -> String:
   FR.Fr.title(st, id, title)
 
+# a project elsewhere still catching up: listed, faded, "(syncing)"
+def Label.syncing(+st: M.State, +id: String) -> Bool:
+  FR.Fr.syncing(st, id)
+
+# whether sync with a machine is off here ("sync.<name>" = "off", Mate.*
+# below): nothing goes to it or comes from it, and what it shared before
+# is not listed
+def Mate.key(+name: String) -> String:
+  "sync." ++ String.to_lower(name)
+
+def Mate.off(+s: M.State, +name: String) -> Bool:
+  String.eq(M.Setting.get(s, Mate.key(name), ""), "off")
+
+def Mate.hidden(+s: M.State, +id: String) -> Bool:
+  Bool.and(FR.Fr.is(id), Mate.off(s, FR.Fr.name(s, id)))
+
 def Act.cmds(a: Act) -> List<&2, Cmd>:
   match a:
     case Act{_, cs}:
@@ -1545,14 +1561,40 @@ def Side.rows.go.ix(ps: List<&2, M.Project>, +ix: SIx, +navs: Map<&2, M.Nav>, +n
     case M.Project{+id, ti, r, +c, +rm} <> t:
       Side.rows.k(rm, M.Project{id, ti, r, c, rm}, SIx.mine(ix, id), c, navs, now, M.Nav.project_key(navs, id), Side.rows.go.ix(t, ix, navs, now))
 
+# the projects the sidebar lists: all but those of a machine sync is off
+# with (only a project elsewhere is asked)
+def Side.keep(hide: Bool, p: M.Project, rest: List<&2, M.Project>) -> List<&2, M.Project>:
+  match hide:
+    case True{}:
+      rest
+    case False{}:
+      p <> rest
+
+def Side.projs.k(far: Bool, +s: M.State, +id: String, p: M.Project, rest: List<&2, M.Project>) -> List<&2, M.Project>:
+  match far:
+    case True{}:
+      Side.keep(Mate.hidden(s, id), p, rest)
+    case False{}:
+      p <> rest
+
+def Side.projs.go(ps: List<&2, M.Project>, +s: M.State) -> List<&2, M.Project>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case M.Project{+id, ti, r, c, rm} <> t:
+      Side.projs.k(FR.Fr.is(id), s, id, M.Project{id, ti, r, c, rm}, Side.projs.go(t, s))
+
+def Side.projs(+s: M.State) -> List<&2, M.Project>:
+  Side.projs.go(Ui.projects(s), s)
+
 # Side.sorted from the index
 def Side.sorted.ix(+st: M.State, +ix: SIx, +now: Nat) -> List<&2, SRow>:
-  PSlot.rows(List.sort(~PSlot, ~PSlot.before, Side.rows.go.ix(Ui.projects(st), ix, M.State.navs(st), now)))
+  PSlot.rows(List.sort(~PSlot, ~PSlot.before, Side.rows.go.ix(Side.projs(st), ix, M.State.navs(st), now)))
 
 # the projects by order key, then latest activity, their threads on
 # shelves (delegated child threads live under their parent instead)
 def Side.sorted(+st: M.State, +now: Nat) -> List<&2, SRow>:
-  PSlot.rows(List.sort(~PSlot, ~PSlot.before, Side.rows.go(Ui.projects(st), Kids.keep(Ui.threads(st), Kids.set(st)), M.State.navs(st), now)))
+  PSlot.rows(List.sort(~PSlot, ~PSlot.before, Side.rows.go(Side.projs(st), Kids.keep(Ui.threads(st), Kids.set(st)), M.State.navs(st), now)))
 
 # Quiet projects
 # --------------
@@ -4792,6 +4834,133 @@ def Far.machine.k(+j: J.Json, +pname: String, +purl: String, +domain: String) ->
 def Far.machine(+j: J.Json, +pname: String, +purl: String) -> Maybe<&2, String>:
   Far.machine.k(j, pname, purl, J.Json.get_str(J.Json.get_obj(j, "self"), "domain", ""))
 
+# Pairing the owner's machines (Mate.*)
+# ----------------------------
+# Each hub finds the owner's other hubs (Machines.* in server.bend: the
+# tailnet's online machines that answer GET /hello). One it is not linked
+# to yet is paired by the hubs themselves, with no invite to paste: the
+# hub with the lower address asks the other (POST /bots/pair, which only
+# the owner's own devices may call: Tailscale has said whose they are)
+# and links with the invite it answers (the usual signed POST /bots/link).
+# From then on the two mirror each other's projects and threads in the
+# background (far.bend). The setting "sync.<name>" = "off" keeps a
+# machine out, on either side.
+
+# whether a live link already reaches the machine called n at url
+def Mate.linked(ps: List<&2, BT.Peer>, +n: String, +url: String, +domain: String) -> Bool:
+  match ps:
+    case Nil{}:
+      False{}
+    case BT.Peer{_, +pn, +pu, _, _} <> t:
+      Bool.or(Far.hit(n, url, pn, pu, domain), Mate.linked(t, n, url, domain))
+
+# whether this hub (at `me`) asks the machine called n at url: it is not
+# this one, this one's address is the lower (so of two hubs one asks),
+# neither link nor setting says otherwise
+def Mate.wants(+n: String, +url: String, +ps: List<&2, BT.Peer>, +s: M.State, +me: String, +domain: String) -> Bool:
+  Bool.and(Bool.and(Bool.and(Bool.not(String.is_empty(url)), Bool.not(String.is_empty(me))), LV.Live.cmp.lt(String.cmp(me, url))),
+    Bool.and(Bool.not(Mate.off(s, n)), Bool.not(Mate.linked(ps, n, url, domain))))
+
+def Mate.due.k(go: Bool, +n: String, +url: String, rest: List<&2, MRow>) -> List<&2, MRow>:
+  match go:
+    case True{}:
+      MRow{n, url, True{}} <> rest
+    case False{}:
+      rest
+
+def Mate.due.go(ms: List<&2, J.Json>, +ps: List<&2, BT.Peer>, +s: M.State, +me: String, +domain: String) -> List<&2, MRow>:
+  match ms:
+    case Nil{}:
+      Nil{}
+    case +m <> t:
+      Mate.due.k(Mate.wants(J.Json.get_str(m, "name", ""), J.Json.get_str(m, "url", ""), ps, s, me, domain),
+        J.Json.get_str(m, "name", ""), J.Json.get_str(m, "url", ""), Mate.due.go(t, ps, s, me, domain))
+
+# the machines (the switcher's JSON) this hub should ask to pair now
+def Mate.due(+j: J.Json, +ps: List<&2, BT.Peer>, +s: M.State) -> List<&2, MRow>:
+  Mate.due.go(J.Json.elems(J.Json.get_obj(j, "peers")), ps, s, J.Json.get_str(J.Json.get_obj(j, "self"), "url", ""), J.Json.get_str(J.Json.get_obj(j, "self"), "domain", ""))
+
+# what this hub answers a machine that asks to pair: 0 an invite, 1 no
+# (sync with it is off here), 2 no (a live link already reaches it)
+def Mate.answer(+j: J.Json, +ps: List<&2, BT.Peer>, +s: M.State, +n: String, +url: String) -> Nat:
+  Bool.pick(Nat, Mate.off(s, n), 1n,
+    Bool.pick(Nat, Mate.linked(ps, n, url, J.Json.get_str(J.Json.get_obj(j, "self"), "domain", "")), 2n, 0n))
+
+# the owner's machines as a hub at `me` found them: one other, "desk" (for laws)
+def Mate.demo(+me: String) -> J.Json:
+  J.Json.obj([J.KV{"self", J.Json.obj([J.KV{"name", J.Str{"laptop"}}, J.KV{"url", J.Str{me}}, J.KV{"domain", J.Str{"t.ts.net"}}])},
+    J.KV{"peers", J.Json.arr([J.Json.obj([J.KV{"name", J.Str{"desk"}}, J.KV{"url", J.Str{"http://100.2.0.1:3787"}}, J.KV{"version", J.Str{"1"}}])])}])
+
+# Settings' machines: each of the owner's other machines this hub found,
+# whether it syncs with it ("sync.<name>": on unless "off"), and how that
+# goes: linking (within the minute), synced, catching up (how many of its
+# projects), away; nothing syncs with one turned off
+type MateRow is Data:
+  MateRow{name: String, note: String, on: String, key: String}
+
+def Mate.link(ps: List<&2, BT.Peer>, +n: String, +url: String, +domain: String) -> String:
+  match ps:
+    case Nil{}:
+      ""
+    case BT.Peer{+i, +pn, +pu, _, _} <> t:
+      Bool.pick(String, Far.hit(n, url, pn, pu, domain), i, Mate.link(t, n, url, domain))
+
+def Mate.behind(ps: List<&2, M.Project>, +s: M.State, +link: String, +acc: Nat) -> Nat:
+  match ps:
+    case Nil{}:
+      acc
+    case M.Project{+id, _, _, _, _} <> t:
+      Mate.behind(t, s, link, Bool.pick(Nat, Bool.and(String.eq(FR.Fr.link(id), link), FR.Fr.syncing(s, id)), 1n+acc, acc))
+
+def Mate.note.linked(+n: Nat, away: Bool) -> String:
+  match away:
+    case True{}:
+      "Away: its projects stay listed and readable until it answers."
+    case False{}:
+      Bool.pick(String, Nat.is_eq(n, 0n), "In sync. Its projects and threads show here as they change.",
+        "Catching up: " ++ Nat.show(n) ++ Bool.pick(String, Nat.is_eq(n, 1n), " project", " projects") ++ " still loading. The rest are ready.")
+
+def Mate.note.k(off: Bool, +link: String, +u: Ui) -> String:
+  match off:
+    case True{}:
+      "Off. Nothing syncs with it."
+    case False{}:
+      Bool.pick(String, String.is_empty(link), "Linking. Its projects will appear here within a minute or two.",
+        Mate.note.linked(Mate.behind(Ui.projects(Ui.state(u)), Ui.state(u), link, 0n), String.eq(Ui.info(u, "far.away." ++ link), "1")))
+
+def Mate.row(+n: String, +url: String, +domain: String, +u: Ui) -> MateRow:
+  MateRow{n, Mate.note.k(Mate.off(Ui.state(u), n), Mate.link(BT.World.peers(M.State.bots(Ui.state(u))), n, url, domain), u),
+    Bool.pick(String, Mate.off(Ui.state(u), n), "off", "on"), Mate.key(n)}
+
+def Mate.rows.k(skip: Bool, +m: J.Json, +domain: String, +u: Ui, rest: List<&2, MateRow>) -> List<&2, MateRow>:
+  match skip:
+    case True{}:
+      rest
+    case False{}:
+      Mate.row(J.Json.get_str(m, "name", ""), J.Json.get_str(m, "url", ""), domain, u) <> rest
+
+def Mate.rows.go(ms: List<&2, J.Json>, +me: String, +domain: String, +u: Ui) -> List<&2, MateRow>:
+  match ms:
+    case Nil{}:
+      Nil{}
+    case +m <> t:
+      Mate.rows.k(Bool.or(String.is_empty(J.Json.get_str(m, "url", "")), String.eq(J.Json.get_str(m, "url", ""), me)), m, domain, u, Mate.rows.go(t, me, domain, u))
+
+def Mate.rows.of(+j: J.Json, +u: Ui) -> List<&2, MateRow>:
+  Mate.rows.go(J.Json.elems(J.Json.get_obj(j, "peers")), J.Json.get_str(J.Json.get_obj(j, "self"), "url", ""), J.Json.get_str(J.Json.get_obj(j, "self"), "domain", ""), u)
+
+# (the home hub's list: the machines it found)
+def Mate.rows(+u: Ui) -> List<&2, MateRow>:
+  Mate.rows.of(Maybe.default(&2, J.Json, J.Json.parse(Ui.info(u, "machines")), J.Null{}), u)
+
+def Mate.title() -> String:
+  "Your machines"
+
+def Mate.lead(+u: Ui) -> String:
+  Bool.pick(String, List.is_empty(&2, MateRow, Mate.rows(u)),
+    "Other machines of yours on Tailscale that run Backplane show here. Their projects and threads sync into this sidebar by themselves.",
+    "Projects and threads on these machines sync into this sidebar in the background, so you never have to switch. Turn one off to keep it apart.")
+
 def Far.chat(u: Ui, +id: String) -> Act:
   Act{Bots.views(u, "", "", id), [Focus{"remote-send"}, Scroll{}]}
 
@@ -6001,8 +6170,8 @@ def Ui.far.st(u: Ui, st: M.State) -> Ui:
       Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
 
 def Ui.far.k(+u: Ui, +link: String, +o: J.Json) -> Ui:
-  Ui.info_set(Ui.info_set(Ui.far.st(u, FR.Fr.mark(FR.Fr.recv(Ui.state(u), link, J.Json.get_str(o, "epoch", ""), J.Json.get_nat(o, "since", 0n), J.Json.get_nat(o, "head", 0n),
-      FR.Fr.items.of(J.Json.elems(J.Json.get_obj(o, "items")))), link, J.Json.get_str(o, "name", link), J.Json.get_bool(o, "away", False{}))),
+  Ui.info_set(Ui.info_set(Ui.far.st(u, FR.Fr.mark(FR.Fr.cat.apply(J.Json.elems(J.Json.get_obj(o, "catalog")), link, FR.Fr.recv(Ui.state(u), link, J.Json.get_str(o, "epoch", ""), J.Json.get_nat(o, "since", 0n), J.Json.get_nat(o, "head", 0n),
+      FR.Fr.items.of(J.Json.elems(J.Json.get_obj(o, "items"))))), link, J.Json.get_str(o, "name", link), J.Json.get_bool(o, "away", False{}))),
     "far.away." ++ link, Bool.pick(String, J.Json.get_bool(o, "away", False{}), "1", "")), "far.name." ++ link, J.Json.get_str(o, "name", link))
 
 def Ui.far(+u: Ui, +o: J.Json) -> Ui:

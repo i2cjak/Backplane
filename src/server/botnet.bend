@@ -551,6 +551,19 @@ def Bn.signed(+home: String, +url: String, +peer: String, +secret: String, +now:
 def Bn.to_peer(+home: String, +url: String, +peer: String, +now: Nat, +path: String, +post: Bool, +body: String) -> IO(Resp):
   IO.bind(String, Resp, Bn.peer.secret(home, peer), secret => Bn.signed(home, url, peer, secret, now, path, post, body))
 
+# an unsigned POST with no body, to one of the owner's own machines (it
+# trusts this one because Tailscale says whose it is: POST /bots/pair)
+def Bn.plain.k(ok: Bool, +url: String) -> IO(Resp):
+  match ok:
+    case True{}:
+      IO.bind(P.Ran, Resp, Bn.curl(["-sS", "--proto", "=http,https", "-m", "15", "--max-filesize", "65536", "-X", "POST", "-H", "@-", "-w", "\n%{http_code}", "--url", url], "Content-Length: 0\n"),
+        r => IO.pure(Resp, Bn.resp(r)))
+    case False{}:
+      IO.pure(Resp, Resp{0n, "not an http address"})
+
+def Bn.plain(+url: String) -> IO(Resp):
+  Bn.plain.k(Bn.url.ok(url), url)
+
 # Who we are
 # ----------
 

@@ -117,12 +117,18 @@ def Mob.quiet(p: J.Json, q: Bool) -> J.Json:
     case x:
       x
 
+# a project elsewhere still catching up shows faded, as a quiet one does
+def Mob.syncing(r: U.SRow, +st: M.State) -> Bool:
+  match r:
+    case U.SRow{_, M.Project{+id, _, _, _, _}, _}:
+      U.Label.syncing(st, id)
+
 def Mob.projects(rs: List<&2, U.SRow>, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +now: Nat, +q: Bool) -> List<&2, J.Json>:
   match rs:
     case Nil{}:
       Nil{}
-    case r <> t:
-      Mob.quiet(Mob.project(r, open, ix, st, now), q) <> Mob.projects(t, open, ix, st, now, q)
+    case +r <> t:
+      Mob.quiet(Mob.project(r, open, ix, st, now), Bool.or(q, Mob.syncing(r, st))) <> Mob.projects(t, open, ix, st, now, q)
 
 # the projects as the sidebar groups them (core's Side.groups): live ones,
 # then the quiet ones ("quiet": shown faded), then the older ones, only
@@ -1039,11 +1045,23 @@ def Mob.set.pair(+on: Bool, +nf: Map<&2, String>) -> J.Json:
     Bool.pick(List<&2, J.Json>, String.is_empty(U.Pair.link(nf)), Nil{}, [Mob.set.btn("Copy", "copy", U.Pair.link(nf), False{})])) : List<&2, J.Json>}
   Mob.set.pair.k(on, btns, nf)
 
+# Your machines (U.Mate.rows): each of the owner's other machines, how its
+# sync goes, and On/Off ("sync.<name>")
+def Mob.mates.go(rs: List<&2, U.MateRow>) -> List<&2, J.Json>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case U.MateRow{+nm, +note, +on, +key} <> t:
+      Mob.set.row(nm, note, Mob.set.chips(["on", "off"], on, key)) <> Mob.mates.go(t)
+
+def Mob.mates(+u: U.Ui) -> List<&2, J.Json>:
+  Mob.set.row(U.Mate.title(), U.Mate.lead(u), Nil{}) <> Mob.mates.go(U.Mate.rows(u))
+
 def Mob.settings.of(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String, more: List<&2, J.Json>) -> J.Json:
   +prov = M.Setting.get(st, "agent.provider", "claude")
   +models = U.Str.get(nf, "models")
   +model = M.Setting.get(st, "agent.model", "")
-  J.Json.obj([J.KV{"rows", J.Json.arr(List.append(&2, J.Json, [
+  J.Json.obj([J.KV{"rows", J.Json.arr(List.append(&2, J.Json, List.append(&2, J.Json, [
     Mob.set.row(Mob.set.days.label(M.Setting.get(st, "settle.days", "3")), "Threads idle this long move to Settled. They stay saved.", Mob.set.days(M.Setting.get(st, "settle.days", "3"))),
     Mob.set.row("Continue after a restart", "Turns a restart cuts short go on by themselves.", Mob.set.chips(["on", "off"], Bool.pick(String, M.Carry.on(st), "on", "off"), "restart.continue")),
     Mob.set.row("Provider for new threads", Bool.pick(String, String.is_empty(U.Models.cli(models, prov)), prov ++ " is not installed", U.Models.cli(models, prov)), Mob.set.chips(["claude", "codex", "grok"], prov, "agent.provider")),
@@ -1053,10 +1071,10 @@ def Mob.settings.of(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +n
     Mob.set.row(U.KiCad.ipc.label(nf), U.KiCad.ipc.note(nf), Bool.pick(List<&2, J.Json>, U.KiCad.ipc.ready(nf), Mob.set.chips(["on", "off"], M.Setting.get(st, "kicad.ipc", "on"), "kicad.ipc"), Nil{})),
     Mob.set.row("Theme", "Unset, the phone follows its own system.", Mob.set.chips(["dark", "light"], M.Setting.get(st, "ui.theme", ""), "ui.theme")),
     Mob.set.row("Thread list", "Projects groups threads by project; active lists what is going on, what needs you first.", Mob.set.chips(["projects", "active"], U.Side.view(st), "sidebar.view")),
-    Mob.set.row(U.Tail.label(nf), U.Tail.note(nf), Nil{}),
+    Mob.set.row(U.Tail.label(nf), U.Tail.note(nf), Nil{})], List.append(&2, J.Json, Mob.mates(u), [
     Mob.set.pair(U.Ui.flag(u, "pairqr"), nf),
     Mob.set.row("Update channel", "Stable takes releases; nightly also takes the daily builds.", Mob.set.chips(["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel")),
-    Mob.set.row("Backplane " ++ v, U.Update.line.w(st, nf, note), Mob.update.btn(U.Update.btn(st, nf, note)))], more))}])
+    Mob.set.row("Backplane " ++ v, U.Update.line.w(st, nf, note), Mob.update.btn(U.Update.btn(st, nf, note)))])), more))}])
 
 def Mob.settings.k(+u: U.Ui, more: List<&2, J.Json>) -> J.Json:
   match u:

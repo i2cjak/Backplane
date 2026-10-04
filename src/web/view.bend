@@ -148,7 +148,7 @@ def View.look(open: Bool, +st: M.State, +id: String, +rm: Bool) -> List<&2, D.No
 def View.project(r: U.SRow, +quiet: Bool, +open: Map<&2, Bool>, +ix: U.SIx, +st: M.State, +sel: String, +now: Nat, +look: String, +rm: String) -> D.Node:
   match r:
     case U.SRow{_, M.Project{+id, title, root, _, _}, M.Shelves{pinned, active, settled, hidden, snoozed}}:
-      D.El{"section", id, [D.At{"class", Bool.pick(String, quiet, "project quiet", "project")}, D.At{"style", "--tint:" ++ BG.Badge.css_of(st, id)}, D.At{"data-drag-to", id}, D.At{"data-drag-act", "reorder-project"}],
+      D.El{"section", id, [D.At{"class", Bool.pick(String, Bool.or(quiet, U.Label.syncing(st, id)), Bool.pick(String, U.Label.syncing(st, id), "project quiet syncing", "project quiet"), "project")}, D.At{"style", "--tint:" ++ BG.Badge.css_of(st, id)}, D.At{"data-drag-to", id}, D.At{"data-drag-act", "reorder-project"}],
         List.concat(&2, D.Node, [[D.El{"div", "", [D.At{"class", "project-head"}, D.At{"title", root}, D.At{"draggable", "true"}, D.At{"data-drag", id}, D.At{"data-drag-act", "reorder-project"}, D.At{"data-value", id}, D.On{"contextmenu", "proj-menu"}],
             [WI.WIcon.button("badge", "look", id, "Colour and icon", BG.Badge.icon(st, id), 14, ""), D.Dom.span("name", U.Label.title(st, id, title)), WI.WIcon.button("icon", "new-thread", id, "New thread", "plus", 16, "")]}],
           View.look(String.eq(look, id), st, id, String.eq(rm, id)),
@@ -750,6 +750,18 @@ def View.update.btn(i: Nat) -> List<&2, D.Node>:
     case _:
       Nil{}
 
+# Your machines (U.Mate.rows): each of the owner's other machines, how its
+# sync goes, and On/Off ("sync.<name>")
+def View.mates.go(rs: List<&2, U.MateRow>) -> List<&2, D.Node>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case U.MateRow{+nm, +note, +on, +key} <> t:
+      View.setrow(nm, note, View.chips(["on", "off"], on, key)) <> View.mates.go(t)
+
+def View.mates(+u: U.Ui) -> List<&2, D.Node>:
+  View.setrow(U.Mate.title(), U.Mate.lead(u), Nil{}) <> View.mates.go(U.Mate.rows(u))
+
 def View.settings(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +note: String) -> D.Node:
   +prov = M.Setting.get(st, "agent.provider", "claude")
   +ipc = M.Setting.get(st, "kicad.ipc", "on")
@@ -770,8 +782,9 @@ def View.settings(+u: U.Ui, +st: M.State, +nf: Map<&2, String>, +v: String, +not
       View.setrow(U.KiCad.ipc.label(nf), U.KiCad.ipc.note(nf), Bool.pick(List<&2, D.Node>, U.KiCad.ipc.ready(nf), View.chips(["on", "off"], ipc, "kicad.ipc"), Nil{})),
       View.setrow("Theme", "The window and the web page (phones unset follow their own system).", View.chips(["dark", "light"], Bool.pick(String, String.eq(M.Setting.get(st, "ui.theme", ""), "light"), "light", "dark"), "ui.theme")),
       View.setrow("Thread list", "Projects groups threads by project; active lists what is going on, what needs you first.", View.chips(["projects", "active"], U.Side.view(st), "sidebar.view")),
-      View.setrow(U.Tail.label(nf), U.Tail.note(nf), Nil{}),
-      View.setrow("Pairing link", U.Pair.note(U.Pair.link(nf)), D.Dom.cat(D.Dom.when(U.Pair.qr.ready(nf), D.Dom.button(Bool.pick(String, U.Ui.flag(u, "pairqr"), "on", ""), "flag", "pairqr", "Show the link as a code to scan", "QR code")),
+      View.setrow(U.Tail.label(nf), U.Tail.note(nf), Nil{})],
+      View.mates(u),
+      [View.setrow("Pairing link", U.Pair.note(U.Pair.link(nf)), D.Dom.cat(D.Dom.when(U.Pair.qr.ready(nf), D.Dom.button(Bool.pick(String, U.Ui.flag(u, "pairqr"), "on", ""), "flag", "pairqr", "Show the link as a code to scan", "QR code")),
         D.Dom.when(Bool.not(String.is_empty(U.Pair.link(nf))), D.Dom.copy(U.Pair.link(nf)))))],
       View.pair.qr(U.Ui.flag(u, "pairqr"), nf),
       [View.setrow("Update channel", "Stable takes releases; nightly also takes the daily builds.", View.chips(["stable", "nightly"], M.Setting.get(st, "update.channel", "stable"), "update.channel")),
