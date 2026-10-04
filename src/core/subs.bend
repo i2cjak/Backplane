@@ -2,6 +2,7 @@ import Base
 import ./model.bend as M
 import ./fold.bend as FO
 import ./client.bend as U
+import ./diff.bend as DF
 
 # Subagents
 # ---------
@@ -39,8 +40,11 @@ def Subs.shown() -> Nat:
 def Subs.done_kept() -> Nat:
   3n
 
+# a step's first line, in one walk that stops at the first break (splitting
+# a subagent's 20 KB step recursed once per character and overflowed the
+# web's and the phones' stacks: the thread never opened)
 def Subs.line(+t: String) -> String:
-  Maybe.default(&2, String, List.head(&2, String, String.split(t, '\n')), "")
+  DF.Diff.first(t)
 
 # Reading the log
 # ---------------
