@@ -178,11 +178,50 @@ def Refs.far.typing(+rest: String) -> Bool:
   Bool.and(Bool.not(String.is_empty(Slug.take(rest))),
     Bool.and(String.starts_with(String.drop(rest, String.length(Slug.take(rest))), "@"), Slug.all(String.drop(rest, Nat.add(String.length(Slug.take(rest)), 1n)))))
 
+# Threads elsewhere (far.bend's "<link>~<id>", synced from another of the
+# owner's machines): written `>machine:slug`, the machine by its name as a
+# slug (its link id when the name makes none). `>machine:` alone offers
+# only that machine's threads.
+def Refs.x.is(+id: String) -> Bool:
+  String.contains(id, "~")
+
+def Refs.x.link(+id: String) -> String:
+  Maybe.default(&2, String, List.head(&2, String, String.split(id, '~')), "")
+
+# the machine a thread elsewhere lives on, as it is called
+def Refs.x.name(+s: M.State, +id: String) -> String:
+  Bool.pick(String, String.is_empty(M.Nav.key(M.Nav.get(M.State.navs(s), "far~" ++ Refs.x.link(id)), "pinned")), Refs.x.link(id),
+    M.Nav.key(M.Nav.get(M.State.navs(s), "far~" ++ Refs.x.link(id)), "pinned"))
+
+# ... and as a word writes it
+def Refs.x.mach(+s: M.State, +id: String) -> String:
+  Bool.pick(String, String.is_empty(Slug.of(Refs.x.name(s, id))), Slug.of(Refs.x.link(id)), Slug.of(Refs.x.name(s, id)))
+
+# what follows `>`: the machine part (before ':', "" for none) and the rest
+def Refs.x.m(+w: String) -> String:
+  Bool.pick(String, String.contains(w, ":"), Maybe.default(&2, String, List.head(&2, String, String.split(w, ':')), ""), "")
+
+def Refs.x.q(+w: String) -> String:
+  Bool.pick(String, String.contains(w, ":"), String.drop(w, Nat.add(String.length(Refs.x.m(w)), 1n)), w)
+
+# whether what follows a `>` is `machine:slug` as far as typed
+def Refs.x.typing(+rest: String) -> Bool:
+  Bool.and(Bool.not(String.is_empty(Slug.take(rest))),
+    Bool.and(String.starts_with(String.drop(rest, String.length(Slug.take(rest))), ":"), Slug.all(String.drop(rest, Nat.add(String.length(Slug.take(rest)), 1n)))))
+
+# whether what follows a `>` names a thread elsewhere: `machine:slug`, a
+# slug after the ':' (`>fix: it fails` still names the thread fix here)
+def Refs.x.word(+rest: String) -> Bool:
+  Bool.and(Bool.not(String.is_empty(Slug.take(rest))),
+    Bool.and(String.starts_with(String.drop(rest, String.length(Slug.take(rest))), ":"), Bool.not(String.is_empty(Slug.take(String.drop(rest, Nat.add(String.length(Slug.take(rest)), 1n)))))))
+
 # whether a word is a reference being typed: a sigil, then slug characters
-# only (none yet is fine), or a bot's `name@machine`
+# only (none yet is fine), a bot's `name@machine`, or a thread's
+# `machine:slug`
 def Refs.typing(+w: String) -> Bool:
   Bool.and(Bool.not(String.is_empty(Refs.kind(w))),
-    Bool.or(Slug.all(String.drop(w, 1n)), Bool.and(String.eq(Refs.kind(w), "bot"), Refs.far.typing(String.drop(w, 1n)))))
+    Bool.or(Slug.all(String.drop(w, 1n)), Bool.or(Bool.and(String.eq(Refs.kind(w), "bot"), Refs.far.typing(String.drop(w, 1n))),
+      Bool.and(String.eq(Refs.kind(w), "thread"), Refs.x.typing(String.drop(w, 1n))))))
 
 # Summaries
 # ---------
@@ -415,43 +454,61 @@ def Refs.count.k(skip: Bool, +k: String, +m: Map<&2, Nat>) -> Map<&2, Nat>:
     case False{}:
       Map.set(&2, Nat, m, k, Nat.add(Refs.count.of(Map.get(Nat, 0n, m, k)), 1n))
 
+# what a thread's slug is counted under: its slug, with its machine for
+# one elsewhere ("desk:fix-perf")
+def Refs.t.key(+s: M.State, +slug: String, +id: String) -> String:
+  Bool.pick(String, Refs.x.is(id), Refs.x.mach(s, id) ++ ":" ++ slug, slug)
+
 # the slugs every live project thread has, counted (for Refs.t.token)
-def Refs.counts(ts: List<&2, M.Thread>, +m: Map<&2, Nat>) -> Map<&2, Nat>:
+def Refs.counts(ts: List<&2, M.Thread>, +s: M.State, +m: Map<&2, Nat>) -> Map<&2, Nat>:
   match ts:
     case Nil{}:
       m
     case M.Thread{+id, +p, +ti, _, _, _, _, ar, _, _, _, _, _, _, _, _, _, _, _, _, de} <> t:
-      Refs.counts(t, Refs.count.k(Bool.or(String.is_empty(p), Bool.or(ar, de)), Refs.t.slug(ti, id), m))
+      Refs.counts(t, s, Refs.count.k(Bool.or(String.is_empty(p), Bool.or(ar, de)), Refs.t.key(s, Refs.t.slug(ti, id), id), m))
 
 def Refs.count(+m: Map<&2, Nat>, +k: String) -> Nat:
   Refs.count.of(Map.get(Nat, 0n, m, k))
 
-# a thread's word: its slug, with its seq when another thread shares it
-def Refs.t.token(+m: Map<&2, Nat>, +slug: String, +id: String) -> String:
-  ">" ++ Bool.pick(String, Nat.is_gt(Refs.count(m, slug), 1n), slug ++ "-" ++ Refs.seq(id), slug)
+# a thread's word: its slug, with its seq when another thread shares it,
+# after its machine for one elsewhere
+def Refs.t.token(+s: M.State, +m: Map<&2, Nat>, +slug: String, +id: String) -> String:
+  ">" ++ Bool.pick(String, Refs.x.is(id), Refs.x.mach(s, id) ++ ":", "") ++ Bool.pick(String, Nat.is_gt(Refs.count(m, Refs.t.key(s, slug, id)), 1n), slug ++ "-" ++ Refs.seq(id), slug)
 
-def Refs.t.cand(+s: M.State, +m: Map<&2, Nat>, +sel: String, +here: String, +now: Nat, +q: String, t: M.Thread, +rest: List<&2, Cand>) -> List<&2, Cand>:
+# whether a thread is left out for the machine a word names ("": none named)
+def Refs.x.out(+s: M.State, +mach: String, +id: String) -> Bool:
+  Bool.and(Bool.not(String.is_empty(mach)), Bool.not(Bool.and(Refs.x.is(id), String.starts_with(Refs.x.mach(s, id), mach))))
+
+# what a row matches on: its title, and its machine's name for one elsewhere
+def Refs.t.name(+s: M.State, +id: String, +title: String) -> String:
+  Bool.pick(String, Refs.x.is(id), title ++ " " ++ Refs.x.name(s, id), title)
+
+def Refs.t.about.x(+s: M.State, +same: Bool, +id: String, +pid: String, +title: String, +sum: String) -> String:
+  Bool.pick(String, Refs.x.is(id), Refs.x.name(s, id) ++ " · " ++ Refs.t.about(s, False{}, pid, title, sum), Refs.t.about(s, same, pid, title, sum))
+
+def Refs.t.cand(+s: M.State, +m: Map<&2, Nat>, +sel: String, +here: String, +now: Nat, +mach: String, +q: String, t: M.Thread, +rest: List<&2, Cand>) -> List<&2, Cand>:
   match t:
     case M.Thread{+id, +p, +ti, _, +act, tu, _, ar, _, _, _, +pin, _, _, _, _, _, _, _, _, de}:
-      Bool.pick(List<&2, Cand>, Bool.or(Bool.or(String.is_empty(p), String.eq(id, sel)), Bool.or(ar, de)), rest,
-        Refs.keep(Refs.score(Refs.t.slug(ti, id), ti, Sum.of(s, id), q),
-          Cand{Refs.t.token(m, Refs.t.slug(ti, id), id), Refs.t.about(s, String.eq(p, here), p, ti, Sum.of(s, id)),
-            Nat.add(Nat.add(Refs.score(Refs.t.slug(ti, id), ti, Sum.of(s, id), q), Refs.fresh(now, act)),
+      Bool.pick(List<&2, Cand>, Bool.or(Bool.or(Bool.or(String.is_empty(p), String.eq(id, sel)), Bool.or(ar, de)), Refs.x.out(s, mach, id)), rest,
+        Refs.keep(Refs.score(Refs.t.slug(ti, id), Refs.t.name(s, id, ti), Sum.of(s, id), q),
+          Cand{Refs.t.token(s, m, Refs.t.slug(ti, id), id), Refs.t.about.x(s, String.eq(p, here), id, p, ti, Sum.of(s, id)),
+            Nat.add(Nat.add(Refs.score(Refs.t.slug(ti, id), Refs.t.name(s, id, ti), Sum.of(s, id), q), Refs.fresh(now, act)),
               Nat.add(Bool.pick(Nat, String.eq(p, here), 40n, 0n), Nat.add(Bool.pick(Nat, pin, 10n, 0n), Bool.pick(Nat, Refs.running(tu), 15n, 0n)))), act},
           rest))
 
-def Refs.threads.go(ts: List<&2, M.Thread>, +s: M.State, +m: Map<&2, Nat>, +sel: String, +here: String, +now: Nat, +q: String) -> List<&2, Cand>:
+def Refs.threads.go(ts: List<&2, M.Thread>, +s: M.State, +m: Map<&2, Nat>, +sel: String, +here: String, +now: Nat, +mach: String, +q: String) -> List<&2, Cand>:
   match ts:
     case Nil{}:
       Nil{}
     case t <> r:
-      Refs.t.cand(s, m, sel, here, now, q, t, Refs.threads.go(r, s, m, sel, here, now, q))
+      Refs.t.cand(s, m, sel, here, now, mach, q, t, Refs.threads.go(r, s, m, sel, here, now, mach, q))
 
-def Refs.threads(+s: M.State, +sel: String, +now: Nat, +q: String) -> List<&2, Cand>:
+# (w: what follows the `>`, lower case: `machine:` narrows to that machine)
+def Refs.threads(+s: M.State, +sel: String, +now: Nat, +w: String) -> List<&2, Cand>:
   match s:
     case M.State{_, +ts, _, _, _, _, _, _, _, _, _}:
-      Refs.threads.go(Map.values(&2, M.Thread, ts), s, Refs.counts(Map.values(&2, M.Thread, ts), Map.new(&2, Nat)), sel,
-        Refs.t.project(Sum.thread.of(s, sel)), now, q)
+      Refs.threads.go(Map.values(&2, M.Thread, ts), s, Refs.counts(Map.values(&2, M.Thread, ts), s, Map.new(&2, Nat)), sel,
+        Refs.t.project(Sum.thread.of(s, sel)), now, Refs.x.m(w), Refs.x.q(w))
 
 # a bot's row: its summary, else its persona's first line
 def Refs.b.first(+line: String) -> String:
@@ -702,8 +759,10 @@ def Refs.find.far(far: Bool, +s: M.State, +sel: String, +word: String) -> List<&
       Refs.find.k(Refs.kind.pos(Refs.kind(word)), s, sel, Slug.of(Slug.take(String.drop(word, 1n))))
 
 # what one word names (nothing, or one hit)
+# (a thread elsewhere, `>machine:slug`, is none here: xref.bend finds it
+# in the hub's mirror of that machine)
 def Refs.find(+s: M.State, +sel: String, +word: String) -> List<&2, Hit>:
-  Bool.pick(List<&2, Hit>, String.is_empty(Slug.take(String.drop(word, 1n))), Nil{},
+  Bool.pick(List<&2, Hit>, Bool.or(String.is_empty(Slug.take(String.drop(word, 1n))), Bool.and(String.eq(Refs.kind(word), "thread"), Refs.x.word(String.drop(word, 1n)))), Nil{},
     Refs.find.far(Bool.and(String.eq(Refs.kind(word), "bot"), Bool.not(String.is_empty(Refs.far.m(String.drop(word, 1n))))), s, sel, word))
 
 def Refs.has(hs: List<&2, Hit>, +id: String) -> Bool:

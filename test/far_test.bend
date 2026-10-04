@@ -142,6 +142,24 @@ def work.done() -> List<&2, FR.Item>:
 def phase(+u: U.Ui, +th: String) -> String:
   M.Phase.label(U.Side.phase(U.Ui.state(u), U.Ui.thread(U.Ui.state(u), th)))
 
+# a far message with box's catalog beside it: "pa" done at 30, "pb" at 12
+def cat(+since: Nat, +head: Nat) -> J.Json:
+  Maybe.default(&2, J.Json, J.Json.parse(FR.Fr.with.cat(FR.Fr.msg("p1", "box", False{}, since, head, Nil{}),
+    "[{\"id\":\"pa\",\"title\":\"Alpha\",\"at\":500,\"n\":30},{\"id\":\"pb\",\"title\":\"Beta\",\"at\":400,\"n\":12}]")), J.Null{})
+
+def machines() -> J.Json:
+  J.Json.obj([J.KV{"t", J.Json.str("info")}, J.KV{"info", J.Json.obj([J.KV{"machines", J.Json.str("{\"self\":{\"name\":\"me\",\"url\":\"http://100.1.0.1:3787\",\"domain\":\"\"},\"peers\":[{\"name\":\"box\",\"url\":\"http://box:3787\",\"version\":\"1\"},{\"name\":\"lab\",\"url\":\"http://lab:3787\",\"version\":\"1\"}]}")}])}])
+
+def pids(rs: List<&2, U.SRow>) -> String:
+  String.join(U.Side.pids(rs), ",")
+
+def mates(rs: List<&2, U.MateRow>) -> String:
+  match rs:
+    case Nil{}:
+      ""
+    case U.MateRow{n, note, on, key} <> t:
+      n ++ " " ++ on ++ " " ++ key ++ ": " ++ note ++ "\n" ++ mates(t)
+
 def main() -> IO(Unit):
   do IO<Unit>:
     +u : U.Ui = joined()
@@ -235,6 +253,35 @@ def main() -> IO(Unit):
       ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("ask.answer", [J.KV{"id", J.Str{"a1"}}]))) ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("ask.answer", [J.KV{"id", J.Str{"a2"}}])))
       ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("setting.set", [J.KV{"key", J.Str{"x"}}]))) ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("thread.delete", [J.KV{"thread", J.Str{"bt1"}}]))),
       "True True True True False False")
+    # a catalog: the link's projects listed at once, each catching up until
+    # the link's head passes its last number; Settings' machines say so
+    +uc : U.Ui = recv(recv(joined(), machines()), cat(14n, 14n))
+    C.Check.str("catalog lists every project at once", pids(U.Side.sorted(U.Ui.state(uc), 1000n)), "p1~pa,p1~pb")
+    C.Check.str("catalog: the one past the head is syncing", U.Label.title(U.Ui.state(uc), "p1~pa", "Alpha") ++ "|" ++ U.Label.title(U.Ui.state(uc), "p1~pb", "Beta"),
+      "Alpha · box (syncing)|Beta · box")
+    C.Check.str("machines while catching up", mates(U.Mate.rows(uc)),
+      "box on sync.box: Catching up: 1 project still loading. The rest are ready.\nlab on sync.lab: Linking. Its projects will appear here within a minute or two.\n")
+    +ud : U.Ui = recv(uc, far(14n, 30n, False{}, Nil{}))
+    C.Check.str("caught up", U.Label.title(U.Ui.state(ud), "p1~pa", "Alpha") ++ "|" ++ mates(U.Mate.rows(ud)),
+      "Alpha · box|box on sync.box: In sync. Its projects and threads show here as they change.\nlab on sync.lab: Linking. Its projects will appear here within a minute or two.\n")
+    +uo : U.Ui = U.Act.ui(U.Ui.setting(ud, "sync.box=off"))
+    C.Check.str("off: its projects leave the sidebar", pids(U.Side.sorted(U.Ui.state(uo), 1000n)) ++ "|" ++ mates(U.Mate.rows(uo)),
+      "|box off sync.box: Off. Nothing syncs with it.\nlab on sync.lab: Linking. Its projects will appear here within a minute or two.\n")
+    # the owning hub's catalog: each project's last shared change
+    +ol : List<&2, String> = ["{\"$\":\"MessagePosted\",\"thread\":\"t2\",\"msg\":\"m\",\"role\":\"user\",\"text\":\"x\",\"at\":9}",
+      "{\"$\":\"ThreadCreated\",\"id\":\"t2\",\"project\":\"q2\",\"title\":\"T\",\"env\":\"local\",\"branch\":\"\",\"worktree\":\"\",\"provider\":\"claude\",\"model\":\"\",\"at\":8}",
+      "{\"$\":\"ProjectCreated\",\"id\":\"q2\",\"title\":\"Two\",\"root\":\"/b\",\"at\":7}",
+      "{\"$\":\"ProjectCreated\",\"id\":\"q1\",\"title\":\"One\",\"root\":\"/a\",\"at\":6}"]
+    +ost : M.State = M.State.apply(M.State.apply(M.State.apply(M.State.apply(M.State.empty(), M.ProjectCreated{"q1", "One", "/a", 6n}), M.ProjectCreated{"q2", "Two", "/b", 7n}),
+      M.ThreadCreated{"t2", "q2", "T", M.Local{}, "", "", "claude", "", 8n}), M.MessagePosted{"t2", "m", M.User{}, "x", 9n})
+    C.Check.str("owner's catalog", J.Json.show(FR.Fr.catalog(ost, FR.Feed.lasts(FR.Fr.feed.full(ol, ost)))),
+      "[{\"id\":\"q1\",\"title\":\"One\",\"at\":6,\"n\":1},{\"id\":\"q2\",\"title\":\"Two\",\"at\":9,\"n\":4}]")
+    # a pull's answer: the page's fields and the catalog side by side
+    +lg : J.Json = Maybe.default(&2, J.Json, J.Json.parse(FR.Fr.log.json(3n, FR.Fr.catalog(ost, FR.Feed.lasts(FR.Fr.feed.full(ol, ost))),
+      FR.Fr.with.epoch(FR.Page.json(FR.Fr.page(FR.Fr.feed(ol, ost), 0n, 4n, 400000n)), "ep1"))), J.Null{})
+    C.Check.str("a pull's answer reads whole", Nat.show(J.Json.get_nat(lg, "since", 9n)) ++ " " ++ Nat.show(J.Json.get_nat(lg, "head", 0n)) ++ " " ++ Nat.show(List.length(&2, J.Json, J.Json.elems(J.Json.get_obj(lg, "items"))))
+      ++ " " ++ J.Json.get_str(lg, "epoch", "") ++ " " ++ Nat.show(List.length(&2, J.Json, J.Json.elems(J.Json.get_obj(lg, "catalog")))) ++ " " ++ Bool.show(J.Json.get_bool(lg, "more", True{})),
+      "3 4 4 ep1 2 False")
     # a mirrored bot's space page, served by the mirroring hub
     +pi : FR.In = FR.In.put(FR.In.new("p1", "box"), 0n, 3n, numbered([M.SpacePageSet{"b1", "<p>old</p>", 1n}, M.SpacePageSet{"b2", "<p>other</p>", 2n}, M.SpacePageSet{"b1", "<p>new</p>", 3n}], 1n))
     C.Check.str("mirrored space page", FR.In.page(pi, "b1") ++ "|" ++ FR.In.page(pi, "b9"), "<p>new</p>|")

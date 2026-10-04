@@ -1,5 +1,6 @@
 // End to end: threads elsewhere (far.bend, docs/bots.md "Threads
-// elsewhere") on two headless hubs linked to each other. Each hub lists the
+// elsewhere") on two headless hubs that pair by themselves (no invite:
+// client.bend's Mate.*). Each hub lists the
 // other as one of the owner's machines (BACKPLANE_PEERS), so each shares
 // its projects, bots and threads with the other. Checks that a bot made on
 // alpha appears on beta, mirrored and named by the link; that writing to
@@ -148,13 +149,21 @@ try {
   check("each hub lists the other as the owner's", !!both, [ca.info?.machines, cb.info?.machines]);
   console.log(`  machines lists ready after ${Date.now() - tm} ms`);
 
-  // link them (the invite's address is alpha's)
-  const inv = await rpc(ca, "bots.invite", { url: `http://127.0.0.1:${pa}` });
-  const joined = await rpc(cb, "bots.join", { invite: inv?.invite ?? "" });
-  check("linked", !!(inv?.ok && joined?.ok), [inv, joined]);
-  const peer = await until(8000, () => cb.seen.find((c) => c.$ === "PeerSet" && !c.revoked));
+  // they pair by themselves, no invite pasted: the hub with the lower
+  // address asks the other (POST /bots/pair) at the minute tick
+  // (client.bend's Mate.*), and each keeps one link
+  const tp = Date.now();
+  const peer = await until(150000, () => cb.seen.find((c) => c.$ === "PeerSet" && !c.revoked));
+  const peerA = await until(8000, () => ca.seen.find((c) => c.$ === "PeerSet" && !c.revoked));
   const link = peer?.id as string;
-  check("beta names the link", typeof link === "string" && link.length > 0, peer);
+  check("they pair by themselves", typeof link === "string" && link.length > 0 && peerA?.id === link, [peer, peerA]);
+  console.log(`  paired ${Date.now() - tp} ms after both listed each other`);
+  await sleep(65000);
+  check("and only once (the next minute asks nothing)", cb.seen.filter((c) => c.$ === "PeerSet").length === 1 && ca.seen.filter((c) => c.$ === "PeerSet").length === 1,
+    [cb.seen.filter((c) => c.$ === "PeerSet"), ca.seen.filter((c) => c.$ === "PeerSet")]);
+  const asked = await fetch(`http://127.0.0.1:${pa}/bots/pair?name=beta&url=http://127.0.0.1:${pb}`, { method: "POST" });
+  const askedB = await fetch(`http://127.0.0.1:${pb}/bots/pair?name=alpha&url=http://127.0.0.1:${pa}`, { method: "POST" });
+  check("a linked machine asking again is refused", asked.status === 409 && askedB.status === 409, [asked.status, askedB.status]);
 
   // a bot on alpha appears on beta, mirrored
   const t0 = Date.now();
@@ -193,6 +202,13 @@ try {
   const pt = created?.id;
   check("ordinary project thread created", !!ordinary?.ok && !!pt, [ordinary, created]);
   const catalog = await until(8000, () => farItems(cb, link).find((c) => c.$ === "ThreadCreated" && c.id === pt));
+  // a client joining beta later gets alpha's catalog with the mirror (the
+  // one the last pull brought: a project made since arrives by its push),
+  // each project's last number at or below the mirror's head
+  const cbc = await connect(b);
+  clients.push(cbc);
+  const cat = await until(8000, () => cbc.far.find((f) => f.link === link && Array.isArray(f.catalog) && f.catalog.length > 0));
+  check("a joining client gets the catalog, caught up", !!cat && cat.catalog.every((p: any) => p.n <= cat.head), cat ? { head: cat.head, catalog: cat.catalog } : cbc.far.map((f) => Object.keys(f)));
   check("ordinary project and thread are mirrored together", !!catalog && catalog.project === pc?.id && farItems(cb, link).some((c) => c.$ === "ProjectCreated" && c.id === pc?.id), catalog);
   const psent = await rpc(cb, "turn.start", { thread: `${link}~${pt}`, text: "review from beta", msg: "ordinary-m1", mode: "queue" });
   check("ordinary thread send reaches its owner", !!psent?.ok && !!await until(8000, () => ca.seen.find((c) => c.$ === "MessagePosted" && c.thread === pt && c.text.includes("review from beta"))), psent);

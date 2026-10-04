@@ -7463,3 +7463,72 @@ def Laws.tour_scroll_up_stops():
 
 def Laws.tour_scroll_none():
   {==}
+
+def Laws.mate_lower_asks():
+  {==}
+
+def Laws.mate_higher_waits():
+  {==}
+
+def Laws.mate_linked_never_asks():
+  {==}
+
+def Laws.mate_off_never_asks():
+  {==}
+
+def Laws.mate_no_self_never_asks():
+  {==}
+
+def Laws.mate_answer_invites():
+  {==}
+
+def Laws.mate_answer_off():
+  {==}
+
+def Laws.mate_answer_linked():
+  {==}
+
+def Laws.mate_off_hidden():
+  {==}
+
+def Laws.mate_on_shown():
+  {==}
+
+def Laws.far_catalog_stands_in():
+  {==}
+
+def Laws.far_catalog_syncing():
+  {==}
+
+def Laws.far_catalog_caught_up():
+  {==}
+
+def Laws.far_catalog_here_never():
+  {==}
+
+def Laws.far_catalog_titled():
+  {==}
+
+def Laws.far_scope_thread():
+  {==}
+
+def Laws.far_scope_project():
+  {==}
+
+def Laws.mate_unnamed_without_tailnet():
+  {==}
+
+def Laws.mate_answer_stranger():
+  {==}
+
+def Laws.refs_machine_word():
+  {==}
+
+def Laws.refs_colon_after_stays_here():
+  {==}
+
+def Laws.mate_loopback_lower_asks():
+  {==}
+
+def Laws.mate_loopback_higher_waits():
+  {==}

@@ -121,10 +121,16 @@ def Ob.body.6(+k: Nat) -> String:
   "API keys for other services are kept in a file on the hub's machine that agents running there could read. They are told not to print them; nothing enforces it. "
     ++ Bool.pick(String, Ob.phone(k), "Dictation's OpenAI key is set in Settings on a computer or the web page.", "Dictation needs an OpenAI key, set under Voice in Settings.")
 
+# How other machines are found and kept in sync (server.bend's Machines.*
+# every two minutes: tailscale status, then GET /hello on each online
+# machine of yours; client.bend's Mate.*: the hub with the lower address
+# asks the other to link, which only your own devices may, and the two
+# then mirror each other's projects and threads: far.bend). Settings' row
+# is client.bend's Mate.title().
 def Ob.body.7(+k: Nat) -> String:
   Bool.pick(String, Ob.phone(k),
-    "Each home folder runs one hub. The Hubs button lists the hubs this phone is paired with and your other hubs it found. They are usually reached over Tailscale: the hub's computer needs it signed in when Backplane starts, and this phone needs Tailscale on the same tailnet.",
-    "Each home folder runs one hub. With Tailscale signed in when Backplane starts, it also listens on your tailnet and lists your other hubs in the sidebar. Settings says Tailscale: on, not connected (sign in, then restart Backplane) or off (started with --no-tailscale).")
+    "Each home folder runs one hub. Hubs on your computers find each other over Tailscale and sync each other's projects and threads in the background, so any one of them shows them all. A project still loading is faded and says syncing. In a message, >desktop: names a thread on the machine called desktop. The Hubs button lists the hubs this phone is paired with; this phone needs Tailscale on the same tailnet.",
+    "Each home folder runs one hub. With Tailscale signed in when Backplane starts, the hub listens on your tailnet and every two minutes asks your other online machines whether Backplane runs there. Tailscale vouches that they are yours, so the hubs link by themselves and sync each other's projects and threads into this sidebar in the background: no switching. A project still loading is faded and says syncing; the rest work meanwhile. In a message, >desktop: names a thread on the machine called desktop. Settings, Your machines shows each one and turns sync off for any of them. Settings also says Tailscale: on, not connected (sign in, then restart Backplane) or off (started with --no-tailscale).")
 
 def Ob.body.8(+k: Nat) -> String:
   Bool.pick(String, Ob.phone(k),

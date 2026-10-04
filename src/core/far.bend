@@ -278,6 +278,154 @@ def Fr.shared(+s: M.State, c: M.Change) -> Bool:
     case _:
       False{}
 
+# The project a shared change belongs to ("" for none: bots, routines,
+# memory, space), with the state after it: the project itself, or the
+# project of the thread it is about. A mirror knows a project is complete
+# once it holds the last change that has it as its scope (Fr.catalog).
+def Fr.thread.of(r: Map<&2, M.Thread> & M.Thread) -> String:
+  (_, t) = r
+  Fr.thread.project(t)
+
+def Fr.scope.th(+s: M.State, +th: String) -> String:
+  Fr.thread.of(Map.get(M.Thread, M.Thread.blank(th), Fr.st.threads(s), th))
+
+def Fr.scope.ask(+s: M.State, +id: String) -> String:
+  Fr.scope.th(s, Fr.ask.thread(Map.get(M.Ask, M.Ask{id, "", "", "", "", "", False{}, ""}, Fr.st.asks(s), id)))
+
+def Fr.scope.task(+s: M.State, +id: String) -> String:
+  Fr.scope.th(s, Fr.task.parent(Map.get(M.Task, M.Task.blank(id), Fr.st.tasks(s), id)))
+
+def Fr.scope(+s: M.State, c: M.Change) -> String:
+  match c:
+    case M.ProjectCreated{+id, _, _, _}:
+      id
+    case M.ProjectRemoved{+id, _}:
+      id
+    case M.ThreadCreated{+id, _, _, _, _, _, _, _, _}:
+      Fr.scope.th(s, id)
+    case M.ThreadRenamed{+id, _, _}:
+      Fr.scope.th(s, id)
+    case M.MessagePosted{+thread, _, _, _, _}:
+      Fr.scope.th(s, thread)
+    case M.TurnChanged{+thread, _, _}:
+      Fr.scope.th(s, thread)
+    case M.PendingChanged{+thread, _, _}:
+      Fr.scope.th(s, thread)
+    case M.ActivityLogged{+thread, _, _, _, _, _}:
+      Fr.scope.th(s, thread)
+    case M.ThreadSettled{+id, _, _}:
+      Fr.scope.th(s, id)
+    case M.ThreadUnsettled{+id, _}:
+      Fr.scope.th(s, id)
+    case M.ThreadArchived{+id, _, _}:
+      Fr.scope.th(s, id)
+    case M.ThreadDeleted{+id, _}:
+      Fr.scope.th(s, id)
+    case M.ModesSet{+id, _, _, _, _}:
+      Fr.scope.th(s, id)
+    case M.TaskDelegated{_, +parent, _, _, _, _, _}:
+      Fr.scope.th(s, parent)
+    case M.TaskStateSet{+task, _, _, _}:
+      Fr.scope.task(s, task)
+    case M.TaskDelivered{+task, _}:
+      Fr.scope.task(s, task)
+    case M.TurnQueued{+thread, _, _, _}:
+      Fr.scope.th(s, thread)
+    case M.QueueTaken{+thread, _}:
+      Fr.scope.th(s, thread)
+    case M.AskOpened{_, +thread, _, _, _, _, _}:
+      Fr.scope.th(s, thread)
+    case M.AskClosed{+id, _, _}:
+      Fr.scope.ask(s, id)
+    case M.QueueEdited{+thread, _, _, _}:
+      Fr.scope.th(s, thread)
+    case M.QueueRemoved{+thread, _, _}:
+      Fr.scope.th(s, thread)
+    case M.QueueMoved{+thread, _, _, _}:
+      Fr.scope.th(s, thread)
+    case M.QueueTakenOne{+thread, _, _}:
+      Fr.scope.th(s, thread)
+    case M.ProviderSet{+id, _, _, _}:
+      Fr.scope.th(s, id)
+    case M.TodosSet{+thread, _, _}:
+      Fr.scope.th(s, thread)
+    case M.WorkSet{+thread, _, _, _}:
+      Fr.scope.th(s, thread)
+    case _:
+      ""
+
+# Each project's last shared change, as the owning hub numbers it
+# (project id → n). Lines are walked newest first at start, so a project
+# keeps the first number it meets; a commit's are newer than all of them.
+def Fr.nat.got(r: Map<&2, Nat> & Nat) -> Nat:
+  (_, n) = r
+  n
+
+def Fr.str.got(r: Map<&2, String> & String) -> String:
+  (_, v) = r
+  v
+
+def Fr.last.put(+p: String, +n: Nat, +m: Map<&2, Nat>) -> Map<&2, Nat>:
+  Bool.pick(Map<&2, Nat>, Bool.or(String.is_empty(p), Nat.is_ge(Fr.nat.got(Map.get(Nat, 0n, m, p)), n)), m, Map.set(&2, Nat, m, p, n))
+
+# a commit's changes (oldest first) numbered after `seq`
+def Fr.lasts.add(cs: List<&2, M.Change>, +seq: Nat, +s: M.State, +m: Map<&2, Nat>) -> Map<&2, Nat>:
+  match cs:
+    case Nil{}:
+      m
+    case +c <> t:
+      Fr.lasts.add(t, 1n+seq, s, Bool.pick(Map<&2, Nat>, Fr.shared(s, c), Fr.last.put(Fr.scope(s, c), 1n+seq, m), m))
+
+# the larger of two maps' numbers, key by key
+def Fr.lasts.merge(ks: List<&2, String>, +from: Map<&2, Nat>, m: Map<&2, Nat>) -> Map<&2, Nat>:
+  match ks:
+    case Nil{}:
+      m
+    case +k <> t:
+      Fr.lasts.merge(t, from, Fr.last.put(k, Fr.nat.got(Map.get(Nat, 0n, from, k)), m))
+
+# What a hub keeps beside its mirrors and pushes: its own projects' last
+# numbers (lasts), and the newest catalog each link sent (link → its JSON
+# text), for clients that join while a mirror is catching up
+type Cx is Data:
+  Cx{lasts: Map<&2, Nat>, cats: Map<&2, String>}
+
+def Cx.empty() -> Cx:
+  Cx{Map.new(&2, Nat), Map.new(&2, String)}
+
+# The catalog: every project this hub shares, so a mirror can list them
+# all at once, in their place, before their threads arrive: its title,
+# its latest activity (how the sidebar ranks it) and the number of its
+# last shared change (until the mirror holds that, it is catching up)
+def Fr.acts(ts: List<&2, M.Thread>, +m: Map<&2, Nat>) -> Map<&2, Nat>:
+  match ts:
+    case Nil{}:
+      m
+    case M.Thread{_, +p, _, _, +a, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _} <> t:
+      Fr.acts(t, Bool.pick(Map<&2, Nat>, Nat.is_ge(Fr.nat.got(Map.get(Nat, 0n, m, p)), a), m, Map.set(&2, Nat, m, p, a)))
+
+def Fr.cat.one(skip: Bool, +id: String, +title: String, +at: Nat, +n: Nat, rest: List<&2, J.Json>) -> List<&2, J.Json>:
+  match skip:
+    case True{}:
+      rest
+    case False{}:
+      J.Json.obj([J.KV{"id", J.Str{id}}, J.KV{"title", J.Str{title}}, J.KV{"at", J.Json.nat(at)}, J.KV{"n", J.Json.nat(n)}]) <> rest
+
+def Fr.cat.go(ps: List<&2, M.Project>, +acts: Map<&2, Nat>, +lasts: Map<&2, Nat>) -> List<&2, J.Json>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case M.Project{+id, +ti, _, +c, +rm} <> t:
+      Fr.cat.one(Bool.or(rm, Fr.is(id)), id, ti, M.Time.max(c, Fr.nat.got(Map.get(Nat, 0n, acts, id))), Fr.nat.got(Map.get(Nat, 0n, lasts, id)), Fr.cat.go(t, acts, lasts))
+
+def Fr.st.projects(s: M.State) -> List<&2, M.Project>:
+  match s:
+    case M.State{ps, _, _, _, _, _, _, _, _, _, _}:
+      Map.values(&2, M.Project, ps)
+
+def Fr.catalog(+s: M.State, +lasts: Map<&2, Nat>) -> J.Json:
+  J.Json.arr(Fr.cat.go(Fr.st.projects(s), Fr.acts(Map.values(&2, M.Thread, Fr.st.threads(s)), Map.new(&2, Nat)), lasts))
+
 # Batches
 # -------
 # An item is a change as its own hub numbers it (its place in that log)
@@ -419,12 +567,64 @@ def Fr.name(+s: M.State, +id: String) -> String:
 def Fr.away(+s: M.State, +id: String) -> Bool:
   Bool.and(Fr.is(id), String.eq(M.Nav.key(M.Nav.get(M.State.navs(s), Fr.nav(Fr.link(id))), "active"), "away"))
 
+# A catalog (Fr.catalog) taken by a client: each project it lists shows
+# at once, in its place (a project not here yet stands in with its title
+# and latest activity until its own changes come), and is catching up
+# while the link's head is short of its last number ("wait~<id>").
+def Fr.wait.nav(+id: String) -> String:
+  "wait~" ++ id
+
+def Fr.syncing(+s: M.State, +id: String) -> Bool:
+  Bool.and(Fr.is(id), Nat.is_gt(M.Nav.until(M.Nav.get(M.State.navs(s), Fr.wait.nav(id))), Fr.head(s, Fr.link(id))))
+
+def Fr.has.project(r: Map<&2, M.Project> & Bool) -> Bool:
+  (_, b) = r
+  b
+
+def Fr.st.has.project(s: M.State, +id: String) -> Bool:
+  match s:
+    case M.State{ps, _, _, _, _, _, _, _, _, _, _}:
+      Fr.has.project(Map.has(&2, M.Project, ps, id))
+
+def Fr.stand.in(here: Bool, s: M.State, +id: String, +title: String, +at: Nat) -> M.State:
+  match here:
+    case True{}:
+      s
+    case False{}:
+      M.State.put_project(s, M.Project{id, title, "", at, False{}})
+
+def Fr.cat.take(+s: M.State, +id: String, +title: String, +at: Nat, +n: Nat) -> M.State:
+  M.State.nav((x => M.Nav.snoozed(x, n)), Fr.stand.in(Fr.st.has.project(s, id), s, id, title, at), Fr.wait.nav(id))
+
+def Fr.cat.apply(es: List<&2, J.Json>, +link: String, +s: M.State) -> M.State:
+  match es:
+    case Nil{}:
+      s
+    case +e <> t:
+      Fr.cat.apply(t, link, Fr.cat.take(s, Fr.id(link, J.Json.get_str(e, "id", "")), J.Json.get_str(e, "title", ""), J.Json.get_nat(e, "at", 0n), J.Json.get_nat(e, "n", 0n)))
+
+# whether any of a link's projects is still catching up, and how many
+def Fr.cat.count(es: List<&2, J.Json>, +link: String, +s: M.State, +acc: Nat) -> Nat:
+  match es:
+    case Nil{}:
+      acc
+    case +e <> t:
+      Fr.cat.count(t, link, s, Bool.pick(Nat, Fr.syncing(s, Fr.id(link, J.Json.get_str(e, "id", ""))), 1n+acc, acc))
+
+# link "L" (machine "desk") at head h, its catalog one project "p1"
+# ("Board") whose last number is 5 (for laws)
+def Fr.cat.demo(+h: Nat) -> M.State:
+  Fr.cat.take(Fr.head.set(Fr.mark(M.State.empty(), "L", "desk", False{}), "L", h), "L~p1", "Board", 7n, 5n)
+
+def Fr.title.tag(+s: M.State, +id: String) -> String:
+  Bool.pick(String, Fr.away(s, id), " (away)", Bool.pick(String, Fr.syncing(s, id), " (syncing)", ""))
+
 def Fr.title.k(far: Bool, +s: M.State, +id: String, title: String) -> String:
   match far:
     case False{}:
       title
     case True{}:
-      title ++ " · " ++ Bool.pick(String, String.is_empty(Fr.name(s, id)), Fr.link(id), Fr.name(s, id)) ++ Bool.pick(String, Fr.away(s, id), " (away)", "")
+      title ++ " · " ++ Bool.pick(String, String.is_empty(Fr.name(s, id)), Fr.link(id), Fr.name(s, id)) ++ Fr.title.tag(s, id)
 
 def Fr.title(+s: M.State, +id: String, title: String) -> String:
   Fr.title.k(Fr.is(id), s, id, title)
@@ -700,6 +900,22 @@ def In.epoch.set(i: In, e: String) -> In:
 def Fr.with.epoch(+text: String, epoch: String) -> String:
   J.Json.show(J.Obj{J.Field{"epoch", J.Str{epoch}, Fr.epoch.fields(Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}))}})
 
+# the answer to a pull (POST /far/log): where it starts, the catalog, then
+# the page with its epoch ({"head", "items", "more", "epoch"})
+def Fr.log.json(+from: Nat, cat: J.Json, +page: String) -> String:
+  J.Json.show(J.Obj{J.Field{"since", J.Json.nat(from), J.Field{"catalog", cat, Fr.epoch.fields(Maybe.default(&2, J.Json, J.Json.parse(page), J.Null{}))}}})
+
+# a far message with a link's catalog (Fr.catalog's JSON text) beside it
+def Fr.with.cat.k(none: Bool, +text: String, +cat: String) -> String:
+  match none:
+    case True{}:
+      text
+    case False{}:
+      J.Json.show(J.Obj{J.Field{"catalog", Maybe.default(&2, J.Json, J.Json.parse(cat), J.Null{}), Fr.epoch.fields(Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}))}})
+
+def Fr.with.cat(+text: String, +cat: String) -> String:
+  Fr.with.cat.k(String.is_empty(cat), text, cat)
+
 def Fr.msg.epoch(+link: String, +name: String, away: Bool, +since: Nat, +head: Nat, xs: List<&2, Item>, epoch: String) -> String:
   J.Json.show(J.Json.obj([J.KV{"t", J.Str{"far"}}, J.KV{"link", J.Str{link}}, J.KV{"name", J.Str{name}}, J.KV{"away", J.Json.bool(away)},
     J.KV{"since", J.Json.nat(since)}, J.KV{"head", J.Json.nat(head)}, J.KV{"epoch", J.Str{epoch}}, J.KV{"items", J.Json.arr(Fr.items.json(xs))}]))
@@ -921,17 +1137,53 @@ def Fr.line.parsed(m: Maybe<&2, J.Json>) -> Maybe<&2, M.Change>:
     case None{}:
       None{}
 
+# the shared lines of a log and each project's last number, in one pass
+type Feed is Data:
+  Feed{lines: List<&2, Line>, lasts: Map<&2, Nat>}
+
+def Feed.lines(f: Feed) -> List<&2, Line>:
+  match f:
+    case Feed{ls, _}:
+      ls
+
+def Feed.lasts(f: Feed) -> Map<&2, Nat>:
+  match f:
+    case Feed{_, la}:
+      la
+
+def Fr.feed.step.k(sh: Bool, +p: String, +n: Nat, +text: String, f: Feed) -> Feed:
+  match sh f:
+    case True{} Feed{ls, la}:
+      Feed{Line{n, text} <> ls, Fr.last.put(p, n, la)}
+    case False{} Feed{ls, la}:
+      Feed{ls, la}
+
+def Fr.feed.step(m: Maybe<&2, M.Change>, +s: M.State, +n: Nat, +text: String, f: Feed) -> Feed:
+  match m:
+    case Some{+c}:
+      Fr.feed.step.k(Fr.shared(s, c), Fr.scope(s, c), n, text, f)
+    case None{}:
+      f
+
+def Fr.feed.done(f: Feed) -> Feed:
+  match f:
+    case Feed{ls, la}:
+      Feed{List.reverse(&2, Line, ls), la}
+
 # the shared lines of a log (newest first, `n` the number of the first),
 # newest first; tail-recursive (a log holds tens of thousands)
-def Fr.feed.go(ls: List<&2, String>, +n: Nat, +s: M.State, acc: List<&2, Line>) -> List<&2, Line>:
+def Fr.feed.go(ls: List<&2, String>, +n: Nat, +s: M.State, acc: Feed) -> Feed:
   match ls:
     case Nil{}:
-      List.reverse(&2, Line, acc)
+      Fr.feed.done(acc)
     case +l <> t:
-      Fr.feed.go(t, Nat.sub(n, 1n), s, Fr.line.k(Fr.line.shared(Fr.line.parsed(J.Json.parse(l)), s), n, l, acc))
+      Fr.feed.go(t, Nat.sub(n, 1n), s, Fr.feed.step(Fr.line.parsed(J.Json.parse(l)), s, n, l, acc))
+
+def Fr.feed.full(+ls: List<&2, String>, +s: M.State) -> Feed:
+  Fr.feed.go(ls, List.length(&2, String, ls), s, Feed{Nil{}, Map.new(&2, Nat)})
 
 def Fr.feed(+ls: List<&2, String>, +s: M.State) -> List<&2, Line>:
-  Fr.feed.go(ls, List.length(&2, String, ls), s, Nil{})
+  Feed.lines(Fr.feed.full(ls, s))
 
 # a commit's changes (oldest first) with their wire lines (oldest first),
 # numbered after `seq`, the shared ones newest first
@@ -1177,14 +1429,14 @@ def Send.body(s: Send, +name: String) -> String:
 # (None until made from the log), and the lines committed meanwhile
 
 type Fh is Data:
-  Fh{ins: List<&2, In>, outs: List<&2, Out>, feed: Maybe<&2, List<&2, Line>>, early: List<&2, Line>, pulls: List<&2, String>, epoch: String}
+  Fh{ins: List<&2, In>, outs: List<&2, Out>, feed: Maybe<&2, List<&2, Line>>, early: List<&2, Line>, pulls: List<&2, String>, epoch: String, cx: Cx}
 
 def Fh.empty() -> Fh:
-  Fh{Nil{}, Nil{}, None{}, Nil{}, Nil{}, ""}
+  Fh{Nil{}, Nil{}, None{}, Nil{}, Nil{}, "", Cx.empty()}
 
 def Fh.ins(f: Fh) -> List<&2, In>:
   match f:
-    case Fh{i, _, _, _, _, _}:
+    case Fh{i, _, _, _, _, _, _}:
       i
 
 def Fh.in(+f: Fh, +link: String, +name: String) -> In:
@@ -1192,23 +1444,23 @@ def Fh.in(+f: Fh, +link: String, +name: String) -> In:
 
 def Fh.in.set(f: Fh, i: In) -> Fh:
   match f:
-    case Fh{ms, os, fd, e, p, ep}:
-      Fh{Ins.set(ms, i), os, fd, e, p, ep}
+    case Fh{ms, os, fd, e, p, ep, cx}:
+      Fh{Ins.set(ms, i), os, fd, e, p, ep, cx}
 
 def Fh.out(+f: Fh, +link: String) -> Out:
   match f:
-    case Fh{_, os, _, _, _, _}:
+    case Fh{_, os, _, _, _, _, _}:
       Outs.get(os, link)
 
 def Fh.out.set(f: Fh, o: Out) -> Fh:
   match f:
-    case Fh{ms, os, fd, e, p, ep}:
-      Fh{ms, Outs.set(os, o), fd, e, p, ep}
+    case Fh{ms, os, fd, e, p, ep, cx}:
+      Fh{ms, Outs.set(os, o), fd, e, p, ep, cx}
 
 # the feed, None until it is made from the log
 def Fh.feed(f: Fh) -> Maybe<&2, List<&2, Line>>:
   match f:
-    case Fh{_, _, fd, _, _, _}:
+    case Fh{_, _, fd, _, _, _, _}:
       fd
 
 def Fh.feed.put(m: Maybe<&2, List<&2, Line>>, e: List<&2, Line>, ls: List<&2, Line>) -> Maybe<&2, List<&2, Line>> & List<&2, Line>:
@@ -1220,8 +1472,8 @@ def Fh.feed.put(m: Maybe<&2, List<&2, Line>>, e: List<&2, Line>, ls: List<&2, Li
 
 def Fh.feed.at.k(f: Fh, fd: Maybe<&2, List<&2, Line>>, e: List<&2, Line>) -> Fh:
   match f:
-    case Fh{ms, os, _, _, p, ep}:
-      Fh{ms, os, fd, e, p, ep}
+    case Fh{ms, os, _, _, p, ep, cx}:
+      Fh{ms, os, fd, e, p, ep, cx}
 
 def Fh.feed.at(f: Fh, r: Maybe<&2, List<&2, Line>> & List<&2, Line>) -> Fh:
   (fd, e) = r
@@ -1230,25 +1482,47 @@ def Fh.feed.at(f: Fh, r: Maybe<&2, List<&2, Line>> & List<&2, Line>) -> Fh:
 # a commit's shared lines (newest first) join the feed, or wait for it
 def Fh.feed.add(f: Fh, ls: List<&2, Line>) -> Fh:
   match f:
-    case Fh{ms, os, fd, e, p, ep}:
-      Fh.feed.at(Fh{ms, os, None{}, Nil{}, p, ep}, Fh.feed.put(fd, e, ls))
+    case Fh{ms, os, fd, e, p, ep, cx}:
+      Fh.feed.at(Fh{ms, os, None{}, Nil{}, p, ep, cx}, Fh.feed.put(fd, e, ls))
 
 # the feed made from the log (up to where it was when asked), with what
-# was committed since on top
-def Fh.feed.ready(f: Fh, ls: List<&2, Line>) -> Fh:
+# was committed since on top; its projects' numbers join the commits'
+def Fh.feed.ready(f: Fh, fd: Feed) -> Fh:
+  match f fd:
+    case Fh{ms, os, _, e, p, ep, Cx{la, ca}} Feed{ls, +fl}:
+      Fh{ms, os, Some{List.append(&2, Line, e, ls)}, Nil{}, p, ep, Cx{Fr.lasts.merge(Map.keys(&2, Nat, fl), fl, la), ca}}
+
+# a commit's changes counted into the projects' numbers
+def Fh.lasts.add(f: Fh, cs: List<&2, M.Change>, +seq: Nat, +s: M.State) -> Fh:
   match f:
-    case Fh{ms, os, _, e, p, ep}:
-      Fh{ms, os, Some{List.append(&2, Line, e, ls)}, Nil{}, p, ep}
+    case Fh{ms, os, fd, e, p, ep, Cx{la, ca}}:
+      Fh{ms, os, fd, e, p, ep, Cx{Fr.lasts.add(cs, seq, s, la), ca}}
+
+def Fh.lasts(f: Fh) -> Map<&2, Nat>:
+  match f:
+    case Fh{_, _, _, _, _, _, Cx{la, _}}:
+      la
+
+# the newest catalog a link sent ("" for none), and keeping one
+def Fh.cat(+f: Fh, +link: String) -> String:
+  match f:
+    case Fh{_, _, _, _, _, _, Cx{_, ca}}:
+      Fr.str.got(Map.get(String, "", ca, link))
+
+def Fh.cat.set(f: Fh, +link: String, +text: String) -> Fh:
+  match f:
+    case Fh{ms, os, fd, e, p, ep, Cx{la, +ca}}:
+      Fh{ms, os, fd, e, p, ep, Cx{la, Bool.pick(Map<&2, String>, String.is_empty(text), ca, Map.set(&2, String, ca, link, text))}}
 
 def Fh.pulling(+f: Fh, +link: String) -> Bool:
   match f:
-    case Fh{_, _, _, _, p, _}:
+    case Fh{_, _, _, _, p, _, _}:
       Fr.may.go(p, link)
 
 def Fh.pull.on(f: Fh, +link: String) -> Fh:
   match f:
-    case Fh{ms, os, fd, e, p, ep}:
-      Fh{ms, os, fd, e, link <> p, ep}
+    case Fh{ms, os, fd, e, p, ep, cx}:
+      Fh{ms, os, fd, e, link <> p, ep, cx}
 
 def Fh.pull.off.go(ps: List<&2, String>, +link: String) -> List<&2, String>:
   match ps:
@@ -1259,18 +1533,18 @@ def Fh.pull.off.go(ps: List<&2, String>, +link: String) -> List<&2, String>:
 
 def Fh.pull.off(f: Fh, +link: String) -> Fh:
   match f:
-    case Fh{ms, os, fd, e, p, ep}:
-      Fh{ms, os, fd, e, Fh.pull.off.go(p, link), ep}
+    case Fh{ms, os, fd, e, p, ep, cx}:
+      Fh{ms, os, fd, e, Fh.pull.off.go(p, link), ep, cx}
 
 def Fh.epoch(f: Fh) -> String:
   match f:
-    case Fh{_, _, _, _, _, ep}:
+    case Fh{_, _, _, _, _, ep, _}:
       ep
 
 def Fh.epoch.set(f: Fh, +epoch: String) -> Fh:
   match f:
-    case Fh{ms, os, fd, e, p, +ep}:
-      Fh{ms, os, fd, e, p, Bool.pick(String, String.is_empty(epoch), ep, epoch)}
+    case Fh{ms, os, fd, e, p, +ep, cx}:
+      Fh{ms, os, fd, e, p, Bool.pick(String, String.is_empty(epoch), ep, epoch), cx}
 
 # lines (newest first) as items, oldest first
 def Fr.lines.items(ls: List<&2, Line>, acc: List<&2, Item>) -> List<&2, Item>:
@@ -1334,6 +1608,12 @@ def Fr.file.done(i: In) -> In:
 
 def Fr.file.read(+text: String, +link: String, +name: String) -> In:
   Fr.file.done(Fr.file.scan(String.lines(text), In.new(link, name)))
+
+# what a mirror holds, oldest first
+def In.items(i: In) -> List<&2, Item>:
+  match i:
+    case In{_, _, _, xs, _, _}:
+      xs
 
 def In.name.of(i: In) -> String:
   match i:

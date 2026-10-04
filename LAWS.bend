@@ -5739,3 +5739,87 @@ law tour_scroll_up_stops:
 
 law tour_scroll_none:
   {N.Tour.scroll(0n, 0n, False{}) == 0n : Nat}
+
+# Pairing the owner's machines (client.bend's Mate.*): the hub with the
+# lower address asks a machine of the owner's it is not linked to; never
+# one already linked, never one sync is off with, never from the higher
+law mate_lower_asks:
+  {U.Mate.due(True{}, U.Mate.demo("http://100.1.0.1:3787"), Nil{}, M.State.empty()) == [U.MRow{"desk", "http://100.2.0.1:3787", True{}}] : List<&2, U.MRow>}
+
+law mate_higher_waits:
+  {U.Mate.due(True{}, U.Mate.demo("http://100.3.0.1:3787"), Nil{}, M.State.empty()) == Nil{} : List<&2, U.MRow>}
+
+law mate_linked_never_asks:
+  {U.Mate.due(True{}, U.Mate.demo("http://100.1.0.1:3787"), [BOT.Peer{"p1", "desk", "http://desk.t.ts.net:3787", 0n, False{}}], M.State.empty()) == Nil{} : List<&2, U.MRow>}
+
+law mate_off_never_asks:
+  {U.Mate.due(True{}, U.Mate.demo("http://100.1.0.1:3787"), Nil{}, M.State.setting(M.State.empty(), "sync.desk", "off")) == Nil{} : List<&2, U.MRow>}
+
+law mate_no_self_never_asks:
+  {U.Mate.due(True{}, U.Mate.demo(""), Nil{}, M.State.empty()) == Nil{} : List<&2, U.MRow>}
+
+# a hub without its own tailnet pairs only with machines BACKPLANE_PEERS
+# names, never with the owner's tailnet machines it lists
+law mate_unnamed_without_tailnet:
+  {U.Mate.due(False{}, U.Mate.demo("http://100.1.0.1:3787"), Nil{}, M.State.empty()) == Nil{} : List<&2, U.MRow>}
+
+# the machine asked answers an invite, unless the asker is none of the
+# machines it found, sync with it is off there or a live link reaches it
+law mate_answer_stranger:
+  {U.Mate.answer(U.Mate.demo("http://100.3.0.1:3787"), Nil{}, M.State.empty(), "desk", "http://127.0.0.1:9999") == 3n : Nat}
+
+law mate_answer_invites:
+  {U.Mate.answer(U.Mate.demo("http://100.3.0.1:3787"), Nil{}, M.State.empty(), "desk", "http://desk.t.ts.net:3787") == 0n : Nat}
+
+law mate_answer_off:
+  {U.Mate.answer(U.Mate.demo("http://100.3.0.1:3787"), Nil{}, M.State.setting(M.State.empty(), "sync.desk", "off"), "desk", "http://desk.t.ts.net:3787") == 1n : Nat}
+
+law mate_answer_linked:
+  {U.Mate.answer(U.Mate.demo("http://100.3.0.1:3787"), [BOT.Peer{"p1", "desk", "http://desk.t.ts.net:3787", 0n, False{}}], M.State.empty(), "desk", "http://desk.t.ts.net:3787") == 2n : Nat}
+
+# a machine sync is off with lists nothing of its own in the sidebar
+law mate_off_hidden:
+  {U.Mate.hidden(FR.Fr.mark(M.State.setting(M.State.empty(), "sync.desk", "off"), "L", "desk", False{}), "L~p1") == True{} : Bool}
+
+law mate_on_shown:
+  {U.Mate.hidden(FR.Fr.mark(M.State.empty(), "L", "desk", False{}), "L~p1") == False{} : Bool}
+
+# A catalog lists a link's projects at once; each is catching up until the
+# link's head reaches its last number, and a project here never is
+law far_catalog_stands_in:
+  {U.Side.pids(U.Side.sorted(FR.Fr.cat.demo(0n), 0n)) == ["L~p1"] : List<&2, String>}
+
+law far_catalog_syncing:
+  {FR.Fr.syncing(FR.Fr.cat.demo(4n), "L~p1") == True{} : Bool}
+
+law far_catalog_caught_up:
+  {FR.Fr.syncing(FR.Fr.cat.demo(5n), "L~p1") == False{} : Bool}
+
+law far_catalog_here_never:
+  {FR.Fr.syncing(FR.Fr.cat.demo(0n), "p1") == False{} : Bool}
+
+law far_catalog_titled:
+  {U.Label.title(FR.Fr.cat.demo(4n), "L~p1", "Board") == "Board · desk (syncing)" : String}
+
+# a change's project: its own, or its thread's
+law far_scope_thread:
+  {FR.Fr.scope(M.State.apply(M.State.empty(), M.ThreadCreated{"t1", "p1", "x", M.Local{}, "", "", "claude", "", 1n}), M.MessagePosted{"t1", "m1", M.User{}, "hi", 2n}) == "p1" : String}
+
+law far_scope_project:
+  {FR.Fr.scope(M.State.empty(), M.ProjectCreated{"p2", "x", "/x", 1n}) == "p2" : String}
+
+# a thread on another of the owner's machines is `>machine:slug`; a word
+# ending in ':' still names a thread here (`>fix: it fails`)
+law refs_machine_word:
+  {RF.Refs.x.word("desk:fix-perf") == True{} : Bool}
+
+law refs_colon_after_stays_here:
+  {RF.Refs.x.word("fix:") == False{} : Bool}
+
+# two hubs on one machine compare their loopback addresses, so exactly
+# one of them asks: 4001 asks 4002, and 4003 does not ask 4002
+law mate_loopback_lower_asks:
+  {U.Mate.due(False{}, U.Mate.demo.lo("4001"), Nil{}, M.State.empty()) == [U.MRow{"127.0.0.1", "http://127.0.0.1:4002", True{}}] : List<&2, U.MRow>}
+
+law mate_loopback_higher_waits:
+  {U.Mate.due(False{}, U.Mate.demo.lo("4003"), Nil{}, M.State.empty()) == Nil{} : List<&2, U.MRow>}

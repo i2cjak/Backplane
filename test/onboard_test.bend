@@ -129,6 +129,7 @@ def main() -> IO(Unit):
     C.Check.str("worktrees by default, shared otherwise", Bool.show(holds(OB.Ob.body(0n, "7", 2n), "Git projects use separate worktrees by default; without git, or in local mode, threads share the project folder.")), "True")
     C.Check.str("web: Enter on a button presses it", Bool.show(holds(OB.Ob.body(1n, "7", 0n), "on a focused button it presses that button")), "True")
     C.Check.str("tailnet: the other device needs Tailscale too", Bool.show(Bool.and(holds(OB.Ob.body(2n, "7", 7n), "this phone needs Tailscale on the same tailnet"), holds(OB.Ob.body(0n, "7", 8n), "install Tailscale on it and join the same tailnet"))), "True")
+    C.Check.str("machines: background sync, named as Settings names it", Bool.show(Bool.and(holds(OB.Ob.body(0n, "7", 7n), "Settings, " ++ U.Mate.title()), Bool.and(holds(OB.Ob.body(0n, "7", 7n), "every two minutes"), holds(OB.Ob.body(2n, "7", 7n), "says syncing")))), "True")
     C.Check.str("scratch expires, with its days", Bool.show(holds(OB.Ob.body(0n, "9", 1n), "9 days is deleted with its folder, unless pinned")), "True")
     C.Check.str("days come from the setting", U.Tour.days(U.Ui.adopt.raw(U.Ui.init(1n), M.State.replay([M.SettingSet{"scratch.days", "3", 1n}], M.State.empty()))), "3")
     C.Check.str("days default to 7", U.Tour.days(U.Ui.init(1n)), "7")

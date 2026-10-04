@@ -8,6 +8,8 @@ import ../src/core/bot.bend as BT
 import ../src/core/bothub.bend as BH
 import ../src/core/refs.bend as RF
 import ../src/core/client.bend as U
+import ../src/core/far.bend as FR
+import ../src/core/xref.bend as XR
 
 # References in a message (refs.bend): slugs, what the composer offers for
 # `@bot`, `>thread`, `%project` and `#room`, what a sent message names, the
@@ -97,6 +99,13 @@ def rows(rs: List<&2, U.SkillRow>) -> String:
     case U.SkillRow{n, _, _} <> t:
       n ++ "," ++ rows(t)
 
+def descs(rs: List<&2, U.SkillRow>) -> String:
+  match rs:
+    case Nil{}:
+      ""
+    case U.SkillRow{_, a, _} <> t:
+      a ++ "|" ++ descs(t)
+
 def lit(rs: List<&2, U.SkillRow>) -> String:
   match rs:
     case Nil{}:
@@ -159,6 +168,18 @@ def info(+k: String, +v: String) -> J.Json:
 
 def offer(+s: M.State, +w: String) -> List<&2, RF.Cand>:
   RF.Refs.offer(s, "t100-8", 1010n, w)
+
+# desk's mirror (link "pk"): a project and a thread with a message
+def desk.items() -> List<&2, FR.Item>:
+  [FR.Item{1n, CD.Change.wire(M.ProjectCreated{"pq", "Board", "/b", 5n})},
+   FR.Item{2n, CD.Change.wire(M.ThreadCreated{"t9", "pq", "Fix the perf lag", M.Local{}, "", "", "claude", "", 6n})},
+   FR.Item{3n, CD.Change.wire(M.MessagePosted{"t9", "m9", M.User{}, "the frame takes 70 ms", 7n})}]
+
+def desk.far() -> J.Json:
+  Maybe.default(&2, J.Json, J.Json.parse(FR.Fr.msg("pk", "desk", False{}, 0n, 3n, desk.items())), J.Null{})
+
+def desk.in() -> FR.In:
+  FR.In.put(FR.In.new("pk", "desk"), 0n, 3n, desk.items())
 
 def main() -> IO(Unit):
   +s = base()
@@ -234,3 +255,17 @@ def main() -> IO(Unit):
       rows(U.Ui.skills(ui(U.Ui.act(U.Ui.recv(U.Ui.fold([M.PeerSet{"pk", "laptop", "http://laptop:3787", False{}, 1000n}], u0), info("bots.remote", dir())), "draft", "ask @k")))),
       "@Kit@laptop,")
     C.Check.str("complete far", U.Skills.complete("ask @k", "@Kit@laptop"), "ask @Kit@laptop ")
+    # threads on another of the owner's machines: `>machine:slug`
+    +ux : U.Ui = U.Ui.recv(u0, desk.far())
+    C.Check.str("composer offers a thread elsewhere with its machine", rows(U.Ui.skills(ui(U.Ui.act(ux, "draft", "see >perf")))), ">fix-perf-lag-7,>fix-perf-lag-9,>desk:fix-the-perf-lag,")
+    C.Check.str("its row names the machine", descs(U.Ui.skills(ui(U.Ui.act(ux, "draft", "see >desk:")))), "desk · Board: Fix the perf lag|")
+    C.Check.str(">desk: narrows to that machine", rows(U.Ui.skills(ui(U.Ui.act(ux, "draft", "see >desk:")))), ">desk:fix-the-perf-lag,")
+    C.Check.str(">desk:fix", rows(U.Ui.skills(ui(U.Ui.act(ux, "draft", "see >desk:fix")))), ">desk:fix-the-perf-lag,")
+    C.Check.str("another machine's name narrows to none", rows(U.Ui.skills(ui(U.Ui.act(ux, "draft", "see >lab:")))), "")
+    C.Check.str("a machine word names nothing here; `>fix:` still a word here", yes(RF.Refs.x.word("desk:fix")) ++ " " ++ yes(RF.Refs.x.word("fix:")) ++ " " ++ Nat.show(List.length(&2, RF.Hit, RF.Refs.find(U.Ui.state(ux), "t100-8", ">desk:fix-the-perf-lag"))), "yes no 0")
+    # the hub: the agent's block names it from the mirror; thread_read reads it
+    C.Check.str("the agent is told what >desk:slug is", XR.Xref.block("look at >desk:fix-the-perf-lag please", [desk.in()]),
+      "\n\n<references>\n>desk:fix-the-perf-lag is the thread \"Fix the perf lag\" (id pk~t9, project \"Board\"). Read it with thread_read. It is on the machine desk; thread_read reads it from here, thread_send writes to it there.\n</references>")
+    C.Check.str("no machine word, no block", XR.Xref.block("look at >fix and a: colon", [desk.in()]), "")
+    +rd : J.Json = Maybe.default(&2, J.Json, J.Json.parse("{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"thread_read\",\"arguments\":{\"threadId\":\"pk~t9\"}}}"), J.Null{})
+    C.Check.str("thread_read on it is answered from the mirror", yes(XR.Xref.read.is(rd)) ++ " " ++ yes(String.contains(XR.Xref.read(rd, [desk.in()]), "the frame takes 70 ms")), "yes yes")
