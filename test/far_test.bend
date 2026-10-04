@@ -276,6 +276,12 @@ def main() -> IO(Unit):
       M.ThreadCreated{"t2", "q2", "T", M.Local{}, "", "", "claude", "", 8n}), M.MessagePosted{"t2", "m", M.User{}, "x", 9n})
     C.Check.str("owner's catalog", J.Json.show(FR.Fr.catalog(ost, FR.Feed.lasts(FR.Fr.feed.full(ol, ost)))),
       "[{\"id\":\"q1\",\"title\":\"One\",\"at\":6,\"n\":1},{\"id\":\"q2\",\"title\":\"Two\",\"at\":9,\"n\":4}]")
+    # a pull's answer: the page's fields and the catalog side by side
+    +lg : J.Json = Maybe.default(&2, J.Json, J.Json.parse(FR.Fr.log.json(3n, FR.Fr.catalog(ost, FR.Feed.lasts(FR.Fr.feed.full(ol, ost))),
+      FR.Fr.with.epoch(FR.Page.json(FR.Fr.page(FR.Fr.feed(ol, ost), 0n, 4n, 400000n)), "ep1"))), J.Null{})
+    C.Check.str("a pull's answer reads whole", Nat.show(J.Json.get_nat(lg, "since", 9n)) ++ " " ++ Nat.show(J.Json.get_nat(lg, "head", 0n)) ++ " " ++ Nat.show(List.length(&2, J.Json, J.Json.elems(J.Json.get_obj(lg, "items"))))
+      ++ " " ++ J.Json.get_str(lg, "epoch", "") ++ " " ++ Nat.show(List.length(&2, J.Json, J.Json.elems(J.Json.get_obj(lg, "catalog")))) ++ " " ++ Bool.show(J.Json.get_bool(lg, "more", True{})),
+      "3 4 4 ep1 2 False")
     # a mirrored bot's space page, served by the mirroring hub
     +pi : FR.In = FR.In.put(FR.In.new("p1", "box"), 0n, 3n, numbered([M.SpacePageSet{"b1", "<p>old</p>", 1n}, M.SpacePageSet{"b2", "<p>other</p>", 2n}, M.SpacePageSet{"b1", "<p>new</p>", 3n}], 1n))
     C.Check.str("mirrored space page", FR.In.page(pi, "b1") ++ "|" ++ FR.In.page(pi, "b9"), "<p>new</p>|")

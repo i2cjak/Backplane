@@ -900,6 +900,11 @@ def In.epoch.set(i: In, e: String) -> In:
 def Fr.with.epoch(+text: String, epoch: String) -> String:
   J.Json.show(J.Obj{J.Field{"epoch", J.Str{epoch}, Fr.epoch.fields(Maybe.default(&2, J.Json, J.Json.parse(text), J.Null{}))}})
 
+# the answer to a pull (POST /far/log): where it starts, the catalog, then
+# the page with its epoch ({"head", "items", "more", "epoch"})
+def Fr.log.json(+from: Nat, cat: J.Json, +page: String) -> String:
+  J.Json.show(J.Obj{J.Field{"since", J.Json.nat(from), J.Field{"catalog", cat, Fr.epoch.fields(Maybe.default(&2, J.Json, J.Json.parse(page), J.Null{}))}}})
+
 # a far message with a link's catalog (Fr.catalog's JSON text) beside it
 def Fr.with.cat.k(none: Bool, +text: String, +cat: String) -> String:
   match none:

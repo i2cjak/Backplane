@@ -7050,9 +7050,8 @@ def Far.log.go(m: Maybe<&2, List<&2, FR.Line>>, h: Hub, +since: Nat, +epoch: Str
     case Some{+fs} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       +own = FR.Fh.epoch(BN.Bn.far(Cfg.bn(cfg)))
       +from = Bool.pick(Nat, FR.Fr.epoch.changed(epoch, own), 0n, since)
-      Hub.answer(Hub{st, f, ls, cl, as, inbox, cfg, note}, reply, Bot.json("200 OK", J.Json.show(J.Obj{J.Field{"since", J.Json.nat(from),
-        J.Obj{J.Field{"catalog", FR.Fr.catalog(st, FR.Fh.lasts(BN.Bn.far(Cfg.bn(cfg)))),
-        FR.Fr.epoch.fields(Maybe.default(&2, J.Json, J.Json.parse(FR.Fr.with.epoch(FR.Page.json(FR.Fr.page(fs, from, M.State.seq(st), 400000n)), own)), J.Null{}))}}}})))
+      Hub.answer(Hub{st, f, ls, cl, as, inbox, cfg, note}, reply, Bot.json("200 OK", FR.Fr.log.json(from, FR.Fr.catalog(st, FR.Fh.lasts(BN.Bn.far(Cfg.bn(cfg)))),
+        FR.Fr.with.epoch(FR.Page.json(FR.Fr.page(fs, from, M.State.seq(st), 400000n)), own))))
     case None{} _:
       Hub.answer(h, reply, W.Http.text("503 Service Unavailable", "not ready"))
 
