@@ -202,11 +202,12 @@ try {
   const pt = created?.id;
   check("ordinary project thread created", !!ordinary?.ok && !!pt, [ordinary, created]);
   const catalog = await until(8000, () => farItems(cb, link).find((c) => c.$ === "ThreadCreated" && c.id === pt));
-  // a client joining beta later gets alpha's catalog with the mirror (every
-  // project alpha shares, its last number at or below the mirror's head)
+  // a client joining beta later gets alpha's catalog with the mirror (the
+  // one the last pull brought: a project made since arrives by its push),
+  // each project's last number at or below the mirror's head
   const cbc = await connect(b);
   clients.push(cbc);
-  const cat = await until(8000, () => cbc.far.find((f) => f.link === link && Array.isArray(f.catalog) && f.catalog.some((p: any) => p.id === pc?.id)));
+  const cat = await until(8000, () => cbc.far.find((f) => f.link === link && Array.isArray(f.catalog) && f.catalog.length > 0));
   check("a joining client gets the catalog, caught up", !!cat && cat.catalog.every((p: any) => p.n <= cat.head), cat ? { head: cat.head, catalog: cat.catalog } : cbc.far.map((f) => Object.keys(f)));
   check("ordinary project and thread are mirrored together", !!catalog && catalog.project === pc?.id && farItems(cb, link).some((c) => c.$ === "ProjectCreated" && c.id === pc?.id), catalog);
   const psent = await rpc(cb, "turn.start", { thread: `${link}~${pt}`, text: "review from beta", msg: "ordinary-m1", mode: "queue" });
