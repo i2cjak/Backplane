@@ -2119,6 +2119,20 @@ def Set.spin(none: Bool, +v: String, +n: Nui, +x: U32, +y: U32, +dir: U32) -> St
     case False{}:
       Step{Nui.with_ui(n, U.Ui.scratch_set(Nui.ui(n), "@set.sc", Set.scroll(U.Ui.scratch(Nui.ui(n), "@set.sc"), v, dir))), Nil{}, True{}}
 
+# A pane that scrolls by rows (the subagents panel, the todo card): its hit
+# "pane" carries "<key>|<last>", and a wheel notch over it moves the first
+# row shown by one, within 0..last, kept in the info as "pane:<key>" (the
+# layout reads it as Pane.off). Elsewhere the wheel goes on as before.
+def Pane.at(+v: String, +i: Nat) -> String:
+  Maybe.default(&2, String, List.get(&2, String, String.split(v, '|'), i), "")
+
+def Pane.to(+cur: Nat, +last: Nat, +dir: U32) -> Nat:
+  Bool.pick(Nat, U32.is_eq(dir, 0), Nat.sub(cur, 1n), Bool.pick(Nat, Nat.is_lt(cur, last), 1n+cur, last))
+
+def Pane.step(+n: Nui, +key: String, +last: Nat, +dir: U32) -> Step:
+  Step{Nui.with_ui(n, U.Ui.info_set(Nui.ui(n), "pane:" ++ key,
+    Nat.show(Pane.to(Maybe.default(&2, Nat, Nat.read(U.Ui.info(Nui.ui(n), "pane:" ++ key)), 0n), last, dir)))), Nil{}, True{}}
+
 # the wheel over the open picker scrolls its models, elsewhere as before
 def Menu.spin(none: Bool, +v: String, +n: Nui, +x: U32, +y: U32, +dir: U32) -> Step:
   match none:
@@ -2126,6 +2140,13 @@ def Menu.spin(none: Bool, +v: String, +n: Nui, +x: U32, +y: U32, +dir: U32) -> S
       Set.spin(String.is_empty(Hit.value_at(Nui.hits(n), "set-bg", x, y)), Hit.value_at(Nui.hits(n), "set-bg", x, y), n, x, y, dir)
     case False{}:
       Step{Nui.with_ui(n, U.Ui.scratch_set(Nui.ui(n), "@menu.off", Menu.scroll(v, dir))), Nil{}, True{}}
+
+def Pane.spin(none: Bool, +v: String, +n: Nui, +x: U32, +y: U32, +dir: U32) -> Step:
+  match none:
+    case True{}:
+      Menu.spin(String.is_empty(Menu.box(Nui.hits(n), x, y)), Menu.box(Nui.hits(n), x, y), n, x, y, dir)
+    case False{}:
+      Pane.step(n, Pane.at(v, 0n), Maybe.default(&2, Nat, Nat.read(Pane.at(v, 1n)), 0n), dir)
 
 def Nui.ms_of(n: Nui) -> Nat:
   match n:
@@ -2842,7 +2863,7 @@ def Nui.event(+n: Nui, e: W.WinEv) -> Step:
     case W.WMove{+x, +y, +mods}:
       Nui.move(Nui.dragging(n), n, x, y, mods)
     case W.WWheel{+x, +y, +dir}:
-      Menu.spin(String.is_empty(Menu.box(Nui.hits(n), x, y)), Menu.box(Nui.hits(n), x, y), n, x, y, dir)
+      Pane.spin(String.is_empty(Hit.value_at(Nui.hits(n), "pane", x, y)), Hit.value_at(Nui.hits(n), "pane", x, y), n, x, y, dir)
     case W.WSize{w, h}:
       Nui.resize(n, w, h)
     case W.WExpose{}:

@@ -4649,6 +4649,54 @@ def Todos.pick(show: Bool, ts: List<&2, TD.Todo>) -> List<&2, TD.Todo>:
 def Todos.shown(+st: M.State, +th: String, +run: Bool) -> List<&2, TD.Todo>:
   Todos.pick(TD.Todo.shown(Todos.of(st, th), run), Todos.of(st, th))
 
+# The card's two controls, on all four clients: its head opens or shuts it
+# (the "fold" action, key todos:<thread>; open until shut), and a list too
+# long for the card ends in a line that shows every step, or the fitted
+# few again (key todos.all:<thread>). A client that scrolls the card shows
+# every step; the window, which cannot, as many as cap leaves room for.
+def Todos.key(+th: String) -> String:
+  "todos:" ++ th
+
+def Todos.all.key(+th: String) -> String:
+  "todos.all:" ++ th
+
+def Todos.open(+info: Map<&2, String>, +th: String) -> Bool:
+  FO.Fold.open(FO.Fold.user(info, Todos.key(th)), True{})
+
+def Todos.all(+info: Map<&2, String>, +th: String) -> Bool:
+  FO.Fold.open(FO.Fold.user(info, Todos.all.key(th)), False{})
+
+# what a click on the head asks, and on the last line
+def Todos.toggle(+open: Bool, +th: String) -> String:
+  FO.Fold.ask(open, Todos.key(th))
+
+def Todos.more.ask(+all: Bool, +th: String) -> String:
+  FO.Fold.ask(all, Todos.all.key(th))
+
+# the last line's words: "Show all 24" or "Show fewer", "" when the list fits
+def Todos.more(+all: Bool, +ts: List<&2, TD.Todo>) -> String:
+  Bool.pick(String, Nat.is_gt(List.length(&2, TD.Todo, ts), TD.Todo.fit()), Bool.pick(String, all, "Show fewer", "Show all " ++ Nat.show(List.length(&2, TD.Todo, ts))), "")
+
+def Todos.rows.all(+cap: Nat, +ts: List<&2, TD.Todo>) -> List<&2, TD.TRow>:
+  TD.Todo.rows.k(Nat.is_gt(List.length(&2, TD.Todo, ts), cap), ts, List.length(&2, TD.Todo, ts), cap, TD.Todo.open(ts))
+
+def Todos.rows.k(open: Bool, all: Bool, +cap: Nat, +ts: List<&2, TD.Todo>) -> List<&2, TD.TRow>:
+  match open all:
+    case False{} _:
+      Nil{}
+    case True{} True{}:
+      Todos.rows.all(cap, ts)
+    case True{} False{}:
+      TD.Todo.rows(ts)
+
+# the card's rows: none shut, every step (up to cap) shown all, else the fitted few
+def Todos.rows(+info: Map<&2, String>, +th: String, +cap: Nat, +ts: List<&2, TD.Todo>) -> List<&2, TD.TRow>:
+  Todos.rows.k(Todos.open(info, th), Todos.all(info, th), cap, ts)
+
+# a client that scrolls the card shows every step
+def Todos.cap.all() -> Nat:
+  100000n
+
 # how many queued rows show (the rest are counted on the last)
 def Qu.shown() -> Nat:
   4n

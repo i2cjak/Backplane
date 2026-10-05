@@ -2448,6 +2448,44 @@ def Sa.sum(rs: List<&2, SB.SubRow>) -> U32:
     case +r <> rest:
       (Sa.h(r) + Sa.sum(rest) : U32)
 
+# A pane that scrolls by rows (the subagents panel, the todo card): the
+# first row shown is the info's "pane:<key>" (nui.bend's Pane, the wheel
+# over the pane's "pane" hit), and the rows from there that fit its height.
+def Pane.off(+info: Map<&2, String>, +key: String) -> Nat:
+  Maybe.default(&2, Nat, Nat.read(U.Str.get(info, "pane:" ++ key)), 0n)
+
+def Pane.clamp(+off: Nat, +n: Nat) -> Nat:
+  Bool.pick(Nat, Nat.is_lt(off, n), off, Nat.sub(n, 1n))
+
+# "rows 4–9 of 12" when not all of them show, else ""
+def Pane.range(+from: Nat, +shown: Nat, +n: Nat) -> String:
+  Bool.pick(String, Nat.is_lt(shown, n), " · " ++ Nat.show(1n+from) ++ "–" ++ Nat.show(Nat.add(from, shown)) ++ " of " ++ Nat.show(n), "")
+
+# the subagent rows from the first shown that fit room (at least one): a row
+# that does not fit leaves no room for any after it
+def Sa.fit.ok(+h: U32, +room: U32, +first: Bool) -> Bool:
+  Bool.or(U32.is_le(h, room), first)
+
+def Sa.fit.put(ok: Bool, r: SB.SubRow, rest: List<&2, SB.SubRow>) -> List<&2, SB.SubRow>:
+  match ok:
+    case True{}:
+      r <> rest
+    case False{}:
+      Nil{}
+
+def Sa.fit(rs: List<&2, SB.SubRow>, +room: U32, +first: Bool) -> List<&2, SB.SubRow>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case +r <> rest:
+      Sa.fit.put(Sa.fit.ok(Sa.h(r), room, first), r,
+        Sa.fit(rest, Bool.pick(U32, Sa.fit.ok(Sa.h(r), room, first), (room - U32.min(Sa.h(r), room) : U32), 0), False{}))
+
+# the panel's rows on screen: open ones from the scrolled-to row, as many as
+# a third of the window holds
+def Subs.vis(+all: List<&2, SB.SubRow>, +open: Bool, +off: Nat, +h: U32) -> List<&2, SB.SubRow>:
+  Sa.fit(List.drop(&2, SB.SubRow, SB.Subs.panel.rows(open, all), off), (h / 3 : U32), True{})
+
 # the panel's box: its head, and its rows when open
 def Subs.box.h(+rs: List<&2, SB.SubRow>, +open: Bool) -> U32:
   (Sa.sum(rs) + Bool.pick(U32, open, 36, 32) : U32)
@@ -2455,28 +2493,31 @@ def Subs.box.h(+rs: List<&2, SB.SubRow>, +open: Bool) -> U32:
 # the subagent viewer: every task this thread delegated and each of the
 # agent's own subagents, what each does now, and the steps of those open.
 # Its head opens and shuts it; once all is done it folds to the head
-# (subs.bend's panel)
-def Lay.subs.k(some: Bool, +ty: Ty, +all: List<&2, SB.SubRow>, +open: Bool, +th: String, +x0: U32, +x1: U32, +y: U32) -> Out:
+# (subs.bend's panel). Never taller than a third of the window: the wheel
+# over it scrolls its rows (Pane)
+def Lay.subs.k(some: Bool, +ty: Ty, +all: List<&2, SB.SubRow>, +rs: List<&2, SB.SubRow>, +open: Bool, +th: String, +off: Nat, +x0: U32, +x1: U32, +y: U32) -> Out:
   match some:
     case True{}:
-      +rs = SB.Subs.panel.rows(open, all)
+      +n = List.length(&2, SB.SubRow, SB.Subs.panel.rows(open, all))
       +on = Nat.is_gt(SB.Subs.live(all), 0n)
-      +word = SB.Subs.panel.word(all)
+      +word = {SB.Subs.panel.word(all) ++ Pane.range(off, List.length(&2, SB.SubRow, rs), n) : String}
+      +bh = Subs.box.h(rs, open)
       Out.all([
-        Out.ops(Lay.box(D.Clip.all(), x0, y, (x1 - x0 : U32), Subs.box.h(rs, open), 8, T.Th.panel(), Bool.pick(U32, on, T.Th.accent(), T.Th.line()))),
+        Out.ops(Lay.box(D.Clip.all(), x0, y, (x1 - x0 : U32), bh, 8, T.Th.panel(), Bool.pick(U32, on, T.Th.accent(), T.Th.line()))),
         Out.ops(Ty.text(ty, 2n, "Subagents", D.Clip.all(), (x0 + 12 : U32), y, 32, Bool.pick(U32, on, T.Th.text(), T.Th.faint()))),
         Out.ops(Ty.text(ty, 2n, word, D.Clip.all(), (x1 - Ty.width(ty, 2n, word) - 36 : U32), y, 32, Bool.pick(U32, on, T.Th.accent(), T.Th.faint()))),
         Out.ops(Lay.icon(ty, Bool.pick(String, open, "chevron-down", "chevron-right"), D.Clip.all(), (x1 - 28 : U32), (y + 8 : U32), T.Th.faint())),
         Out{Nil{}, [Lay.hit(x0, y, (x1 - x0 : U32), 30, "fold", SB.Subs.panel.ask(open, th))]},
-        Sa.rows(ty, rs, x0, x1, (y + 30 : U32))])
+        Sa.rows(ty, rs, x0, x1, (y + 30 : U32)),
+        Out{Nil{}, [Lay.hit(x0, y, (x1 - x0 : U32), bh, "pane", "subs:" ++ th ++ "|" ++ Nat.show(Nat.sub(n, 1n)))]}])
     case False{}:
       Out.none()
 
-def Lay.subs(+ty: Ty, +all: List<&2, SB.SubRow>, +open: Bool, +th: String, +x0: U32, +x1: U32, +y: U32) -> Out:
-  Lay.subs.k(Bool.not(List.is_empty(&2, SB.SubRow, all)), ty, all, open, th, x0, x1, y)
+def Lay.subs(+ty: Ty, +all: List<&2, SB.SubRow>, +rs: List<&2, SB.SubRow>, +open: Bool, +th: String, +off: Nat, +x0: U32, +x1: U32, +y: U32) -> Out:
+  Lay.subs.k(Bool.not(List.is_empty(&2, SB.SubRow, all)), ty, all, rs, open, th, off, x0, x1, y)
 
-def Subs.height(+all: List<&2, SB.SubRow>, +open: Bool) -> U32:
-  Bool.pick(U32, List.is_empty(&2, SB.SubRow, all), 0, (Subs.box.h(SB.Subs.panel.rows(open, all), open) + 12 : U32))
+def Subs.height(+all: List<&2, SB.SubRow>, +rs: List<&2, SB.SubRow>, +open: Bool) -> U32:
+  Bool.pick(U32, List.is_empty(&2, SB.SubRow, all), 0, (Subs.box.h(rs, open) + 12 : U32))
 
 def Lay.parent.k(+ty: Ty, +p: String, +st: M.State, +x0: U32, +y: U32) -> Out:
   +label = "← delegated by " ++ U.Tasks.title(st, p)
@@ -2613,13 +2654,13 @@ def Lay.qrows(qs: List<&2, M.QItem>, +ty: Ty, +i: Nat, +n: Nat, +run: Bool, +mor
 def Lay.qn(+qs: List<&2, M.QItem>) -> Nat:
   Bool.pick(Nat, Nat.is_gt(List.length(&2, M.QItem, qs), U.Qu.shown()), U.Qu.shown(), List.length(&2, M.QItem, qs))
 
-# The todo list above the queue: its head, then its rows (TD.Todo.rows:
-# the steps around the one being done, and a line for the rest)
-def Lay.tdn(+ts: List<&2, TD.Todo>) -> Nat:
-  List.length(&2, TD.TRow, TD.Todo.rows(ts))
-
-def Lay.tdh(+ts: List<&2, TD.Todo>) -> U32:
-  Bool.pick(U32, List.is_empty(&2, TD.Todo, ts), 0, ((U32.from_nat(Lay.tdn(ts)) * 22 : U32) + 34 : U32))
+# The todo list above the queue: its head, then its rows (client.bend's
+# Todos.rows: the steps around the one being done and a line for the rest,
+# every step as many as fit, or none shut), then a long list's last line
+# ("Show all 24", "Show fewer"). The head and that line are clicks (fold).
+def Lay.tdh(+ts: List<&2, TD.Todo>, +rs: List<&2, TD.TRow>, +more: String) -> U32:
+  Bool.pick(U32, List.is_empty(&2, TD.Todo, ts), 0,
+    ((U32.from_nat(List.length(&2, TD.TRow, rs)) * 22 : U32) + 34 + Bool.pick(U32, String.is_empty(more), 0, 22) : U32))
 
 def Lay.tdlines(rs: List<&2, TD.TRow>, +ty: Ty, +x0: U32, +x1: U32, +y: U32) -> List<&2, R.Op>:
   match rs:
@@ -2630,11 +2671,30 @@ def Lay.tdlines(rs: List<&2, TD.TRow>, +ty: Ty, +x0: U32, +x1: U32, +y: U32) -> 
           Bool.pick(U32, String.eq(TD.TRow.status(r), "completed"), T.Th.faint(), Bool.pick(U32, String.eq(TD.TRow.status(r), "in_progress"), T.Th.text(), T.Th.dim()))),
         Lay.tdlines(rest, ty, x0, x1, (y + 22 : U32)))
 
-def Lay.todos(+ty: Ty, +ts: List<&2, TD.Todo>, +x0: U32, +x1: U32, +bottom: U32) -> Out:
-  Out.when(Bool.not(List.is_empty(&2, TD.Todo, ts)),
-    Out.ops(List.concat(&2, R.Op, [Lay.box(D.Clip.all(), x0, (bottom - Lay.tdh(ts) : U32), (x1 - x0 : U32), (Lay.tdh(ts) - 4 : U32), 0, T.Th.raise(), T.Th.line()),
-      Ty.text(ty, 2n, TD.Todo.head(ts), D.Clip.all(), (x0 + 12 : U32), (bottom - Lay.tdh(ts) + 2 : U32), 26, T.Th.soft()),
-      Lay.tdlines(TD.Todo.rows(ts), ty, x0, x1, (bottom - Lay.tdh(ts) + 28 : U32))])))
+# how many steps the window shows of every step: what half its height holds
+def Lay.tdcap(+h: U32) -> Nat:
+  U32.to_nat(U32.max((U32.shr(h) / 22 : U32), 6))
+
+def Lay.todos.k(some: Bool, +ty: Ty, +ts: List<&2, TD.Todo>, +rs: List<&2, TD.TRow>, +more: String, +open: Bool, +all: Bool, +th: String, +off: Nat, +n: Nat, +x0: U32, +x1: U32, +bottom: U32) -> Out:
+  match some:
+    case True{}:
+      +hh = Lay.tdh(ts, rs, more)
+      +top = {(bottom - hh : U32) : U32}
+      +ry = {(top + 28 + (U32.from_nat(List.length(&2, TD.TRow, rs)) * 22 : U32) : U32) : U32}
+      Out.all([
+        Out.ops(List.concat(&2, R.Op, [Lay.box(D.Clip.all(), x0, top, (x1 - x0 : U32), (hh - 4 : U32), 0, T.Th.raise(), T.Th.line()),
+          Ty.text(ty, 2n, TD.Todo.head(ts) ++ Pane.range(off, List.length(&2, TD.TRow, rs), n), D.Clip.all(), (x0 + 12 : U32), (top + 2 : U32), 26, T.Th.soft()),
+          Lay.icon(ty, Bool.pick(String, open, "chevron-down", "chevron-right"), D.Clip.all(), (x1 - 28 : U32), (top + 6 : U32), T.Th.faint()),
+          Lay.tdlines(rs, ty, x0, x1, (top + 28 : U32)),
+          Ty.text(ty, 2n, more, D.Clip.all(), (x0 + 12 : U32), ry, 22, T.Th.accent())])),
+        Out{Nil{}, List.concat(&2, S.Hit, [[Lay.hit(x0, top, (x1 - x0 : U32), 28, "fold", U.Todos.toggle(open, th))],
+          Bool.pick(List<&2, S.Hit>, String.is_empty(more), Nil{}, [Lay.hit(x0, ry, (x1 - x0 : U32), 22, "fold", U.Todos.more.ask(all, th))]),
+          [Lay.hit(x0, top, (x1 - x0 : U32), hh, "pane", "todos:" ++ th ++ "|" ++ Nat.show(Nat.sub(n, 1n)))]])}])
+    case False{}:
+      Out.none()
+
+def Lay.todos(+ty: Ty, +ts: List<&2, TD.Todo>, +rs: List<&2, TD.TRow>, +more: String, +open: Bool, +all: Bool, +th: String, +off: Nat, +n: Nat, +x0: U32, +x1: U32, +bottom: U32) -> Out:
+  Lay.todos.k(Bool.not(List.is_empty(&2, TD.Todo, ts)), ty, ts, rs, more, open, all, th, off, n, x0, x1, bottom)
 
 # the queue's height above the composer
 def Lay.qh(+qs: List<&2, M.QItem>) -> U32:
@@ -4774,15 +4834,23 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
       +cx1 = {(cx0 + cw : U32) : U32}
       +ts = SB.Subs.rows(st, pics, sel)
       +sopen = SB.Subs.panel.open(pics, sel, ts)
+      +soff = Pane.clamp(Pane.off(pics, "subs:" ++ sel), List.length(&2, SB.SubRow, SB.Subs.panel.rows(sopen, ts)))
+      +svis = Subs.vis(ts, sopen, soff, h)
       # the row under the header: the parent's link
       +pl = {Bool.pick(U32, String.is_empty(U.Tasks.parent(st, sel)), 0, 32) : U32}
       +pins = U.Ec.pins(ec, st, sel)
-      +top = {(52 + hy + pl + Subs.height(ts, sopen) + Pins.height(pins) : U32) : U32}
+      +top = {(52 + hy + pl + Subs.height(ts, svis, sopen) + Pins.height(pins) : U32) : U32}
       +asks = U.Asks.open(st, sel)
       +ah = Asks.h(ty, asks, (cw - 32 : U32))
       +qs = M.Queue.items(st, sel)
       +tds = U.Todos.shown(st, sel, Lay.running(turn))
-      +qh = {(Lay.qh(qs) + Lay.tdh(tds) : U32) : U32}
+      +tdo = U.Todos.open(pics, sel)
+      +tda = U.Todos.all(pics, sel)
+      +tdall = U.Todos.rows(pics, sel, U.Todos.cap.all(), tds)
+      +tdoff = Pane.clamp(Pane.off(pics, "todos:" ++ sel), List.length(&2, TD.TRow, tdall))
+      +tdr = List.take(&2, TD.TRow, List.drop(&2, TD.TRow, tdall, tdoff), Lay.tdcap(h))
+      +tdm = {Bool.pick(String, tdo, U.Todos.more(tda, tds), "") : String}
+      +qh = {(Lay.qh(qs) + Lay.tdh(tds, tdr, tdm) : U32) : U32}
       # the composer grows by eh, and all above it moves up
       +ls = Comp.wrap(ty, draft, cw)
       +eh = Comp.eh(List.length(&2, String, ls))
@@ -4795,11 +4863,11 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
         cx0, cx1, top, (h - ah - qh - eh - bh : U32), sc, tsel, Out.none()) Out.all([Lay.header(ty, M.Thread{id, p, ti, c, a, turn, pe, ar, o, sa, ua, pi, en, br, wt, pr, mo, rm, im, se, de}, st, x0, x1, pa, term, M.Snooze.on(now, U.Side.until(st, sel)), del, hy),
           Ren.field.if(String.eq(ren, sel), ty, rtext, focus, blink, caret, mark, x0, x1, hy),
           Lay.parent(ty, st, sel, cx0, (58 + hy : U32)),
-          Lay.subs(ty, ts, sopen, sel, cx0, cx1, (60 + hy + pl : U32)),
-          Lay.pins(ty, ec, pins, cx0, cx1, (60 + hy + pl + Subs.height(ts, sopen) : U32), fkey, blink),
+          Lay.subs(ty, ts, svis, sopen, sel, soff, cx0, cx1, (60 + hy + pl : U32)),
+          Lay.pins(ty, ec, pins, cx0, cx1, (60 + hy + pl + Subs.height(ts, svis, sopen) : U32), fkey, blink),
           Lay.composer.a(ty, draft, ls, held, caret, mark, focus, blink, cx0, cx1, h, U.Follow.button(st, sel, Lay.running(turn), stop, draft), U.Follow.act(stop), U.Effort.label(U.Models.label(pr, mo), U.Effort.of(st, sel)) ++ U.Usage.tail(st, sel), rs, atts, up, path),
           Lay.queued(ty, qs, Lay.running(turn), cx0, cx1, (h - eh : U32)),
-          Lay.todos(ty, tds, cx0, cx1, (h - eh - 124 - Lay.qh(qs) : U32)),
+          Lay.todos(ty, tds, tdr, tdm, tdo, tda, sel, tdoff, List.length(&2, TD.TRow, tdall), cx0, cx1, (h - eh - 124 - Lay.qh(qs) : U32)),
           Lay.asks(ty, asks, draft, cx0, cx1, (h - 132 - ah - qh - eh - bh + 4 : U32)),
           Btw.card.if(Bool.not(String.is_empty(bq)), ty, bq, ba, cx0, cx1, (h - 132 - qh - eh - bh + 4 : U32)),
           Lay.picker(picking, ty, U.Models.menu(info, pr), mo, info, pr, cx0, cx1, (h - 128 - eh : U32), (60 + hy : U32), U.Chip.all(info, pr, mo), U.Effort.of(st, sel), moff)])

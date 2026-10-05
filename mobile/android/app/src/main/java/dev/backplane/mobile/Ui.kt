@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -888,9 +889,19 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
                     for (a in t.asks) Box(Modifier.padding(bottom = 8.dp)) { AskCard(m, a) }
                     t.todos?.let { td ->
                         Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
-                            Text(td.head, style = MaterialTheme.typography.labelMedium)
-                            for (l in td.lines) Text(l.text, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                color = if (l.status == "completed") MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface)
+                            // the head opens and shuts the card
+                            Row(Modifier.fillMaxWidth().then(if (td.toggle.isNotEmpty()) Modifier.clickable { m.act("fold", td.toggle) } else Modifier),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Text(td.head, Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+                                Text(if (td.open) "▾" else "▸", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                            }
+                            // every step scrolls within a third of the screen
+                            Column(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
+                                for (l in td.lines) Text(l.text, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    color = if (l.status == "completed") MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface)
+                            }
+                            if (td.more.isNotEmpty()) Text(td.more, Modifier.clickable { m.act("fold", td.moreValue) }.padding(vertical = 2.dp),
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                         }
                     }
                     for (q in t.queue) Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {

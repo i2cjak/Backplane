@@ -794,9 +794,29 @@ struct ThreadScreen: View {
             }
             if let td = thread.todos {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(td.head).bold()
-                    ForEach(Array(td.lines.enumerated()), id: \.offset) { _, l in
-                        Text(l.text).lineLimit(1).foregroundStyle(l.status == "completed" ? .secondary : .primary)
+                    // the head opens and shuts the card
+                    Button { if let t = td.toggle, !t.isEmpty { model.act("fold", t) } } label: {
+                        HStack {
+                            Text(td.head).bold()
+                            Spacer(minLength: 0)
+                            Image(systemName: (td.open ?? true) ? "chevron.down" : "chevron.right").foregroundStyle(.secondary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    // every step scrolls within a third of the screen
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(Array(td.lines.enumerated()), id: \.offset) { _, l in
+                                Text(l.text).lineLimit(1).foregroundStyle(l.status == "completed" ? .secondary : .primary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 220)
+                    .fixedSize(horizontal: false, vertical: true)
+                    if let more = td.more, !more.isEmpty {
+                        Button(more) { model.act("fold", td.moreValue ?? "") }.buttonStyle(.borderless)
                     }
                 }
                 .font(.caption)

@@ -576,9 +576,17 @@ def Mob.tdlines(rs: List<&2, TD.TRow>) -> List<&2, J.Json>:
     case +r <> rest:
       J.Json.obj([J.KV{"text", J.Json.str(TD.TRow.text(r))}, J.KV{"status", J.Json.str(TD.TRow.status(r))}]) <> Mob.tdlines(rest)
 
-# the agent's todo list (U.Todos.shown), or null while hidden
-def Mob.todos(+ts: List<&2, TD.Todo>) -> J.Json:
-  Bool.pick(J.Json, List.is_empty(&2, TD.Todo, ts), J.Null{}, J.Json.obj([J.KV{"head", J.Json.str(TD.Todo.head(ts))}, J.KV{"lines", J.Json.arr(Mob.tdlines(TD.Todo.rows(ts)))}]))
+# the agent's todo list (U.Todos.shown), or null while hidden: its head,
+# whether it is open and what a tap on the head sends (fold, with toggle),
+# its lines (every step once shown all: the app scrolls them), and a long
+# list's last line ("Show all 24", "Show fewer"; "" when it fits) and its value
+def Mob.todos.k(+open: Bool, +all: Bool, +th: String, +ts: List<&2, TD.Todo>, +info: Map<&2, String>) -> J.Json:
+  J.Json.obj([J.KV{"head", J.Json.str(TD.Todo.head(ts))}, J.KV{"open", J.Json.bool(open)}, J.KV{"toggle", J.Json.str(U.Todos.toggle(open, th))},
+    J.KV{"lines", J.Json.arr(Mob.tdlines(U.Todos.rows(info, th, U.Todos.cap.all(), ts)))},
+    J.KV{"more", J.Json.str(Bool.pick(String, open, U.Todos.more(all, ts), ""))}, J.KV{"moreValue", J.Json.str(U.Todos.more.ask(all, th))}])
+
+def Mob.todos(+info: Map<&2, String>, +th: String, +ts: List<&2, TD.Todo>) -> J.Json:
+  Bool.pick(J.Json, List.is_empty(&2, TD.Todo, ts), J.Null{}, Mob.todos.k(U.Todos.open(info, th), U.Todos.all(info, th), th, ts, info))
 
 # Asks: what the agent waits on the user for. Each button sends "answer"
 # with its value; "primary" marks the one to lead with
@@ -854,7 +862,7 @@ def Mob.thread(u: U.Ui, t: M.Thread, pend: List<&2, String>, vw: J.Json, +atts: 
         J.KV{"asks", J.Json.arr(Mob.asks(U.Asks.open(st, id), U.Str.get(drafts, sel)))},
         J.KV{"queued", J.Json.str(M.Queue.of(st, id))},
         J.KV{"queue", J.Json.arr(Mob.queue(M.Queue.items(st, id), True{}, V.View.running(turn)))},
-        J.KV{"todos", Mob.todos(U.Todos.shown(st, id, V.View.running(turn)))},
+        J.KV{"todos", Mob.todos(nf, id, U.Todos.shown(st, id, V.View.running(turn)))},
         J.KV{"live", J.Json.arr(Mob.nodes(D.Md.render(U.Str.get(live, id))))},
         J.KV{"working", J.Json.str(Bool.pick(String, String.is_empty(U.Str.get(live, id)), M.Phase.label(ph), ""))},
         J.KV{"phase", J.Json.str(M.Phase.name(ph))},

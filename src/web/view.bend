@@ -629,8 +629,20 @@ def View.tdlines(rs: List<&2, TD.TRow>) -> List<&2, D.Node>:
       D.Dom.span("todo " ++ TD.TRow.status(r), TD.TRow.text(r)) <> View.tdlines(rest)
 
 # the agent's todo list above the queue (U.Todos.shown)
-def View.todos(+ts: List<&2, TD.Todo>) -> D.Node:
-  D.El{"div", "", [D.At{"class", "todos"}], Bool.pick(List<&2, D.Node>, List.is_empty(&2, TD.Todo, ts), Nil{}, D.Dom.span("head", TD.Todo.head(ts)) <> View.tdlines(TD.Todo.rows(ts)))}
+# the todo card (client.bend's Todos): its head opens or shuts it, and a
+# long list ends in a line that shows every step or the fitted few again
+def View.todo.more(+text: String, +ask: String) -> List<&2, D.Node>:
+  Bool.pick(List<&2, D.Node>, String.is_empty(text), Nil{}, [D.Dom.button("more", "fold", ask, text, text)])
+
+def View.todos.k(+open: Bool, +all: Bool, +th: String, +ts: List<&2, TD.Todo>, +info: Map<&2, String>) -> List<&2, D.Node>:
+  WI.WIcon.after("head", "fold", U.Todos.toggle(open, th), Bool.pick(String, open, "Hide the steps", "Show the steps"), TD.Todo.head(ts),
+    Bool.pick(String, open, "chevron-down", "chevron-right"), 14)
+    <> List.append(&2, D.Node, View.tdlines(U.Todos.rows(info, th, U.Todos.cap.all(), ts)),
+      Bool.pick(List<&2, D.Node>, open, View.todo.more(U.Todos.more(all, ts), U.Todos.more.ask(all, th)), Nil{}))
+
+def View.todos(+info: Map<&2, String>, +th: String, +ts: List<&2, TD.Todo>) -> D.Node:
+  D.El{"div", "", [D.At{"class", Bool.pick(String, U.Todos.all(info, th), "todos all", "todos")}], Bool.pick(List<&2, D.Node>, List.is_empty(&2, TD.Todo, ts), Nil{},
+    View.todos.k(U.Todos.open(info, th), U.Todos.all(info, th), th, ts, info))}
 
 # what waits for a later turn (stored on the server), next first, each
 # with its buttons (U.Qu.buttons)
@@ -1250,6 +1262,31 @@ def View.top(hd: List<&2, D.Node>, t: M.Thread, +st: M.State, +panel: Bool, snoo
     case h <> r:
       h <> r
 
+# The two parts of a thread's page that follow its draft: the composer and
+# the asks (an answer with the draft). The page draws them with these, and
+# host.js redraws only them for a keystroke (app.bend's composer and asks):
+# rebuilding a long thread's page for every key took 280 ms a key.
+def View.composer.t(+st: M.State, +sel: String, +drafts: Map<&2, String>, +op: Map<&2, Bool>, +nf: Map<&2, String>, +turn: M.TurnState, +pr: String, +mo: String,
+    +atts: List<&2, String>, +up: String, vo: List<&2, D.Node>, +mic: String) -> D.Node:
+  +stop = U.Follow.stop(View.running(turn), U.Str.get(drafts, sel), atts)
+  View.composer(U.Str.get(drafts, sel), U.Follow.button(st, sel, View.running(turn), stop, U.Str.get(drafts, sel)), U.Follow.act(stop), U.Models.label(pr, mo), U.Usage.tail(st, sel), U.Flag.get(op, "models"), U.Models.menu(U.Str.get(nf, "models"), pr), mo, U.Str.get(nf, "models"), pr,
+    U.Chip.all(U.Str.get(nf, "models"), pr, mo), U.Effort.of(st, sel), U.Skills.of(sel, drafts, nf), atts, up, vo, mic)
+
+def View.asks.box(+st: M.State, +id: String, +draft: String) -> D.Node:
+  D.El{"div", "asks", [D.At{"class", "asks"}, D.At{"id", "asks"}], View.asks(U.Asks.open(st, id), draft)}
+
+# the same two from the Ui alone (app.bend's composer and asks)
+def View.composer.k(u: U.Ui, t: M.Thread, +atts: List<&2, String>, +up: String, vo: List<&2, D.Node>, +mic: String) -> D.Node:
+  match u t:
+    case U.Ui{+st, +sel, +drafts, _, +op, _, _, _, _, _, _, _, _, _, +nf, _, _} M.Thread{_, _, _, _, _, +turn, _, _, _, _, _, _, _, _, _, +pr, +mo, _, _, _, _}:
+      View.composer.t(st, sel, drafts, op, nf, turn, pr, mo, atts, up, vo, mic)
+
+def View.composer.u(+u: U.Ui) -> D.Node:
+  View.composer.k(u, U.Ui.thread(U.Ui.state(u), U.Ui.sel(u)), U.Ui.atts(u, U.Ui.sel(u)), U.Ui.uploading(u, U.Ui.sel(u)), D.Dom.cat(View.btw(u), View.voice(u, U.Ui.sel(u))), View.mic.of(u, U.Ui.sel(u)))
+
+def View.asks.u(+u: U.Ui) -> D.Node:
+  View.asks.box(U.Ui.state(u), U.Ui.sel(u), U.Ui.draft_text(u))
+
 def View.thread.p(u: U.Ui, t: M.Thread, pend: List<&2, String>, +atts: List<&2, String>, +up: String, +term: Bool, hd: List<&2, D.Node>, vo: List<&2, D.Node>, +mic: String) -> D.Node:
   match u t:
     case U.Ui{+st, +sel, +drafts, +live, +op, _, +now, _, panel, _, _, _, _, _, +nf, _, +tr} M.Thread{+id, p, ti, c, a, +turn, pe, ar, o, sa, ua, pi, en, br, wt, +pr, +mo, rm, im, se, de}:
@@ -1261,11 +1298,10 @@ def View.thread.p(u: U.Ui, t: M.Thread, pend: List<&2, String>, +atts: List<&2, 
           D.Dom.cat(View.parent(st, U.Tasks.parent(st, id)), D.Dom.cat([D.El{"div", "work", [D.At{"class", "work"}], D.Dom.cat(View.subs(nf, id, SB.Subs.rows(st, nf, id)), View.pins(U.Ec.pins(U.Ec.make(tr, st, id, now), st, id), U.Ec.make(tr, st, id, now)))}], D.Dom.cat(Nil{},
           D.Dom.cat(View.paged(drafts, M.State.mine(st, id), st, id, nf, View.running(turn), U.Ec.make(tr, st, id, now)), D.Dom.cat(View.sending(pend),
             View.live.k(String.is_empty(U.Str.get(live, id)), U.Side.phase(st, U.Ui.thread(st, id)), U.Str.get(live, id)))))))},
-        D.El{"div", "asks", [D.At{"class", "asks"}], View.asks(U.Asks.open(st, id), U.Str.get(drafts, sel))},
-        View.todos(U.Todos.shown(st, id, View.running(turn))),
+        View.asks.box(st, id, U.Str.get(drafts, sel)),
+        View.todos(nf, id, U.Todos.shown(st, id, View.running(turn))),
         View.queued(M.Queue.items(st, id), View.running(turn)),
-        View.composer(U.Str.get(drafts, sel), U.Follow.button(st, sel, View.running(turn), stop, U.Str.get(drafts, sel)), U.Follow.act(stop), U.Models.label(pr, mo), U.Usage.tail(st, sel), U.Flag.get(op, "models"), U.Models.menu(U.Str.get(nf, "models"), pr), mo, U.Str.get(nf, "models"), pr,
-          U.Chip.all(U.Str.get(nf, "models"), pr, mo), U.Effort.of(st, sel), U.Skills.of(sel, drafts, nf), atts, up, vo, mic)]),
+        View.composer.t(st, sel, drafts, op, nf, turn, pr, mo, atts, up, vo, mic)]),
         D.Dom.when(term, View.term(U.Term.get(tr, id))))}
 
 def View.thread.h(+u: U.Ui, t: M.Thread, hd: List<&2, D.Node>) -> D.Node:
