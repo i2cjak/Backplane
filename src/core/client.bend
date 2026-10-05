@@ -6932,13 +6932,19 @@ def Emb.views.k(is_t: Bool, +s: M.State, +e: M.Entry, +last: Nat, +now: Nat, res
     case False{}:
       rest
 
-# what the thread's terminals look like now (key, live, pinned, size)
-def Emb.views.go(es: List<&2, M.Entry>, +s: M.State, +last: Nat, +now: Nat) -> List<&2, EM.EV>:
+# what the thread's terminals look like now (key, live, pinned, size): a
+# tail call onto a reversed accumulator, as core/emb.bend's walks (built
+# around the recursive call, a thread of thousands of entries overflowed
+# the web's and phones' stack on every action, and it could not be opened)
+def Emb.views.acc(es: List<&2, M.Entry>, +s: M.State, +last: Nat, +now: Nat, acc: List<&2, EM.EV>) -> List<&2, EM.EV>:
   match es:
     case Nil{}:
-      Nil{}
+      acc
     case +e <> t:
-      Emb.views.k(EM.Emb.is(e), s, e, last, now, Emb.views.go(t, s, last, now))
+      Emb.views.acc(t, s, last, now, Emb.views.k(EM.Emb.is(e), s, e, last, now, acc))
+
+def Emb.views.go(es: List<&2, M.Entry>, +s: M.State, +last: Nat, +now: Nat) -> List<&2, EM.EV>:
+  List.reverse(&2, EM.EV, Emb.views.acc(es, s, last, now, Nil{}))
 
 def Emb.views(+u: Ui, +th: String) -> List<&2, EM.EV>:
   Emb.views.go(M.State.mine(Ui.state(u), th), Ui.state(u), EM.Emb.last_user(M.State.mine(Ui.state(u), th), 0n), Side.now(u))
