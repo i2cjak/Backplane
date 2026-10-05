@@ -696,6 +696,8 @@ struct ThreadScreen: View {
     @State private var shown: Shown?
     // the entry that was first when earlier ones were asked for
     @State private var keepAt: String?
+    // where the earlier mark is (its top in the timeline)
+    @State private var markY: CGFloat = -10000
     // the entry a jump showed, tinted for a moment
     @State private var lit: String?
     // the file menu this dialog let go of
@@ -718,6 +720,7 @@ struct ThreadScreen: View {
                     if let n = thread.earlier, n > 0 {
                         Color.clear.frame(height: 1).background(GeometryReader { g in
                             Color.clear.onChange(of: g.frame(in: .named("timeline")).minY) { _, y in
+                                markY = y
                                 if y > -400 && keepAt == nil {
                                     keepAt = thread.entries.first?.id
                                     model.act("earlier", "")
@@ -769,6 +772,13 @@ struct ThreadScreen: View {
             .onChange(of: thread.entries.last?.id) { proxy.scrollTo("end", anchor: .bottom) }
             .onChange(of: thread.entries.first?.id) {
                 if let k = keepAt { proxy.scrollTo(k, anchor: .top); keepAt = nil }
+            }
+            // a page of entries the timeline does not draw (todo steps, a
+            // fold's calls) moves nothing: still at the top, the next is asked for
+            .onChange(of: thread.earlier) {
+                guard let k = keepAt, k == thread.entries.first?.id else { return }
+                keepAt = nil
+                if (thread.earlier ?? 0) > 0 && markY > -400 { keepAt = k; model.act("earlier", "") }
             }
             // the design history's way back: the entry scrolled to and tinted,
             // the tint fading out (after the rows the jump opened are laid out)

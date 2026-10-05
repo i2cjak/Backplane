@@ -218,6 +218,10 @@ function render() {
   Solid.mount(document.getElementById("solid"));
   Plot2d.mount(document.getElementById("plot"));
   earlierAsked = false;
+  // a page of entries the timeline does not draw (todo steps, a fold's
+  // calls) moves nothing and, at the very top, no scroll comes to ask for
+  // the next: still near the top after a render, it is asked for
+  if (tl2 && tl2.querySelector("[data-earlier]") && tl2.scrollTop <= tl2.clientHeight * 2) requestAnimationFrame(() => earlierCheck(document.getElementById("timeline")));
   if (focus) {
     document.getElementById(focus)?.focus();
     focus = null;
@@ -770,14 +774,14 @@ document.addEventListener("click", (e) => {
 });
 // the timeline scrolled within two screens of its top while earlier
 // entries are left out (view.bend's mark): ask for them, once a render
-document.addEventListener("scroll", (e) => {
-  const tl = e.target;
+function earlierCheck(tl) {
   if (earlierAsked || !(tl instanceof Element) || tl.id !== "timeline") return;
   const mark = tl.querySelector("[data-earlier]");
   if (!mark || tl.scrollTop > tl.clientHeight * 2) return;
   earlierAsked = true;
   dispatch("earlier", mark.getAttribute("data-earlier") ?? "");
-}, true);
+}
+document.addEventListener("scroll", (e) => earlierCheck(e.target), true);
 
 document.addEventListener("click", (e) => {
   if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey) return;

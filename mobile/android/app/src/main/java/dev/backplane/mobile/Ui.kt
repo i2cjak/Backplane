@@ -90,6 +90,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
@@ -132,6 +133,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 
 @Composable
 fun App(m: AppModel) {
@@ -973,10 +975,14 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
             t.parent?.let { p -> item(key = "parent") { EntryRow(m, p) { shown = it } } }
             // scrolled up to the top while earlier entries are left out: they
             // are shown, no button (the list keeps its place by entry key)
-            if (t.earlier > 0) item(key = "earlier:" + (t.entries.firstOrNull()?.id ?: "")) {
-                // only when the person scrolled here (not as the list opens)
+            // (keyed by how many are left out too: a page of entries the list
+            // does not draw, todo steps or a fold's calls, moves nothing, and
+            // the next is asked for when the person scrolls on)
+            if (t.earlier > 0) item(key = "earlier:" + (t.entries.firstOrNull()?.id ?: "") + ":" + t.earlier) {
+                // only when the person scrolls here (not as the list opens)
                 LaunchedEffect(Unit) {
-                    if (list.isScrollInProgress) { keepAt = t.entries.firstOrNull()?.id; m.act("earlier", "") }
+                    snapshotFlow { list.isScrollInProgress }.first { it }
+                    keepAt = t.entries.firstOrNull()?.id; m.act("earlier", "")
                 }
                 Spacer(Modifier.size(1.dp))
             }
