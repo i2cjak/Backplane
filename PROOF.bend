@@ -7407,6 +7407,12 @@ def Laws.onboard_waits(done):
 def Laws.onboard_live_log_shows():
   {==}
 
+def Laws.onboard_join_waits():
+  {==}
+
+def Laws.onboard_join_shows():
+  {==}
+
 def Laws.onboard_cache_unsynced():
   {==}
 

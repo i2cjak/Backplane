@@ -7012,8 +7012,10 @@ def Emb.act(+u: Ui, +action: String, +value: String) -> Act:
 def Tour.done(+st: M.State) -> Bool:
   String.eq(M.Setting.get(st, "onboard.done", ""), "1")
 
+# ... and, on a long log sent in chunks, until its last chunk has come
+# ("@boot" clear): the first said nothing of the "onboard.done" at its end
 def Tour.ready(+u: Ui) -> Bool:
-  Bool.and(Nat.is_gt(Ui.seq(u), 0n), String.eq(Ui.scratch(u, "@sync"), "1"))
+  Bool.and(Bool.and(Nat.is_gt(Ui.seq(u), 0n), String.eq(Ui.scratch(u, "@sync"), "1")), String.is_empty(Ui.scratch(u, "@boot")))
 
 def Tour.at(+u: Ui) -> Nat:
   OB.Ob.at(Tour.ready(u), Tour.done(Ui.state(u)), Ui.scratch(u, "@tour"))
