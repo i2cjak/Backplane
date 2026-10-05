@@ -33,6 +33,7 @@ import ./src/gfx/font.bend as F
 import ./src/app/layout.bend as L
 import ./src/core/eq.bend as Q
 import ./src/core/gh.bend as GH
+import ./src/core/kicadcli.bend as KCL
 import ./src/core/fold.bend as FO
 import ./src/core/subs.bend as SB
 import ./src/core/plot.bend as PL
@@ -7540,4 +7541,31 @@ def Laws.mate_loopback_lower_asks():
   {==}
 
 def Laws.mate_loopback_higher_waits():
+  {==}
+
+def Laws.kicad_cli_asset_linux_x64():
+  {==}
+
+def Laws.kicad_cli_asset_mac():
+  {==}
+
+def Laws.kicad_cli_no_fork_intel_mac():
+  {==}
+
+def Laws.kicad_cli_no_fork_arm_linux():
+  {==}
+
+def Laws.kicad_cli_dir_linux(data, ver):
+  {==}
+
+def Laws.kicad_cli_dir_mac():
+  {==}
+
+def Laws.kicad_cli_mac_order():
+  {==}
+
+def Laws.kicad_cli_intel_mac_app():
+  {==}
+
+def Laws.kicad_cli_linux_order():
   {==}

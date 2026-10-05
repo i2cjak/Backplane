@@ -3,6 +3,7 @@ import ./host.bend as H
 import ./proc.bend as P
 import ../core/json.bend as J
 import ../core/utf8.bend as U
+import ../core/kicadcli.bend as KC
 
 # KiCad on this machine: which kicad-cli to use (the Backplane KiCad fork,
 # with IPC, when present), a project's canonical files, and the KiStack
@@ -153,15 +154,29 @@ def Rt.first.k(+cli: String) -> IO(Rt):
 def Rt.first(+cs: List<&2, String>) -> IO(Rt):
   IO.bind(List<&2, Bool>, Rt, Io.flags(cs), fs => Rt.first.k(Rt.found(cs, fs)))
 
+def KiCad.plat.k(r: P.Ran) -> String:
+  match r:
+    case P.Ran{_, out}:
+      String.trim(out)
+
+# this machine (`uname -sm`)
+def KiCad.plat() -> IO(String):
+  IO.bind(P.Ran, String, P.Proc.run("uname", ["-sm"], "/"), r => IO.pure(String, KiCad.plat.k(r)))
+
 def Rt.resolve.k(none: Bool, +explicit: String, +exe: String, +data: String) -> IO(Rt):
   match none:
     case True{}:
-      Rt.first([exe ++ "/kicad/bin/kicad-cli", data ++ "/kicad/" ++ KiCad.version() ++ "/bin/kicad-cli", "/usr/bin/kicad-cli", "/usr/local/bin/kicad-cli"])
+      do IO<Rt>:
+        plat : String <- KiCad.plat()
+        h : Result<&1, &1, U32 & String, String> <- IO.get_env("HOME")
+        +user : String = Result.default(&1, &1, U32 & String, String, h, "")
+        Rt.first(KC.Cli.candidates(plat, exe, data, KiCad.version(), user))
     case False{}:
       Rt.read(explicit)
 
-# an explicit BACKPLANE_KICAD_CLI, then a fork beside this install or in our
-# data directory, then the system's kicad-cli
+# an explicit BACKPLANE_KICAD_CLI, then where this machine keeps KiCad
+# (KC.Cli.candidates: the fork beside this install or in our data directory
+# on Linux x86-64, KiCad.app on a Mac, the system's), then PATH's
 def Rt.resolve(+explicit: String, +exe: String, +data: String) -> IO(Rt):
   Rt.resolve.k(String.is_empty(explicit), explicit, exe, data)
 
@@ -330,18 +345,33 @@ def KiCad.install.k(r: P.Ran) -> String:
 # The fork, installed on request
 # ------------------------------
 
-# download Backplane KiCad for linux-x86_64, check it against the release's
-# SHA256SUMS, unpack into <data>/kicad/<version>; answers "" or an error
-def KiCad.install(+data: String) -> IO(String):
+# download this machine's build of Backplane KiCad, check it against the
+# release's SHA256SUMS, unpack into its folder (KC.Cli.dir, emptied first);
+# answers "" or an error
+def KiCad.install.go(+data: String, +asset: String) -> IO(String):
   do IO<String>:
-    +dir : String = data ++ "/kicad/" ++ KiCad.version()
-    +name : String = "backplane-kicad-linux-x86_64-" ++ KiCad.version() ++ ".tar.gz"
+    +dir : String = KC.Cli.dir(data, KiCad.version(), asset)
+    +name : String = KC.Cli.package(asset, KiCad.version())
     +base : String = "https://github.com/i2cjak/Backplane_KiCad/releases/download/" ++ KiCad.release() ++ "/"
     mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(dir)
     r : P.Ran <- P.Proc.run("sh", ["-c",
-      "set -e; cd \"$1\"; curl -fsSL -o pkg.tgz \"$2$3\"; curl -fsSL -o SUMS \"$2SHA256SUMS\"; want=$(awk -v n=\"$3\" '$2 == n || $2 == \"./\" n { print $1 }' SUMS); got=$(sha256sum pkg.tgz | cut -d' ' -f1); [ \"$want\" = \"$got\" ] || { echo checksum mismatch; exit 1; }; tar -xzf pkg.tgz --strip-components=1; rm pkg.tgz SUMS",
+      "set -e; rm -rf \"$1\"; mkdir -p \"$1\"; cd \"$1\"; curl -fsSL -o pkg.tgz \"$2$3\"; curl -fsSL -o SUMS \"$2SHA256SUMS\"; want=$(awk -v n=\"$3\" '$2 == n || $2 == \"./\" n { print $1 }' SUMS); got=$({ command -v sha256sum >/dev/null && sha256sum pkg.tgz || shasum -a 256 pkg.tgz; } | cut -d' ' -f1); [ \"$want\" = \"$got\" ] || { echo checksum mismatch; exit 1; }; tar -xzf pkg.tgz --strip-components=1; rm pkg.tgz SUMS",
       "sh", dir, base, name], "/")
     return KiCad.install.k(r)
+
+def KiCad.install.on(runs: Bool, +data: String, +asset: String) -> IO(String):
+  match runs:
+    case True{}:
+      KiCad.install.go(data, asset)
+    case False{}:
+      IO.pure(String, KC.Cli.no_fork())
+
+def KiCad.install.at(+plat: String, +data: String) -> IO(String):
+  KiCad.install.on(KC.Cli.fork_runs(plat), data, KC.Cli.asset(plat))
+
+# this machine's build of the fork (KC.Cli.asset); where there is none, why not
+def KiCad.install(+data: String) -> IO(String):
+  IO.bind(String, String, KiCad.plat(), plat => KiCad.install.at(plat, data))
 
 # Opening a project
 # -----------------
@@ -358,7 +388,7 @@ def KiCad.open.k(fork: Bool, +cli: String, +fs: Files) -> IO(String):
     case True{} Files{+pro, +pcb, +sch, _}:
       do IO<String>:
         r : P.Ran <- P.Proc.run("sh", ["-c",
-          "r=\"$1\"; if [ -n \"$2\" ]; then set -- kicad \"$2\"; elif [ -n \"$3\" ]; then set -- pcbnew \"$3\"; elif [ -n \"$4\" ]; then set -- eeschema \"$4\"; else echo \"no KiCad project here\"; exit 1; fi; [ -x \"$r/bin/$1\" ] || { echo \"Backplane KiCad has no $1\"; exit 1; }; setsid -f \"$r/bin/$1\" \"$2\" </dev/null >/dev/null 2>&1",
+          "r=\"$1\"; if [ -n \"$2\" ]; then set -- kicad \"$2\"; elif [ -n \"$3\" ]; then set -- pcbnew \"$3\"; elif [ -n \"$4\" ]; then set -- eeschema \"$4\"; else echo \"no KiCad project here\"; exit 1; fi; [ -x \"$r/bin/$1\" ] || { echo \"Backplane KiCad has no $1\"; exit 1; }; if command -v setsid >/dev/null 2>&1; then setsid -f \"$r/bin/$1\" \"$2\" </dev/null >/dev/null 2>&1; else nohup \"$r/bin/$1\" \"$2\" </dev/null >/dev/null 2>&1 & fi",
           "sh", Rt.root(cli), pro, pcb, sch], "/")
         return KiCad.open.said(r)
     case False{} _:
