@@ -20,19 +20,66 @@ def Img.ends(xs: List<&2, String>, +p: String) -> Bool:
 def Img.is_image(+p: String) -> Bool:
   Bool.and(Bool.or(String.starts_with(p, "/"), String.starts_with(p, "~/")), Img.ends(Img.exts(), String.to_lower(p)))
 
-def Img.split1(xs: List<&2, String>, +c: Char) -> List<&2, String>:
+# a message's words, cut at spaces, brackets, quotes and punctuation, in
+# one tail-recursive walk: String.split recurses once per character, and a
+# long reply naming an image overflowed the phones' JS stack, which lost
+# the hub's whole frame (a message sent after it never showed). A word
+# longer than Img.long() is no path: it is dropped, so nothing per word
+# walks more than that.
+def Img.long() -> Nat:
+  1024n
+
+def Img.seps() -> List<&2, U32>:
+  [32, 10, 9, 13, 40, 41, 91, 93, 60, 62, 96, 34, 39, 44, 59, 124]
+
+def Img.sep.in(xs: List<&2, U32>, +c: U32) -> Bool:
   match xs:
     case Nil{}:
-      Nil{}
-    case x <> t:
-      List.append(&2, String, String.split(x, c), Img.split1(t, c))
+      False{}
+    case +x <> t:
+      Bool.or(U32.is_eq(x, c), Img.sep.in(t, c))
 
-def Img.split(cs: List<&2, Char>, xs: List<&2, String>) -> List<&2, String>:
-  match cs:
-    case Nil{}:
-      xs
-    case +c <> t:
-      Img.split(t, Img.split1(xs, c))
+type IW is Data:
+  IW{n: Nat, cur: String, acc: List<&2, String>}
+
+def Img.push.k(keep: Bool, cur: String, acc: List<&2, String>) -> List<&2, String>:
+  match keep:
+    case True{}:
+      String.reverse(cur) <> acc
+    case False{}:
+      acc
+
+def Img.push(+n: Nat, cur: String, acc: List<&2, String>) -> List<&2, String>:
+  Img.push.k(Bool.and(Nat.is_gt(n, 0n), Nat.is_le(n, Img.long())), cur, acc)
+
+def Img.add(long: Bool, +c: U32, cur: String) -> String:
+  match long:
+    case True{}:
+      cur
+    case False{}:
+      SCon{Chr{c}, cur}
+
+def Img.step(sep: Bool, +c: U32, st: IW) -> IW:
+  match sep st:
+    case True{} IW{+n, cur, acc}:
+      IW{0n, SNil{}, Img.push(n, cur, acc)}
+    case False{} IW{+n, cur, acc}:
+      IW{Nat.add(n, 1n), Img.add(Nat.is_ge(n, Img.long()), c, cur), acc}
+
+def Img.words.fin(st: IW) -> List<&2, String>:
+  match st:
+    case IW{+n, cur, acc}:
+      List.reverse(&2, String, Img.push(n, cur, acc))
+
+def Img.words.go(s: String, st: IW) -> List<&2, String>:
+  match s:
+    case SNil{}:
+      Img.words.fin(st)
+    case SCon{Chr{+c}, t}:
+      Img.words.go(t, Img.step(Img.sep.in(Img.seps(), c), c, st))
+
+def Img.words(s: String) -> List<&2, String>:
+  Img.words.go(s, IW{0n, SNil{}, Nil{}})
 
 # a path ends a sentence or a clause sometimes: drop what follows it
 def Img.trim(+p: String) -> String:
@@ -98,7 +145,7 @@ def Img.may(+s: String) -> Bool:
 
 # the images a message shows, in order, each once
 def Img.paths(+text: String) -> List<&2, String>:
-  Img.pick(Img.split([' ', '\n', '\t', '(', ')', '[', ']', '<', '>', '`', '"', '\'', ',', ';', '|'], [text]), Nil{})
+  Img.pick(Img.words(text), Nil{})
 
 def Img.hex(+n: U32) -> Char:
   Chr{U32.add(n, Bool.pick(U32, U32.is_lt(n, 10), 48, 55))}

@@ -23,5 +23,11 @@ def main() -> IO(Unit):
     # a pasted log hundreds of thousands of characters long: one walk that
     # never nests (the phones' V8 died on a 14k-character message)
     C.Check.str("may: a long text", Bool.show(Bool.and(I.Img.may(Long.go(18n, "word. ") ++ "/tmp/z.png"), Bool.not(I.Img.may(Long.go(18n, "word. "))))), "True")
+    # a long reply naming an image: the words found in one walk that never
+    # nests (String.split per character overflowed the phones' stack and
+    # lost the hub's frame, and with it the next message sent)
+    C.Check.str("paths: a long text", String.join(I.Img.paths(Long.go(16n, "see this. ") ++ "/tmp/z.png and (~/q.gif)"), "|"), "/tmp/z.png|~/q.gif")
+    C.Check.str("paths: a word too long to be a path", String.join(I.Img.paths("/" ++ Long.go(11n, "a") ++ ".png /tmp/ok.png"), "|"), "/tmp/ok.png")
+    C.Check.str("paths: separators", String.join(I.Img.paths("a\r/tmp/r.png|/tmp/p.png;'/tmp/q.png'"), "|"), "/tmp/r.png|/tmp/p.png|/tmp/q.png")
     C.Check.str("url", I.Img.url("/tmp/my board (1).png"), "/img?path=/tmp/my%20board%20%281%29.png")
     C.Check.str("url round trip", AT.Att.from_uri("file://" ++ String.drop(I.Img.url("/tmp/résumé 2.png"), 10n)), "/tmp/résumé 2.png")

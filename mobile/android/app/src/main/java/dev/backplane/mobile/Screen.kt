@@ -351,6 +351,8 @@ data class Screen(
     val older: Older? = null, val settled: Older? = null, val rowMenu: RowMenu? = null,
     val renaming: Renaming? = null,
     val tour: Tour? = null,
+    // a thread this phone asked for is still to come (its page opens at once)
+    val making: Boolean = false,
 )
 
 data class Cmd(
@@ -604,6 +606,7 @@ fun parseScreen(o: JSONObject) = Screen(
     o.optJSONObject("search")?.let { Search(it.optBoolean("open"), it.optString("query"), it.optString("hint")) },
     o.optString("theme"),
     view = o.optString("view").ifEmpty { "projects" },
+    making = o.optBoolean("making"),
     active = o.optJSONArray("active").map(::row),
     older = o.optJSONObject("older")?.let { Older(it.optInt("count"), it.optBoolean("open")) },
     settled = o.optJSONObject("settled")?.let { Older(it.optInt("count"), it.optBoolean("open")) },
