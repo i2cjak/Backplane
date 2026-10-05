@@ -386,6 +386,45 @@ function json_cbor_frame(text, keys, words) {
   return xs;
 }
 
+// Json.items_frames and Sock.send_items: a join frame's lines as
+// outbox.bend's Items.texts.s splits them, each frame's CBOR (see host.c)
+function ji_frames(hd, plain, split, lines, tl, ends, most, bytes, keys, words) {
+  const ls = [];
+  for (let x = lines; x.$ === "Con"; x = x.tail) ls.push(x.head);
+  const cps = ls.map((l) => [...l].length);
+  const count = (i) => {
+    if (i >= ls.length) return 0;
+    let r = Math.max(0, bytes - cps[i]), c = 1;
+    for (let j = i + 1, left = Math.max(0, most - 1); j < ls.length && left > 0; j += 1, left -= 1) {
+      if (cps[j] > r) break;
+      r -= cps[j]; c += 1;
+    }
+    return c;
+  };
+  let c = count(0);
+  const out = jc_frame(hd + (c >= ls.length ? plain : split) + ls.slice(0, c).join(",") + tl, keys, words);
+  for (let i = c; i < ls.length; i += c) {
+    c = count(i);
+    const last = ends !== 0 && i + c >= ls.length;
+    for (const b of jc_frame(`{"t":"changes","boot":${last ? "false" : "true"},"items":[` + ls.slice(i, i + c).join(",") + "]}", keys, words)) out.push(b);
+  }
+  return out;
+}
+
+function json_items_frames(hd, plain, split, lines, tl, ends, most, bytes, keys, words) {
+  let xs = { $: "Nil" };
+  const b = ji_frames(hd, plain, split, lines, tl, ends, most, bytes, keys, words);
+  for (let k = b.length - 1; k >= 0; k -= 1) xs = { $: "Con", head: b[k], tail: xs };
+  return xs;
+}
+
+function sock_send_items(socket, hd, plain, split, lines, tl, ends, most, bytes, keys, words, ms, k) {
+  let xs = { $: "Nil" };
+  const b = ji_frames(hd, plain, split, lines, tl, ends, most, bytes, keys, words);
+  for (let j = b.length - 1; j >= 0; j -= 1) xs = { $: "Con", head: b[j], tail: xs };
+  return sock_send_until(socket, xs, ms, k);
+}
+
 function sock_send_cbor(socket, text, keys, words, ms, k) {
   let xs = { $: "Nil" };
   const b = jc_frame(text, keys, words);

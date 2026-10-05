@@ -907,7 +907,7 @@ static void __attribute__((constructor)) sys_exec_use(void) {
 // are the same (test/native/cbor_frame_test.bend). Bend's parser is lenient
 // about malformed text (it skips commas and colons) and this one is not.
 
-#if defined(CID_SOCK_SEND_CBOR) || defined(CID_JSON_CBOR_FRAME)
+#if defined(CID_SOCK_SEND_CBOR) || defined(CID_JSON_CBOR_FRAME) || defined(CID_SOCK_SEND_ITEMS) || defined(CID_JSON_ITEMS_FRAMES)
 
 typedef struct { uint8_t* p; size_t n, cap; int bad; } JcBuf;
 typedef struct { const char* p[128]; size_t n[128]; int len; } JcDict;
@@ -1163,6 +1163,101 @@ static int jc_frame(const char* text, size_t n, const char* ks, size_t kn, const
 
 #endif
 
+// A join frame's lines (core/outbox.bend's Items.texts.s) as the binary
+// WebSocket frames of their CBOR, back to back: the first frame is hd, then
+// plain (or split when the lines take more frames), the lines joined by
+// commas, then tl; each later one a "changes" frame with "boot": true, the
+// very last "boot": false when ends. A frame takes at least one line, then
+// lines while they fit in `bytes` characters, `most` at most (Join.count.at:
+// a line is counted in code points, as String.length counts it). The lines
+// are read once here: in Bend each was measured three times and joined, a
+// character at a time, for every frame.
+
+typedef struct { char* p; u64 n; u64 cps; } JiLine;
+
+static u64 ji_cps(const char* p, u64 n) {
+  u64 c = 0;
+  for (u64 i = 0; i < n; i += 1) c += ((uint8_t)p[i] & 0xC0) != 0x80;
+  return c;
+}
+
+static u64 ji_count(JiLine* ls, u64 i, u64 n, u64 most, u64 bytes) {
+  if (i >= n) return 0;
+  u64 r = ls[i].cps > bytes ? 0 : bytes - ls[i].cps, c = 1;
+  u64 left = most > 0 ? most - 1 : 0;
+  for (u64 j = i + 1; j < n && left > 0; j += 1, left -= 1) {
+    if (ls[j].cps > r) break;
+    r -= ls[j].cps;
+    c += 1;
+  }
+  return c;
+}
+
+static void ji_join(JcBuf* t, JiLine* ls, u64 i, u64 c) {
+  for (u64 j = i; j < i + c; j += 1) {
+    if (j > i) jc_byte(t, ',');
+    jc_put(t, ls[j].p, ls[j].n);
+  }
+}
+
+// one frame's text out as its WebSocket frame, appended to out
+static int ji_put(JcBuf* t, const char* ks, u64 kn, const char* ws, u64 wn, JcBuf* out) {
+  if (t->bad) return 0;
+  JcBuf f = {0};
+  int ok = jc_frame((const char*)t->p, t->n, ks, kn, ws, wn, &f, 0);
+  if (ok) jc_put(out, f.p, f.n);
+  free(f.p);
+  t->n = 0;
+  return ok && !out->bad;
+}
+
+static int ji_frames(const char* hd, u64 hn, const char* pl, u64 pn, const char* sp, u64 sn, JiLine* ls, u64 n,
+                     const char* tl, u64 tn, int ends, u64 most, u64 bytes, const char* ks, u64 kn, const char* ws, u64 wn, JcBuf* out) {
+  JcBuf t = {0};
+  u64 c = ji_count(ls, 0, n, most, bytes);
+  jc_put(&t, hd, hn);
+  if (c >= n) jc_put(&t, pl, pn); else jc_put(&t, sp, sn);
+  ji_join(&t, ls, 0, c);
+  jc_put(&t, tl, tn);
+  int ok = ji_put(&t, ks, kn, ws, wn, out);
+  for (u64 i = c; ok && i < n; i += c) {
+    c = ji_count(ls, i, n, most, bytes);
+    const char* h = ends && i + c >= n ? "{\"t\":\"changes\",\"boot\":false,\"items\":[" : "{\"t\":\"changes\",\"boot\":true,\"items\":[";
+    jc_put(&t, h, strlen(h));
+    ji_join(&t, ls, i, c);
+    jc_put(&t, "]}", 2);
+    ok = ji_put(&t, ks, kn, ws, wn, out);
+  }
+  free(t.p);
+  return ok;
+}
+
+// f[at..]: hd, plain, split, lines, tl, ends, most, bytes, keys, words
+static int ji_run(Env e, Term* f, JcBuf* out) {
+  u64 hn, pn, sn, tn, kn, wn, cap = 64, n = 0;
+  char* hd = io_cstr(e, f[0], &hn);
+  char* pl = io_cstr(e, f[1], &pn);
+  char* sp = io_cstr(e, f[2], &sn);
+  JiLine* ls = (JiLine*)io_mem(malloc(cap * sizeof(JiLine)));
+  Term xs = f[3];
+  while (term_aux(xs) == CID_CON) {
+    Term fb[2];
+    spare_free(e, cls_fit(2), ctr_take(e, xs, 2, fb));
+    if (n >= cap) { cap *= 2; ls = (JiLine*)io_mem(realloc(ls, cap * sizeof(JiLine))); }
+    ls[n].p = io_cstr(e, fb[0], &ls[n].n);
+    ls[n].cps = ji_cps(ls[n].p, ls[n].n);
+    n += 1;
+    xs = fb[1];
+  }
+  char* tl = io_cstr(e, f[4], &tn);
+  char* k = io_cstr(e, f[8], &kn);
+  char* ws = io_cstr(e, f[9], &wn);
+  int ok = ji_frames(hd, hn, pl, pn, sp, sn, ls, n, tl, tn, (u32)f[5] != 0, (u64)(u32)f[6], (u64)(u32)f[7], k, kn, ws, wn, out);
+  for (u64 i = 0; i < n; i += 1) free(ls[i].p);
+  free(ls); free(hd); free(pl); free(sp); free(tl); free(k); free(ws);
+  return ok;
+}
+
 #ifdef CID_JSON_CBOR_FRAME
 
 Term json_cbor_frame_run(Env e, Term* f, IoWork* w) {
@@ -1184,7 +1279,7 @@ static void __attribute__((constructor)) json_cbor_frame_use(void) {
 
 #endif
 
-#ifdef CID_SOCK_SEND_CBOR
+#if defined(CID_SOCK_SEND_CBOR) || defined(CID_SOCK_SEND_ITEMS)
 
 // as sock_send_until_more: data holds the deadline and span, then the frame
 static Term sock_send_cbor_more(Env e, IoWork* w) {
@@ -1210,6 +1305,10 @@ static Term sock_send_cbor_more(Env e, IoWork* w) {
   return io_tup(e, io_hand(w->hand), r);
 }
 
+#endif
+
+#ifdef CID_SOCK_SEND_CBOR
+
 Term sock_send_cbor_run(Env e, Term* f, IoWork* w) {
   u64 tn, kn, wn;
   char* t = io_cstr(e, f[1], &tn);
@@ -1234,6 +1333,50 @@ Term sock_send_cbor_run(Env e, Term* f, IoWork* w) {
 
 static void __attribute__((constructor)) sock_send_cbor_use(void) {
   io_eff(CID_SOCK_SEND_CBOR, sock_send_cbor_run, 0);
+}
+
+#endif
+
+#ifdef CID_JSON_ITEMS_FRAMES
+
+Term json_items_frames_run(Env e, Term* f, IoWork* w) {
+  JcBuf out = {0};
+  int ok = ji_run(e, f, &out);
+  Term r = ok ? host_bytes(e, out.p, out.n) : term_pak(CID_NIL, 0);
+  free(out.p);
+  return r;
+}
+
+static void __attribute__((constructor)) json_items_frames_use(void) {
+  io_eff(CID_JSON_ITEMS_FRAMES, json_items_frames_run, 0);
+}
+
+#endif
+
+#ifdef CID_SOCK_SEND_ITEMS
+
+// as sock_send_cbor: data holds the deadline and span, then the frames
+Term sock_send_items_run(Env e, Term* f, IoWork* w) {
+  u64 span = (u64)f[11] * 1000000ull;
+  u64 deadline = io_tick() + span;
+  size_t pre = sizeof deadline + sizeof span;
+  JcBuf out = {0};
+  jc_room(&out, pre);
+  out.n = pre;
+  int ok = !out.bad && ji_run(e, f + 1, &out);
+  w->hand = (intptr_t)io_hand_v(f[0]);
+  w->code = 0;
+  if (!ok) { free(out.p); return io_tup(e, io_hand(w->hand), io_fail(e, ENOMEM, NULL)); }
+  memcpy(out.p, &deadline, sizeof deadline);
+  memcpy(out.p + sizeof deadline, &span, sizeof span);
+  w->data = io_mem(out.p);
+  w->size = out.n;
+  w->made = pre;
+  return sock_send_cbor_more(e, w);
+}
+
+static void __attribute__((constructor)) sock_send_items_use(void) {
+  io_eff(CID_SOCK_SEND_ITEMS, sock_send_items_run, 0);
 }
 
 #endif

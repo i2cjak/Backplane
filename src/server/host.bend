@@ -47,6 +47,22 @@ def Json.cbor_frame(text: String, keys: String, words: String) -> IO(List<&2, U3
   import "./effects/host.c"
   import "./effects/host.js"
 
+# A join frame's lines (core/outbox.bend's Items.texts.s: hd, plain or
+# split, the lines, tl; then "changes" frames, the last one's "boot" false
+# when ends is 1; at most `most` lines and `bytes` characters a frame) as
+# the binary WebSocket frames of their CBOR, sent with a deadline as
+# send_cbor. The lines are measured, joined and encoded in C: Bend measured
+# each line three times and joined them a character at a time per frame.
+def Sock.send_items(sock: Socket, hd: String, plain: String, split: String, lines: List<&2, String>, tl: String, ends: U32, most: U32, bytes: U32, keys: String, words: String, ms: U32) ->
+  IO(Socket & Result<&1, &1, U32 & String, Unit>):
+  import "./effects/host.c"
+  import "./effects/host.js"
+
+# the frames send_items sends, as bytes (for tests)
+def Json.items_frames(hd: String, plain: String, split: String, lines: List<&2, String>, tl: String, ends: U32, most: U32, bytes: U32, keys: String, words: String) -> IO(List<&2, U32>):
+  import "./effects/host.c"
+  import "./effects/host.js"
+
 def Sock.send_text(sock: Socket, text: String) ->
   IO(Socket & Result<&1, &1, U32 & String, Unit>):
   import "./effects/host.c"
