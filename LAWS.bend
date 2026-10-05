@@ -5281,6 +5281,17 @@ law made_stale_quiet:
 law made_fork_selects_own:
   {U.Ui.sel(U.Ui.recv(U.Ui.recv(U.Act.ui(U.Ui.fork(U.Ui.init(0n))), U.Made.made("changes", "t9")), U.Made.demo("0", "t9"))) == "t9" : String}
 
+# New Thread is waited for at once (the phones open its page then), and
+# the hub's answer ends the wait whether it made the thread or failed
+law made_waiting_at_once:
+  {U.Made.waiting(U.Act.ui(U.Ui.new_thread(U.Ui.init(0n), "p1"))) == True{} : Bool}
+
+law made_waiting_ends_made:
+  {U.Made.waiting(U.Ui.recv(U.Act.ui(U.Ui.new_thread(U.Ui.init(0n), "p1")), U.Made.demo("0", "t9"))) == False{} : Bool}
+
+law made_waiting_ends_failed:
+  {U.Made.waiting(U.Ui.recv(U.Act.ui(U.Ui.new_thread(U.Ui.init(0n), "p1")), J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{"0"}}, J.KV{"ok", J.Flag{False{}}}]))) == False{} : Bool}
+
 # The sidebar's index (client.bend's Side.ix, gathered once a frame) gives
 # what walking the state gives: rows, phases, subagent counts, the active
 # view, and work for the settle tick; phones compare only the threads a

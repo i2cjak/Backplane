@@ -2654,6 +2654,12 @@ def Made.rid(u: Ui) -> Nat:
 def Made.want(+u: Ui) -> Ui:
   Ui.scratch_set(Ui.scratch_set(u, "@want.new", Nat.show(Made.rid(u))), "@want.new.at", Made.at(u))
 
+# a thread this client asked for is still to come (the phones show its
+# page at once, waiting, rather than leave the button to be tapped again;
+# the answer, made or failed, ends it: laws made_waiting_*)
+def Made.waiting(+u: Ui) -> Bool:
+  Bool.not(String.is_empty(Ui.scratch(u, "@want.new")))
+
 def Ui.new_thread(u: Ui, +pid: String) -> Act:
   Ui.rpc(Made.want(u), "thread.create", [J.KV{"project", J.Str{pid}}, J.KV{"title", J.Str{"New thread"}}])
 

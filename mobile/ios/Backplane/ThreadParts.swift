@@ -330,6 +330,28 @@ struct SubsView: View {
     }
 }
 
+// the subagents over the thread, from the top bar's button: the panel
+// opened (its rows folded away once all are done) and kept up to date
+struct SubsSheet: View {
+    let model: AppModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                if let u = model.screen?.thread?.subs { SubsView(model: model, subs: u).padding() }
+            }
+            .navigationTitle("Subagents")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+        .presentationDetents([.medium, .large])
+        .onAppear {
+            if let u = model.screen?.thread?.subs, u.open == false, let a = u.act, !a.isEmpty { model.act(a, u.value ?? "") }
+        }
+    }
+}
+
 // an approval, question or plan waiting on the user
 struct AskCard: View {
     let model: AppModel

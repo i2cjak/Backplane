@@ -655,6 +655,7 @@ struct ThreadDestination: View {
 
     // the row's title in the list, while nothing of the thread is known
     private var title: String {
+        if id == AppModel.making { return "New thread" }
         for p in model.screen?.projects ?? [] {
             for r in p.threads + p.snoozed + p.settled + (p.archived ?? []) where r.id == id { return r.title }
         }
@@ -699,6 +700,8 @@ struct ThreadScreen: View {
     @State private var lit: String?
     // the file menu this dialog let go of
     @State private var shutFile: RowMenu?
+    // the subagents sheet (the top bar's button) is up
+    @State private var showSubs = false
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -782,9 +785,6 @@ struct ThreadScreen: View {
         }
         .safeAreaInset(edge: .bottom) {
           VStack(spacing: 0) {
-            if let u = thread.subs {
-                SubsView(model: model, subs: u).padding(.horizontal).padding(.top, 8)
-            }
             // the terminals pinned to the top of the thread
             ForEach((thread.embs ?? []).filter { $0.pinned }, id: \.key) { e in
                 EmbView(model: model, emb: e, top: true).padding(.horizontal).padding(.top, 8)
@@ -907,6 +907,7 @@ struct ThreadScreen: View {
             }
         }
         .fullScreenCover(item: $shown) { s in Lightbox(shown: s) { shown = nil } }
+        .sheet(isPresented: $showSubs) { SubsSheet(model: model) }
         .sheet(isPresented: Binding(get: { thread.diff != nil }, set: { if !$0, model.screen?.thread?.diff != nil { model.act("panel") } })) {
             if let d = model.screen?.thread?.diff { DiffSheet(model: model, diff: d) }
         }
@@ -923,6 +924,18 @@ struct ThreadScreen: View {
                 }
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
+                // the subagents sit in the top bar, a sheet a tap away, so
+                // they never cover the thread
+                if let u = thread.subs {
+                    Button { showSubs = true } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "person.2")
+                            Text(String((u.word ?? u.busy).prefix { $0.isNumber })).font(.caption.monospacedDigit())
+                        }
+                        .foregroundStyle(u.busy.isEmpty ? Color.secondary : PhaseColor.accent)
+                    }
+                    .accessibilityLabel("Subagents: " + (u.word ?? u.busy))
+                }
                 if !thread.viewer.choices.isEmpty {
                     Menu {
                         ForEach(thread.viewer.choices, id: \.value) { c in

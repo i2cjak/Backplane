@@ -53,6 +53,8 @@ final class AppModel {
     // answers an older action never pulls a thread back open
     private(set) var path: [String] = []
     @ObservationIgnored private var shownSel = ""
+    // a new thread's page was opened while the hub makes it
+    @ObservationIgnored private var shownMaking = false
     // the hub whose plots are drawn: frames from any other are dropped
     @ObservationIgnored private var shownHub = ""
     var active = true
@@ -319,6 +321,9 @@ final class AppModel {
         return Pairing.http(l, path: path, query: query, token: token)
     }
 
+    // the page of a thread asked for and not yet made
+    static let making = "@new"
+
     // what the stack shows: the thread selected, or a room or a bot on a
     // linked machine (a bot's own view is its thread's)
     static func nav(_ s: Screen) -> String {
@@ -400,6 +405,14 @@ final class AppModel {
             if nav != shownSel {
                 shownSel = nav
                 path = nav.isEmpty ? [] : [nav]
+            }
+            // New Thread: its page opens at once and waits there for the
+            // hub's thread (the selection above replaces it); a failure
+            // takes it away again
+            let making = s.making ?? false
+            if making != shownMaking {
+                shownMaking = making
+                if making { path = [Self.making] } else if path == [Self.making] { path = nav.isEmpty ? [] : [nav] }
             }
             island?.show(s.island, foreground: active)
             #if DEBUG

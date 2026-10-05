@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
@@ -135,6 +136,9 @@ import kotlinx.coroutines.delay
 fun App(m: AppModel) {
     var pairing by rememberSaveable { mutableStateOf(false) }
     val s = m.screen
+    // New Thread's page, left with Back before the hub made the thread
+    var leftNew by remember { mutableStateOf(false) }
+    LaunchedEffect(s?.making) { if (s?.making != true) leftNew = false }
     // a file link tapped in a message asks for its menu
     CompositionLocalProvider(LocalFileTap provides { p: String -> m.act("file-menu", p) }) { when {
         m.links.isEmpty() -> Pair("", cancel = null) { m.pair(it) }
@@ -142,6 +146,11 @@ fun App(m: AppModel) {
         pairing -> {
             BackHandler { pairing = false }
             Hubs(m, s) { pairing = false }
+        }
+        // New Thread: its page at once, waiting for the hub's thread
+        s.making && !leftNew -> {
+            BackHandler { leftNew = true; m.act("select", "") }
+            MakingScreen { leftNew = true; m.act("select", "") }
         }
         s.thread != null && s.thread.viewer.open == "files" && s.thread.viewer.files != null -> {
             BackHandler { m.act("view", "") }
@@ -707,6 +716,20 @@ private fun FolderPicker(m: AppModel, p: Folders) {
     }
 }
 
+// a new thread's page while the hub makes it
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MakingScreen(back: () -> Unit) {
+    Scaffold(topBar = {
+        TopAppBar(
+            navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+            title = { Text("New thread") },
+        )
+    }) { pad ->
+        Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+    }
+}
+
 // a message the hub has not stored yet
 @Composable
 private fun SendingView(text: String) {
@@ -729,9 +752,19 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
     val snacks = remember { SnackbarHostState() }
     val list = rememberLazyListState()
     var menu by remember { mutableStateOf(false) }
+    // the subagents sheet (the top bar's button) is up
+    var subs by remember { mutableStateOf(false) }
     // the image open in the lightbox
     var shown by remember { mutableStateOf<String?>(null) }
     val termSize = rememberTermSize()
+    val su = t.subs
+    if (subs && su != null) {
+        // opened, its rows show (folded once all are done)
+        LaunchedEffect(Unit) { if (!su.open && su.act.isNotEmpty()) m.act(su.act, su.value) }
+        ModalBottomSheet(onDismissRequest = { subs = false }, sheetState = rememberModalBottomSheetState()) {
+            Box(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp)) { SubsView(m, su) }
+        }
+    }
     Errors(m, s, snacks)
     val count = (if (t.parent != null) 1 else 0) +
         (if (t.earlier > 0) 1 else 0) + t.entries.size + t.sending.size + (if (t.live.isNotEmpty() || t.working.isNotEmpty()) 1 else 0)
@@ -776,6 +809,17 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
                     }
                 },
                 actions = {
+                    // the subagents sit in the top bar, a sheet a tap away, so
+                    // they never cover the thread
+                    t.subs?.let { u ->
+                        TextButton(onClick = { subs = true }) {
+                            Icon(Icons.Filled.Group, "Subagents: " + u.word.ifEmpty { u.busy },
+                                tint = if (u.busy.isNotEmpty()) PhaseColor.accent else MaterialTheme.colorScheme.outline)
+                            Text(u.word.ifEmpty { u.busy }.takeWhile { it.isDigit() }, Modifier.padding(start = 2.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (u.busy.isNotEmpty()) PhaseColor.accent else MaterialTheme.colorScheme.outline)
+                        }
+                    }
                     if (t.viewer.choices.isNotEmpty()) Box {
                         var boards by remember { mutableStateOf(false) }
                         IconButton(onClick = { boards = true }) { Icon(Icons.Filled.Memory, "Board viewer") }
@@ -839,7 +883,6 @@ fun ThreadScreen(m: AppModel, s: Screen, t: ThreadView, below: (@Composable () -
         bottomBar = {
             Surface(tonalElevation = 3.dp) {
                 Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(8.dp)) {
-                    t.subs?.let { u -> Box(Modifier.padding(bottom = 8.dp)) { SubsView(m, u) } }
                     // the terminals pinned to the top of the thread
                     for (e in t.embs) if (e.pinned) key(e.key) { Box(Modifier.padding(bottom = 8.dp)) { EmbView(m, e, top = true) } }
                     for (a in t.asks) Box(Modifier.padding(bottom = 8.dp)) { AskCard(m, a) }

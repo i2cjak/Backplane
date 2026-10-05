@@ -7089,6 +7089,15 @@ def Laws.made_stale_quiet():
 def Laws.made_fork_selects_own():
   {==}
 
+def Laws.made_waiting_at_once():
+  {==}
+
+def Laws.made_waiting_ends_made():
+  {==}
+
+def Laws.made_waiting_ends_failed():
+  {==}
+
 def Laws.side_rows_ix_eq():
   {==}
 

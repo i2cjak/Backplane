@@ -624,6 +624,8 @@ struct Screen: Decodable {
     let projects: [Project]
     // "projects" (sections) or "active" (one flat list of rows, active)
     let view: String?
+    // a thread this phone asked for is still to come (its page opens at once)
+    let making: Bool?
     let active: [Row]?
     let older: Older?
     let settled: Older?
