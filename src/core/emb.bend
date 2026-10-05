@@ -2,6 +2,7 @@ import Base
 import ./vt.bend as VT
 import ./utf8.bend as U8
 import ./model.bend as M
+import ./diff.bend as DF
 
 # Terminals in the chat (pure). An agent opens one with the terminal_open
 # tool: a program on a pty, started in the thread's folder, shown in the
@@ -72,11 +73,14 @@ def Emb.rows(+n: U32) -> U32:
 def Emb.summary(+title: String, +cols: U32, +rows: U32, +cmd: String) -> String:
   title ++ "\n" ++ U32.show(cols) ++ "x" ++ U32.show(rows) ++ "\n" ++ cmd
 
+# (lines cut by DF.Diff.lines and the title by DF.Diff.first, tail calls:
+# String.split recurses once per character, and a long summary overflowed
+# the phones' stack)
 def Emb.part(+summary: String, +i: Nat) -> String:
-  Maybe.default(&2, String, List.get(&2, String, String.split(summary, '\n'), i), "")
+  Maybe.default(&2, String, List.get(&2, String, DF.Diff.lines(summary), i), "")
 
 def Emb.title(+summary: String) -> String:
-  Emb.part(summary, 0n)
+  DF.Diff.first(summary)
 
 def Emb.size(+summary: String, +i: Nat) -> String:
   Maybe.default(&2, String, List.get(&2, String, String.split(Emb.part(summary, 1n), 'x'), i), "")
@@ -89,7 +93,7 @@ def Emb.tall(+summary: String) -> U32:
 
 # the command (it may hold newlines of its own)
 def Emb.cmd(+summary: String) -> String:
-  String.join(List.drop(&2, String, String.split(summary, '\n'), 2n), "\n")
+  String.join(List.drop(&2, String, DF.Diff.lines(summary), 2n), "\n")
 
 # The screen as text, and as bytes
 # --------------------------------

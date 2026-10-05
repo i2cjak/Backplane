@@ -366,6 +366,16 @@ def Mob.imgs.list(+s: String) -> List<&2, String>:
 def Mob.imgs(+dr: Map<&2, String>, +id: String) -> List<&2, J.Json>:
   Mob.urls(Mob.imgs.list(String.drop(U.Str.get(dr, Mob.imgs.key(id)), 1n)))
 
+# a terminal's row or any other activity's: matched, not Bool.pick (which
+# built both, so every tool call's summary was cut as a terminal's title)
+def Mob.act.k(term: Bool, +id: String, +th: String, +tone: String, +kind: String, +summary: String) -> J.Json:
+  match term:
+    case True{}:
+      J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str("emb")}, J.KV{"key", J.Json.str(EM.Emb.key(th, id))}, J.KV{"text", J.Json.str(EM.Emb.title(summary))}])
+    case False{}:
+      J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str("act")}, J.KV{"tone", J.Json.str(tone)},
+        J.KV{"label", J.Json.str(kind)}, J.KV{"text", J.Json.str(summary)}])
+
 # a tool call or other activity; a design step (core/hist.bend) is a row
 # that shows it in the viewer ("hist-show" with its value)
 def Mob.act(step: Bool, e: M.Entry) -> J.Json:
@@ -373,10 +383,7 @@ def Mob.act(step: Bool, e: M.Entry) -> J.Json:
     case True{} M.Act{+id, _, _, _, _, _}:
       J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str("step")}, J.KV{"text", J.Json.str(HS.Hist.row(e))}, J.KV{"value", J.Json.str(id)}])
     case _ M.Act{+id, +th, +tone, +kind, +summary, _}:
-      Bool.pick(J.Json, String.eq(tone, EM.Emb.tone()),
-        J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str("emb")}, J.KV{"key", J.Json.str(EM.Emb.key(th, id))}, J.KV{"text", J.Json.str(EM.Emb.title(summary))}]),
-        J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str("act")}, J.KV{"tone", J.Json.str(tone)},
-          J.KV{"label", J.Json.str(kind)}, J.KV{"text", J.Json.str(summary)}]))
+      Mob.act.k(String.eq(tone, EM.Emb.tone()), id, th, tone, kind, summary)
     case _ M.Msg{+id, _, _, text, _}:
       J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str("act")}, J.KV{"tone", J.Json.str("")}, J.KV{"label", J.Json.str("")}, J.KV{"text", J.Json.str(text)}])
 
