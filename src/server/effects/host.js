@@ -295,3 +295,100 @@ function sys_exec(path, args) {
 function sys_exe_path() {
   return process.argv[1] ?? "";
 }
+
+// Json.cbor_frame and Sock.send_cbor: JSON text to one binary WebSocket
+// frame of its CBOR, as core/cbor.bend's Cbor.encode over J.Json.parse (see
+// host.c): plain 32-bit integers as major 0/1, other numbers as tag 7 over
+// their text, dictionary words as tag 6, dictionary keys as their index.
+function jc_frame(text, keys, words) {
+  const ks = keys.split("\n"), ws = words.split("\n");
+  const enc = new TextEncoder();
+  const out = [];
+  const head = (mb, v) => {
+    if (v < 24) out.push(mb | v);
+    else if (v < 256) out.push(mb | 24, v);
+    else if (v < 65536) out.push(mb | 25, v >> 8, v & 255);
+    else out.push(mb | 26, (v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255);
+  };
+  const txt = (s) => { const b = enc.encode(s); head(0x60, b.length); for (const x of b) out.push(x); };
+  const pos = (r) => /^(0|[1-9][0-9]{0,9})$/.test(r) && Number(r) <= 0xffffffff ? Number(r) : -1;
+  let i = 0;
+  const wsp = () => { while (i < text.length && " \t\n\r".includes(text[i])) i += 1; };
+  const str = () => {
+    let s = "";
+    while (i < text.length) {
+      const c = text[i++];
+      if (c === '"') return s;
+      if (c !== "\\") { s += c; continue; }
+      const e = text[i++];
+      if (e === "u") { s += String.fromCharCode(parseInt(text.slice(i, i + 4), 16)); i += 4; }
+      else s += ({ '"': '"', "\\": "\\", "/": "/", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t" })[e] ?? (() => { throw 0; })();
+    }
+    throw 0;
+  };
+  const val = () => {
+    wsp();
+    const c = text[i];
+    if (c === "{" || c === "[") {
+      i += 1;
+      const map = c === "{";
+      const at = out.length;
+      const items = [];
+      wsp();
+      if (text[i] === (map ? "}" : "]")) { i += 1; }
+      else for (;;) {
+        const mark = out.length;
+        if (map) {
+          wsp();
+          if (text[i] !== '"') throw 0;
+          i += 1;
+          const k = str();
+          const n = ks.indexOf(k);
+          if (n >= 0) head(0, n); else txt(k);
+          wsp();
+          if (text[i++] !== ":") throw 0;
+        }
+        val();
+        items.push(out.splice(mark));
+        wsp();
+        const d = text[i++];
+        if (d === ",") continue;
+        if (d === (map ? "}" : "]")) break;
+        throw 0;
+      }
+      head(map ? 0xa0 : 0x80, items.length);
+      for (const it of items) for (const x of it) out.push(x);
+      return at;
+    }
+    if (c === '"') { i += 1; const s = str(); const n = ws.indexOf(s); if (n >= 0) { out.push(0xc6); head(0, n); } else txt(s); return; }
+    if (text.startsWith("true", i)) { i += 4; out.push(0xf5); return; }
+    if (text.startsWith("false", i)) { i += 5; out.push(0xf4); return; }
+    if (text.startsWith("null", i)) { i += 4; out.push(0xf6); return; }
+    const m = /^[-+0-9.eE]+/.exec(text.slice(i, i + 64));
+    if (!m) throw 0;
+    const r = m[0];
+    i += r.length;
+    if (r[0] === "-") { const v = pos(r.slice(1)); if (v > 0) { head(0x20, v - 1); return; } }
+    else { const v = pos(r); if (v >= 0) { head(0, v); return; } }
+    out.push(0xc7);
+    txt(r);
+  };
+  try { val(); wsp(); if (i !== text.length) throw 0; } catch { out.length = 0; out.push(0xf6); }
+  const n = out.length;
+  const h = n < 126 ? [0x82, n] : n < 65536 ? [0x82, 126, n >> 8, n & 255] : [0x82, 127, 0, 0, 0, 0, (n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
+  return h.concat(out);
+}
+
+function json_cbor_frame(text, keys, words) {
+  let xs = { $: "Nil" };
+  const b = jc_frame(text, keys, words);
+  for (let k = b.length - 1; k >= 0; k -= 1) xs = { $: "Con", head: b[k], tail: xs };
+  return xs;
+}
+
+function sock_send_cbor(socket, text, keys, words, ms, k) {
+  let xs = { $: "Nil" };
+  const b = jc_frame(text, keys, words);
+  for (let j = b.length - 1; j >= 0; j -= 1) xs = { $: "Con", head: b[j], tail: xs };
+  return sock_send_until(socket, xs, ms, k);
+}

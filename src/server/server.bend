@@ -954,12 +954,24 @@ def Conn.put(s: Socket, +bs: List<&2, U32>, +out: Chan(Wire), k: Socket -> Nat -
 # a join chunk's frames (OB.Items.texts: each within the byte bound), put
 # out one by one; to the writer's count they are one frame of no bytes, as
 # the hub offered it (it charged none)
+# the wire's dictionaries as host.c's send_cbor takes them
+def Conn.keys() -> String:
+  String.join(CB.Cbor.keys(), "\n")
+
+def Conn.words() -> String:
+  String.join(CB.Cbor.words(), "\n")
+
+# a chunk's frame out: its CBOR made and sent in C (H.Sock.send_cbor, the
+# same bytes as W.Ws.cbor): Bend's encoder sent a long log's join at ~1.5 MB/s
+def Conn.out.cbor(s: Socket, +t: String, +out: Chan(Wire), k: Socket -> IO(Unit)) -> IO(Unit):
+  IO.bind(Socket & Result<&1, &1, U32 & String, Unit>, Unit, H.Sock.send_cbor(s, t, Conn.keys(), Conn.words(), Conn.deadline()), r => Conn.sent.k(r, out, k))
+
 def Conn.items(ts: List<&2, String>, s: Socket, +out: Chan(Wire), k: Socket -> Nat -> IO(Unit)) -> IO(Unit):
   match ts:
     case Nil{}:
       k(s, 0n)
     case +t <> rest:
-      Conn.out(s, W.Ws.cbor(t), out, s2 => Conn.items(rest, s2, out, k))
+      Conn.out.cbor(s, t, out, s2 => Conn.items(rest, s2, out, k))
 
 def Conn.write(m: Maybe<&1, Wire>, s: Socket, +out: Chan(Wire), k: Socket -> Nat -> IO(Unit)) -> IO(Unit):
   match m:

@@ -894,3 +894,346 @@ static void __attribute__((constructor)) sys_exec_use(void) {
 }
 
 #endif
+
+// JSON text to CBOR, as Bend does it
+// ===================================
+// core/cbor.bend's Cbor.encode over J.Json.parse, made in one pass over the
+// text: numbers that are plain 32-bit integers as major 0 or 1, any other
+// number as tag 7 over its text; strings in the words dictionary as tag 6
+// over their index; map keys in the keys dictionary as their index; heads in
+// shortest form; definite lengths. Text that does not parse is null, as
+// Maybe.default(J.Null) makes it. Sock.send_cbor frames and sends it. The
+// hub only ever sends JSON that Bend printed (Json.show); for that the bytes
+// are the same (test/native/cbor_frame_test.bend). Bend's parser is lenient
+// about malformed text (it skips commas and colons) and this one is not.
+
+#if defined(CID_SOCK_SEND_CBOR) || defined(CID_JSON_CBOR_FRAME)
+
+typedef struct { uint8_t* p; size_t n, cap; int bad; } JcBuf;
+typedef struct { const char* p[128]; size_t n[128]; int len; } JcDict;
+typedef struct { const char* s; size_t i, n; JcBuf* out; JcBuf tmp; JcDict* keys; JcDict* words; int depth; } Jc;
+
+static void jc_room(JcBuf* b, size_t more) {
+  if (b->n + more <= b->cap) return;
+  size_t cap = b->cap ? b->cap * 2 : 4096;
+  while (cap < b->n + more) cap *= 2;
+  uint8_t* q = realloc(b->p, cap);
+  if (!q) { b->bad = 1; return; }
+  b->p = q;
+  b->cap = cap;
+}
+
+static void jc_put(JcBuf* b, const void* s, size_t n) {
+  jc_room(b, n);
+  if (b->bad) return;
+  memcpy(b->p + b->n, s, n);
+  b->n += n;
+}
+
+static void jc_byte(JcBuf* b, uint8_t c) { jc_put(b, &c, 1); }
+
+// an item head in shortest form (mb: the major type shifted, major * 32)
+static size_t jc_headw(uint32_t v) { return v < 24 ? 1 : v < 256 ? 2 : v < 65536 ? 3 : 5; }
+static void jc_head_at(uint8_t* q, uint8_t mb, uint32_t v) {
+  if (v < 24) { q[0] = mb | v; }
+  else if (v < 256) { q[0] = mb | 24; q[1] = v; }
+  else if (v < 65536) { q[0] = mb | 25; q[1] = v >> 8; q[2] = v; }
+  else { q[0] = mb | 26; q[1] = v >> 24; q[2] = v >> 16; q[3] = v >> 8; q[4] = v; }
+}
+static void jc_head(JcBuf* b, uint8_t mb, uint32_t v) {
+  uint8_t q[5];
+  jc_head_at(q, mb, v);
+  jc_put(b, q, jc_headw(v));
+}
+
+static void jc_dict(JcDict* d, const char* s, size_t n) {
+  d->len = 0;
+  size_t i = 0;
+  while (i <= n && d->len < 128) {
+    size_t j = i;
+    while (j < n && s[j] != '\n') j += 1;
+    if (j > i || j < n) { d->p[d->len] = s + i; d->n[d->len] = j - i; d->len += 1; }
+    i = j + 1;
+  }
+}
+
+static int jc_find(JcDict* d, const uint8_t* s, size_t n) {
+  for (int i = 0; i < d->len; i += 1) {
+    if (d->n[i] == n && memcmp(d->p[i], s, n) == 0) return i;
+  }
+  return -1;
+}
+
+static void jc_ws(Jc* c) {
+  while (c->i < c->n && (c->s[c->i] == ' ' || c->s[c->i] == '\t' || c->s[c->i] == '\n' || c->s[c->i] == '\r')) c->i += 1;
+}
+
+static void jc_utf8(JcBuf* b, uint32_t cp) {
+  if (cp < 0x80) jc_byte(b, cp);
+  else if (cp < 0x800) { jc_byte(b, 0xC0 | (cp >> 6)); jc_byte(b, 0x80 | (cp & 63)); }
+  else if (cp < 0x10000) { jc_byte(b, 0xE0 | (cp >> 12)); jc_byte(b, 0x80 | ((cp >> 6) & 63)); jc_byte(b, 0x80 | (cp & 63)); }
+  else { jc_byte(b, 0xF0 | (cp >> 18)); jc_byte(b, 0x80 | ((cp >> 12) & 63)); jc_byte(b, 0x80 | ((cp >> 6) & 63)); jc_byte(b, 0x80 | (cp & 63)); }
+}
+
+static int jc_hex4(Jc* c, uint32_t* v) {
+  if (c->i + 4 > c->n) return 0;
+  uint32_t x = 0;
+  for (int k = 0; k < 4; k += 1) {
+    char h = c->s[c->i + k];
+    x <<= 4;
+    if (h >= '0' && h <= '9') x |= h - '0';
+    else if (h >= 'a' && h <= 'f') x |= h - 'a' + 10;
+    else if (h >= 'A' && h <= 'F') x |= h - 'A' + 10;
+    else return 0;
+  }
+  c->i += 4;
+  *v = x;
+  return 1;
+}
+
+// a string's text (after its opening quote) into c->tmp, unescaped
+static int jc_string(Jc* c) {
+  c->tmp.n = 0;
+  while (c->i < c->n) {
+    char ch = c->s[c->i++];
+    if (ch == '"') return !c->tmp.bad;
+    if (ch != '\\') { jc_byte(&c->tmp, (uint8_t)ch); continue; }
+    if (c->i >= c->n) return 0;
+    char e = c->s[c->i++];
+    switch (e) {
+      case '"': jc_byte(&c->tmp, '"'); break;
+      case '\\': jc_byte(&c->tmp, '\\'); break;
+      case '/': jc_byte(&c->tmp, '/'); break;
+      case 'b': jc_byte(&c->tmp, 8); break;
+      case 'f': jc_byte(&c->tmp, 12); break;
+      case 'n': jc_byte(&c->tmp, 10); break;
+      case 'r': jc_byte(&c->tmp, 13); break;
+      case 't': jc_byte(&c->tmp, 9); break;
+      case 'u': {
+        uint32_t v;
+        // each \uXXXX is one character, a surrogate's half too, as Bend's
+        // lexer reads it (core/json.bend's Lex.uni)
+        if (!jc_hex4(c, &v)) return 0;
+        jc_utf8(&c->tmp, v);
+        break;
+      }
+      default: return 0;
+    }
+  }
+  return 0;
+}
+
+static void jc_text(JcBuf* b, const uint8_t* s, size_t n) {
+  jc_head(b, 0x60, (uint32_t)n);
+  jc_put(b, s, n);
+}
+
+// digits only, 1..10 of them, no leading zero, below 2^32
+static int jc_pos(const char* s, size_t n, uint32_t* v) {
+  if (n < 1 || n > 10) return 0;
+  if (s[0] == '0' && n > 1) return 0;
+  uint64_t x = 0;
+  for (size_t k = 0; k < n; k += 1) {
+    if (s[k] < '0' || s[k] > '9') return 0;
+    x = x * 10 + (uint64_t)(s[k] - '0');
+  }
+  if (x > 0xFFFFFFFFull) return 0;
+  *v = (uint32_t)x;
+  return 1;
+}
+
+static void jc_number(Jc* c, JcBuf* b) {
+  size_t a = c->i;
+  while (c->i < c->n) {
+    char ch = c->s[c->i];
+    if ((ch >= '0' && ch <= '9') || ch == '-' || ch == '+' || ch == '.' || ch == 'e' || ch == 'E') c->i += 1;
+    else break;
+  }
+  const char* r = c->s + a;
+  size_t n = c->i - a;
+  uint32_t v;
+  if (n > 0 && r[0] == '-') {
+    if (jc_pos(r + 1, n - 1, &v) && v > 0) { jc_head(b, 0x20, v - 1); return; }
+  } else if (jc_pos(r, n, &v)) {
+    jc_head(b, 0x00, v);
+    return;
+  }
+  jc_byte(b, 0xC7);
+  jc_text(b, (const uint8_t*)r, n);
+}
+
+static int jc_value(Jc* c, JcBuf* b);
+
+// a container: its items written after room for the longest head, then the
+// head put in front of them in its shortest form
+static int jc_items(Jc* c, JcBuf* b, int map) {
+  size_t at = b->n;
+  jc_room(b, 5);
+  if (b->bad) return 0;
+  b->n += 5;
+  uint32_t count = 0;
+  jc_ws(c);
+  if (c->i < c->n && c->s[c->i] == (map ? '}' : ']')) {
+    c->i += 1;
+  } else {
+    for (;;) {
+      jc_ws(c);
+      if (map) {
+        if (c->i >= c->n || c->s[c->i] != '"') return 0;
+        c->i += 1;
+        if (!jc_string(c)) return 0;
+        int k = jc_find(c->keys, c->tmp.p, c->tmp.n);
+        if (k >= 0) jc_head(b, 0x00, (uint32_t)k);
+        else jc_text(b, c->tmp.p, c->tmp.n);
+        jc_ws(c);
+        if (c->i >= c->n || c->s[c->i] != ':') return 0;
+        c->i += 1;
+      }
+      if (!jc_value(c, b)) return 0;
+      count += 1;
+      jc_ws(c);
+      if (c->i >= c->n) return 0;
+      char ch = c->s[c->i++];
+      if (ch == ',') continue;
+      if (ch == (map ? '}' : ']')) break;
+      return 0;
+    }
+  }
+  size_t w = jc_headw(count);
+  memmove(b->p + at + w, b->p + at + 5, b->n - at - 5);
+  b->n -= 5 - w;
+  jc_head_at(b->p + at, map ? 0xA0 : 0x80, count);
+  return !b->bad;
+}
+
+static int jc_value(Jc* c, JcBuf* b) {
+  if (++c->depth > 512) return 0;
+  jc_ws(c);
+  int ok = 0;
+  if (c->i >= c->n) ok = 0;
+  else {
+    char ch = c->s[c->i];
+    if (ch == '{') { c->i += 1; ok = jc_items(c, b, 1); }
+    else if (ch == '[') { c->i += 1; ok = jc_items(c, b, 0); }
+    else if (ch == '"') {
+      c->i += 1;
+      ok = jc_string(c);
+      if (ok) {
+        int w = jc_find(c->words, c->tmp.p, c->tmp.n);
+        if (w >= 0) { jc_byte(b, 0xC6); jc_head(b, 0x00, (uint32_t)w); }
+        else jc_text(b, c->tmp.p, c->tmp.n);
+      }
+    }
+    else if (c->i + 4 <= c->n && memcmp(c->s + c->i, "true", 4) == 0) { c->i += 4; jc_byte(b, 0xF5); ok = 1; }
+    else if (c->i + 5 <= c->n && memcmp(c->s + c->i, "false", 5) == 0) { c->i += 5; jc_byte(b, 0xF4); ok = 1; }
+    else if (c->i + 4 <= c->n && memcmp(c->s + c->i, "null", 4) == 0) { c->i += 4; jc_byte(b, 0xF6); ok = 1; }
+    else if (ch == '-' || (ch >= '0' && ch <= '9')) { jc_number(c, b); ok = 1; }
+  }
+  c->depth -= 1;
+  return ok && !b->bad;
+}
+
+// the WebSocket frame (FIN, binary) of text's CBOR, after `pre` bytes left
+// for the caller; 0 when out of memory
+static int jc_frame(const char* text, size_t n, const char* ks, size_t kn, const char* ws, size_t wn, JcBuf* out, size_t pre) {
+  JcDict keys, words;
+  jc_dict(&keys, ks, kn);
+  jc_dict(&words, ws, wn);
+  JcBuf body = {0};
+  Jc c = { text, 0, n, &body, {0}, &keys, &words, 0 };
+  int ok = jc_value(&c, &body);
+  jc_ws(&c);
+  if (!ok || c.i != n) { body.n = 0; body.bad = 0; jc_byte(&body, 0xF6); }
+  free(c.tmp.p);
+  if (body.bad) { free(body.p); return 0; }
+  uint8_t h[10];
+  size_t hn;
+  h[0] = 0x82;
+  if (body.n < 126) { h[1] = body.n; hn = 2; }
+  else if (body.n < 65536) { h[1] = 126; h[2] = body.n >> 8; h[3] = body.n; hn = 4; }
+  else { h[1] = 127; h[2] = h[3] = h[4] = h[5] = 0; h[6] = body.n >> 24; h[7] = body.n >> 16; h[8] = body.n >> 8; h[9] = body.n; hn = 10; }
+  out->p = malloc(pre + hn + body.n);
+  if (!out->p) { free(body.p); return 0; }
+  memcpy(out->p + pre, h, hn);
+  memcpy(out->p + pre + hn, body.p, body.n);
+  out->n = pre + hn + body.n;
+  free(body.p);
+  return 1;
+}
+
+#endif
+
+#ifdef CID_JSON_CBOR_FRAME
+
+Term json_cbor_frame_run(Env e, Term* f, IoWork* w) {
+  u64 tn, kn, wn;
+  char* t = io_cstr(e, f[0], &tn);
+  char* k = io_cstr(e, f[1], &kn);
+  char* ws = io_cstr(e, f[2], &wn);
+  JcBuf out = {0};
+  int ok = jc_frame(t, tn, k, kn, ws, wn, &out, 0);
+  free(t); free(k); free(ws);
+  Term r = ok ? host_bytes(e, out.p, out.n) : term_pak(CID_NIL, 0);
+  free(out.p);
+  return r;
+}
+
+static void __attribute__((constructor)) json_cbor_frame_use(void) {
+  io_eff(CID_JSON_CBOR_FRAME, json_cbor_frame_run, 0);
+}
+
+#endif
+
+#ifdef CID_SOCK_SEND_CBOR
+
+// as sock_send_until_more: data holds the deadline and span, then the frame
+static Term sock_send_cbor_more(Env e, IoWork* w) {
+  int fd = (int)w->hand;
+  u64 deadline, span;
+  memcpy(&deadline, w->data, sizeof deadline);
+  memcpy(&span, w->data + sizeof deadline, sizeof span);
+  while (w->code == 0 && (u64)w->made < w->size) {
+    ssize_t n = host_write(fd, w->data + w->made, w->size - (u64)w->made);
+    if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+      if (io_tick() >= deadline) { w->code = ETIMEDOUT; break; }
+      return io_wait_on(w, fd, POLLOUT, deadline, sock_send_cbor_more);
+    }
+    w->made += io_sys_end(w, n);
+    if (n > 0) {
+      deadline = io_tick() + span;
+      memcpy(w->data, &deadline, sizeof deadline);
+    }
+  }
+  if (w->code != 0) shutdown(fd, SHUT_RDWR);
+  Term r = w->code != 0 ? io_fail(e, w->code, NULL) : io_done(e, host_unit());
+  free(w->data);
+  return io_tup(e, io_hand(w->hand), r);
+}
+
+Term sock_send_cbor_run(Env e, Term* f, IoWork* w) {
+  u64 tn, kn, wn;
+  char* t = io_cstr(e, f[1], &tn);
+  char* k = io_cstr(e, f[2], &kn);
+  char* ws = io_cstr(e, f[3], &wn);
+  u64 span = (u64)f[4] * 1000000ull;
+  u64 deadline = io_tick() + span;
+  JcBuf out = {0};
+  size_t pre = sizeof deadline + sizeof span;
+  int ok = jc_frame(t, tn, k, kn, ws, wn, &out, pre);
+  free(t); free(k); free(ws);
+  w->hand = (intptr_t)io_hand_v(f[0]);
+  w->code = 0;
+  if (!ok) return io_tup(e, io_hand(w->hand), io_fail(e, ENOMEM, NULL));
+  memcpy(out.p, &deadline, sizeof deadline);
+  memcpy(out.p + sizeof deadline, &span, sizeof span);
+  w->data = io_mem(out.p);
+  w->size = out.n;
+  w->made = pre;
+  return sock_send_cbor_more(e, w);
+}
+
+static void __attribute__((constructor)) sock_send_cbor_use(void) {
+  io_eff(CID_SOCK_SEND_CBOR, sock_send_cbor_run, 0);
+}
+
+#endif

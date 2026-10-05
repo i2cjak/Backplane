@@ -32,6 +32,21 @@ def Sock.send_until(sock: Socket, data: List<&2, U32>, ms: U32) ->
   import "./effects/host.c"
   import "./effects/host.js"
 
+# A message's JSON text as one binary WebSocket frame of its CBOR, sent with
+# a deadline as send_until: the same bytes as core/http.bend's Ws.cbor, made
+# in C straight from the text (Bend's encoder parsed it into a tree and built
+# a list cell per byte, and a long log's join went out at ~1.5 MB/s). keys
+# and words are Cbor.keys() and Cbor.words(), each joined by newlines.
+def Sock.send_cbor(sock: Socket, text: String, keys: String, words: String, ms: U32) ->
+  IO(Socket & Result<&1, &1, U32 & String, Unit>):
+  import "./effects/host.c"
+  import "./effects/host.js"
+
+# the frame send_cbor sends, as bytes (for tests)
+def Json.cbor_frame(text: String, keys: String, words: String) -> IO(List<&2, U32>):
+  import "./effects/host.c"
+  import "./effects/host.js"
+
 def Sock.send_text(sock: Socket, text: String) ->
   IO(Socket & Result<&1, &1, U32 & String, Unit>):
   import "./effects/host.c"
