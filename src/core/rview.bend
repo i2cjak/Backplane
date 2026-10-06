@@ -103,19 +103,30 @@ def Rview.part(+spec: String, +i: Nat) -> String:
 # The hub
 # -------
 
+# a folder a client says holds a mirrored thread's files: the cache this hub
+# keeps of that link's machine (Fv.cache), as the client was told by far.view;
+# "" for any other folder
+def Rview.far.k(has: Bool, +home: String, +link: String, +claimed: String) -> String:
+  Bool.pick(String, has,
+    Bool.pick(String, String.eq(FV.Fv.cache(home, link, String.drop(claimed, String.length(home ++ "/farfs/" ++ link))), claimed), claimed, ""), "")
+
+def Rview.far.root(+home: String, +link: String, +claimed: String) -> String:
+  Rview.far.k(String.starts_with(claimed, home ++ "/farfs/" ++ link ++ "/"), home, link, claimed)
+
 # the thread's folder as this hub has its files: its own, or for a thread
-# it mirrors the cache it keeps of the owner's (core/fview.bend); "" for a
-# thread this hub does not know or a folder that is not absolute
-def Rview.root.k(known: Bool, far: Bool, +home: String, +link: String, +cwd: String) -> String:
-  Bool.pick(String, Bool.and(known, String.starts_with(cwd, "/")),
-    Bool.pick(String, far, FV.Fv.cache(home, link, cwd), cwd), "")
+# it mirrors (the hub's state holds none of it) the cache it keeps of the
+# owner's (core/fview.bend) that the client names; "" for a thread this hub
+# does not know or a folder that is not absolute
+def Rview.root.k(known: Bool, far: Bool, +home: String, +link: String, +cwd: String, +claimed: String) -> String:
+  Bool.pick(String, far, Rview.far.root(home, link, claimed),
+    Bool.pick(String, Bool.and(known, String.starts_with(cwd, "/")), cwd, ""))
 
 def Rview.has(r: Map<&2, M.Thread> & Bool) -> Bool:
   (_, b) = r
   b
 
-def Rview.root(+home: String, +s: M.State, +th: String) -> String:
-  Rview.root.k(Rview.has(Map.has(&2, M.Thread, FR.Fr.st.threads(s), th)), FR.Fr.is(th), home, FR.Fr.link(th), H.Hub.cwd(s, H.Hub.thread(s, th)))
+def Rview.root(+home: String, +s: M.State, +th: String, +claimed: String) -> String:
+  Rview.root.k(Rview.has(Map.has(&2, M.Thread, FR.Fr.st.threads(s), th)), FR.Fr.is(th), home, FR.Fr.link(th), H.Hub.cwd(s, H.Hub.thread(s, th)), claimed)
 
 # which request a path is: 1 the listing, 2 a file, 3 a file of a commit
 def Rview.kind(+route: String) -> Nat:

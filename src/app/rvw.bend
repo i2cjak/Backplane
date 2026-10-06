@@ -43,41 +43,43 @@ def Rvw.get.k(ok: Bool, +url: String, +path: String, +secs: Nat, +max: Nat, +out
 def Rvw.get(+url: String, +path: String, +secs: Nat, +max: Nat, +out: String) -> IO(BN.Resp):
   Rvw.get.k(BN.Bn.url.ok(url), url, path, secs, max, out)
 
-def Rvw.q(+thread: String, +rel: String) -> String:
-  "?thread=" ++ RV.Rview.enc(thread) ++ "&path=" ++ RV.Rview.enc(rel)
+# a thread's own folder is the hub's to name; one it mirrors is the cache
+# folder far.view told the client of (`root`)
+def Rvw.q(+thread: String, +root: String, +rel: String) -> String:
+  "?thread=" ++ RV.Rview.enc(thread) ++ "&root=" ++ RV.Rview.enc(root) ++ "&path=" ++ RV.Rview.enc(rel)
 
 # one file into the cache's own temporary name; "rel<TAB>tmp" when it came
-def Rvw.pull(+url: String, +thread: String, +rel: String, +cache: String) -> IO(String):
+def Rvw.pull(+url: String, +thread: String, +root: String, +rel: String, +cache: String) -> IO(String):
   do IO<String>:
     +n : String <- BN.Bn.random(4n)
     +tmp : String = cache ++ "/.farpart-" ++ n
-    r : BN.Resp <- Rvw.get(url, "/view/get" ++ Rvw.q(thread, rel), 120n, Nat.add(FV.Fv.cap(), 1048576n), tmp)
+    r : BN.Resp <- Rvw.get(url, "/view/get" ++ Rvw.q(thread, root, rel), 120n, Nat.add(FV.Fv.cap(), 1048576n), tmp)
     FVS.Fvs.pull.kept(Nat.is_eq(FVS.Fvs.code(r), 200n), rel, tmp)
 
-def Rvw.lane(ls: List<&2, String>, +url: String, +thread: String, +cache: String) -> IO(List<&2, String>):
+def Rvw.lane(ls: List<&2, String>, +url: String, +thread: String, +root: String, +cache: String) -> IO(List<&2, String>):
   match ls:
     case Nil{}:
       IO.pure(List<&2, String>, Nil{})
     case +l <> t:
       do IO<List<&2, String>>:
-        +p : String <- Rvw.pull(url, thread, FVS.Fvs.rel(l), cache)
-        rest : List<&2, String> <- Rvw.lane(t, url, thread, cache)
+        +p : String <- Rvw.pull(url, thread, root, FVS.Fvs.rel(l), cache)
+        rest : List<&2, String> <- Rvw.lane(t, url, thread, root, cache)
         return FVS.Fvs.pair.k(String.is_empty(p), p, rest)
 
-def Rvw.lane.job(ls: List<&2, String>, +url: String, +thread: String, +cache: String, +out: Chan(List<&2, String>)) -> IO(Unit):
+def Rvw.lane.job(ls: List<&2, String>, +url: String, +thread: String, +root: String, +cache: String, +out: Chan(List<&2, String>)) -> IO(Unit):
   do IO<Unit>:
-    +r : List<&2, String> <- Rvw.lane(ls, url, thread, cache)
+    +r : List<&2, String> <- Rvw.lane(ls, url, thread, root, cache)
     ok : Bool <- Chan.send(List<&2, String>, out, r)
     return Unit{}
 
 # the files in four lanes at once; the lines that came
-def Rvw.fetch(+todo: List<&2, String>, +url: String, +thread: String, +cache: String) -> IO(List<&2, String>):
+def Rvw.fetch(+todo: List<&2, String>, +url: String, +thread: String, +root: String, +cache: String) -> IO(List<&2, String>):
   do IO<List<&2, String>>:
     +out : Chan(List<&2, String>) <- Chan.new(List<&2, String>, 4)
-    IO.spawn(Unit, Rvw.lane.job(FVS.Fvs.pick(todo, 1n, 0n), url, thread, cache, out))
-    IO.spawn(Unit, Rvw.lane.job(FVS.Fvs.pick(todo, 2n, 0n), url, thread, cache, out))
-    IO.spawn(Unit, Rvw.lane.job(FVS.Fvs.pick(todo, 3n, 0n), url, thread, cache, out))
-    +a : List<&2, String> <- Rvw.lane(FVS.Fvs.pick(todo, 0n, 0n), url, thread, cache)
+    IO.spawn(Unit, Rvw.lane.job(FVS.Fvs.pick(todo, 1n, 0n), url, thread, root, cache, out))
+    IO.spawn(Unit, Rvw.lane.job(FVS.Fvs.pick(todo, 2n, 0n), url, thread, root, cache, out))
+    IO.spawn(Unit, Rvw.lane.job(FVS.Fvs.pick(todo, 3n, 0n), url, thread, root, cache, out))
+    +a : List<&2, String> <- Rvw.lane(FVS.Fvs.pick(todo, 0n, 0n), url, thread, root, cache)
     b : Maybe<&1, List<&2, String>> <- Chan.recv(List<&2, String>, out)
     c : Maybe<&1, List<&2, String>> <- Chan.recv(List<&2, String>, out)
     d : Maybe<&1, List<&2, String>> <- Chan.recv(List<&2, String>, out)
@@ -87,28 +89,28 @@ def Rvw.fetch(+todo: List<&2, String>, +url: String, +thread: String, +cache: St
 # step at a time per folder, never rolling a file back), and say whether
 # the viewers read again; a file that did not come asks for an answer with
 # no digest, so the next round asks again
-def Rvw.bring(+url: String, +thread: String, +cache: String, +files: String, +ver: String, +have: String) -> IO(Got):
+def Rvw.bring(+url: String, +thread: String, +root: String, +cache: String, +files: String, +ver: String, +have: String) -> IO(Got):
   do IO<Got>:
     +old : Map<&2, String> <- FVS.Fvs.idx(cache)
     +todo : List<&2, String> = FVS.Fvs.todo(FVS.Fvs.lines(files), old)
     mk : P.Ran <- P.Proc.run("mkdir", ["-p", cache], "/")
-    +got : List<&2, String> <- Rvw.fetch(todo, url, thread, cache)
+    +got : List<&2, String> <- Rvw.fetch(todo, url, thread, root, cache)
     now : String <- FVS.Fvs.install(cache, files, got)
     +failed : Nat = Nat.sub(List.length(&2, String, todo), List.length(&2, String, got))
     return Got{True{}, Bool.pick(String, Nat.is_eq(failed, 0n), ver, ""), Bool.not(String.eq(ver, have)), ""}
 
-def Rvw.res.k(+cache: String, +ver: String, +files: String, +url: String, +thread: String, +have: String) -> IO(Got):
+def Rvw.res.k(+cache: String, +ver: String, +files: String, +url: String, +thread: String, +root: String, +have: String) -> IO(Got):
   Bool.pick(IO(Got), String.is_empty(cache), IO.pure(Got, Rvw.fail("that folder cannot be kept here")),
     Bool.pick(IO(Got), Bool.and(String.eq(ver, have), Bool.not(String.is_empty(have))), IO.pure(Got, Got{True{}, ver, False{}, ""}),
-      Rvw.bring(url, thread, cache, files, ver, have)))
+      Rvw.bring(url, thread, root, cache, files, ver, have)))
 
-def Rvw.res(+res: J.Json, +url: String, +pre: String, +thread: String, +have: String) -> IO(Got):
-  Rvw.res.k(RV.Rview.at(pre, J.Json.get_str(res, "root", "")), J.Json.get_str(res, "ver", ""), J.Json.get_str(res, "files", ""), url, thread, have)
+def Rvw.res(+res: J.Json, +url: String, +pre: String, +thread: String, +root: String, +have: String) -> IO(Got):
+  Rvw.res.k(RV.Rview.at(pre, J.Json.get_str(res, "root", "")), J.Json.get_str(res, "ver", ""), J.Json.get_str(res, "files", ""), url, thread, root, have)
 
-def Rvw.body(m: Maybe<&2, J.Json>, +url: String, +pre: String, +thread: String, +have: String) -> IO(Got):
+def Rvw.body(m: Maybe<&2, J.Json>, +url: String, +pre: String, +thread: String, +root: String, +have: String) -> IO(Got):
   match m:
     case Some{+o}:
-      Bool.pick(IO(Got), J.Json.get_bool(o, "ok", False{}), Rvw.res(J.Json.get_obj(o, "result"), url, pre, thread, have),
+      Bool.pick(IO(Got), J.Json.get_bool(o, "ok", False{}), Rvw.res(J.Json.get_obj(o, "result"), url, pre, thread, root, have),
         IO.pure(Got, Rvw.fail(J.Json.get_str(o, "error", "that machine did not take it"))))
     case None{}:
       IO.pure(Got, Rvw.fail("invalid reply from that machine"))
@@ -118,16 +120,16 @@ def Rvw.fail.of(+r: BN.Resp) -> Got:
     case BN.Resp{+c, +b}:
       Rvw.fail(Bool.pick(String, Nat.is_eq(c, 0n), "that machine is away", "that machine did not take it: " ++ String.take(b, 120n)))
 
-def Rvw.got(+r: BN.Resp, +url: String, +pre: String, +thread: String, +have: String) -> IO(Got):
-  Bool.pick(IO(Got), Nat.is_eq(FVS.Fvs.code(r), 200n), Rvw.body(J.Json.parse(FVS.Fvs.body(r)), url, pre, thread, have), IO.pure(Got, Rvw.fail.of(r)))
+def Rvw.got(+r: BN.Resp, +url: String, +pre: String, +thread: String, +root: String, +have: String) -> IO(Got):
+  Bool.pick(IO(Got), Nat.is_eq(FVS.Fvs.code(r), 200n), Rvw.body(J.Json.parse(FVS.Fvs.body(r)), url, pre, thread, root, have), IO.pure(Got, Rvw.fail.of(r)))
 
 # One round: the hub's list of the thread's files, `want` the one more
 # the viewer is on (from the thread's folder), `have` the digest of the
 # last list held ("" for none). It answers at once when its digest is not
 # `have`, else after the list changes or a while.
-def Rvw.sync(+url: String, +pre: String, +thread: String, +want: String, +have: String) -> IO(Got):
-  IO.bind(BN.Resp, Got, Rvw.get(url, "/view/ver?thread=" ++ RV.Rview.enc(thread) ++ "&want=" ++ RV.Rview.enc(want) ++ "&have=" ++ RV.Rview.enc(have), 40n, 1048576n, ""),
-    r => Rvw.got(r, url, pre, thread, have))
+def Rvw.sync(+url: String, +pre: String, +thread: String, +root: String, +want: String, +have: String) -> IO(Got):
+  IO.bind(BN.Resp, Got, Rvw.get(url, "/view/ver?thread=" ++ RV.Rview.enc(thread) ++ "&root=" ++ RV.Rview.enc(root) ++ "&want=" ++ RV.Rview.enc(want) ++ "&have=" ++ RV.Rview.enc(have), 40n, 1048576n, ""),
+    r => Rvw.got(r, url, pre, thread, root, have))
 
 # a file of a commit the viewers name (a history version): the bytes, [] when
 # it cannot be read
@@ -139,10 +141,10 @@ def Rvw.git.done(+r: BN.Resp, +tmp: String) -> IO(List<&2, U32>):
         BN.Bf.rm(tmp)
         return bs
 
-def Rvw.git(+url: String, +pre: String, +thread: String, +path: String) -> IO(List<&2, U32>):
+def Rvw.git(+url: String, +pre: String, +thread: String, +root: String, +path: String) -> IO(List<&2, U32>):
   do IO<List<&2, U32>>:
     mk : P.Ran <- P.Proc.run("mkdir", ["-p", pre], "/")
     +n : String <- BN.Bn.random(4n)
     +tmp : String = pre ++ "/.git-" ++ n
-    r : BN.Resp <- Rvw.get(url, "/view/git" ++ Rvw.q(thread, path), 60n, Nat.add(FV.Fv.cap(), 1048576n), tmp)
+    r : BN.Resp <- Rvw.get(url, "/view/git" ++ Rvw.q(thread, root, path), 60n, Nat.add(FV.Fv.cap(), 1048576n), tmp)
     Rvw.git.done(r, tmp)

@@ -1503,16 +1503,16 @@ def Watch.go(none: Bool, once: Bool, +key: String, +path: String, +q: Chan(Shell
 # folder of copies, the thread, the connection), so the viewers read them
 # once after each round that changed something instead of watching them; a
 # version in a commit is asked of the hub (its git directory is there).
-def Watch.hist.r(+spec: String, +path: String) -> IO(List<&2, U32>):
-  RW.Rvw.git(RV.Rview.part(spec, 0n), RV.Rview.part(spec, 1n), RV.Rview.part(spec, 2n), path)
+def Watch.hist.r(+spec: String, +key: String, +path: String) -> IO(List<&2, U32>):
+  RW.Rvw.git(RV.Rview.part(spec, 0n), RV.Rview.part(spec, 1n), RV.Rview.part(spec, 2n), RV.Rview.back(RV.Rview.part(spec, 1n), Src.at(key, 1n)), path)
 
 def Watch.version.r(+spec: String, +path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
-  IO.bind(List<&2, U32>, Unit, Watch.hist.r(spec, path), bs => Watch.version.of(bs, path, key, q))
+  IO.bind(List<&2, U32>, Unit, Watch.hist.r(spec, key, path), bs => Watch.version.of(bs, path, key, q))
 
 def Watch.compare.r(+spec: String, +path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
   do IO<Unit>:
-    a : List<&2, U32> <- Watch.hist.r(spec, HS.Hist.old(path))
-    b : List<&2, U32> <- Watch.hist.r(spec, HS.Hist.new(path))
+    a : List<&2, U32> <- Watch.hist.r(spec, key, HS.Hist.old(path))
+    b : List<&2, U32> <- Watch.hist.r(spec, key, HS.Hist.new(path))
     Watch.compare.of(a, b, path, key, q)
 
 def Watch.go.r(k: Nat, +spec: String, none: Bool, +key: String, +path: String, +q: Chan(ShellMsg)) -> IO(Unit):
@@ -1543,7 +1543,7 @@ def Watch.follow.done(g: RW.Got, +key: String, +q: Chan(ShellMsg), +tag: String)
         return Unit{}
 
 def Watch.follow(+key: String, +q: Chan(ShellMsg), +spec: String, +have: String) -> IO(Unit):
-  IO.bind(RW.Got, Unit, RW.Rvw.sync(RV.Rview.part(spec, 0n), RV.Rview.part(spec, 1n), RV.Rview.part(spec, 2n), RV.Rview.want(RV.Rview.part(spec, 1n), Src.at(key, 1n), Src.at(key, 2n)), have),
+  IO.bind(RW.Got, Unit, RW.Rvw.sync(RV.Rview.part(spec, 0n), RV.Rview.part(spec, 1n), RV.Rview.part(spec, 2n), RV.Rview.back(RV.Rview.part(spec, 1n), Src.at(key, 1n)), RV.Rview.want(RV.Rview.part(spec, 1n), Src.at(key, 1n), Src.at(key, 2n)), have),
     g => Watch.follow.done(g, key, q, RV.Rview.part(spec, 3n)))
 
 def Watch.begin.k(remote: Bool, once: Bool, +key: String, +q: Chan(ShellMsg), +spec: String) -> IO(Unit):

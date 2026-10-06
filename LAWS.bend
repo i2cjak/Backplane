@@ -6066,10 +6066,19 @@ law rview_git_ok:
   {RVW.Rview.ask.ok("/view/git", "/p", "", "git\t/p/.git\tabc123\t2\t/p/a.kicad_pcb") == True{} : Bool}
 
 law rview_root_unknown:
-  {RVW.Rview.root.k(False{}, False{}, "/h", "", "/p") == "" : String}
+  {RVW.Rview.root.k(False{}, False{}, "/h", "", "/p", "") == "" : String}
 
 law rview_root_far_cache:
-  {RVW.Rview.root.k(True{}, True{}, "/h", "beta", "/p") == "/h/farfs/beta/p" : String}
+  {RVW.Rview.root.k(False{}, True{}, "/h", "beta", "", "/h/farfs/beta/p") == "/h/farfs/beta/p" : String}
+
+law rview_root_far_other_link:
+  {RVW.Rview.root.k(False{}, True{}, "/h", "beta", "", "/h/farfs/gamma/p") == "" : String}
+
+law rview_root_far_climbs:
+  {RVW.Rview.root.k(False{}, True{}, "/h", "beta", "", "/h/farfs/beta/../../etc") == "" : String}
+
+law rview_root_own_ignores_claim:
+  {RVW.Rview.root.k(True{}, False{}, "/h", "", "/p", "/etc") == "/p" : String}
 
 law rview_enc_unreserved:
   {RVW.Rview.enc("hw/a-b_c.kicad_pcb") == "hw/a-b_c.kicad_pcb" : String}

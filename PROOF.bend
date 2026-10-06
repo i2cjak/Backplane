@@ -7757,3 +7757,12 @@ def Laws.rview_enc_breaks():
 
 def Laws.rview_spec_local():
   {==}
+
+def Laws.rview_root_far_other_link():
+  {==}
+
+def Laws.rview_root_far_climbs():
+  {==}
+
+def Laws.rview_root_own_ignores_claim():
+  {==}
