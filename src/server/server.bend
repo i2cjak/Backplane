@@ -34,6 +34,7 @@ import ../core/store.bend as ST
 import ./botnet.bend as BN
 import ../core/far.bend as FR
 import ../core/xref.bend as XR
+import ../core/fmcp.bend as FM
 import ../core/client.bend as UC
 import ../core/bothub.bend as BH
 import ../core/bot.bend as BO
@@ -5537,6 +5538,15 @@ def Far.rpc.job(+client: U32, +id: String, +link: String, +body: String, +home: 
     +r : BN.Resp <- BN.Bn.to_peer(home, url, link, now, "/far/rpc", True{}, body)
     Far.send(inbox, FarReplied{client, id, link, Far.code(r), Far.body(r)})
 
+# a tool call of an agent here, for a machine of the owner's: its owner runs
+# it (fmcp.bend) and the answer goes straight back to the agent's request
+def Far.mcp.job(+id: J.Json, +link: String, +body: String, +home: String, +url: String, +reply: Chan(String)) -> IO(Unit):
+  do IO<Unit>:
+    now : Nat <- Now.nat()
+    +r : BN.Resp <- BN.Bn.to_peer(home, url, link, now, "/far/rpc", True{}, body)
+    ok : Bool <- Chan.send(String, reply, FM.Fm.answer(id, link, Far.code(r), Far.body(r)))
+    return Unit{}
+
 # this hub's shared lines, made from its log (newest first)
 def Far.feed.job(+ls: List<&2, String>, +st: M.State, +inbox: Chan(Msg)) -> IO(Unit):
   Far.send(inbox, FarFeed{FR.Fr.feed.full(ls, st), ""})
@@ -7086,10 +7096,19 @@ def Hub.far.rpc.step(step: B.Step, h: Hub, +reply: Chan(List<&2, U32>)) -> IO(Hu
         h2 : Hub <- Hub.step(h, B.Step{cs, os})
         Hub.answer(h2, reply, Bot.json("200 OK", Far.rpc.reply(os)))
 
+# a remote agent's tool call is run by fmcp.bend; any other request is a
+# client's about a shared thread
+def Far.rpc.decide(mcp: Bool, +st: M.State, +now: Nat, +o: J.Json, +text: String) -> B.Step:
+  match mcp:
+    case True{}:
+      FM.Fm.serve(st, now, Far.client(), o)
+    case False{}:
+      Bot.request(Some{o}, st, now, Far.client(), text)
+
 def Hub.far.rpc.k(may: Bool, h: Hub, +o: J.Json, +text: String, +reply: Chan(List<&2, U32>), +now: Nat) -> IO(Hub):
   match may h:
     case True{} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
-      Hub.far.rpc.step(Bot.request(Some{o}, st, now, Far.client(), text), Hub{st, f, ls, cl, as, inbox, cfg, note}, reply)
+      Hub.far.rpc.step(Far.rpc.decide(FM.Fm.is(o), st, now, o, text), Hub{st, f, ls, cl, as, inbox, cfg, note}, reply)
     case False{} _:
       Hub.answer(h, reply, W.Http.text("403 Forbidden", "not something this machine shares"))
 
@@ -7097,7 +7116,7 @@ def Hub.far.rpc.k(may: Bool, h: Hub, +o: J.Json, +text: String, +reply: Chan(Lis
 def Hub.far.rpc(ok: Bool, m: Maybe<&2, J.Json>, h: Hub, +text: String, +reply: Chan(List<&2, U32>), +now: Nat) -> IO(Hub):
   match ok m h:
     case True{} Some{+o} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
-      Hub.far.rpc.k(FR.Fr.allowed(st, o), Hub{st, f, ls, cl, as, inbox, cfg, note}, o, text, reply, now)
+      Hub.far.rpc.k(FM.Fm.permit(st, o), Hub{st, f, ls, cl, as, inbox, cfg, note}, o, text, reply, now)
     case True{} None{} _:
       Hub.answer(h, reply, W.Http.text("400 Bad Request", "not JSON"))
     case False{} _ _:
@@ -7960,8 +7979,26 @@ def Hub.mcp.x(x: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +reply
     case False{} _:
       Hub.mcp.tr(TermRead.is(o), h, thread, o, body, reply, now)
 
+# a tool call for a machine of the owner's goes there (fmcp.bend); machine_list
+# is answered here; any other runs as before
+def Hub.mcp.f(p: FM.Plan, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match p h:
+    case FM.PHere{} _:
+      Hub.mcp.x(XR.Xref.read.is(o), h, thread, o, body, reply, now)
+    case FM.PAnswer{r} _:
+      Hub.mcp.k(MC.Mcp.reply(Maybe.default(&2, J.Json, J.Json.get(o, "id"), J.Null{}), r), h, reply, body)
+    case FM.PFar{+link, +rq} Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, Far.mcp.job(Maybe.default(&2, J.Json, J.Json.get(o, "id"), J.Null{}), link, rq, Cfg.home(cfg), Bot.peer.url(st, link), reply))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+
+def Hub.mcp.p(+o: J.Json, h: Hub, +thread: String, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      Hub.mcp.f(FM.Fm.plan.o(o, st, FR.Fh.ins(BN.Bn.far(Cfg.bn(cfg))), thread), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, o, body, reply, now)
+
 def Hub.mcp(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
-  Hub.mcp.x(XR.Xref.read.is(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{})), h, thread, Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), body, reply, now)
+  Hub.mcp.p(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), h, thread, body, reply, now)
 
 def Msg.kind(m: Msg) -> String:
   match m:
