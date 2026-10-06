@@ -7382,9 +7382,15 @@ def Pair.got(r: BN.Resp, +from: String, +inbox: Chan(Msg), +home: String, +tailn
         Pair.joined(SG.Invite.parse(J.Json.get_str(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), "invite", "")), inbox, home, tailnet, host, port),
         Log.info("pair: " ++ from ++ " did not pair (" ++ Nat.show(code) ++ ") " ++ String.take(String.trim(body), 120n)))
 
-def Pair.ask(+url: String, +inbox: Chan(Msg), +home: String, +tailnet: Bool, +host: String, +port: U32) -> IO(Unit):
+# (this hub's address as its machines list found it, the one the other
+# side can reach and knows it by; else as it listens: a hub bound to
+# 0.0.0.0 would name an address nobody reaches)
+def Pair.here(+self: String, +tailnet: Bool, +host: String, +port: U32) -> IO(String):
+  Bool.pick(IO(String), String.is_empty(self), BN.Bn.url.here(tailnet, host, port), IO.pure(String, self))
+
+def Pair.ask(+url: String, +self: String, +inbox: Chan(Msg), +home: String, +tailnet: Bool, +host: String, +port: U32) -> IO(Unit):
   do IO<Unit>:
-    +here : String <- BN.Bn.url.here(tailnet, host, port)
+    +here : String <- Pair.here(self, tailnet, host, port)
     +me : String <- BN.Bn.name()
     r : BN.Resp <- BN.Bn.plain(BN.Bn.url.base(url) ++ "/bots/pair?name=" ++ me ++ "&url=" ++ here)
     Pair.got(r, url, inbox, home, tailnet, host, port)
@@ -7395,7 +7401,7 @@ def Pair.go(ms: List<&2, UC.MRow>, +inbox: Chan(Msg), +cfg: Cfg) -> IO(Unit):
       IO.pure(Unit, Unit{})
     case UC.MRow{_, +url, _} <> t:
       do IO<Unit>:
-        IO.spawn(Unit, Pair.ask(url, inbox, Cfg.home(cfg), Cfg.tailnet(cfg), Cfg.host(cfg), Cfg.port(cfg)))
+        IO.spawn(Unit, Pair.ask(url, J.Json.get_str(J.Json.get_obj(Far.machines(cfg), "self"), "url", ""), inbox, Cfg.home(cfg), Cfg.tailnet(cfg), Cfg.host(cfg), Cfg.port(cfg)))
         Pair.go(t, inbox, cfg)
 
 def Hub.pair(h: Hub) -> IO(Hub):

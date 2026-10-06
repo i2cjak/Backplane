@@ -630,7 +630,7 @@ def Bn.at(+host: String, +port: U32) -> String:
 
 # where other machines reach this hub: its MagicDNS name on the tailnet
 # (the hub listens there on the same port), else its listen address
-def Bn.url.here(tailnet: Bool, +host: String, +port: U32) -> IO(String):
+def Bn.url.here.k(tailnet: Bool, +host: String, +port: U32) -> IO(String):
   match tailnet:
     case True{}:
       do IO<String>:
@@ -639,6 +639,13 @@ def Bn.url.here(tailnet: Bool, +host: String, +port: U32) -> IO(String):
         return Bool.pick(String, String.is_empty(name), Bn.at(host, port), Bn.at(name, port))
     case False{}:
       IO.pure(String, Bn.at(host, port))
+
+# this hub's address for other hubs: BACKPLANE_URL when set (a hub bound to
+# 0.0.0.0 off the tailnet names an address others reach), else as above
+def Bn.url.here(tailnet: Bool, +host: String, +port: U32) -> IO(String):
+  do IO<String>:
+    +env : String <- Bf.env("BACKPLANE_URL")
+    Bool.pick(IO(String), String.is_empty(String.trim(env)), Bn.url.here.k(tailnet, host, port), IO.pure(String, String.trim(env)))
 
 # this machine's name for others: BACKPLANE_NAME, else its host name
 def Bn.name() -> IO(String):
