@@ -34,6 +34,7 @@ import ../core/store.bend as ST
 import ./botnet.bend as BN
 import ../core/far.bend as FR
 import ../core/fview.bend as FV
+import ../core/rview.bend as RVW
 import ./farview.bend as FVS
 import ../core/xref.bend as XR
 import ../core/fmcp.bend as FM
@@ -8000,6 +8001,39 @@ def Hub.bot.pair(h: Hub, +arg: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
       Hub.bot.pair.k(UC.Mate.answer(Far.machines(cfg), BO.World.peers(M.State.bots(st)), st,
         BN.Bn.clean(AT.Att.unpct(W.Http.param(arg, "name"))), AT.Att.unpct(W.Http.param(arg, "url"))), Hub{st, f, ls, cl, as, inbox, cfg, note}, reply)
 
+# A window on this hub from another machine (core/rview.bend): the files
+# of a thread's folder for its viewers, read only. /view/ver lists them
+# with a digest and waits for a change when the client holds it already,
+# /view/get is one file's bytes, /view/git one file of a commit. Clients
+# let in as for the websocket (Conn.allowed); the folder is the thread's
+# own (for a thread mirrored here, the cache this hub keeps of the owner's).
+def View.git.sent(bs: List<&2, U32>, +reply: Chan(List<&2, U32>)) -> IO(Unit):
+  match bs:
+    case Nil{}:
+      Bot.answer(reply, W.Http.text("404 Not Found", "no such version"))
+    case b <> t:
+      Bot.answer(reply, W.Http.response.c("200 OK", "application/octet-stream", b <> t, "no-store", ""))
+
+def View.git.job(+path: String, +reply: Chan(List<&2, U32>)) -> IO(Unit):
+  IO.bind(List<&2, U32>, Unit, GT.Git.version(path), bs => View.git.sent(bs, reply))
+
+def Hub.bot.view.k(ok: Bool, +kind: Nat, h: Hub, +root: String, +th: String, +want: String, +have: String, +path: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match ok:
+    case True{}:
+      do IO<Hub>:
+        IO.spawn(Unit, Bool.pick(IO(Unit), Nat.is_eq(kind, 1n), Far.view.ver.job(root, th, want, have, reply),
+          Bool.pick(IO(Unit), Nat.is_eq(kind, 2n), Far.view.get.job(root, path, reply), View.git.job(path, reply))))
+        return h
+    case False{}:
+      Hub.answer(h, reply, W.Http.text("403 Forbidden", "not a thread of this machine, or not a file the viewers read"))
+
+def Hub.bot.view(h: Hub, +arg: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      Hub.bot.view.k(RVW.Rview.ask.ok(W.Http.route(arg), RVW.Rview.root(Cfg.home(cfg), st, AT.Att.unpct(W.Http.param(arg, "thread")), AT.Att.unpct(W.Http.param(arg, "root"))), AT.Att.unpct(W.Http.param(arg, "want")), AT.Att.unpct(W.Http.param(arg, "path"))),
+        RVW.Rview.kind(W.Http.route(arg)), Hub{st, f, ls, cl, as, inbox, cfg, note}, RVW.Rview.root(Cfg.home(cfg), st, AT.Att.unpct(W.Http.param(arg, "thread")), AT.Att.unpct(W.Http.param(arg, "root"))),
+        AT.Att.unpct(W.Http.param(arg, "thread")), AT.Att.unpct(W.Http.param(arg, "want")), AT.Att.unpct(W.Http.param(arg, "have")), AT.Att.unpct(W.Http.param(arg, "path")), reply)
+
 def Hub.bot_http.page(i: Nat, h: Hub, +kind: String, +arg: String, +peer: String, +ts: String, +sig: String, +gh: String, +dl: String, +body: String,
     +ct: String, +raw: List<&2, U32>,
     +reply: Chan(List<&2, U32>), +now: Nat) -> IO(Hub):
@@ -8008,12 +8042,14 @@ def Hub.bot_http.page(i: Nat, h: Hub, +kind: String, +arg: String, +peer: String
       Hub.bot.page(h, arg, reply)
     case 1n:
       Hub.bot.pair(h, arg, reply)
+    case 2n:
+      Hub.bot.view(h, arg, reply)
     case _:
       Hub.bot_http.job(h, kind, arg, peer, ts, sig, gh, dl, body, ct, raw, reply, now)
 
 def Hub.bot_http(h: Hub, +kind: String, +arg: String, +peer: String, +ts: String, +sig: String, +gh: String, +dl: String, +body: String,
     +ct: String, +raw: List<&2, U32>, +reply: Chan(List<&2, U32>), +now: Nat) -> IO(Hub):
-  Hub.bot_http.page(C.Codec.pos(["page", "pair"], kind), h, kind, arg, peer, ts, sig, gh, dl, body, ct, raw, reply, now)
+  Hub.bot_http.page(C.Codec.pos(["page", "pair", "view"], kind), h, kind, arg, peer, ts, sig, gh, dl, body, ct, raw, reply, now)
 
 def Bot.hook.live.k(hk: BO.Hook, +st: M.State) -> Bool:
   match hk:
@@ -8134,7 +8170,7 @@ def Conn.bot.kind.k(+post: Bool, +get: Bool, +r: String) -> Nat:
                 Bool.pick(Nat, Bool.and(post, String.eq(r, "/far/push")), 8n,
                   Bool.pick(Nat, Bool.and(post, String.eq(r, "/far/log")), 9n,
                     Bool.pick(Nat, Bool.and(post, String.eq(r, "/far/rpc")), 10n,
-                      Bool.pick(Nat, Bool.and(post, String.eq(r, "/bots/pair")), 11n, 0n)))))))))))
+                      Bool.pick(Nat, Bool.and(post, String.eq(r, "/bots/pair")), 11n, Bool.pick(Nat, Bool.and(get, Nat.is_gt(RVW.Rview.kind(r), 0n)), 12n, 0n))))))))))))
 
 # which bots' route a request is (0: none)
 def Conn.bot.kind(req: W.Request) -> Nat:
@@ -8361,6 +8397,8 @@ def Conn.route.bot(k: Nat, s: Socket, +req: W.Request, rest: List<&2, U32>, +web
       Conn.bot.signed("far-rpc", W.Http.header_of(hs, "x-backplane-peer"), s, hs, rest, inbox)
     case 11n W.Request{_, +p, +hs}:
       Conn.bot.own(Conn.allowed(trusted, hs, p, token), s, BotReq{"pair", p, "", "", "", "", ""}, inbox)
+    case 12n W.Request{_, +p, +hs}:
+      Conn.bot.own(Conn.allowed(trusted, hs, p, token), s, BotReq{"view", p, "", "", "", "", ""}, inbox)
     case _ _:
       Conn.route.att(Conn.is_att(req), s, req, rest, web, id, inbox, trusted, token)
 
