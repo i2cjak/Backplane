@@ -7,6 +7,8 @@ import ./far.bend as FR
 import ./refs.bend as RF
 import ./mcp.bend as MC
 import ./xref.bend as XR
+import ./handoff.bend as HD
+import ./bothub.bend as BH
 
 # Agents across machines: the thread tools reaching another machine
 # ------------------------------------------------------------------
@@ -259,3 +261,63 @@ def Fm.prompt.k(ns: List<&2, String>) -> String:
 
 def Fm.prompt(ins: List<&2, FR.In>) -> String:
   Fm.prompt.k(Fm.nms(ins))
+
+# /give elsewhere
+# ---------------
+# `/give >machine:slug` hands the conversation to a thread on another
+# machine (thread_send, queued there), and `/give %machine:project` makes a
+# new thread in that machine's project with it (thread_launch): the same
+# signed request an agent's call becomes (PFar). Words naming something
+# here are the hub's own (bothub.bend's Give.*).
+
+# a project on another machine: `%machine:name`
+def Fm.pword(+w: String) -> Bool:
+  Bool.and(String.eq(RF.Refs.kind(w), "project"), Bool.and(String.contains(w, ":"), Bool.not(String.is_empty(RF.Slug.of(RF.Refs.x.m(String.drop(w, 1n)))))))
+
+def Fm.give.thread(m: Maybe<&2, RF.Cand>, +link: String, +src: String, +hand: String) -> List<&2, Plan>:
+  match m:
+    case Some{RF.Cand{+id, _, _, _}}:
+      [PFar{link, Fm.request(link, "thread_send", FR.Fr.id(link, src), J.Json.obj([J.KV{"threadId", J.Str{id}}, J.KV{"text", J.Str{hand}}, J.KV{"mode", J.Str{"queue"}}]))}]
+    case None{}:
+      Nil{}
+
+def Fm.give.t(m: Maybe<&2, FR.In>, +slug: String, +src: String, +hand: String) -> List<&2, Plan>:
+  match m:
+    case Some{+i}:
+      Fm.give.thread(List.head(&2, RF.Cand, List.sort(~RF.Cand, ~RF.Cand.before, RF.Refs.t.hits(XR.Xref.threads(XR.Xref.state(i)), slug, ""))), FR.In.link(i), src, hand)
+    case None{}:
+      Nil{}
+
+def Fm.give.p(m: Maybe<&2, FR.In>, +name: String, +src: String, +hand: String, +title: String) -> List<&2, Plan>:
+  match m:
+    case Some{+i}:
+      [PFar{FR.In.link(i), Fm.request(FR.In.link(i), "thread_launch", FR.Fr.id(FR.In.link(i), src), J.Json.obj([J.KV{"project", J.Str{name}}, J.KV{"prompt", J.Str{hand}}, J.KV{"title", J.Str{title}}]))}]
+    case None{}:
+      Nil{}
+
+def Fm.give.word(+w: String, +ins: List<&2, FR.In>, +src: String, +hand: String, +title: String) -> List<&2, Plan>:
+  Bool.pick(List<&2, Plan>, XR.Xref.named(w),
+    Fm.give.t(XR.Xref.pick(ins, RF.Slug.of(RF.Refs.x.m(String.drop(w, 1n)))), RF.Slug.of(RF.Slug.take(RF.Refs.x.q(String.drop(w, 1n)))), src, hand),
+    Bool.pick(List<&2, Plan>, Fm.pword(w),
+      Fm.give.p(XR.Xref.pick(ins, RF.Slug.of(RF.Refs.x.m(String.drop(w, 1n)))), RF.Refs.x.q(String.drop(w, 1n)), src, hand, title),
+      Nil{}))
+
+def Fm.give.words(ws: List<&2, String>, +ins: List<&2, FR.In>, +src: String, +hand: String, +title: String) -> List<&2, Plan>:
+  match ws:
+    case Nil{}:
+      Nil{}
+    case +w <> t:
+      List.append(&2, Plan, Fm.give.word(w, ins, src, hand, title), Fm.give.words(t, ins, src, hand, title))
+
+def Fm.give.go(+s: M.State, +ins: List<&2, FR.In>, +src: String, +text: String) -> List<&2, Plan>:
+  Fm.give.words(RF.Refs.sigil.words(text), ins, src, String.take(HD.Hand.give(B.Hub.entries(s), src, HD.Hand.title(B.Hub.thread(s, src)), BH.Give.note(text)), 100000n), HD.Hand.title(B.Hub.thread(s, src)))
+
+# the requests a `bots.give` makes of other machines (none for any other
+# request, or a text that names nothing elsewhere: a cheap test first)
+def Fm.give(+s: M.State, +ins: List<&2, FR.In>, +o: J.Json) -> List<&2, Plan>:
+  Bool.pick(List<&2, Plan>, Bool.and(String.eq(J.Json.get_str(o, "m", ""), "bots.give"), String.contains(J.Json.get_str(J.Json.get_obj(o, "p"), "text", ""), ":")),
+    Fm.give.go(s, ins, J.Json.get_str(J.Json.get_obj(o, "p"), "thread", ""), J.Json.get_str(J.Json.get_obj(o, "p"), "text", "")), Nil{})
+
+# whether the text also names something here (bothub.bend's Give.*)
+def Fm.give.here(+s: M.State, +o: J.Json) -> Bool:
+  Bool.not(List.is_empty(&2, RF.Hit, RF.Refs.found(s, J.Json.get_str(J.Json.get_obj(o, "p"), "thread", ""), J.Json.get_str(J.Json.get_obj(o, "p"), "text", ""))))

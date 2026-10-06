@@ -6692,8 +6692,51 @@ def Hub.rpc.far(maybe: Bool, h: Hub, +client: U32, +text: String, +now: Nat) -> 
     case False{}:
       Hub.rpc.here(h, client, text, now)
 
+# `/give` naming threads or projects on the owner's other machines: each is
+# sent there (fmcp.bend's Fm.give, as an agent's tool call is); the hub's
+# own part, if the text names any, runs as usual, else the client is told ok
+def Far.give.go(ps: List<&2, FM.Plan>, h: Hub) -> IO(Hub):
+  match ps h:
+    case Nil{} _:
+      IO.pure(Hub, h)
+    case FM.PFar{+link, +rq} <> t Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
+      do IO<Hub>:
+        +r : Chan(String) <- Chan.new(String, 1)
+        IO.spawn(Unit, Far.mcp.job(J.Null{}, link, rq, Cfg.home(cfg), Bot.peer.url(st, link), r))
+        Far.give.go(t, Hub{st, f, ls, cl, as, inbox, cfg, note})
+    case _ <> t _:
+      Far.give.go(t, h)
+
+def Far.give.k(here: Bool, h: Hub, +client: U32, +id: String, +text: String, +now: Nat) -> IO(Hub):
+  match here:
+    case True{}:
+      Hub.rpc.far(String.contains(text, "~"), h, client, text, now)
+    case False{}:
+      Hub.push(h, client, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{id}}, J.KV{"ok", J.Flag{True{}}}])))
+
+def Far.give.p(ps: List<&2, FM.Plan>, +here: Bool, h: Hub, +client: U32, +id: String, +text: String, +now: Nat) -> IO(Hub):
+  match ps:
+    case Nil{}:
+      Hub.rpc.far(String.contains(text, "~"), h, client, text, now)
+    case _ <> _:
+      IO.bind(Hub, Hub, Far.give.go(ps, h), h2 => Far.give.k(here, h2, client, id, text, now))
+
+def Far.give(m: Maybe<&2, J.Json>, h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
+  match m h:
+    case Some{+o} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      Far.give.p(FM.Fm.give(st, FR.Fh.ins(BN.Bn.far(Cfg.bn(cfg))), o), FM.Fm.give.here(st, o), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, J.Json.as_raw(J.Json.get(o, "id"), "0"), text, now)
+    case None{} _:
+      Hub.rpc.far(String.contains(text, "~"), h, client, text, now)
+
+def Hub.rpc.g(give: Bool, h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
+  match give:
+    case True{}:
+      Far.give(J.Json.parse(text), h, client, text, now)
+    case False{}:
+      Hub.rpc.far(String.contains(text, "~"), h, client, text, now)
+
 def Hub.rpc(h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
-  Hub.rpc.far(String.contains(text, "~"), h, client, text, now)
+  Hub.rpc.g(String.contains(text, "bots.give"), h, client, text, now)
 
 def Hub.line.k(p: M.State & Hub, +thread: String, +line: String, +now: Nat) -> IO(Hub):
   (st, h) = p
