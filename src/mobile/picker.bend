@@ -69,7 +69,7 @@ def MPick.open.k(+u: U.Ui) -> U.Act:
 def MPick.open.on(away: Bool, +u: U.Ui) -> U.Act:
   match away:
     case True{}:
-      MPick.open.k(U.Ui.info_set(U.Ui.info_set(u, "proj.on", ""), "proj.home", ""))
+      MPick.open.k(U.Ui.info_set(U.Ui.info_set(U.Ui.info_set(U.Ui.info_set(u, "proj.on", ""), "proj.home", ""), "proj.found", ""), "proj.dir", ""))
     case False{}:
       MPick.open.k(u)
 

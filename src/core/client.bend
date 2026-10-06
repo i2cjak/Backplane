@@ -3364,7 +3364,7 @@ def Proj.machines.go(ps: List<&2, BT.Peer>, +u: Ui) -> List<&2, String>:
     case Nil{}:
       Nil{}
     case BT.Peer{+id, _, _, _, +rv} <> t:
-      Proj.machines.k(Bool.and(Bool.not(rv), Bool.and(Bool.not(String.is_empty(Ui.info(u, "far.name." ++ id))), Bool.not(String.eq(Ui.info(u, "far.away." ++ id), "1")))), id, Proj.machines.go(t, u))
+      Proj.machines.k(Bool.and(Bool.and(Bool.not(rv), Bool.not(Mate.off(Ui.state(u), Ui.info(u, "far.name." ++ id)))), Bool.and(Bool.not(String.is_empty(Ui.info(u, "far.name." ++ id))), Bool.not(String.eq(Ui.info(u, "far.away." ++ id), "1")))), id, Proj.machines.go(t, u))
 
 def Proj.machines(+u: Ui) -> List<&2, String>:
   Proj.machines.go(BT.World.peers(M.State.bots(Ui.state(u))), u)

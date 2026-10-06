@@ -94,6 +94,8 @@ def Fr.change(+l: String, c: M.Change) -> Maybe<&2, M.Change>:
       Some{M.ThreadArchived{Fr.id(l, id), b, at}}
     case M.ThreadPinned{+id, b, at}:
       Some{M.ThreadPinned{Fr.id(l, id), b, at}}
+    case M.ThreadForked{+id, +src, at}:
+      Some{M.ThreadForked{Fr.id(l, id), Fr.id(l, src), at}}
     case M.ThreadDeleted{+id, at}:
       Some{M.ThreadDeleted{Fr.id(l, id), at}}
     case M.ModesSet{+id, runtime, interaction, model, at}:
@@ -229,6 +231,8 @@ def Fr.shared(+s: M.State, c: M.Change) -> Bool:
       Fr.thread.shared(s, id)
     case M.ThreadPinned{+id, _, _}:
       Fr.thread.shared(s, id)
+    case M.ThreadForked{+id, _, _}:
+      Fr.thread.shared(s, id)
     case M.ThreadDeleted{+id, _}:
       Fr.thread.shared(s, id)
     case M.ModesSet{+id, _, _, _, _}:
@@ -324,6 +328,8 @@ def Fr.scope(+s: M.State, c: M.Change) -> String:
     case M.ThreadArchived{+id, _, _}:
       Fr.scope.th(s, id)
     case M.ThreadPinned{+id, _, _}:
+      Fr.scope.th(s, id)
+    case M.ThreadForked{+id, _, _}:
       Fr.scope.th(s, id)
     case M.ThreadDeleted{+id, _}:
       Fr.scope.th(s, id)
@@ -1006,7 +1012,7 @@ def Ins.set(ms: List<&2, In>, +i: In) -> List<&2, In>:
 
 def Fr.methods() -> List<&2, String>:
   ["turn.start", "turn.interrupt", "ask.answer", "queue.move", "queue.remove", "queue.resume", "queue.steer", "queue.edit",
-   "thread.settle", "thread.unsettle", "thread.rename", "thread.btw", "thread.modes", "thread.provider", "thread.effort", "bots.space", "bots.routine_run",
+   "thread.settle", "thread.unsettle", "thread.back", "thread.rename", "thread.btw", "thread.modes", "thread.provider", "thread.effort", "bots.space", "bots.routine_run",
    "thread.create", "thread.fork", "thread.archive", "thread.unarchive", "thread.pin", "thread.unpin",
    "project.add", "project.new", "project.remove", "fs.list", "fs.mkdir", "fs.find"]
 
@@ -1066,6 +1072,12 @@ def Fr.is.some(m: Maybe<&2, M.Change>) -> Bool:
 # takes it (its method, its params in its ids; no request id)
 type Route is Data:
   Route{link: String, m: String, body: String}
+
+# A routed request carries a nonce of its own (the asking client, its
+# request id and the second), so two equal requests in one second are two
+# signed bodies, not a replay of one. The owner reads only id, m and p.
+def Fr.nonced(+body: String, +n: String) -> String:
+  "{\"n\":" ++ J.Json.show(J.Str{n}) ++ "," ++ String.drop(body, 1n)
 
 def Fr.route.k(+link: String, +m: String, +fs: J.Json) -> Maybe<&2, Route>:
   Bool.pick(Maybe<&2, Route>, String.is_empty(link), None{},
@@ -1321,8 +1333,13 @@ def Page.json(p: Page) -> String:
 # the log holds lines this build does not decode (a newer build wrote them:
 # `len` lines against `seq` changes), how many, so the feed's numbering
 # (by changes) starts a history of its own and mirrors pull it afresh.
+# The version of what is shared (Fr.shared): a build that shares more
+# kinds of change bumps it, so every mirror pulls the history afresh once.
+def Fr.view.tag() -> String:
+  "|view:2"
+
 def Fr.history.body(+first: String, +len: Nat, +seq: Nat) -> String:
-  Bool.pick(String, Nat.is_eq(len, seq), first, first ++ "|unknown:" ++ Nat.show(Nat.sub(len, seq)))
+  Bool.pick(String, Nat.is_eq(len, seq), first, first ++ "|unknown:" ++ Nat.show(Nat.sub(len, seq))) ++ Fr.view.tag()
 
 # Pushing to a linked machine
 # ---------------------------

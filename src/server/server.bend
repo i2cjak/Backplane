@@ -5509,7 +5509,7 @@ def Far.body(r: BN.Resp) -> String:
 # The first durable change identifies the history. Cache its hash at
 # startup or the first (small) commit, before accepting new pushes.
 def Far.history(+ls: List<&2, String>) -> String:
-  Bool.pick(String, List.is_empty(&2, String, ls), "", SG.Sign.header("00", 0n, Maybe.default(&2, String, List.last(&2, String, ls), "")))
+  Bool.pick(String, List.is_empty(&2, String, ls), "", SG.Sign.header("00", 0n, FR.Fr.history.body(Maybe.default(&2, String, List.last(&2, String, ls), ""), 1n, 1n)))
 
 # at start: lines the log holds that this build cannot decode give the
 # history a new identity (Fr.history.body)
@@ -6660,7 +6660,7 @@ def Hub.rpc.here(h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
 def Far.rpc.go(m: Maybe<&2, FR.Route>, h: Hub, +client: U32, +o: J.Json, +text: String, +now: Nat) -> IO(Hub):
   match m h:
     case Some{FR.Route{+link, +meth, +body}} Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
-      Far.rpc.may(FR.Fr.may(meth), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, J.Json.as_raw(J.Json.get(o, "id"), "0"), link, body, now)
+      Far.rpc.may(Bool.and(FR.Fr.may(meth), Far.own.id(st, cfg, link)), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, J.Json.as_raw(J.Json.get(o, "id"), "0"), link, FR.Fr.nonced(body, U32.show(client) ++ "." ++ J.Json.as_raw(J.Json.get(o, "id"), "0") ++ "." ++ Nat.show(now)), now)
     case None{} _:
       Hub.rpc.here(h, client, text, now)
 
@@ -6680,7 +6680,7 @@ def Hub.rpc.far(maybe: Bool, h: Hub, +client: U32, +text: String, +now: Nat) -> 
       Hub.rpc.here(h, client, text, now)
 
 def Hub.rpc(h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
-  Hub.rpc.far(Bool.or(String.contains(text, "~"), String.contains(text, "\"on\":\"")), h, client, text, now)
+  Hub.rpc.far(Bool.or(String.contains(text, "~"), String.contains(text, "\"on\"")), h, client, text, now)
 
 def Hub.line.k(p: M.State & Hub, +thread: String, +line: String, +now: Nat) -> IO(Hub):
   (st, h) = p
