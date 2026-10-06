@@ -5789,6 +5789,58 @@ def Far.live.gone(h: Hub, +link: String) -> IO(Hub):
         cl2 : List<&2, Client> <- Wire.all(cl, LV.Live.msg(bs))
         return Hub{st, f, ls, cl2, as, inbox, Live.with(cfg, bs), note}
 
+# a turn that ended here, told to the owner's other machines: each raises
+# it on its own desk and phones (core/farlive.bend, "note")
+def Far.note.job(+link: String, n: J.Json, +home: String, +url: String) -> IO(Unit):
+  do IO<Unit>:
+    +now : Nat <- Now.nat()
+    +name : String <- BN.Bn.name()
+    +r : BN.Resp <- BN.Bn.to_peer(home, url, link, now, "/far/push", True{}, FLV.FL.note.body(name, n))
+    return Unit{}
+
+def Far.note.go(ps: List<&2, BO.Peer>, +home: String, +n: J.Json) -> IO(Unit):
+  match ps:
+    case Nil{}:
+      IO.pure(Unit, Unit{})
+    case BO.Peer{+i, _, +u, _, _} <> t:
+      do IO<Unit>:
+        IO.spawn(Unit, Far.note.job(i, n, home, u))
+        Far.note.go(t, home, n)
+
+def Far.note.k(send: Bool, h: Hub, +n: NO.Notice, +thread: String, +title: String, +body: String) -> IO(Hub):
+  match send h:
+    case True{} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        Far.note.go(Far.own.go(BO.World.peers(M.State.bots(st)), st, cfg), Cfg.home(cfg), FLV.FL.note.json(thread, NO.Notice.kind(n), NO.Notice.key(n), title, body))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case False{} _:
+      IO.pure(Hub, h)
+
+def Far.note.n(+n: NO.Notice, h: Hub, +thread: String, +state: String, seen: Bool) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Far.note.k(Bool.and(Bool.not(seen), Bool.and(FR.Fr.thread.shared(st, thread), Bool.not(String.is_empty(NO.Notice.kind(n))))),
+        Hub{st, f, ls, cl, as, inbox, cfg, note}, n, thread, PU.Push.title(B.Hub.thread(st, thread)), PU.Push.body(String.eq(state, "failed"), PU.Push.first(B.Task.last(st, thread))))
+
+# a turn ended here and nobody here is watching it: the owner's other
+# machines raise it too (once per machine, under the alert's one key)
+def Far.note.out(h: Hub, +thread: String, +state: String, seen: Bool) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Far.note.n(NO.Notice.of(st, thread, String.eq(state, "failed"), True{}), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, state, seen)
+
+# the phones of this hub hear of a far turn's end
+def Far.note.push(+home: String, st: M.State, +thread: String, +title: String, +body: String, +akey: String, +inbox: Chan(Msg)) -> IO(Unit):
+  IO.bind(List<&2, String>, Unit, PU.Push.note.dead(home, st, thread, title, body, akey), ds => Hub.drop_dead(ds, inbox))
+
+# the desk used last shows it (none when a desk watches the thread)
+def Far.note.desk(m: Maybe<&2, U32>, +cl: List<&2, Client>, +farid: String, +o: J.Json) -> IO(List<&2, Client>):
+  match m:
+    case Some{+c}:
+      Wire.to(cl, c, DK.Desk.notify(farid, J.Json.get_str(o, "title", ""), J.Json.get_str(o, "body", ""), J.Json.get_str(o, "kind", ""), J.Json.get_str(o, "key", "")))
+    case None{}:
+      IO.pure(List<&2, Client>, cl)
+
 # a failed push holds its link for a backoff on a timer of its own; the
 # timer's message lets the retained batch go again
 def Far.retry.arm(holding: Bool, +link: String, +secs: Nat, +inbox: Chan(Msg)) -> IO(Unit):
@@ -6406,7 +6458,7 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         cl2 : List<&2, Client> <- Desk.tell(Desk.to.stop(stop, DK.Desk.to(Clients.looks(cl), thread, now)), cl, st, thread, state)
         IO.spawn(Unit, Hub.phone(Cfg.home(cfg), st, thread, state, seen, inbox))
         Self.post(inbox, Release{})
-        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
+        Far.note.out(Hub{st, f, ls, cl2, as, inbox, cfg, note}, thread, state, seen)
     # a bot's answer to a person elsewhere, captured by the step that left
     # its thread ready (hub.bend's Answer.out)
     case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.BotReply{+thread, +to, +text, _}:
@@ -7180,6 +7232,29 @@ def Far.live.in(h: Hub, +link: String, xs: List<&2, J.Json>, +reply: Chan(List<&
     case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
       Far.live.in.k(FLV.FL.apply(xs, link, Live.of(cfg)), Hub{st, f, ls, cl, as, inbox, cfg, note}, reply)
 
+# a peer's turn ended there, and is news: this hub's desk and phones
+def Far.note.in.k(+o: J.Json, h: Hub, +link: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, +cl, as, +inbox, +cfg, note}:
+      do IO<Hub>:
+        +now : Nat <- Now.nat()
+        +farid : String = FR.Fr.id(link, J.Json.get_str(o, "th", ""))
+        +seen : Bool = DK.Desk.seen(Clients.looks(cl), farid, now)
+        cl2 : List<&2, Client> <- Far.note.desk(DK.Desk.to(Clients.looks(cl), farid, now), cl, farid, o)
+        IO.spawn(Unit, Far.note.push(Cfg.home(cfg), st, farid, J.Json.get_str(o, "title", ""), J.Json.get_str(o, "body", ""), DK.Desk.hold(seen, J.Json.get_str(o, "key", "")), inbox))
+        Bot.answer(reply, Bot.json("200 OK", "{\"ok\":true}"))
+        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
+
+def Far.push.in.n(note: Maybe<&2, J.Json>, +o: J.Json, h: Hub, +peer: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match note:
+    case Some{+n}:
+      Far.note.in.k(n, h, peer, reply)
+    case None{}:
+      do IO<Hub>:
+        Bot.answer(reply, Bot.json("200 OK", "{\"ok\":true}"))
+        Far.push.receive(Far.in.of(Far.fh(h), peer, BN.Bn.clean(J.Json.get_str(o, "name", ""))), J.Json.get_str(o, "epoch", ""), J.Json.get_nat(o, "since", 0n), J.Json.get_nat(o, "head", 0n), FR.Fr.items.of(J.Json.elems(J.Json.get_obj(o, "items"))),
+          BN.Bn.clean(J.Json.get_str(o, "name", "")))
+
 # a push carries changes (`items`) or, on its own, the owner's streamed text
 # (`live`, core/farlive.bend: ephemeral, never in the mirror)
 def Far.push.in.k(live: Maybe<&2, J.Json>, +o: J.Json, h: Hub, +peer: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
@@ -7187,10 +7262,7 @@ def Far.push.in.k(live: Maybe<&2, J.Json>, +o: J.Json, h: Hub, +peer: String, +r
     case Some{+l}:
       Far.live.in(h, peer, J.Json.elems(l), reply)
     case None{}:
-      do IO<Hub>:
-        Bot.answer(reply, Bot.json("200 OK", "{\"ok\":true}"))
-        Far.push.receive(Far.in.of(Far.fh(h), peer, BN.Bn.clean(J.Json.get_str(o, "name", ""))), J.Json.get_str(o, "epoch", ""), J.Json.get_nat(o, "since", 0n), J.Json.get_nat(o, "head", 0n), FR.Fr.items.of(J.Json.elems(J.Json.get_obj(o, "items"))),
-          BN.Bn.clean(J.Json.get_str(o, "name", "")))
+      Far.push.in.n(J.Json.get(o, "note"), o, h, peer, reply)
 
 def Hub.far.push.in(ok: Bool, m: Maybe<&2, J.Json>, h: Hub, +peer: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
   match ok m:

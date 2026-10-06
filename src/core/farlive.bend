@@ -487,3 +487,16 @@ def FL.fill(xs: List<&2, LI>, +bs: List<&2, LV.Buf>) -> List<&2, LI>:
       Nil{}
     case x <> t:
       List.append(&2, LI, FL.fill.one(x, bs), FL.fill(t, bs))
+
+# A turn's end on the owner's machine, told to its other machines
+# -----------------------------------------------------------------
+# `{"name", "note": {"th", "kind", "key", "title", "body"}}`: the owner
+# decided it is news (core/notice.bend, nobody watching it there) and under
+# which key; each peer raises it on its own desk and phones, unless one of
+# its desks watches the thread. Best effort, never stored.
+
+def FL.note.json(+th: String, +kind: String, +key: String, +title: String, +body: String) -> J.Json:
+  J.Json.obj([J.KV{"th", J.Str{th}}, J.KV{"kind", J.Str{kind}}, J.KV{"key", J.Str{key}}, J.KV{"title", J.Str{title}}, J.KV{"body", J.Str{body}}])
+
+def FL.note.body(+name: String, n: J.Json) -> String:
+  J.Json.show(J.Json.obj([J.KV{"name", J.Str{name}}, J.KV{"note", n}]))

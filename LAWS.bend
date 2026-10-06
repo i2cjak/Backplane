@@ -5916,3 +5916,23 @@ law flive_far_activity_keeps_live:
 
 law flive_far_delta_shows:
   {U.Ui.live.of(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{"b~t"}}, J.KV{"text", J.Str{"hel"}}])), J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{"b~t"}}, J.KV{"text", J.Str{"lo"}}])), "b~t") == "hello" : String}
+
+# Alerts of threads elsewhere: one key, one island line
+
+law notice_far_key_same:
+  {NO.Notice.key(NO.Notice.of(M.State.empty(), "b~t", False{}, False{})) == "turn-t" : String}
+
+law notice_far_fail_key_same:
+  {NO.Notice.kind(NO.Notice.of(M.State.empty(), "b~t", True{}, False{})) ++ " " ++ NO.Notice.key(NO.Notice.of(M.State.empty(), "b~t", True{}, False{})) == "fail turn-t" : String}
+
+law notice_local_key_kept:
+  {NO.Notice.key(NO.Notice.of(M.State.empty(), "t", False{}, False{})) == "turn-t" : String}
+
+law island_far_once:
+  {List.length(&2, J.Json, Hb.Hubs.lines.once([J.Json.obj([J.KV{"thread", J.Str{"b~t"}}]), J.Json.obj([J.KV{"thread", J.Str{"t"}}])])) == 1n : Nat}
+
+law island_far_owner_wins:
+  {J.Json.get_str(Maybe.default(&2, J.Json, List.head(&2, J.Json, Hb.Hubs.lines.once([J.Json.obj([J.KV{"thread", J.Str{"b~t"}}]), J.Json.obj([J.KV{"thread", J.Str{"t"}}])])), J.Null{}), "thread", "") == "t" : String}
+
+law island_far_alone_kept:
+  {List.length(&2, J.Json, Hb.Hubs.lines.once([J.Json.obj([J.KV{"thread", J.Str{"b~t"}}]), J.Json.obj([J.KV{"thread", J.Str{"u"}}])])) == 2n : Nat}

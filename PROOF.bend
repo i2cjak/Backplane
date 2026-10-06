@@ -7619,3 +7619,21 @@ def Laws.flive_far_activity_keeps_live():
 
 def Laws.flive_far_delta_shows():
   {==}
+
+def Laws.notice_far_key_same():
+  {==}
+
+def Laws.notice_far_fail_key_same():
+  {==}
+
+def Laws.notice_local_key_kept():
+  {==}
+
+def Laws.island_far_once():
+  {==}
+
+def Laws.island_far_owner_wins():
+  {==}
+
+def Laws.island_far_alone_kept():
+  {==}

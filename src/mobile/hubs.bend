@@ -999,6 +999,38 @@ def Hubs.lines(ss: List<&2, Shown>) -> List<&2, J.Json>:
     case +s <> t:
       List.append(&2, J.Json, J.Json.elems(J.Json.get_obj(J.Json.get_obj(Shown.j(s), "island"), "lines")), Hubs.lines(t))
 
+# A thread the owner's machine runs and this phone's other hub mirrors is
+# one thread: the island lists it once, as its owner's hub gives it (the
+# once list keeps the last of a key, so the owner's lines go last), else
+# one mirror's (law island_far_once)
+def Hubs.line.is.far(+l: J.Json) -> Bool:
+  FR.Fr.is(J.Json.get_str(l, "thread", ""))
+
+def Hubs.line.keep(take: Bool, l: J.Json, rest: List<&2, J.Json>) -> List<&2, J.Json>:
+  match take:
+    case True{}:
+      l <> rest
+    case False{}:
+      rest
+
+# the lines whose thread is elsewhere (far) or here (not far)
+def Hubs.lines.part(ls: List<&2, J.Json>, +far: Bool) -> List<&2, J.Json>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Hubs.line.keep(Bool.pick(Bool, far, Hubs.line.is.far(l), Bool.not(Hubs.line.is.far(l))), l, Hubs.lines.part(t, far))
+
+def Hubs.lines.keyed(ls: List<&2, J.Json>) -> List<&2, BU.RK<J.Json>>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      BU.RK{FR.Fr.local(J.Json.get_str(l, "thread", "")), l} <> Hubs.lines.keyed(t)
+
+def Hubs.lines.once(+ls: List<&2, J.Json>) -> List<&2, J.Json>:
+  BU.BU.once.vals(J.Json, BU.BU.once.of(J.Json, Hubs.lines.keyed(List.append(&2, J.Json, Hubs.lines.part(ls, True{}), Hubs.lines.part(ls, False{})))))
+
 def Hubs.rows(ss: List<&2, Shown>) -> List<&2, J.Json>:
   match ss:
     case Nil{}:
@@ -1325,7 +1357,7 @@ def Hubs.screen.k(+ss: List<&2, Shown>, +cur: String, +list: List<&2, Hub>) -> J
     J.KV{"settings", J.Json.get_obj(Hubs.of(ss, cur), "settings")},
     J.KV{"tour", J.Json.get_obj(Hubs.of(ss, cur), "tour")},
     J.KV{"find", J.Json.get_obj(Hubs.of(ss, cur), "find")},
-    J.KV{"island", N.Note.island.k(Hubs.lines(ss))},
+    J.KV{"island", N.Note.island.k(Hubs.lines.once(Hubs.lines(ss)))},
     J.KV{"thread", Hubs.origin.focus(ss, cur, "thread")},
     J.KV{"bots", J.Json.arr(Hubs.bots(ss, list, Nat.is_gt(List.length(&2, Shown, ss), 1n)))},
     J.KV{"rooms", J.Json.arr(Hubs.rooms(ss, Nat.is_gt(List.length(&2, Shown, ss), 1n)))},
