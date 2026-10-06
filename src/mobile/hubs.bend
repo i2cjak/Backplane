@@ -372,9 +372,9 @@ def One.run(op: Op, +u: U.Ui) -> Did:
     case Got{+o}:
       One.got(u, o)
     case On{b}:
-      Did{VW.View.online(u, b), Nil{}}
+      Did{VW.View.online(S.Mob.heard.set(u), b), Nil{}}
     case Tick{now}:
-      Did{U.Act{U.Ui.tick(u, now), Nil{}}, Nil{}}
+      Did{U.Act{S.Mob.heard.set(U.Ui.tick(u, now)), Nil{}}, Nil{}}
     case Reg{p, t, k, th, e, b}:
       Did{U.Ui.rpc.keep(u, "device.register", [J.KV{"platform", J.Json.str(p)}, J.KV{"token", J.Json.str(t)},
         J.KV{"kind", J.Json.str(k)}, J.KV{"thread", J.Json.str(th)}, J.KV{"env", J.Json.str(e)}, J.KV{"bundle", J.Json.str(b)}]), Nil{}}

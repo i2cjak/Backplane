@@ -4806,6 +4806,26 @@ law island_gone_hidden:
   {Nt.Note.lines.w(U.Ui.threads(M.State.replay([M.ThreadArchived{"t1", True{}, 3n}], H.Rec.demo(M.Running{}))), M.Work.kids.map(H.Rec.demo(M.Running{})),
     M.State.replay([M.ThreadArchived{"t1", True{}, 3n}], H.Rec.demo(M.Running{}))) == [] : List<&2, J.Json>}
 
+# a hub the phone no longer reaches adds nothing to the island once it has
+# been quiet Note.fresh() seconds (its saved turns are stale); one that
+# answers always counts
+law island_unheard_empty:
+  for ts: List<&2, M.Thread>
+  for +st: M.State
+  {Nt.Note.island.h(False{}, ts, st) == Nt.Note.island.k([]) : J.Json}
+
+law island_heard_online:
+  for +now: Nat
+  for +heard: Nat
+  for +fresh: Nat
+  {Nt.Note.heard.in(True{}, now, heard, fresh) == True{} : Bool}
+
+law island_unheard_late:
+  {Nt.Note.heard.in(False{}, 20n, 5n, 10n) == False{} : Bool}
+
+law island_unheard_recent:
+  {Nt.Note.heard.in(False{}, 12n, 5n, 10n) == True{} : Bool}
+
 # a phone's upload ends under the thread it started in, though the phone
 # named it with its hub ("<hub>|<id>"): the reply's thread is read as the
 # hub's own id, so the spinner clears and the path joins that thread
