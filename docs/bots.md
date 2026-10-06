@@ -592,6 +592,26 @@ owner's (`Far.own` in server.bend: the machines list; laws `far_*_stay_home`).
   while it is away the answer says so. Anything
   else about a far thread is refused here (law `far_route_here_stays`,
   `far_allowed_only_methods`).
+- Creating anywhere. `thread.create` (its `project` a `<link>~<id>`),
+  `thread.fork`, `thread.pin`/`unpin`, `thread.archive`/`unarchive` and
+  `project.remove` go to the owning hub like the rest, which makes the thread
+  in its own project; its answer names the new thread by its id here
+  (`Fr.reply.on`: `<link>~<thread>`, the id the mirror will give it). The
+  asking client keeps "making" (`Made.waiting`, `Made.coming`) until the
+  mirrored thread is here, then opens it (`@thread.want`, `Bots.wanted`),
+  whichever of the answer and the push comes first. The project picker can
+  work on another of the owner's machines: a row at its end ("On box
+  (change)", action `proj-on`, `Proj.machine`) cycles this hub and each
+  machine that has answered; its requests (`fs.list`, `fs.mkdir`, `fs.find`,
+  `project.add`, `project.new`) then carry `on: <link>`, which `Fr.params.link`
+  routes. The owning hub runs those from a job (`Far.fs.job`: the same
+  `FsJob` as for its own clients, then `FarDo` for `project.create`) and
+  answers the open request. `Fr.allowed`: a create needs one of its own
+  projects (not a mirror, not one it lacks); pin, archive, fork a thread it
+  shares; folders and adding need nothing but an owner's link. `thread.delete`
+  is not one of them (law `far_no_delete`): a thread elsewhere is deleted on
+  its own machine. Laws `far_create_*`, `made_far_*`, `proj_machine_*`; tests
+  `test/far_test.bend`, `bun test/tools/create_far_e2e.ts`.
 - The same view. A mirrored bot is a bot in the read model, so the window,
   the web and the phones show it with the same header, tabs, space and
   chat, its thread with the same timeline and composer; only its name
