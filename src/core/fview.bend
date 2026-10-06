@@ -27,6 +27,14 @@ def Fv.reads() -> List<&2, String>:
 def Fv.read(+m: String) -> Bool:
   FR.Fr.may.go(Fv.reads(), m)
 
+# the jobs those run on the owning hub (the job a request becomes, B.Git):
+# none writes, starts a program or opens a path; anything else is dropped
+def Fv.jobs() -> List<&2, String>:
+  ["dir", "files", "mech", "refs", "diff", "status"]
+
+def Fv.job(+j: String) -> Bool:
+  FR.Fr.may.go(Fv.jobs(), j)
+
 # The requests the client's own hub answers itself, each with the owning
 # hub's help: far.view keeps the cache of a thread's files up to date,
 # mech.list also brings the renders it lists.
