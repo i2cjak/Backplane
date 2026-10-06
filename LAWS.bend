@@ -2935,6 +2935,27 @@ law google_hop_tailnet_only:
 law google_hop_no_path:
   {GO.Google.hop("state=" ++ GO.Google.state("n0", "https://evil.example.com/x.ts.net") ++ "&code=c", "") == "" : String}
 
+# a phone's own loopback redirect begins a sign-in (RFC 8252 7.3)
+law google_loopback_phone:
+  {GO.Google.redirect.pick("http://127.0.0.1:49152/oauth/google", "http://127.0.0.1:3787/oauth/google") == "http://127.0.0.1:49152/oauth/google" : String}
+
+# none asked: the hub's own
+law google_loopback_none:
+  {GO.Google.redirect.pick("", "http://127.0.0.1:3787/oauth/google") == "http://127.0.0.1:3787/oauth/google" : String}
+
+# only loopback: Google's code never goes to another host
+law google_loopback_not_host:
+  {GO.Google.loopback("http://evil.example.com:80/oauth/google") == False{} : Bool}
+
+law google_loopback_not_userinfo:
+  {GO.Google.loopback("http://127.0.0.1:1@evil.example.com/oauth/google") == False{} : Bool}
+
+law google_loopback_not_path:
+  {GO.Google.loopback("http://127.0.0.1:80/x/oauth/google") == False{} : Bool}
+
+law google_loopback_no_port:
+  {GO.Google.loopback("http://127.0.0.1:/oauth/google") == False{} : Bool}
+
 # a To, Cc or Subject cannot start a header of its own
 law google_header_no_newline_example:
   {GO.Mail.clean("a@x.org\r\nBcc: e@x.org") == "a@x.org  Bcc: e@x.org" : String}

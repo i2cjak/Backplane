@@ -379,7 +379,8 @@ final class AppModel {
             if !id.isEmpty { act("select", id) }
             // the island with several threads: pick one (backplane://open?pick=1)
             else if q.contains(where: { $0.name == "pick" }), (screen?.island.lines.count ?? 0) > 1 { picking = true }
-        } else {
+        } else if url.host != "google" {
+            // (backplane://google ends a Google sign-in: GoogleLoop)
             pair(url.absoluteString)
         }
     }

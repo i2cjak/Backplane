@@ -498,6 +498,8 @@ private fun SettingsTab(m: AppModel, b: BotView, st: BotSettings) {
         OutlinedButton(onClick = { m.act("bot-edit") }, enabled = persona != st.persona, shape = square) { Text("Save") }
 
         SectionLabel("Google")
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        LaunchedEffect(st.google.url) { GoogleLoop.open(ctx, st.google.url) }
         if (st.google.status.isNotEmpty()) Text(st.google.status, style = MaterialTheme.typography.bodyMedium)
         st.google.accounts.forEach { a ->
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -506,7 +508,7 @@ private fun SettingsTab(m: AppModel, b: BotView, st: BotSettings) {
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { m.act("google", "connect") }, shape = square) { Text(if (st.google.accounts.isEmpty()) "Connect Google" else "Add account") }
+            OutlinedButton(onClick = { GoogleLoop.start { a, v -> m.act(a, v) } }, shape = square) { Text(if (st.google.accounts.isEmpty()) "Connect Google" else "Add account") }
             TextButton(onClick = { gown = !gown }) { Text(if (gown) "Hide own client" else "Own client") }
         }
         if (gown) {

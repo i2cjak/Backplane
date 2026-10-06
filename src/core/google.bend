@@ -1362,3 +1362,31 @@ def Google.hop(+query: String, +mine: String) -> String:
   Google.hop.k(Bool.and(Bool.not(String.eq(Url.param(query, "state"), mine)),
       Bool.and(Bool.not(String.eq(Url.param(query, "hop"), "1")), Google.hop.ok(Google.state.home(Url.param(query, "state"))))),
     Google.state.home(Url.param(query, "state")), query)
+
+# A phone's own sign-in (RFC 8252 7.3): the app listens on a loopback port
+# of its own and asks the hub to begin with that redirect, so Google sends
+# the phone's browser back to the app, which hands the address it caught
+# to the hub to finish. The hub takes only exactly
+# http://127.0.0.1:<1-5 digits>/oauth/google; anything else begins with its
+# own redirect.
+def Google.digits(s: String) -> Bool:
+  match s:
+    case SNil{}:
+      True{}
+    case SCon{c, t}:
+      Bool.and(Char.is_digit(c), Google.digits(t))
+
+def Google.loopback.port(+p: String) -> Bool:
+  Bool.and(Bool.and(Nat.is_gt(String.length(p), 0n), Nat.is_le(String.length(p), 5n)), Google.digits(p))
+
+def Google.loopback.mid(+url: String) -> String:
+  String.take(String.drop(url, 17n), Nat.sub(String.length(url), 30n))
+
+def Google.loopback(+url: String) -> Bool:
+  Bool.and(Bool.and(String.starts_with(url, "http://127.0.0.1:"), String.ends_with(url, "/oauth/google")),
+    Bool.and(Nat.is_gt(String.length(url), 30n), Google.loopback.port(Google.loopback.mid(url))))
+
+# the redirect a sign-in begins with: the one asked for when it is a
+# loopback, else the hub's own
+def Google.redirect.pick(+asked: String, +own: String) -> String:
+  Bool.pick(String, Google.loopback(asked), asked, own)

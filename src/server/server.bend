@@ -4905,7 +4905,8 @@ def Bot.redirect(+port: U32) -> String:
 
 # "configure" (phones) and "config" are the same op, and so are "paste"
 # (the window) and "finish"; "connect" saves the client when one was typed,
-# then begins
+# then begins. A phone's "redirect" (its own loopback listener) replaces the
+# hub's for begin and connect; finish uses the one its sign-in began with.
 def BotJob.google.pos(+op: String) -> Nat:
   Bool.pick(Nat, String.eq(op, "configure"), 0n,
     Bool.pick(Nat, String.eq(op, "paste"), 2n, C.Codec.pos(["config", "begin", "finish", "status", "disconnect", "connect"], op)))
@@ -4965,7 +4966,7 @@ def BotJob.google(+inbox: Chan(Msg), +home: String, +tailnet: Bool, +host: Strin
     +p : J.Json = Maybe.default(&2, J.Json, J.Json.parse(params), J.Null{})
     +i : Nat = BotJob.google.pos(J.Json.get_str(p, "op", ""))
     +here : String <- BotJob.google.here(Bool.or(Nat.is_eq(i, 1n), Nat.is_eq(i, 5n)), tailnet, host, port)
-    +raw : String <- BotJob.google.op(i, home, p, Bot.redirect(port), here)
+    +raw : String <- BotJob.google.op(i, home, p, GG.Google.redirect.pick(J.Json.get_str(p, "redirect", ""), Bot.redirect(port)), here)
     +text : String <- GS.Google.say(raw)
     BotJob.google.done(text, raw, Bool.or(Nat.is_eq(i, 1n), Nat.is_eq(i, 5n)), inbox, client, id)
 

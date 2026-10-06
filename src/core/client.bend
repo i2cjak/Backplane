@@ -5171,20 +5171,38 @@ def Bots.token.clear(u: Ui) -> Ui:
 def Bots.token(u: Ui, +hook: String, +op: String) -> Act:
   Ui.rpc(Bots.token.clear(u), "bots.hook_token", [J.KV{"hook", J.Str{hook}}, J.KV{"op", J.Str{op}}])
 
-def Bots.google.rpc(+u: Ui, +op: String, +account: String) -> Act:
+def Bots.google.rpc.x(+u: Ui, +op: String, +account: String, +pasted: String, +redirect: String) -> Act:
   Ui.rpc(u, "bots.google", [J.KV{"op", J.Str{op}}, J.KV{"clientId", J.Str{Bots.field(u, "gid")}}, J.KV{"clientSecret", J.Str{Bots.field(u, "gsecret")}},
-    J.KV{"pasted", J.Str{Bots.field(u, "gpaste")}}, J.KV{"account", J.Str{account}}])
+    J.KV{"pasted", J.Str{pasted}}, J.KV{"account", J.Str{account}}, J.KV{"redirect", J.Str{redirect}}])
 
-# "signout:<address>" signs one account out; "disconnect" signs out every one
-def Bots.google.k(one: Bool, +u: Ui, +op: String) -> Act:
-  match one:
-    case True{}:
+def Bots.google.rpc(+u: Ui, +op: String, +account: String) -> Act:
+  Bots.google.rpc.x(u, op, account, Bots.field(u, "gpaste"), "")
+
+# A phone signs in through a loopback listener of its own (docs/bots.md
+# "Google"): "connect@<port>" begins with Google sending its browser back
+# to http://127.0.0.1:<port>/oauth/google, and "done:<address>" finishes
+# with the address the listener caught.
+def Bots.google.loop(+port: String) -> String:
+  "http://127.0.0.1:" ++ port ++ "/oauth/google"
+
+def Bots.google.op(i: Nat, +u: Ui, +op: String) -> Act:
+  match i:
+    case 0n:
       Bots.google.rpc(u, "disconnect", String.drop(op, 8n))
-    case False{}:
+    case 1n:
+      Bots.google.rpc.x(u, "connect", "", "", Bots.google.loop(String.drop(op, 8n)))
+    case 2n:
+      Bots.google.rpc.x(u, "finish", "", String.drop(op, 5n), "")
+    case _:
       Bots.google.rpc(u, op, "")
 
+# "signout:<address>" signs one account out; "disconnect" signs out every one
+def Bots.google.at(+op: String) -> Nat:
+  Bool.pick(Nat, String.starts_with(op, "signout:"), 0n,
+    Bool.pick(Nat, String.starts_with(op, "connect@"), 1n, Bool.pick(Nat, String.starts_with(op, "done:"), 2n, 3n)))
+
 def Bots.google(+u: Ui, +op: String) -> Act:
-  Bots.google.k(String.starts_with(op, "signout:"), u, op)
+  Bots.google.op(Bots.google.at(op), u, op)
 
 def Bots.google.keep(empty: Bool, x: String, rest: List<&2, String>) -> List<&2, String>:
   match empty:
