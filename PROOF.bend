@@ -7688,3 +7688,72 @@ def Laws.fview_fix_again():
 
 def Laws.fview_fix_leaves_error():
   {==}
+
+def Laws.rview_at_under():
+  {==}
+
+def Laws.rview_at_climbs():
+  {==}
+
+def Laws.rview_at_relative():
+  {==}
+
+def Laws.rview_back_at():
+  {==}
+
+def Laws.rview_back_outside():
+  {==}
+
+def Laws.rview_want_hidden():
+  {==}
+
+def Laws.rview_want_file():
+  {==}
+
+def Laws.rview_ask_get_up():
+  {==}
+
+def Laws.rview_ask_get_abs():
+  {==}
+
+def Laws.rview_ask_get_hidden():
+  {==}
+
+def Laws.rview_ask_get_ok():
+  {==}
+
+def Laws.rview_ask_ver_hidden():
+  {==}
+
+def Laws.rview_ask_no_folder():
+  {==}
+
+def Laws.rview_ask_other():
+  {==}
+
+def Laws.rview_git_option():
+  {==}
+
+def Laws.rview_git_dir():
+  {==}
+
+def Laws.rview_git_climbs():
+  {==}
+
+def Laws.rview_git_ok():
+  {==}
+
+def Laws.rview_root_unknown():
+  {==}
+
+def Laws.rview_root_far_cache():
+  {==}
+
+def Laws.rview_enc_unreserved():
+  {==}
+
+def Laws.rview_enc_breaks():
+  {==}
+
+def Laws.rview_spec_local():
+  {==}

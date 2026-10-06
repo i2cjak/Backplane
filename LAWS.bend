@@ -3,6 +3,7 @@ import ./src/core/bothub.bend as BHS
 import ./src/core/bot.bend as BOT
 import ./src/core/far.bend as FR
 import ./src/core/fview.bend as FVW
+import ./src/core/rview.bend as RVW
 import ./src/core/botui.bend as BU
 import ./src/core/model.bend as M
 import ./src/app/viewer.bend as V
@@ -6004,3 +6005,77 @@ law fview_fix_again:
 
 law fview_fix_leaves_error:
   {FVW.Fv.fix("/h", "b", "not json") == "not json" : String}
+
+# A window on another machine's hub (core/rview.bend): the hub answers a
+# client's viewer reads only for a thread it has a folder for and a path the
+# viewers may read; what the window keeps of a hub's files lives under its
+# own folder for that hub, whatever the path says.
+
+law rview_at_under:
+  {RVW.Rview.at("/c/remote/hb", "/home/u/p/a.kicad_pcb") == "/c/remote/hb/home/u/p/a.kicad_pcb" : String}
+
+law rview_at_climbs:
+  {RVW.Rview.at("/c/remote/hb", "/home/u/../../../etc/passwd") == "" : String}
+
+law rview_at_relative:
+  {RVW.Rview.at("/c/remote/hb", "git\tx") == "git\tx" : String}
+
+law rview_back_at:
+  {RVW.Rview.back("/c/remote/hb", RVW.Rview.at("/c/remote/hb", "/home/u/p/a.kicad_pcb")) == "/home/u/p/a.kicad_pcb" : String}
+
+law rview_back_outside:
+  {RVW.Rview.back("/c/remote/hb", "/etc/passwd") == "" : String}
+
+law rview_want_hidden:
+  {RVW.Rview.want("/c/remote/hb", "/c/remote/hb/p", "/c/remote/hb/p/.env") == "" : String}
+
+law rview_want_file:
+  {RVW.Rview.want("/c/remote/hb", "/c/remote/hb/p", "/c/remote/hb/p/hw/a.step") == "hw/a.step" : String}
+
+law rview_ask_get_up:
+  {RVW.Rview.ask.ok("/view/get", "/p", "", "../a") == False{} : Bool}
+
+law rview_ask_get_abs:
+  {RVW.Rview.ask.ok("/view/get", "/p", "", "/etc/passwd") == False{} : Bool}
+
+law rview_ask_get_hidden:
+  {RVW.Rview.ask.ok("/view/get", "/p", "", ".ssh/id_rsa") == False{} : Bool}
+
+law rview_ask_get_ok:
+  {RVW.Rview.ask.ok("/view/get", "/p", "", "hw/a.kicad_pcb") == True{} : Bool}
+
+law rview_ask_ver_hidden:
+  {RVW.Rview.ask.ok("/view/ver", "/p", "a.kicad_pcb\n.env", "") == False{} : Bool}
+
+law rview_ask_no_folder:
+  {RVW.Rview.ask.ok("/view/get", "", "", "a.kicad_pcb") == False{} : Bool}
+
+law rview_ask_other:
+  {RVW.Rview.ask.ok("/view/other", "/p", "", "a.kicad_pcb") == False{} : Bool}
+
+law rview_git_option:
+  {RVW.Rview.ask.ok("/view/git", "/p", "", "git\t/p/.git\t--output=/tmp/x\t2\t/p/a.kicad_pcb") == False{} : Bool}
+
+law rview_git_dir:
+  {RVW.Rview.ask.ok("/view/git", "/p", "", "git\t/etc\tabc123\t2\t/p/a.kicad_pcb") == False{} : Bool}
+
+law rview_git_climbs:
+  {RVW.Rview.ask.ok("/view/git", "/p", "", "git\t/p/.git\tabc123\t2\t/p/../../etc/passwd") == False{} : Bool}
+
+law rview_git_ok:
+  {RVW.Rview.ask.ok("/view/git", "/p", "", "git\t/p/.git\tabc123\t2\t/p/a.kicad_pcb") == True{} : Bool}
+
+law rview_root_unknown:
+  {RVW.Rview.root.k(False{}, False{}, "/h", "", "/p") == "" : String}
+
+law rview_root_far_cache:
+  {RVW.Rview.root.k(True{}, True{}, "/h", "beta", "/p") == "/h/farfs/beta/p" : String}
+
+law rview_enc_unreserved:
+  {RVW.Rview.enc("hw/a-b_c.kicad_pcb") == "hw/a-b_c.kicad_pcb" : String}
+
+law rview_enc_breaks:
+  {RVW.Rview.enc("a\nb&c=d") == "a%0Ab%26c%3Dd" : String}
+
+law rview_spec_local:
+  {RVW.Rview.spec("", "/c", "t", "g") == "" : String}
