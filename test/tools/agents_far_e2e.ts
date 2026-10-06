@@ -256,6 +256,7 @@ try {
   check("a far id of no linked machine is an error, nothing sent", wrongLink.isError, wrongLink.body);
 
   // /give to a thread and a project on beta
+  await sleep(2000); // the rename reaches alpha's mirror
   const given = await rpc(ca, "bots.give", { thread: ta, text: "/give >beta:renamed-by-alpha with a note" });
   check("/give >beta:slug is ok", !!given?.ok, given);
   check("beta's thread got the conversation", !!await until(15000, () => cb.seen.find((c) => c.$ === "MessagePosted" && c.thread === pt && c.text.includes("a conversation to give"))), cb.seen.filter((c) => c.$ === "MessagePosted" && c.thread === pt).map((c) => c.text.slice(0, 80)));
