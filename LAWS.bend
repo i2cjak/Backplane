@@ -2,6 +2,7 @@ import Base
 import ./src/core/bothub.bend as BHS
 import ./src/core/bot.bend as BOT
 import ./src/core/far.bend as FR
+import ./src/core/fview.bend as FVW
 import ./src/core/botui.bend as BU
 import ./src/core/model.bend as M
 import ./src/app/viewer.bend as V
@@ -5834,3 +5835,101 @@ law mate_loopback_lower_asks:
 
 law mate_loopback_higher_waits:
   {U.Mate.due(False{}, U.Mate.demo.lo("4003"), Nil{}, M.State.empty()) == Nil{} : List<&2, U.MRow>}
+
+# Viewers for threads elsewhere (core/fview.bend): the owning hub answers
+# only reads about a thread it shares, a path never leaves the thread's
+# folder (and never reaches a hidden file), and what is kept here from
+# another machine lives under <home>/farfs/<link>, whatever the link or the
+# folder says.
+
+law fview_file_up:
+  {FVW.Fv.file.ok("lib/../../etc/passwd") == False{} : Bool}
+
+law fview_file_abs:
+  {FVW.Fv.file.ok("/etc/passwd") == False{} : Bool}
+
+law fview_file_hidden:
+  {FVW.Fv.file.ok(".git/config") == False{} : Bool}
+
+law fview_file_hidden_deep:
+  {FVW.Fv.file.ok("hw/.env") == False{} : Bool}
+
+law fview_file_pick:
+  {FVW.Fv.file.ok(".backplane.json") == True{} : Bool}
+
+law fview_file_ok:
+  {FVW.Fv.file.ok("hw/board.kicad_pcb") == True{} : Bool}
+
+law fview_file_empty:
+  {FVW.Fv.file.ok("") == False{} : Bool}
+
+law fview_dir_root:
+  {FVW.Fv.dir.ok("") == True{} : Bool}
+
+law fview_dir_up:
+  {FVW.Fv.dir.ok("../x") == False{} : Bool}
+
+law fview_reads_disjoint:
+  {FVW.Fv.disjoint(FR.Fr.methods(), FVW.Fv.reads()) == True{} : Bool}
+
+law fview_no_open:
+  {FVW.Fv.read("file.open") == False{} : Bool}
+
+law fview_no_pdf:
+  {FVW.Fv.read("pdf.page") == False{} : Bool}
+
+law fview_no_fs:
+  {FVW.Fv.read("fs.list") == False{} : Bool}
+
+law fview_allowed_not_write:
+  for +s: M.State
+  for +p: J.Json
+  {FVW.Fv.allowed(s, J.Json.obj([J.KV{"m", J.Str{"turn.start"}}, J.KV{"p", p}])) == False{} : Bool}
+
+law fview_allowed_path:
+  for +s: M.State
+  {FVW.Fv.allowed(s, J.Json.obj([J.KV{"m", J.Str{"view.get"}}, J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{"t1"}}, J.KV{"path", J.Str{"../../etc/passwd"}}])}])) == False{} : Bool}
+
+law fview_allowed_want:
+  for +s: M.State
+  {FVW.Fv.allowed(s, J.Json.obj([J.KV{"m", J.Str{"view.ver"}}, J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{"t1"}}, J.KV{"want", J.Str{"a.kicad_pcb\n.ssh/id_rsa"}}])}])) == False{} : Bool}
+
+law fview_allowed_dir:
+  for +s: M.State
+  {FVW.Fv.allowed(s, J.Json.obj([J.KV{"m", J.Str{"files.dir"}}, J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{"t1"}}, J.KV{"path", J.Str{"/etc"}}])}])) == False{} : Bool}
+
+law fview_cache_under:
+  {FVW.Fv.cache("/h", "beta", "/home/u/p") == "/h/farfs/beta/home/u/p" : String}
+
+law fview_cache_dotdot:
+  {FVW.Fv.cache("/h", "beta", "/home/../etc") == "" : String}
+
+law fview_cache_link_slash:
+  {FVW.Fv.cache("/h", "a/b", "/p") == "" : String}
+
+law fview_cache_link_dotdot:
+  {FVW.Fv.cache("/h", "..", "/p") == "" : String}
+
+law fview_cache_relative:
+  {FVW.Fv.cache("/h", "beta", "p") == "" : String}
+
+law fview_cache_of_file:
+  {FVW.Fv.cache.of("/h", "b", "/p", "/p/a.kicad_pcb") == "/h/farfs/b/p/a.kicad_pcb" : String}
+
+law fview_cache_of_outside:
+  {FVW.Fv.cache.of("/h", "b", "/p", "/q/a") == "" : String}
+
+law fview_cache_of_prefix:
+  {FVW.Fv.cache.of("/h", "b", "/p", "/pq/a") == "" : String}
+
+law fview_fix_thread:
+  {J.Json.get_str(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(FVW.Fv.fix("/h", "b", "{\"t\":\"reply\",\"id\":0,\"ok\":true,\"result\":{\"thread\":\"t1\",\"fmRoot\":\"/p\"}}")), J.Null{}), "result"), "thread", "") == "b~t1" : String}
+
+law fview_fix_root:
+  {J.Json.get_str(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(FVW.Fv.fix("/h", "b", "{\"t\":\"reply\",\"id\":0,\"ok\":true,\"result\":{\"thread\":\"t1\",\"fmRoot\":\"/p\"}}")), J.Null{}), "result"), "fmRoot", "") == "/h/farfs/b/p" : String}
+
+law fview_fix_again:
+  {FVW.Fv.fix("/h", "b", FVW.Fv.fix("/h", "b", "{\"t\":\"reply\",\"id\":0,\"ok\":true,\"result\":{\"thread\":\"t1\",\"root\":\"/p\"}}")) == FVW.Fv.fix("/h", "b", "{\"t\":\"reply\",\"id\":0,\"ok\":true,\"result\":{\"thread\":\"t1\",\"root\":\"/p\"}}") : String}
+
+law fview_fix_leaves_error:
+  {FVW.Fv.fix("/h", "b", "not json") == "not json" : String}
