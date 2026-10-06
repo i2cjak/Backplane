@@ -722,3 +722,41 @@ owner's (`Far.own` in server.bend: the machines list; laws `far_*_stay_home`).
 `test/tools/far_e2e.ts` (two hubs: a bot made on one shows on the other,
 a message from the other reaches it and its answer comes back, away when
 it stops, from disk after a restart).
+- A window on another hub. The native window can switch to another machine's
+  hub (the machine switch, `src/app/link.bend`); its viewers read files from
+  the window's own disk, so on another machine's hub they would show nothing.
+  They read copies instead (`core/rview.bend`, `src/app/rvw.bend`, main.bend's
+  `Watch.follow`): the hub lists a thread's viewer files for its clients and
+  sends their bytes, and the window keeps them under
+  `$XDG_CACHE_HOME/backplane-bend/remote/<hub>` in the same folders as on the
+  hub (a hub's path P is read at `<that>P`, `Rview.at`; the source key the
+  viewer holds names the copy, `Nui.source`, client info `local.remote.pre`
+  and `local.remote.url`, set at each connection, "" for this machine's own
+  hub), so the board, schematic, 3D, Mech and sheet-tree readers are as they
+  were. The images and PDFs the window shows (`/img`, `pdf.page`) and the
+  Files tab already came from the hub.
+  - On the hub, read-only, for a client let in as for the websocket
+    (`Conn.allowed`: loopback, the owner's own machine by Tailscale, or the
+    token; else 401): `GET /view/ver?thread&want&have` answers the folder, a
+    digest and the files `Fvs.ver` lists, and holds while `have` is still the
+    digest until a file changes (at most 24 s; the same long poll the owners'
+    machines use); `GET /view/get?thread&path` is one file's bytes;
+    `GET /view/git?thread&path` is one file of a commit (a history version,
+    `git\t<gitdir>\t<commit>...`: the commit must be a hash, the git directory
+    a repository's, a worktree's or `<folder>/.backplane/history.git`). The
+    hub names the folder from the thread itself (`Rview.root`: the thread's own
+    folder, or for a thread it mirrors the cache it keeps of the owner's,
+    `farfs`, which `far.view` fills), so a client names no folder; the paths
+    pass `Fv.file.ok`/`Fv.wants.ok` and the scripts of `Fvs` check the real
+    path (no symlink out). Laws `rview_*`.
+  - In the window (`Rvw.sync`, one round): ask `view.ver` with the digest held,
+    bring the files that differ four at a time and install them with the
+    owners' locked script (never rolling a file back, removing what the hub no
+    longer lists), then say whether the viewers read again. The shell starts
+    the next round only while the viewer is still open on that source of that
+    connection (`RvGot`, `Shell.rvgot`); a source let go is asked for again
+    when the viewer returns (`Shell.stale`). A history version or comparison
+    asks the hub for each commit's bytes (`Watch.hist.r`). A remote source
+    runs no 150 ms stat loop: the viewers read once after each round that
+    changed something. Tests `test/rview_test.bend`, `bun test/tools/remote_view_e2e.ts`,
+    `test/native/rvw_sync.bend`.

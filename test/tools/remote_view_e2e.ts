@@ -127,16 +127,20 @@ try {
   const res = v1.body?.result;
   const files = String(res?.files ?? "").split("\n").filter(Boolean).map((l: string) => l.split("\t")[0]);
   console.log(`  /view/ver first answer ${Date.now() - t0} ms (${files.length} files)`);
-  check("the list answers with the folder, a digest and the files", v1.status === 200 && v1.body?.ok === true && res?.root === project && String(res?.ver).length > 0, v1);
+  check("the list answers with the folder, a digest and the files", v1.status === 200 && v1.body?.ok === true && typeof res?.root === "string" && res.root.startsWith("/") && String(res?.ver).length > 0, v1);
   check("it holds the board, schematic, project and a model", ["ecc83-pp.kicad_pcb", "ecc83-pp.kicad_sch", "ecc83-pp.kicad_pro", "hw/second.kicad_pcb", "mech.step"].every((f) => files.includes(f)), files);
   check("nothing hidden or linked is listed", !files.some((f: string) => f.startsWith(".") || f.includes("/.") || f.includes("etclink") || f === "leak.kicad_pcb"), files);
+
+  // the thread works in a folder of its own (a worktree of the project)
+  const dirT: string = res.root;
+  const own = (rel: string) => join(dirT, rel);
 
   // a file's bytes
   const t1 = Date.now();
   const g1 = await get("/view/get", { thread: th, path: "ecc83-pp.kicad_pcb" });
   const bytes = Buffer.from(await g1.arrayBuffer());
   console.log(`  /view/get ${bytes.length} bytes ${Date.now() - t1} ms`);
-  check("a file comes byte for byte", g1.status === 200 && bytes.equals(readFileSync(join(project, "ecc83-pp.kicad_pcb"))), g1.status);
+  check("a file comes byte for byte", g1.status === 200 && bytes.equals(readFileSync(own("ecc83-pp.kicad_pcb"))), g1.status);
   const g2 = await get("/view/get", { thread: th, path: "hw/second.kicad_pcb" });
   check("a file in a folder", g2.status === 200 && Buffer.from(await g2.arrayBuffer()).length === bytes.length);
 
@@ -146,7 +150,7 @@ try {
   const waiting = get("/view/ver", { thread: th, want: "", have: String(res.ver) }, { signal: hold.signal }).then((r) => r.status, () => "aborted");
   const early = await Promise.race([waiting, sleep(1500).then(() => "held")]);
   check("with the digest it holds while nothing changes", early === "held", early);
-  appendFileSync(join(project, "ecc83-pp.kicad_pcb"), "\n");
+  appendFileSync(own("ecc83-pp.kicad_pcb"), "\n");
   const woke = (await Promise.race([waiting, sleep(8000).then(() => "late")])) as any;
   const wokeMs = Date.now() - t2;
   console.log(`  long poll woken ${wokeMs} ms after it began (change at 1500 ms)`);
