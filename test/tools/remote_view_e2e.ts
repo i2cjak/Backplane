@@ -10,17 +10,21 @@
 // a commit that is an option, and a client the hub does not let in (no
 // token). Prints "ok ..." / "FAIL ..." lines and timings.
 //
-//   bun test/tools/remote_view_e2e.ts [BINARY] [WIREDIR]
+//   bun test/tools/remote_view_e2e.ts [BINARY] [WIREDIR] [RVW_SYNC]
 //
 // BINARY defaults to build/backplane (build/backplane-serve works too);
-// WIREDIR to build/wire. Needs KiCad's ecc83 demo.
+// WIREDIR to build/wire; RVW_SYNC (build/rvw_sync, from test/native/rvw_sync.bend
+// with scripts/build-app.sh) is the window's own fetching code run against the hub:
+// when it is built the test also checks that it fills a cache folder, byte for
+// byte, follows a change with one long poll and reads a version of a commit.
+// Needs KiCad's ecc83 demo.
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, chmodSync, mkdirSync, existsSync, copyFileSync, symlinkSync, appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const args = process.argv.slice(2);
-const [bin = "build/backplane", wire = "build/wire"] = args.filter((a) => !a.startsWith("--"));
+const [bin = "build/backplane", wire = "build/wire", sync = "build/rvw_sync"] = args.filter((a) => !a.startsWith("--"));
 for (const f of readdirSync(wire).filter((f) => f.endsWith(".js"))) (0, eval)(readFileSync(`${wire}/${f}`, "utf8"));
 const W = (globalThis as any).Wire;
 
@@ -194,6 +198,39 @@ try {
   check("no token through the tailnet: 401 on every request", (await status("/view/ver", { thread: th, want: "" }, via)) === 401 && (await status("/view/get", { thread: th, path: "ecc83-pp.kicad_pcb" }, via)) === 401 && (await status("/view/git", { thread: th, path: hp(`${project}/.git`, sha, "ecc83-pp.kicad_pcb") }, via)) === 401);
   check("a wrong token: 401", (await status("/view/get", { thread: th, path: "ecc83-pp.kicad_pcb", token: "0".repeat(token.length) }, via)) === 401);
   check("the token lets it in", (await status("/view/get", { thread: th, path: "ecc83-pp.kicad_pcb", token }, via)) === 200);
+  // the window's own code (src/app/rvw.bend) against this hub
+  if (existsSync(sync)) {
+    const cacheDir = join(root, "xdg");
+    const run = async (have: string, gitp = "") => {
+      const p = Bun.spawn([resolve(sync), base, th, cacheDir, have, gitp], { stdout: "pipe", stderr: "pipe", env: { ...process.env, PATH: "/usr/bin:/bin" } });
+      const text = await new Response(p.stdout).text();
+      await p.exited;
+      const m = /round ok=(\w+) ver=(\S*) reread=(\w+) why=(.*)/.exec(text);
+      return { ok: m?.[1] === "True", ver: m?.[2] ?? "", reread: m?.[3] === "True", why: m?.[4] ?? text, text };
+    };
+    const copy = join(cacheDir, "remote", "h" + base.replace(/[^A-Za-z0-9.-]/g, "_"), dirT);
+    const t3 = Date.now();
+    const r1 = await run("");
+    console.log(`  window round 1 ${Date.now() - t3} ms`);
+    check("the window's first round fills its cache and says to read", r1.ok && r1.reread && r1.ver.length > 0, r1);
+    const sameFile = (rel: string) => existsSync(join(copy, rel)) && readFileSync(join(copy, rel)).equals(readFileSync(own(rel)));
+    check("the copies are the hub's files byte for byte", sameFile("ecc83-pp.kicad_pcb") && sameFile("ecc83-pp.kicad_sch") && sameFile("ecc83-pp.kicad_pro") && sameFile("hw/second.kicad_pcb"), readdirSync(copy));
+    check("nothing hidden came", !existsSync(join(copy, ".env")) && !existsSync(join(copy, "hw", "etclink")) && !existsSync(join(copy, "leak.kicad_pcb")), readdirSync(copy));
+    const t4 = Date.now();
+    const pending = run(r1.ver);
+    await sleep(1500);
+    writeFileSync(own("ecc83-pp.kicad_sch"), readFileSync(own("ecc83-pp.kicad_sch"), "utf8") + "\n; changed\n");
+    const r2 = await pending;
+    console.log(`  window round 2 (change at 1500 ms) answered ${Date.now() - t4} ms after it began`);
+    check("the next round waits, then brings the change and says to read", r2.ok && r2.reread && r2.ver !== r1.ver && sameFile("ecc83-pp.kicad_sch"), r2);
+    const t5 = Date.now();
+    const r3 = await run(r2.ver, hp(`${project}/.git`, sha, "ecc83-pp.kicad_pcb"));
+    console.log(`  window round 3 (nothing changed) answered after ${Date.now() - t5} ms`);
+    check("a round nothing changed in says so: same digest, no read", r3.ok && !r3.reread && r3.ver === r2.ver, r3);
+    check("a version of a commit comes through the hub", r3.text.includes(`git ${committed.length}`), r3.text);
+  } else {
+    console.log("  (no build/rvw_sync: the window's side is not run)");
+  }
   ws.close();
 } catch (e) {
   console.log(`FAIL error: ${e}`);
