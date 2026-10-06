@@ -17,6 +17,7 @@ import ./refs.bend as RF
 import ./mech.bend as MC
 import ./far.bend as FR
 import ./fview.bend as FV
+import ./farlive.bend as FLV
 import ./desk.bend as DK
 import ./hist.bend as HI
 import ./links.bend as LK
@@ -6480,8 +6481,22 @@ def Ui.far.k(+u: Ui, +link: String, +o: J.Json) -> Ui:
       FR.Fr.items.of(J.Json.elems(J.Json.get_obj(o, "items"))))), link, J.Json.get_str(o, "name", link), J.Json.get_bool(o, "away", False{}))),
     "far.away." ++ link, Bool.pick(String, J.Json.get_bool(o, "away", False{}), "1", "")), "far.name." ++ link, J.Json.get_str(o, "name", link))
 
+# a thread elsewhere whose message was posted or turn ended shows no live
+# text any more (the same rule as a local one, Ui.see; core/farlive.bend)
+def Ui.live.gone(u: Ui, +thread: String) -> Ui:
+  match u:
+    case Ui{st, sel, dr, +live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      Ui{st, sel, dr, Map.set(&2, String, live, thread, ""), op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
+
+def Ui.far.live(ids: List<&2, String>, u: Ui) -> Ui:
+  match ids:
+    case Nil{}:
+      u
+    case +id <> t:
+      Ui.far.live(t, Ui.live.gone(u, id))
+
 def Ui.far(+u: Ui, +o: J.Json) -> Ui:
-  Far.arrived(Ui.far.k(u, J.Json.get_str(o, "link", ""), o))
+  Far.arrived(Ui.far.live(FLV.FL.ended(FR.Fr.items.of(J.Json.elems(J.Json.get_obj(o, "items"))), J.Json.get_str(o, "link", "")), Ui.far.k(u, J.Json.get_str(o, "link", ""), o)))
 
 # whether the machine a thing elsewhere lives on did not answer last time
 def Ui.far.away(+u: Ui, +id: String) -> Bool:

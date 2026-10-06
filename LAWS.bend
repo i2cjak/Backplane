@@ -83,6 +83,7 @@ import ./src/core/desk.bend as DK
 import ./src/core/emb.bend as EMB
 import ./src/core/outbox.bend as OB
 import ./src/core/live.bend as LV
+import ./src/core/farlive.bend as FLV
 import ./src/core/contain.bend as CTN
 import ./src/core/qr.bend as QR
 
@@ -6086,3 +6087,103 @@ law fmc_give_unlinked_nothing:
 # the hub's own /give never reads a machine's word as one of its own
 law fmc_give_local_drops_machines:
   {FMC.Fm.give.text("/give >beta:fix %mine %beta:board now") == "/give %mine now" : String}
+# Live text of threads elsewhere (core/farlive.bend): ephemeral, ordered by
+# length and generation, never a change
+
+law flive_delta_appends:
+  {FLV.FL.text(FLV.FL.get(FLV.Took.bs(FLV.FL.take(FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{})), "b~t", "cd", 5n, 2n, False{}, False{})), "b~t")) == "abcd" : String}
+
+law flive_gap_asks:
+  {FLV.Took.v(FLV.FL.take(FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{})), "b~t", "zz", 5n, 9n, False{}, False{})) == 2n : Nat}
+
+law flive_gap_changes_nothing:
+  {FLV.FL.text(FLV.FL.get(FLV.Took.bs(FLV.FL.take(FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{})), "b~t", "zz", 5n, 9n, False{}, False{})), "b~t")) == "ab" : String}
+
+law flive_end_blocks_old:
+  {FLV.Took.v(FLV.FL.take(LV.Live.end(FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{})), "b~t"), "b~t", "ab", 5n, 0n, False{}, False{})) == 1n : Nat}
+
+law flive_end_no_resurrect:
+  {FLV.FL.text(FLV.FL.get(FLV.Took.bs(FLV.FL.take(LV.Live.end(FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{})), "b~t"), "b~t", "ab", 5n, 0n, False{}, False{})), "b~t")) == "" : String}
+
+law flive_next_gen_taken:
+  {FLV.FL.text(FLV.FL.get(FLV.Took.bs(FLV.FL.take(LV.Live.end(FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{})), "b~t"), "b~t", "cd", 6n, 0n, False{}, False{})), "b~t")) == "cd" : String}
+
+law flive_snap_replaces:
+  {FLV.FL.text(FLV.FL.get(FLV.Took.bs(FLV.FL.take(FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{})), "b~t", "abcdef", 5n, 0n, False{}, True{})), "b~t")) == "abcdef" : String}
+
+law flive_snap_older_stale:
+  {FLV.Took.v(FLV.FL.take(LV.Live.end(FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{})), "b~t"), "b~t", "ab", 5n, 0n, False{}, True{})) == 1n : Nat}
+
+law flive_ended_ids:
+  {FLV.FL.ended([FR.Item{4n, C.Change.encode(M.MessagePosted{"t", "m:1", M.Assistant{}, "hi", 3n})}, FR.Item{5n, C.Change.encode(M.TurnChanged{"u", M.Completed{}, 4n})}, FR.Item{6n, C.Change.encode(M.TurnChanged{"v", M.Running{}, 5n})}], "b") == ["b~t", "b~u"] : List<&2, String>}
+
+law flive_user_message_keeps:
+  {FLV.FL.ended([FR.Item{4n, C.Change.encode(M.MessagePosted{"t", "m:1", M.User{}, "hi", 3n})}], "b") == Nil{} : List<&2, String>}
+
+law flive_body_no_items:
+  {List.length(&2, FR.Item, FR.Fr.items.of(J.Json.elems(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(FLV.FL.body("a", [FLV.LI{"t", 5n, 0n, "ab", 2n, False{}}])), J.Null{}), "items")))) == 0n : Nat}
+
+law flive_body_has_live:
+  {List.length(&2, J.Json, J.Json.elems(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(FLV.FL.body("a", [FLV.LI{"t", 5n, 0n, "ab", 2n, False{}}])), J.Null{}), "live"))) == 1n : Nat}
+
+law flive_queue_joins:
+  {FLV.LQ.pend(FLV.LQ.add(FLV.LQ.add(FLV.LQ.new("b"), 10n, "t", 5n, 0n, "ab"), 10n, "t", 5n, 2n, "cd")) == [FLV.LI{"t", 5n, 0n, "abcd", 4n, False{}}] : List<&2, FLV.LI>}
+
+law flive_queue_gap_owes_whole:
+  {FLV.LQ.pend(FLV.LQ.add(FLV.LQ.add(FLV.LQ.new("b"), 10n, "t", 5n, 0n, "ab"), 10n, "t", 5n, 7n, "cd")) == [FLV.LI{"t", 5n, 0n, "", 0n, True{}}] : List<&2, FLV.LI>}
+
+law flive_queue_whole_absorbs:
+  {FLV.LQ.pend(FLV.LQ.add(FLV.LQ.need(FLV.LQ.new("b"), "t", 0n), 10n, "t", 5n, 0n, "ab")) == [FLV.LI{"t", 0n, 0n, "", 0n, True{}}] : List<&2, FLV.LI>}
+
+law flive_queue_threads_apart:
+  {List.length(&2, FLV.LI, FLV.LQ.pend(FLV.LQ.add(FLV.LQ.add(FLV.LQ.new("b"), 10n, "t", 5n, 0n, "ab"), 10n, "u", 5n, 0n, "cd"))) == 2n : Nat}
+
+law flive_one_request_out:
+  {FLV.LQ.due(FLV.LQ.add(FLV.LQ.start(FLV.LQ.add(FLV.LQ.new("b"), 10n, "t", 5n, 0n, "ab")), 10n, "t", 5n, 2n, "cd")) == False{} : Bool}
+
+law flive_due_after_answer:
+  {FLV.LQ.due(FLV.LQ.done(FLV.LQ.add(FLV.LQ.start(FLV.LQ.add(FLV.LQ.new("b"), 10n, "t", 5n, 0n, "ab")), 10n, "t", 5n, 2n, "cd"), True{}, 10n)) == True{} : Bool}
+
+law flive_quiet_drops:
+  {FLV.LQ.pend(FLV.LQ.add(FLV.LQ.done(FLV.LQ.start(FLV.LQ.add(FLV.LQ.new("b"), 10n, "t", 5n, 0n, "ab")), False{}, 100n), 105n, "t", 5n, 2n, "cd")) == Nil{} : List<&2, FLV.LI>}
+
+law flive_quiet_ends:
+  {FLV.LQ.pend(FLV.LQ.add(FLV.LQ.done(FLV.LQ.start(FLV.LQ.add(FLV.LQ.new("b"), 10n, "t", 5n, 0n, "ab")), False{}, 100n), 108n, "t", 5n, 2n, "cd")) == [FLV.LI{"t", 5n, 2n, "cd", 2n, False{}}] : List<&2, FLV.LI>}
+
+law flive_whole_from_buffer:
+  {FLV.FL.fill([FLV.LI{"t", 0n, 0n, "", 0n, True{}}], LV.Live.add(LV.Live.add(Nil{}, "t", "ab"), "t", "cd")) == [FLV.LI{"t", 0n, 0n, "abcd", 4n, True{}}] : List<&2, FLV.LI>}
+
+law flive_whole_ended_dropped:
+  {FLV.FL.fill([FLV.LI{"t", 0n, 0n, "", 0n, True{}}], LV.Live.end(LV.Live.add(Nil{}, "t", "ab"), "t")) == Nil{} : List<&2, FLV.LI>}
+
+law flive_link_gone:
+  {LV.Live.msg(FLV.FL.drop.link(LV.Live.add(LV.Live.add(Nil{}, "b~t", "ab"), "t", "cd"), "b~")) == LV.Live.msg(LV.Live.add(Nil{}, "t", "cd")) : String}
+
+law flive_far_message_ends_live:
+  {U.Ui.live.of(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{"b~t"}}, J.KV{"text", J.Str{"hel"}}])), Maybe.default(&2, J.Json, J.Json.parse(FR.Fr.msg("b", "Beta", False{}, 3n, 4n, [FR.Item{4n, C.Change.encode(M.MessagePosted{"t", "m:1", M.Assistant{}, "hello", 3n})}])), J.Null{})), "b~t") == "" : String}
+
+law flive_far_activity_keeps_live:
+  {U.Ui.live.of(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{"b~t"}}, J.KV{"text", J.Str{"hel"}}])), Maybe.default(&2, J.Json, J.Json.parse(FR.Fr.msg("b", "Beta", False{}, 3n, 4n, [FR.Item{4n, C.Change.encode(M.TodosSet{"t", "[]", 3n})}])), J.Null{})), "b~t") == "hel" : String}
+
+law flive_far_delta_shows:
+  {U.Ui.live.of(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{"b~t"}}, J.KV{"text", J.Str{"hel"}}])), J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{"b~t"}}, J.KV{"text", J.Str{"lo"}}])), "b~t") == "hello" : String}
+
+# Alerts of threads elsewhere: one key, one island line
+
+law notice_far_key_same:
+  {NO.Notice.key(NO.Notice.of(M.State.empty(), "b~t", False{}, False{})) == "turn-t" : String}
+
+law notice_far_fail_key_same:
+  {NO.Notice.kind(NO.Notice.of(M.State.empty(), "b~t", True{}, False{})) ++ " " ++ NO.Notice.key(NO.Notice.of(M.State.empty(), "b~t", True{}, False{})) == "fail turn-t" : String}
+
+law notice_local_key_kept:
+  {NO.Notice.key(NO.Notice.of(M.State.empty(), "t", False{}, False{})) == "turn-t" : String}
+
+law island_far_once:
+  {List.length(&2, J.Json, Hb.Hubs.lines.once([J.Json.obj([J.KV{"thread", J.Str{"b~t"}}]), J.Json.obj([J.KV{"thread", J.Str{"t"}}])])) == 1n : Nat}
+
+law island_far_owner_wins:
+  {J.Json.get_str(Maybe.default(&2, J.Json, List.head(&2, J.Json, Hb.Hubs.lines.once([J.Json.obj([J.KV{"thread", J.Str{"b~t"}}]), J.Json.obj([J.KV{"thread", J.Str{"t"}}])])), J.Null{}), "thread", "") == "t" : String}
+
+law island_far_alone_kept:
+  {List.length(&2, J.Json, Hb.Hubs.lines.once([J.Json.obj([J.KV{"thread", J.Str{"b~t"}}]), J.Json.obj([J.KV{"thread", J.Str{"u"}}])])) == 2n : Nat}

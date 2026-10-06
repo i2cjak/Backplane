@@ -7744,3 +7744,98 @@ def Laws.fmc_give_unlinked_nothing():
 
 def Laws.fmc_give_local_drops_machines():
   {==}
+def Laws.flive_delta_appends():
+  {==}
+
+def Laws.flive_gap_asks():
+  {==}
+
+def Laws.flive_gap_changes_nothing():
+  {==}
+
+def Laws.flive_end_blocks_old():
+  {==}
+
+def Laws.flive_end_no_resurrect():
+  {==}
+
+def Laws.flive_next_gen_taken():
+  {==}
+
+def Laws.flive_snap_replaces():
+  {==}
+
+def Laws.flive_snap_older_stale():
+  {==}
+
+def Laws.flive_ended_ids():
+  {==}
+
+def Laws.flive_user_message_keeps():
+  {==}
+
+def Laws.flive_body_no_items():
+  {==}
+
+def Laws.flive_body_has_live():
+  {==}
+
+def Laws.flive_queue_joins():
+  {==}
+
+def Laws.flive_queue_gap_owes_whole():
+  {==}
+
+def Laws.flive_queue_whole_absorbs():
+  {==}
+
+def Laws.flive_queue_threads_apart():
+  {==}
+
+def Laws.flive_one_request_out():
+  {==}
+
+def Laws.flive_due_after_answer():
+  {==}
+
+def Laws.flive_quiet_drops():
+  {==}
+
+def Laws.flive_quiet_ends():
+  {==}
+
+def Laws.flive_whole_from_buffer():
+  {==}
+
+def Laws.flive_whole_ended_dropped():
+  {==}
+
+def Laws.flive_link_gone():
+  {==}
+
+def Laws.flive_far_message_ends_live():
+  {==}
+
+def Laws.flive_far_activity_keeps_live():
+  {==}
+
+def Laws.flive_far_delta_shows():
+  {==}
+
+def Laws.notice_far_key_same():
+  {==}
+
+def Laws.notice_far_fail_key_same():
+  {==}
+
+def Laws.notice_local_key_kept():
+  {==}
+
+def Laws.island_far_once():
+  {==}
+
+def Laws.island_far_owner_wins():
+  {==}
+
+def Laws.island_far_alone_kept():
+  {==}

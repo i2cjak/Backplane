@@ -556,3 +556,39 @@ def Push.turn_ended.done(dead: List<&2, String>) -> IO(Unit):
 # calls Push.turn_ended.dead and posts Push.drop_request for each)
 def Push.turn_ended(+home: String, st: M.State, +thread: String, +state: String, seen: Bool) -> IO(Unit):
   IO.bind(List<&2, String>, Unit, Push.turn_ended.dead(home, st, thread, state, seen), Push.turn_ended.done)
+
+# A turn that ended on another of the owner's machines (core/farlive.bend):
+# that machine decided it is news and under which key; this hub pushes it
+# to its own phones like any alert (same key: one collapse id, so a phone
+# paired with both machines shows it once)
+def Push.note.send(+home: String, +st: M.State, +thread: String, +title: String, +body: String, +akey: String, +pkey: String, +kid: String, +team: String) -> IO(List<&2, String>):
+  do IO<List<&2, String>>:
+    +dir : String = home ++ "/tmp"
+    mk : Result<&1, &1, U32 & String, Unit> <- H.FS.mkdirs(dir)
+    m : Result<&1, &1, U32 & String, Unit> <- H.FS.chmod(dir, 448)
+    t : U32 <- H.Clock.epoch()
+    +now : Nat = U32.to_nat(t)
+    +prefix : String = "push-" ++ Nat.show(now) ++ "-" ++ thread
+    +jwt : String <- Jwt.sign(pkey, dir, prefix, Jwt.input(kid, team, now))
+    base : String <- Push.env("BACKPLANE_APNS_URL")
+    +others : List<&2, M.Thread> = Island.others(st, thread)
+    +job : Job = Job{dir, base, jwt, now, thread, Push.alert(thread, akey, title, body), Island.state(others), List.is_empty(&2, M.Thread, others), akey}
+    Push.gate(String.is_empty(jwt), Push.devices(st), job, prefix)
+
+def Push.note.go(ok: Bool, phones: Bool, +home: String, +st: M.State, +thread: String, +title: String, +body: String, +akey: String, +pkey: String, +kid: String, +team: String) -> IO(List<&2, String>):
+  match ok:
+    case True{}:
+      Push.note.send(home, st, thread, title, body, akey, pkey, kid, team)
+    case False{}:
+      Push.skip(phones)
+
+# the push for a far turn's end (akey "" when a desk watches it: none goes)
+def Push.note.dead(+home: String, +st: M.State, +thread: String, +title: String, +body: String, +akey: String) -> IO(List<&2, String>):
+  do IO<List<&2, String>>:
+    +pkey : String = M.Setting.get(st, "push.apns.key", "")
+    +kid : String = M.Setting.get(st, "push.apns.keyid", "")
+    +team : String = M.Setting.get(st, "push.apns.team", "")
+    has : Bool <- Push.exists(pkey)
+    +phones : Bool = Push.any(Push.devices(st))
+    Push.note.go(Bool.and(has, Bool.and(phones, Bool.not(Bool.or(String.is_empty(akey), Bool.or(String.is_empty(kid), String.is_empty(team)))))),
+      phones, home, st, thread, title, body, akey, pkey, kid, team)

@@ -10,6 +10,7 @@ import ../core/bot.bend as BO
 import ../core/bothub.bend as BH
 import ../core/far.bend as FR
 import ../core/live.bend as LV
+import ../core/farlive.bend as FL
 
 # Bots' IO that needs secrets (docs/bots.md): webhook and peer secrets,
 # signed requests to linked machines, verifying signed requests to us, and
@@ -25,47 +26,57 @@ import ../core/live.bend as LV
 # threads elsewhere (far.bend: mirrors, pushes, this hub's feed), and each
 # thread's streamed text since its last message (core/live.bend)
 type Bn is Data:
-  Bn{dir: String, seen: SG.Seen, work: BH.DirWork, far: FR.Fh, live: List<&2, LV.Buf>, broken: String}
+  Bn{dir: String, seen: SG.Seen, work: BH.DirWork, far: FR.Fh, live: List<&2, LV.Buf>, broken: String, fl: List<&2, FL.LQ>}
 
 def Bn.empty() -> Bn:
-  Bn{"[]", SG.Seen.empty(), BH.DirWork.empty(), FR.Fh.empty(), Nil{}, ""}
+  Bn{"[]", SG.Seen.empty(), BH.DirWork.empty(), FR.Fh.empty(), Nil{}, "", Nil{}}
 
 def Bn.dir(b: Bn) -> String:
   match b:
-    case Bn{d, _, _, _, lv, _}:
+    case Bn{d, _, _, _, lv, _, _}:
       d
 
 def Bn.far(b: Bn) -> FR.Fh:
   match b:
-    case Bn{_, _, _, f, lv, _}:
+    case Bn{_, _, _, f, lv, _, _}:
       f
 
 def Bn.live(b: Bn) -> List<&2, LV.Buf>:
   match b:
-    case Bn{_, _, _, _, lv, _}:
+    case Bn{_, _, _, _, lv, _, _}:
       lv
+
+def Bn.fl(b: Bn) -> List<&2, FL.LQ>:
+  match b:
+    case Bn{_, _, _, _, _, _, q}:
+      q
+
+def Bn.with_fl(b: Bn, q: List<&2, FL.LQ>) -> Bn:
+  match b:
+    case Bn{d, s, w, f, lv, bk, _}:
+      Bn{d, s, w, f, lv, bk, q}
 
 def Bn.with_live(b: Bn, lv: List<&2, LV.Buf>) -> Bn:
   match b:
-    case Bn{d, s, w, f, _, bk}:
-      Bn{d, s, w, f, lv, bk}
+    case Bn{d, s, w, f, _, bk, fl}:
+      Bn{d, s, w, f, lv, bk, fl}
 
 # why the log can no longer be appended to ("" while it can): a failed
 # write could not be taken back, so nothing more is committed until it is
 def Bn.broken(b: Bn) -> String:
   match b:
-    case Bn{_, _, _, _, _, bk}:
+    case Bn{_, _, _, _, _, bk, _}:
       bk
 
 def Bn.with_broken(b: Bn, +bk: String) -> Bn:
   match b:
-    case Bn{d, s, w, f, lv, _}:
-      Bn{d, s, w, f, lv, bk}
+    case Bn{d, s, w, f, lv, _, fl}:
+      Bn{d, s, w, f, lv, bk, fl}
 
 def Bn.with_far(b: Bn, f: FR.Fh) -> Bn:
   match b:
-    case Bn{d, s, w, _, lv, bk}:
-      Bn{d, s, w, f, lv, bk}
+    case Bn{d, s, w, _, lv, bk, fl}:
+      Bn{d, s, w, f, lv, bk, fl}
 
 # Files
 # -----
@@ -453,18 +464,18 @@ def Bn.seen.k(had: Bool, s: SG.Seen, +key: String, +now: Nat) -> Maybe<&2, SG.Se
 
 def Bn.accept(+b: Bn, +key: String, +now: Nat) -> Maybe<&2, SG.Seen>:
   match b:
-    case Bn{_, +s, _, _, lv, _}:
+    case Bn{_, +s, _, _, lv, _, _}:
       Bn.seen.k(SG.Seen.has(s, key), s, key, now)
 
 def Bn.with_seen(b: Bn, s: SG.Seen) -> Bn:
   match b:
-    case Bn{d, _, w, f, lv, bk}:
-      Bn{d, s, w, f, lv, bk}
+    case Bn{d, _, w, f, lv, bk, fl}:
+      Bn{d, s, w, f, lv, bk, fl}
 
 def Bn.with_dir(b: Bn, d: String) -> Bn:
   match b:
-    case Bn{_, s, w, f, lv, bk}:
-      Bn{d, s, w, f, lv, bk}
+    case Bn{_, s, w, f, lv, bk, fl}:
+      Bn{d, s, w, f, lv, bk, fl}
 
 # Signed requests out
 # -------------------
@@ -709,13 +720,13 @@ def Bn.fetched(r: Resp, +peer: String, +pname: String, +now: Nat) -> Maybe<&2, L
 
 def Bn.work(b: Bn) -> BH.DirWork:
   match b:
-    case Bn{_, _, w, _, lv, _}:
+    case Bn{_, _, w, _, lv, _, _}:
       w
 
 def Bn.with_work(b: Bn, w: BH.DirWork) -> Bn:
   match b:
-    case Bn{d, s, _, f, lv, bk}:
-      Bn{d, s, w, f, lv, bk}
+    case Bn{d, s, _, f, lv, bk, fl}:
+      Bn{d, s, w, f, lv, bk, fl}
 
 def Bn.cache(home: String) -> String:
   home ++ "/bots.cache"

@@ -658,9 +658,21 @@ owner's (`Far.own` in server.bend: the machines list; laws `far_*_stay_home`).
   clients through `Label.title`/`Label.syncing` and the phones' `quiet`.
   Projects that have arrived work meanwhile, and nothing pops in or moves.
   Laws `far_catalog_*`, `far_scope_*`.
-- Not mirrored: streamed text while a far turn runs (its messages arrive as
-  they are posted), and a bot's browser. The viewers of a far project thread
-  are below.
+- Live text of a far turn (core/farlive.bend, laws `flive_*`): the owner's
+  streamed reply is not a change, so it never enters the log or the mirror
+  file. It goes hub to hub as an ephemeral `live` body on POST /far/push
+  (deltas of the owner's Live buffer: `off` = length before, `gen` bumps at
+  each end), one queue per peer with one request out at a time (a slow peer
+  gets fewer, bigger deltas, like `Delta.merge`). The receiver keeps it in
+  its own Live buffer under `<link>~<thread>` and sends its clients the
+  ordinary `delta`, so every client renders it like a local reply. A gap
+  asks for the whole text; the durable message arriving first ends the
+  buffer, so a late delta never brings text back. A peer with no client
+  (`watch: false`) is left alone for 8 s; the first delta after finds a gap
+  and gets a snapshot. A far turn's end alerts once, by the owner's key.
+- Join cost: a mirror's chunks are cut by a tail-recursive walk
+  (`Fr.after`), linear in the mirror, not stack-deep (`test/native/far_sync_bench.bend`).
+- Not mirrored: a bot's browser. The viewers of a far project thread are below.
 - Viewers elsewhere. The viewer panel of a thread on another machine (Board,
   Schematic, 3D, Mech, Files, Diff) works from any client of any hub, the
   window, the web and both phones, with the same Bend defs (`core/fview.bend`,
