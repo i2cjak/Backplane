@@ -293,20 +293,40 @@ def Fvs.ready(ls: List<&2, String>, +m: Map<&2, String>) -> List<&2, String>:
     case +l <> t:
       Fvs.ready.k(Bool.not(String.is_empty(Fvs.rel(Fvs.at(m, l)))), l, Fvs.ready(t, m))
 
-# Installing what came: one step at a time per cache (a lock folder, as
-# macOS has no flock). A file is replaced only by a version at least as
-# new as the one there, so two syncs racing never roll one back; a KiCad
+# the lock a cache's steps take one at a time (a folder, as macOS has no
+# flock; one left by a killed step is taken after 15 s)
+def Fvs.lock.sh() -> String:
+  "c=$1; mkdir -p \"$c\"; n=0\nwhile ! mkdir \"$c/.farlock\" 2>/dev/null; do n=$((n+1)); if [ $n -ge 150 ]; then rm -rf \"$c/.farlock\"; mkdir \"$c/.farlock\" 2>/dev/null; break; fi; sleep 0.1; done\n"
+  ++ "trap 'rmdir \"$c/.farlock\" 2>/dev/null' EXIT\nT=$(printf '\\t')\n"
+
+# A sync round takes a number as its list arrives (Fvs.ticket), so the
+# rounds of one cache are ordered by when their lists were made, whatever
+# the files' times say.
+def Fvs.ticket.sh() -> String:
+  Fvs.lock.sh() ++ "k=$(cat \"$c/.farnext\" 2>/dev/null || echo 0); k=$((k+1)); echo \"$k\" > \"$c/.farnext\"; echo \"$k\"\n"
+
+def Fvs.ticket.out(r: P.Ran) -> String:
+  match r:
+    case P.Ran{_, +out}:
+      String.trim(out)
+
+def Fvs.ticket(+cache: String) -> IO(String):
+  IO.bind(P.Ran, String, P.Proc.run("sh", ["-c", Fvs.ticket.sh(), "sh", cache], "/"), r => IO.pure(String, Fvs.ticket.out(r)))
+
+# Installing what came: one step at a time per cache. A round older than
+# the last installed one (its ticket, $4, is lower) installs nothing, so
+# two syncs racing never roll a file back or delete what a newer one
+# brought; a KiCad
 # file the owner no longer lists is removed (every list names all of them:
 # a model or a file a client named stays, as another client's list need
 # not name it). Prints the lines
 # the cache now holds (its new .farver).
 def Fvs.install.sh() -> String:
-  "c=$1; n=0\nwhile ! mkdir \"$c/.farlock\" 2>/dev/null; do n=$((n+1)); if [ $n -ge 150 ]; then rm -rf \"$c/.farlock\"; mkdir \"$c/.farlock\" 2>/dev/null; break; fi; sleep 0.1; done\n"
-  ++ "trap 'rmdir \"$c/.farlock\" 2>/dev/null' EXIT\nT=$(printf '\\t')\n"
+  Fvs.lock.sh()
+  ++ "last=$(cat \"$c/.fargen\" 2>/dev/null || echo 0)\nif [ \"$4\" -lt \"$last\" ]; then printf '%s\\n' \"$3\" | cut -f2 | while IFS= read -r tmp; do [ -n \"$tmp\" ] && rm -f \"$tmp\"; done; cat \"$c/.farver\" 2>/dev/null; exit 0; fi\necho \"$4\" > \"$c/.fargen\"\n"
   ++ "{ echo '#'; printf '%s\\n' \"$2\"; } > \"$c/.farnew\"; touch \"$c/.farver\"; echo '#' > \"$c/.farins\"\n"
   ++ "printf '%s\\n' \"$3\" | while IFS=\"$T\" read -r rel tmp; do\n  [ -n \"$rel\" ] || continue\n"
-  ++ "  new=$(awk -F'\\t' -v r=\"$rel\" '$1==r{print $3; exit}' \"$c/.farnew\"); old=$(awk -F'\\t' -v r=\"$rel\" '$1==r{print $3; exit}' \"$c/.farver\")\n"
-  ++ "  if [ -z \"$old\" ] || awk -v a=\"$new\" -v b=\"$old\" 'BEGIN{exit !(a+0>=b+0)}'; then mkdir -p \"$(dirname \"$c/$rel\")\" && mv -f \"$tmp\" \"$c/$rel\" && printf '%s\\n' \"$rel\" >> \"$c/.farins\"; else rm -f \"$tmp\"; fi\ndone\n"
+  ++ "  mkdir -p \"$(dirname \"$c/$rel\")\" && mv -f \"$tmp\" \"$c/$rel\" && printf '%s\\n' \"$rel\" >> \"$c/.farins\"\ndone\n"
   ++ "{ echo '#'; cat \"$c/.farver\"; } > \"$c/.farold\"\n"
   ++ "awk -F'\\t' 'FNR==1{f++; next} f==1{I[$1]=1; next} f==2{N[$1]=$0; next} f==3{if($1!=\"\") O[$1]=$0; next}\n"
   ++ "  END{for(r in I) if(r in N) print N[r]; for(r in O) if(!(r in I)){ l=tolower(r); if(r in N) print O[r]; else if(l ~ /\\.(kicad_pcb|kicad_sch|kicad_pro)$/ || l ~ /(^|\\/)(sym-lib-table|fp-lib-table)$/) print \"DEL\" FS r; else print O[r]}}' \"$c/.farins\" \"$c/.farnew\" \"$c/.farold\" > \"$c/.farmid\"\n"
@@ -318,8 +338,8 @@ def Fvs.install.out(r: P.Ran) -> String:
     case P.Ran{_, +out}:
       out
 
-def Fvs.install(+cache: String, +files: String, +got: List<&2, String>) -> IO(String):
-  IO.bind(P.Ran, String, P.Proc.run("sh", ["-c", Fvs.install.sh(), "sh", cache, files, String.join(got, "\n")], "/"), r => IO.pure(String, Fvs.install.out(r)))
+def Fvs.install(+cache: String, +files: String, +got: List<&2, String>, +ticket: String) -> IO(String):
+  IO.bind(P.Ran, String, P.Proc.run("sh", ["-c", Fvs.install.sh(), "sh", cache, files, String.join(got, "\n"), ticket], "/"), r => IO.pure(String, Fvs.install.out(r)))
 
 # (a sync that missed a file says so with no version, so the client asks
 # again at once and the next sync brings what is missing; it waits a
@@ -334,9 +354,9 @@ def Fvs.sync.pause(+failed: Nat) -> IO(Unit):
 # owner's list is asked for with the digest this client holds; when that
 # changes (or after a while: same) the files that differ are brought in
 # and the answer says what the cache holds now, for the client to go on.
-def Fvs.sync.done(+home: String, +link: String, +thread: String, +cache: String, +want: String, +ver: String, +files: String, +old: Map<&2, String>, +todo: List<&2, String>, +got: List<&2, String>) -> IO(String):
+def Fvs.sync.done(+home: String, +link: String, +thread: String, +cache: String, +want: String, +ver: String, +files: String, +old: Map<&2, String>, +todo: List<&2, String>, +got: List<&2, String>, +ticket: String) -> IO(String):
   do IO<String>:
-    +now : String <- Fvs.install(cache, files, got)
+    +now : String <- Fvs.install(cache, files, got, ticket)
     +keep : List<&2, String> = Fvs.lines(now)
     +failed : Nat = Nat.sub(List.length(&2, String, todo), List.length(&2, String, got))
     Fvs.sync.pause(failed)
@@ -348,9 +368,9 @@ def Fvs.sync.fetch(+home: String, +link: String, +url: String, +thread: String, 
   do IO<String>:
     +old : Map<&2, String> <- Fvs.idx(cache)
     +todo : List<&2, String> = Fvs.todo(Fvs.lines(files), old)
-    mk : P.Ran <- P.Proc.run("mkdir", ["-p", cache], "/")
+    +ticket : String <- Fvs.ticket(cache)
     +got : List<&2, String> <- Fvs.fetch(todo, home, link, url, thread, cache)
-    Fvs.sync.done(home, link, thread, cache, want, ver, files, old, todo, got)
+    Fvs.sync.done(home, link, thread, cache, want, ver, files, old, todo, got, ticket)
 
 def Fvs.sync.at(+cache: String, +ver: String, +files: String, +home: String, +link: String, +url: String, +thread: String, +want: String, +have: String) -> IO(String):
   Bool.pick(IO(String), String.is_empty(cache), IO.pure(String, Fvs.err("that folder cannot be kept here")),

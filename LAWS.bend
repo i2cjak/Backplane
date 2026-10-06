@@ -6249,37 +6249,45 @@ law rview_want_file:
   {RVW.Rview.want("/c/remote/hb", "/c/remote/hb/p", "/c/remote/hb/p/hw/a.step") == "hw/a.step" : String}
 
 law rview_ask_get_up:
-  {RVW.Rview.ask.ok("/view/get", "/p", "", "../a") == False{} : Bool}
+  {RVW.Rview.ask.ok("/view/get", "/p", "", "", "../a") == False{} : Bool}
 
 law rview_ask_get_abs:
-  {RVW.Rview.ask.ok("/view/get", "/p", "", "/etc/passwd") == False{} : Bool}
+  {RVW.Rview.ask.ok("/view/get", "/p", "", "", "/etc/passwd") == False{} : Bool}
 
 law rview_ask_get_hidden:
-  {RVW.Rview.ask.ok("/view/get", "/p", "", ".ssh/id_rsa") == False{} : Bool}
+  {RVW.Rview.ask.ok("/view/get", "/p", "", "", ".ssh/id_rsa") == False{} : Bool}
 
 law rview_ask_get_ok:
-  {RVW.Rview.ask.ok("/view/get", "/p", "", "hw/a.kicad_pcb") == True{} : Bool}
+  {RVW.Rview.ask.ok("/view/get", "/p", "", "", "hw/a.kicad_pcb") == True{} : Bool}
 
 law rview_ask_ver_hidden:
-  {RVW.Rview.ask.ok("/view/ver", "/p", "a.kicad_pcb\n.env", "") == False{} : Bool}
+  {RVW.Rview.ask.ok("/view/ver", "/p", "", "a.kicad_pcb\n.env", "") == False{} : Bool}
 
 law rview_ask_no_folder:
-  {RVW.Rview.ask.ok("/view/get", "", "", "a.kicad_pcb") == False{} : Bool}
+  {RVW.Rview.ask.ok("/view/get", "", "", "", "a.kicad_pcb") == False{} : Bool}
 
 law rview_ask_other:
-  {RVW.Rview.ask.ok("/view/other", "/p", "", "a.kicad_pcb") == False{} : Bool}
+  {RVW.Rview.ask.ok("/view/other", "/p", "", "", "a.kicad_pcb") == False{} : Bool}
 
 law rview_git_option:
-  {RVW.Rview.ask.ok("/view/git", "/p", "", "git\t/p/.git\t--output=/tmp/x\t2\t/p/a.kicad_pcb") == False{} : Bool}
+  {RVW.Rview.ask.ok("/view/git", "/p", "", "", "git\t/p/.git\t--output=/tmp/x\t2\t/p/a.kicad_pcb") == False{} : Bool}
 
 law rview_git_dir:
-  {RVW.Rview.ask.ok("/view/git", "/p", "", "git\t/etc\tabc123\t2\t/p/a.kicad_pcb") == False{} : Bool}
+  {RVW.Rview.ask.ok("/view/git", "/p", "", "", "git\t/etc\tabc123\t2\t/p/a.kicad_pcb") == False{} : Bool}
 
 law rview_git_climbs:
-  {RVW.Rview.ask.ok("/view/git", "/p", "", "git\t/p/.git\tabc123\t2\t/p/../../etc/passwd") == False{} : Bool}
+  {RVW.Rview.ask.ok("/view/git", "/p", "", "", "git\t/p/.git\tabc123\t2\t/p/../../etc/passwd") == False{} : Bool}
 
 law rview_git_ok:
-  {RVW.Rview.ask.ok("/view/git", "/p", "", "git\t/p/.git\tabc123\t2\t/p/a.kicad_pcb") == True{} : Bool}
+  {RVW.Rview.ask.ok("/view/git", "/p", "", "", "git\t/p/.git\tabc123\t2\t/p/a.kicad_pcb") == True{} : Bool}
+
+# a version is read only from the thread's own repository, and never a
+# hidden file of it
+law rview_git_other_repo:
+  {RVW.Rview.ask.ok("/view/git", "/p", "", "", "git\t/private/.git\tabc123\t8\t/private/a.kicad_pcb") == False{} : Bool}
+
+law rview_git_hidden:
+  {RVW.Rview.ask.ok("/view/git", "/p", "", "", "git\t/p/.git\tabc123\t2\t/p/.env") == False{} : Bool}
 
 law rview_root_unknown:
   {RVW.Rview.root.k(False{}, False{}, "/h", "", "/p", "") == "" : String}

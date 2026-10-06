@@ -93,10 +93,11 @@ def Rvw.bring(+url: String, +thread: String, +root: String, +cache: String, +fil
   do IO<Got>:
     +old : Map<&2, String> <- FVS.Fvs.idx(cache)
     +todo : List<&2, String> = FVS.Fvs.todo(FVS.Fvs.lines(files), old)
-    mk : P.Ran <- P.Proc.run("mkdir", ["-p", cache], "/")
+    +ticket : String <- FVS.Fvs.ticket(cache)
     +got : List<&2, String> <- Rvw.fetch(todo, url, thread, root, cache)
-    now : String <- FVS.Fvs.install(cache, files, got)
+    now : String <- FVS.Fvs.install(cache, files, got, ticket)
     +failed : Nat = Nat.sub(List.length(&2, String, todo), List.length(&2, String, got))
+    FVS.Fvs.sync.pause(failed)
     return Got{True{}, Bool.pick(String, Nat.is_eq(failed, 0n), ver, ""), Bool.not(String.eq(ver, have)), ""}
 
 def Rvw.res.k(+cache: String, +ver: String, +files: String, +url: String, +thread: String, +root: String, +have: String) -> IO(Got):

@@ -74,8 +74,10 @@ def Rview.pre(+cache: String, +url: String) -> String:
 # a path on the hub, where it is read here: under the hub's folder, or ""
 # when it is not an absolute path that stays where it says; a path that is
 # not a file (a version, a comparison, "") is as it was
+# (a path already in the copies stays as it is: the sheet tree read from a
+# copy names its children there, and they are not copied twice)
 def Rview.at(+pre: String, +path: String) -> String:
-  Bool.pick(String, String.is_empty(pre), path,
+  Bool.pick(String, Bool.or(String.is_empty(pre), String.starts_with(path, pre ++ "/")), path,
     Bool.pick(String, String.starts_with(path, "/"),
       Bool.pick(String, FM.Fm.safe(String.drop(path, 1n)), pre ++ path, ""), path))
 
@@ -155,13 +157,31 @@ def Rview.version.ok(+p: String) -> Bool:
     Bool.and(Bool.and(Rview.gitdir(HI.Hist.git.dir(p)), Rview.hex(HI.Hist.git.commit(p))),
       Bool.and(FM.Fm.safe(HI.Hist.git.rel(p)), Bool.not(String.is_empty(HI.Hist.git.rel(p))))))
 
+# a thread's project folder ("" for a thread the hub does not keep itself:
+# a mirrored thread's history is its own machine's)
+def Rview.proot.k(known: Bool, +s: M.State, +th: String) -> String:
+  Bool.pick(String, Bool.and(known, Bool.not(FR.Fr.is(th))), H.Hub.project.root(H.Hub.project(s, H.Hub.thread_project(H.Hub.thread(s, th)))), "")
+
+def Rview.proot(+s: M.State, +th: String) -> String:
+  Rview.proot.k(Rview.has(Map.has(&2, M.Thread, FR.Fr.st.threads(s), th)), s, th)
+
+# a version's git directory is the thread's own: inside its folder or its
+# project's (the repository, a worktree's record in it, the history kept
+# outside git), and the file in it one a viewer may read (no hidden file)
+def Rview.bound(+g: String, +root: String, +proot: String) -> Bool:
+  Bool.or(Bool.and(Bool.not(String.is_empty(root)), String.starts_with(g, root ++ "/")),
+    Bool.and(Bool.not(String.is_empty(proot)), String.starts_with(g, proot ++ "/")))
+
+def Rview.version.mine(+p: String, +root: String, +proot: String) -> Bool:
+  Bool.and(Rview.version.ok(p), Bool.and(Rview.bound(HI.Hist.git.dir(p), root, proot), FV.Fv.file.ok(HI.Hist.git.rel(p))))
+
 # whether a request is one the hub answers: a thread it has a folder for
 # and paths a viewer may read
-def Rview.ask.k(+k: Nat, +root: String, +want: String, +path: String) -> Bool:
+def Rview.ask.k(+k: Nat, +root: String, +proot: String, +want: String, +path: String) -> Bool:
   Bool.and(Bool.not(String.is_empty(root)),
     Bool.pick(Bool, Nat.is_eq(k, 1n), FV.Fv.wants.ok(want),
       Bool.pick(Bool, Nat.is_eq(k, 2n), FV.Fv.file.ok(path),
-        Bool.and(Nat.is_eq(k, 3n), Rview.version.ok(path)))))
+        Bool.and(Nat.is_eq(k, 3n), Rview.version.mine(path, root, proot)))))
 
-def Rview.ask.ok(+route: String, +root: String, +want: String, +path: String) -> Bool:
-  Rview.ask.k(Rview.kind(route), root, want, path)
+def Rview.ask.ok(+route: String, +root: String, +proot: String, +want: String, +path: String) -> Bool:
+  Rview.ask.k(Rview.kind(route), root, proot, want, path)

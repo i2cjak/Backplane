@@ -7915,6 +7915,12 @@ def Laws.rview_git_climbs():
 def Laws.rview_git_ok():
   {==}
 
+def Laws.rview_git_other_repo():
+  {==}
+
+def Laws.rview_git_hidden():
+  {==}
+
 def Laws.rview_root_unknown():
   {==}
 

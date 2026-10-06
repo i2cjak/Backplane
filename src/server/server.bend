@@ -8030,7 +8030,7 @@ def Hub.bot.view.k(ok: Bool, +kind: Nat, h: Hub, +root: String, +th: String, +wa
 def Hub.bot.view(h: Hub, +arg: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
-      Hub.bot.view.k(RVW.Rview.ask.ok(W.Http.route(arg), RVW.Rview.root(Cfg.home(cfg), st, AT.Att.unpct(W.Http.param(arg, "thread")), AT.Att.unpct(W.Http.param(arg, "root"))), AT.Att.unpct(W.Http.param(arg, "want")), AT.Att.unpct(W.Http.param(arg, "path"))),
+      Hub.bot.view.k(RVW.Rview.ask.ok(W.Http.route(arg), RVW.Rview.root(Cfg.home(cfg), st, AT.Att.unpct(W.Http.param(arg, "thread")), AT.Att.unpct(W.Http.param(arg, "root"))), RVW.Rview.proot(st, AT.Att.unpct(W.Http.param(arg, "thread"))), AT.Att.unpct(W.Http.param(arg, "want")), AT.Att.unpct(W.Http.param(arg, "path"))),
         RVW.Rview.kind(W.Http.route(arg)), Hub{st, f, ls, cl, as, inbox, cfg, note}, RVW.Rview.root(Cfg.home(cfg), st, AT.Att.unpct(W.Http.param(arg, "thread")), AT.Att.unpct(W.Http.param(arg, "root"))),
         AT.Att.unpct(W.Http.param(arg, "thread")), AT.Att.unpct(W.Http.param(arg, "want")), AT.Att.unpct(W.Http.param(arg, "have")), AT.Att.unpct(W.Http.param(arg, "path")), reply)
 

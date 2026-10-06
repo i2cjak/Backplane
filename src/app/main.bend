@@ -1503,8 +1503,17 @@ def Watch.go(none: Bool, once: Bool, +key: String, +path: String, +q: Chan(Shell
 # folder of copies, the thread, the connection), so the viewers read them
 # once after each round that changed something instead of watching them; a
 # version in a commit is asked of the hub (its git directory is there).
+# (a file of a commit through the hub; the working copy, a comparison's
+# usual other side, from the copy here)
+def Watch.hist.r.k(k: Nat, +spec: String, +key: String, +path: String) -> IO(List<&2, U32>):
+  match k:
+    case 1n:
+      RW.Rvw.git(RV.Rview.part(spec, 0n), RV.Rview.part(spec, 1n), RV.Rview.part(spec, 2n), RV.Rview.back(RV.Rview.part(spec, 1n), Src.at(key, 1n)), path)
+    case _:
+      GT.Git.version(RV.Rview.at(RV.Rview.part(spec, 1n), path))
+
 def Watch.hist.r(+spec: String, +key: String, +path: String) -> IO(List<&2, U32>):
-  RW.Rvw.git(RV.Rview.part(spec, 0n), RV.Rview.part(spec, 1n), RV.Rview.part(spec, 2n), RV.Rview.back(RV.Rview.part(spec, 1n), Src.at(key, 1n)), path)
+  Watch.hist.r.k(HS.Hist.kind(path), spec, key, path)
 
 def Watch.version.r(+spec: String, +path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
   IO.bind(List<&2, U32>, Unit, Watch.hist.r(spec, key, path), bs => Watch.version.of(bs, path, key, q))
