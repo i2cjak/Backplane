@@ -234,3 +234,28 @@ def Fm.answer.b(m: Maybe<&2, J.Json>, +id: J.Json, +link: String) -> String:
 def Fm.answer(+id: J.Json, +link: String, +code: Nat, +body: String) -> String:
   Bool.pick(String, Nat.is_eq(code, 200n), Fm.answer.b(J.Json.parse(body), id, link),
     XR.Xref.out(MC.Mcp.reply(id, MC.Res.fail(Bool.pick(String, Nat.is_eq(code, 0n), "that machine is away or did not answer", "that machine did not take it: " ++ String.take(body, 160n))))))
+
+# The agent's prompt
+# ------------------
+# which machines are linked as the agent starts ("" for none; how to use
+# them is in the orchestration paragraph)
+
+def Fm.nm(+i: FR.In) -> String:
+  Bool.pick(String, String.is_empty(FR.In.name.of(i)), FR.In.link(i), FR.In.name.of(i)) ++ Bool.pick(String, FR.In.away(i), " (away)", "")
+
+def Fm.nms(ins: List<&2, FR.In>) -> List<&2, String>:
+  match ins:
+    case Nil{}:
+      Nil{}
+    case +i <> t:
+      Fm.nm(i) <> Fm.nms(t)
+
+def Fm.prompt.k(ns: List<&2, String>) -> String:
+  match ns:
+    case Nil{}:
+      ""
+    case +x <> +t:
+      "<machines>The person's other machines linked to this one: " ++ String.join(x <> t, ", ") ++ ". machine_list shows their projects and ids.</machines>"
+
+def Fm.prompt(ins: List<&2, FR.In>) -> String:
+  Fm.prompt.k(Fm.nms(ins))

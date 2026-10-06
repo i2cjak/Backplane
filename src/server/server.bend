@@ -2728,11 +2728,22 @@ def Hub.prompt.files(+cwd: String, fs: K.Files) -> String:
 # one thread's instructions: the shared runtime and skills, then this
 # machine's KiCad, the project's canonical files, and what it may delegate
 # (keys: the API keys' block, server/apikeys.bend's Ak.prompt, "" for none)
+def Cfg.bn(c: Cfg) -> BN.Bn:
+  match c:
+    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}:
+      bnx
+
+def Hub.prompt.machines.k(+m: String) -> String:
+  Bool.pick(String, String.is_empty(m), "", "\n\n" ++ m)
+
+def Hub.prompt.machines(+cfg: Cfg) -> String:
+  Hub.prompt.machines.k(FM.Fm.prompt(FR.Fh.ins(BN.Bn.far(Cfg.bn(cfg)))))
+
 def Hub.prompt(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, fs: K.Files, +keys: String) -> String:
   String.join([Cfg.prompt(cfg),
     Hub.prompt.kicad(Cfg.rt(cfg), Bool.not(String.eq(M.Setting.get(st, "kicad.ipc", "on"), "off"))),
     Hub.prompt.files(cwd, fs),
-    Q.Prompt.orchestration(M.Task.may_delegate(B.Task.depth(st, thread)), Cfg.mtext(cfg)), Q.Prompt.background()], "\n\n") ++ Bool.pick(String, String.is_empty(keys), "", "\n\n" ++ keys) ++ BH.Bots.prompt(st, thread, Cfg.home(cfg))
+    Q.Prompt.orchestration(M.Task.may_delegate(B.Task.depth(st, thread)), Cfg.mtext(cfg)), Q.Prompt.background()], "\n\n") ++ Bool.pick(String, String.is_empty(keys), "", "\n\n" ++ keys) ++ Hub.prompt.machines(cfg) ++ BH.Bots.prompt(st, thread, Cfg.home(cfg))
 
 def Hub.agent_args(+cfg: Cfg, +thread: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, prompt: String, +effort: String, +gen: String) -> List<&2, String>:
   match cfg:
@@ -4531,11 +4542,6 @@ def Cfg.machines(c: Cfg) -> String:
   match c:
     case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, _, _, _, mc, _, _, _, _, _}}:
       mc
-
-def Cfg.bn(c: Cfg) -> BN.Bn:
-  match c:
-    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}:
-      bnx
 
 def Live.of(+cfg: Cfg) -> List<&2, LV.Buf>:
   BN.Bn.live(Cfg.bn(cfg))
