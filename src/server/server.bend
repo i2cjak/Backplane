@@ -2252,7 +2252,7 @@ def FileJob.run(+inbox: Chan(Msg), +client: U32, +id: String, +path: String, +ho
 # its folders then its files ("d|f <tab> size <tab> name"), hidden ones and
 # symlinked folders left out, 2000 of each at most
 def DirJob.sh() -> String:
-  "cd \"$1\" 2>/dev/null || { echo 'no such folder'; exit 1; }; [ -z \"$2\" ] || cd \"./$2\" 2>/dev/null || { echo 'no such folder'; exit 1; }; for f in *; do [ -d \"$f\" ] && [ ! -L \"$f\" ] && printf 'd\\t0\\t%s\\n' \"$f\"; done | head -n 2000; for f in *; do [ -f \"$f\" ] && printf 'f\\t%s\\t%s\\n' \"$(wc -c < \"$f\" | tr -d ' ')\" \"$f\"; done | head -n 2000; true"
+  "cd \"$1\" 2>/dev/null || { echo 'no such folder'; exit 1; }; rr=$(pwd -P); [ -z \"$2\" ] || cd \"./$2\" 2>/dev/null || { echo 'no such folder'; exit 1; }; case \"$(pwd -P)/\" in \"$rr\"/*) ;; *) echo 'no such folder'; exit 1;; esac; for f in *; do [ -d \"$f\" ] && [ ! -L \"$f\" ] && printf 'd\\t0\\t%s\\n' \"$f\"; done | head -n 2000; for f in *; do [ -f \"$f\" ] && printf 'f\\t%s\\t%s\\n' \"$(wc -c < \"$f\" | tr -d ' ')\" \"$f\"; done | head -n 2000; true"
 
 def DirJob.sent(r: P.Ran, +inbox: Chan(Msg), +client: U32, +id: String, +thread: String, +cwd: String, +rel: String) -> IO(Unit):
   match r:

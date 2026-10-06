@@ -639,7 +639,64 @@ owner's (`Far.own` in server.bend: the machines list; laws `far_*_stay_home`).
   Projects that have arrived work meanwhile, and nothing pops in or moves.
   Laws `far_catalog_*`, `far_scope_*`.
 - Not mirrored: streamed text while a far turn runs (its messages arrive as
-  they are posted), file viewers for far project threads, and a bot's browser.
+  they are posted), and a bot's browser. The viewers of a far project thread
+  are below.
+- Viewers elsewhere. The viewer panel of a thread on another machine (Board,
+  Schematic, 3D, Mech, Files, Diff) works from any client of any hub, the
+  window, the web and both phones, with the same Bend defs (`core/fview.bend`,
+  client.bend's `Fv.*`, `src/server/farview.bend`). The files stay on the owner's
+  machine; the hub the client is on keeps what the viewers read in a cache of
+  its own, `<home>/farfs/<link>/<the owner's project folder>`, and a client
+  of a far thread reads that folder (`Ui.root`, "" until the hub says which)
+  as it reads a project folder here: the window parses the boards itself, the
+  plot actor serves phones and the web, `/img` and `pdf.page` read it, with
+  nothing else to know.
+  - What goes to the owner (`POST /far/rpc`, signed, owner-only like every
+    request between hubs, only for a thread it shares; `Fv.reads`, `Fv.allowed`):
+    `files.dir`, `files.list`, `mech.list`, `history.refs`, `git.diff`,
+    `git.status` (answered by the job a request becomes here, `Fv.jobs`, run on
+    a channel of its own; no hub state touched) and two of its own, `view.ver`
+    and `view.get`. Nothing writes: the render, KiCad, `file.open`, `pdf.page` and
+    `fs.list` are refused or stay local (law `fview_reads_disjoint`). A path
+    never leaves the thread's folder, reaches no hidden file (`.git`, `.env`;
+    `.backplane.json` alone is read) and follows no symlink out (laws
+    `fview_file_*`, `fview_allowed_*`; the owner checks the real path of each
+    file and folder, `Fvs.lib`).
+  - `view.ver {thread, want, have}`: the files the viewers want of the folder
+    (the project's `.kicad_pro/.kicad_pcb/.kicad_sch`, `sym-lib-table`, its small
+    models, `.backplane.json`, and the files in `want`; at most 400, each under
+    24 MB) as `path<TAB>size<TAB>mtime` lines with a cksum digest. With
+    `have` equal to the current digest the owner waits for it to change, at most
+    24 s (one `sh` on its side polling `stat` every 2 s, as the plot actor does for
+    a file here), so changes flow from the owner and no client polls.
+    `view.get {thread, path}` is one file's bytes.
+  - `far.view {thread, want, have}`, a client's ask, is answered by its own hub:
+    it asks the owner `view.ver`, brings the files that differ (size or time)
+    into the cache four at a time, each written beside its place and moved there
+    whole, and answers `{farView, thread, root, ver, same, want, ready, changed,
+    failed}` (or `down` when the owner is away: the viewer then shows the file
+    as it is). The client keeps the digest and asks again at once, so about one
+    request per half minute stays parked at the owner while a far viewer is open
+    (`Fv.sync`, run after every action and message by all four clients; the
+    phones through `View.fv`). The cache index is `<cache>/.farver`.
+  - The viewer shows a far file only when the cache holds it: `Ui.view_get`
+    reads the Files tab until the answer names the path (`fv.ready:<t>`,
+    `Fv.pending`), so a viewer never loads a file that is not there yet.
+  - `mech.list` is answered by the client's hub too: the owner's listing, with
+    the renders it names brought into the cache first, the listing's thread and
+    folder as here (`Fvs.mech`). The other reads come back through the hub with
+    the same fix (`Fv.fix`: the thread's id here, `root` and `fmRoot` the
+    cache).
+  - `viewer_show` by an agent on the owner reaches the clients of the owner's
+    other machines: the owner tells each (`view.show`, only a file inside the
+    folder), each brings it into its cache and sends its clients a `view`
+    message of the thread there with the cache path (`Far.shown`, `Far.show.*`).
+  - Limits: a file over 24 MB is not sent (a large STEP is not viewable
+    remotely), design history versions are not read remotely (the timeline's
+    steps and `history.refs` work, a version of a file does not), a window
+    switched to another machine's hub (`Link`) reads files on this machine, so
+    only a thread that hub keeps in its own folder shows there, and the cache
+    is never cleaned (`<home>/farfs`).
 
 `test/far_test.bend` (the client's fold, routing, sharing) and
 `test/tools/far_e2e.ts` (two hubs: a bot made on one shows on the other,
