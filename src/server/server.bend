@@ -170,6 +170,9 @@ type Msg is Data:
   FarHere{answered: String}
   # a pull to try again (the other hub was still making its feed)
   FarRetry{link: String}
+  # a linked machine's request, taken (Fr.allowed) and ready to run here
+  # once its folder is resolved (Far.fs.job): answered on `reply`
+  FarDo{text: String, reply: Chan(List<&2, U32>)}
   # a bot's answer to a person elsewhere, captured at its turn's end
   # (hub.bend's BotReply): sent and logged now
   Replied{thread: String, to: String, text: String}
@@ -5921,7 +5924,7 @@ def Hub.far.pulled(h: Hub, +link: String, +since: Nat, +code: Nat, +body: String
 
 # a request sent on for a client came back: its answer goes to the client
 def Hub.far.replied(h: Hub, +client: U32, +id: String, +link: String, +code: Nat, +body: String) -> IO(Hub):
-  Hub.push(h, client, Bool.pick(String, Nat.is_eq(code, 200n), FR.Fr.reply(Maybe.default(&2, J.Json, J.Json.parse(body), J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"ok", J.Flag{False{}}}, J.KV{"error", J.Str{"invalid reply from that machine"}}, J.KV{"id", J.Num{"0"}}])), id),
+  Hub.push(h, client, Bool.pick(String, Nat.is_eq(code, 200n), FR.Fr.reply.on(Maybe.default(&2, J.Json, J.Json.parse(body), J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"ok", J.Flag{False{}}}, J.KV{"error", J.Str{"invalid reply from that machine"}}, J.KV{"id", J.Num{"0"}}])), id, link),
     J.Json.show(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{id}}, J.KV{"ok", J.Flag{False{}}},
       J.KV{"error", J.Str{Bool.pick(String, Nat.is_eq(code, 0n), "that machine is away", "that machine did not take it: " ++ String.take(body, 120n))}}]))))
 
@@ -6677,7 +6680,7 @@ def Hub.rpc.far(maybe: Bool, h: Hub, +client: U32, +text: String, +now: Nat) -> 
       Hub.rpc.here(h, client, text, now)
 
 def Hub.rpc(h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
-  Hub.rpc.far(String.contains(text, "~"), h, client, text, now)
+  Hub.rpc.far(Bool.or(String.contains(text, "~"), String.contains(text, "\"on\":\"")), h, client, text, now)
 
 def Hub.line.k(p: M.State & Hub, +thread: String, +line: String, +now: Nat) -> IO(Hub):
   (st, h) = p
@@ -7086,12 +7089,54 @@ def Hub.far.rpc.step(step: B.Step, h: Hub, +reply: Chan(List<&2, U32>)) -> IO(Hu
         h2 : Hub <- Hub.step(h, B.Step{cs, os})
         Hub.answer(h2, reply, Bot.json("200 OK", Far.rpc.reply(os)))
 
+# a folder listed, made or added for a linked machine: the job resolves it
+# off the hub and the hub answers (FarDo) once the project is made
+def Far.fs.take(m: Maybe<&1, Msg>, +reply: Chan(List<&2, U32>), +inbox: Chan(Msg)) -> IO(Unit):
+  match m:
+    case Some{Push{_, +text}}:
+      Bot.answer(reply, Bot.json("200 OK", text))
+    case Some{Rpc{_, +text}}:
+      do IO<Unit>:
+        ok : Bool <- Chan.send(Msg, inbox, FarDo{text, reply})
+        return Unit{}
+    case _:
+      Bot.answer(reply, Bot.json("200 OK", "{\"t\":\"reply\",\"id\":0,\"ok\":false,\"error\":\"no answer from that machine's folders\"}"))
+
+def Far.fs.op(+m: String) -> String:
+  Bool.pick(String, String.eq(m, "project.add"), "add", Bool.pick(String, String.eq(m, "project.new"), "new",
+    Bool.pick(String, String.eq(m, "fs.mkdir"), "mkdir", Bool.pick(String, String.eq(m, "fs.find"), "find", "list"))))
+
+def Far.fs.job(+m: String, +path: String, +reply: Chan(List<&2, U32>), +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    +tmp : Chan(Msg) <- Chan.new(Msg, 4)
+    FsJob.run(Far.fs.op(m), tmp, 0, "0", path)
+    r : Maybe<&1, Msg> <- Chan.recv(Msg, tmp)
+    Far.fs.take(r, reply, inbox)
+
+def Hub.far.rpc.fs(async: Bool, h: Hub, +o: J.Json, +text: String, +reply: Chan(List<&2, U32>), +now: Nat) -> IO(Hub):
+  match async h:
+    case True{} Hub{st, f, ls, cl, as, +inbox, cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, Far.fs.job(J.Json.get_str(o, "m", ""), J.Json.get_str(J.Json.get_obj(o, "p"), "path", ""), reply, inbox))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case False{} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.far.rpc.step(Bot.request(Some{o}, st, now, Far.client(), text), Hub{st, f, ls, cl, as, inbox, cfg, note}, reply)
+
 def Hub.far.rpc.k(may: Bool, h: Hub, +o: J.Json, +text: String, +reply: Chan(List<&2, U32>), +now: Nat) -> IO(Hub):
   match may h:
-    case True{} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
-      Hub.far.rpc.step(Bot.request(Some{o}, st, now, Far.client(), text), Hub{st, f, ls, cl, as, inbox, cfg, note}, reply)
+    case True{} h2:
+      Hub.far.rpc.fs(FR.Fr.async(J.Json.get_str(o, "m", "")), h2, o, text, reply, now)
     case False{} _:
       Hub.answer(h, reply, W.Http.text("403 Forbidden", "not something this machine shares"))
+
+# a folder resolved for a linked machine: the request goes on as it is
+# (project.create) with the answer back on the open request
+def Hub.far.do(m: Maybe<&2, J.Json>, h: Hub, +text: String, +reply: Chan(List<&2, U32>), +now: Nat) -> IO(Hub):
+  match m h:
+    case Some{+o} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.far.rpc.step(Bot.request(Some{o}, st, now, Far.client(), text), Hub{st, f, ls, cl, as, inbox, cfg, note}, reply)
+    case None{} _:
+      Hub.answer(h, reply, W.Http.text("400 Bad Request", "not JSON"))
 
 # POST /far/rpc: a request about one of this hub's shared threads (Fr.allowed)
 def Hub.far.rpc(ok: Bool, m: Maybe<&2, J.Json>, h: Hub, +text: String, +reply: Chan(List<&2, U32>), +now: Nat) -> IO(Hub):
@@ -8057,6 +8102,8 @@ def Msg.kind(m: Msg) -> String:
       "far_here"
     case FarRetry{_}:
       "far_retry"
+    case FarDo{_, _}:
+      "far_do"
     case Replied{_, _, _}:
       "replied"
     case Release{}:
@@ -8381,6 +8428,8 @@ def Hub.handle(h: Hub, m: Msg, +now: Nat) -> IO(Hub):
       Hub.far.here(h, ans)
     case FarRetry{link}:
       Far.pull.here(h, link)
+    case FarDo{+text, +reply}:
+      Hub.far.do(J.Json.parse(text), h, text, reply, now)
     case Replied{+thread, +to, +text}:
       Hub.replied(Hub.state(h), thread, to, text, now)
     case Release{}:

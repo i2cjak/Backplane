@@ -2654,12 +2654,6 @@ def Made.rid(u: Ui) -> Nat:
 def Made.want(+u: Ui) -> Ui:
   Ui.scratch_set(Ui.scratch_set(u, "@want.new", Nat.show(Made.rid(u))), "@want.new.at", Made.at(u))
 
-# a thread this client asked for is still to come (the phones show its
-# page at once, waiting, rather than leave the button to be tapped again;
-# the answer, made or failed, ends it: laws made_waiting_*)
-def Made.waiting(+u: Ui) -> Bool:
-  Bool.not(String.is_empty(Ui.scratch(u, "@want.new")))
-
 def Ui.new_thread(u: Ui, +pid: String) -> Act:
   Ui.rpc(Made.want(u), "thread.create", [J.KV{"project", J.Str{pid}}, J.KV{"title", J.Str{"New thread"}}])
 
@@ -3325,6 +3319,83 @@ def Models.label_of(+info: String, +provider: String, +model: String) -> String:
 # the server (fs.list). The query and selection live in the drafts map
 # under keys no thread id can take.
 
+# The machine the picker works on: "" the hub this client is connected to,
+# else the link of another of the owner's machines (info "proj.on"). Its
+# requests carry it as `on`, and the hub sends them there (Fr.params.link).
+def Proj.on(u: Ui) -> String:
+  Ui.info(u, "proj.on")
+
+def Proj.on.kv(+on: String, +p: List<&2, J.KV>) -> List<&2, J.KV>:
+  Bool.pick(List<&2, J.KV>, String.is_empty(on), p, J.KV{"on", J.Str{on}} <> p)
+
+# whether a project (its id here) is on the machine `on` ("" this hub's own)
+def Proj.of(+on: String, +id: String) -> Bool:
+  Bool.pick(Bool, String.is_empty(on), Bool.not(FR.Fr.is(id)), String.eq(FR.Fr.link(id), on))
+
+def Proj.ps.k(keep: Bool, p: M.Project, rest: List<&2, M.Project>) -> List<&2, M.Project>:
+  match keep:
+    case True{}:
+      p <> rest
+    case False{}:
+      rest
+
+def Proj.ps.go(ps: List<&2, M.Project>, +on: String) -> List<&2, M.Project>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case M.Project{+id, ti, r, c, rm} <> t:
+      Proj.ps.k(Proj.of(on, id), M.Project{id, ti, r, c, rm}, Proj.ps.go(t, on))
+
+# the projects of the machine the picker works on
+def Proj.ps(+u: Ui) -> List<&2, M.Project>:
+  Proj.ps.go(Ui.projects(Ui.state(u)), Proj.on(u))
+
+# The owner's other machines the picker can work on: the links whose
+# mirror has answered ("far.name.<link>", Ui.far.k) and are not away
+def Proj.machines.k(keep: Bool, +id: String, rest: List<&2, String>) -> List<&2, String>:
+  match keep:
+    case True{}:
+      id <> rest
+    case False{}:
+      rest
+
+def Proj.machines.go(ps: List<&2, BT.Peer>, +u: Ui) -> List<&2, String>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case BT.Peer{+id, _, _, _, +rv} <> t:
+      Proj.machines.k(Bool.and(Bool.not(rv), Bool.and(Bool.not(String.is_empty(Ui.info(u, "far.name." ++ id))), Bool.not(String.eq(Ui.info(u, "far.away." ++ id), "1")))), id, Proj.machines.go(t, u))
+
+def Proj.machines(+u: Ui) -> List<&2, String>:
+  Proj.machines.go(BT.World.peers(M.State.bots(Ui.state(u))), u)
+
+def Proj.cycle.next(ls: List<&2, String>, +first: String) -> String:
+  match ls:
+    case Nil{}:
+      first
+    case x <> _:
+      x
+
+# the machine after `on` in ["", links...], and "" after the last
+def Proj.cycle(ls: List<&2, String>, +on: String, +first: String) -> String:
+  match ls:
+    case Nil{}:
+      first
+    case +x <> +t:
+      Bool.pick(String, String.eq(x, on), Proj.cycle.next(t, first), Proj.cycle(t, on, first))
+
+# the machine the next tap of the picker's machine row picks
+def Proj.next(+u: Ui) -> String:
+  Proj.cycle("" <> Proj.machines(u), Proj.on(u), "")
+
+def Proj.on.name(+u: Ui) -> String:
+  Bool.pick(String, String.is_empty(Proj.on(u)), "this machine", Ui.info(u, "far.name." ++ Proj.on(u)))
+
+# the picker's row naming the machine it works on: shown only when the
+# owner has other machines up; a tap goes to the next
+def Proj.machine.row(+u: Ui) -> List<&2, PItem>:
+  Bool.pick(List<&2, PItem>, List.is_empty(&2, String, Proj.machines(u)), Nil{}, [PItem{"On " ++ Proj.on.name(u) ++ " (change)", "proj-on", Proj.next(u)}])
+
 def Proj.query(u: Ui) -> String:
   match u:
     case Ui{_, _, dr, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
@@ -3359,7 +3430,7 @@ def Ui.error_put(u: Ui, e: String) -> Ui:
 # a request of the picker's: only the answer to the newest one counts (a
 # listing that arrives after the user has moved on is dropped)
 def Proj.rpc(+u: Ui, m: String, p: List<&2, J.KV>) -> Act:
-  Ui.rpc(Ui.scratch_set(u, "@proj.rid", Nat.show(Ui.rid(u))), m, p)
+  Ui.rpc(Ui.scratch_set(u, "@proj.rid", Nat.show(Ui.rid(u))), m, Proj.on.kv(Proj.on(u), p))
 
 # whether a new thread is waited for (Ui.see selects it when it comes)
 def Ui.want_new(u: Ui, b: Bool) -> Ui:
@@ -3398,12 +3469,27 @@ def Proj.cmds.front(cs: List<&2, Cmd>, a: Act) -> Act:
 def Proj.find(a: Act) -> Act:
   match a:
     case Act{+u, cs}:
-      Proj.cmds.front(cs, Ui.rpc(Ui.scratch_set(u, "@proj.frid", Nat.show(Ui.rid(u))), "fs.find", Nil{}))
+      Proj.cmds.front(cs, Ui.rpc(Ui.scratch_set(u, "@proj.frid", Nat.show(Ui.rid(u))), "fs.find", Proj.on.kv(Proj.on(u), Nil{})))
 
 # opens on the projects; the folder list is fetched where it was last
 # (home the first time)
 def Proj.open(+u: Ui) -> Act:
   Proj.focus(Proj.find(Proj.rpc(Proj.mode(Ui.flag_on(u, "proj"), ""), "fs.list", [J.KV{"path", J.Str{Proj.dir(u)}}])))
+
+# a machine chosen: its folders and projects are asked for afresh
+def Proj.machine(+u: Ui, +on: String) -> Act:
+  Proj.open(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.info_set(Ui.info_set(Ui.info_set(Ui.info_set(u, "proj.on", on), "proj.dir", ""), "proj.found", ""), "proj.home", ""), "@mpick", ""), "@mpick.asked", ""), "@mpick.follow", ""))
+
+def Proj.open.k(here: Bool, +u: Ui) -> Act:
+  match here:
+    case True{}:
+      Proj.open(u)
+    case False{}:
+      Proj.machine(u, "")
+
+# the picker as it opens: on the hub this client is connected to
+def Proj.open.fresh(+u: Ui) -> Act:
+  Proj.open.k(String.is_empty(Proj.on(u)), u)
 
 def Proj.names(xs: List<&2, J.Json>) -> List<&2, String>:
   match xs:
@@ -3561,7 +3647,7 @@ def Proj.is_project(ps: List<&2, M.Project>, +root: String) -> Bool:
 
 # the listed folder as a project (once)
 def Proj.add(+u: Ui, +dir: String) -> List<&2, PItem>:
-  Bool.pick(List<&2, PItem>, Proj.is_project(Ui.projects(Ui.state(u)), dir), [PItem{dir ++ " is already a project", "", ""}], [PItem{"Add " ++ dir ++ " as a project", "proj-add", dir}])
+  Bool.pick(List<&2, PItem>, Proj.is_project(Proj.ps(u), dir), [PItem{dir ++ " is already a project", "", ""}], [PItem{"Add " ++ dir ++ " as a project", "proj-add", dir}])
 
 # (a match, not Bool.pick: only the list shown is made)
 def Proj.items.q(empty: Bool, +u: Ui, +q: String, +dir: String, +ns: List<&2, String>) -> List<&2, PItem>:
@@ -3653,7 +3739,7 @@ def Proj.dedup(xs: List<&2, PCand>, +acc: List<&2, PCand>) -> List<&2, PCand>:
 
 # live projects, then removed ones, then those found on disk
 def Proj.cands(+u: Ui) -> List<&2, PCand>:
-  Proj.dedup(List.concat(&2, PCand, [Proj.cands.ps(Ui.projects(Ui.state(u)), True{}), Proj.cands.ps(Ui.projects(Ui.state(u)), False{}),
+  Proj.dedup(List.concat(&2, PCand, [Proj.cands.ps(Proj.ps(u), True{}), Proj.cands.ps(Proj.ps(u), False{}),
     Proj.cands.found(Proj.nonempty(String.split(Ui.info(u, "proj.found"), Proj.sep())))]), Nil{})
 
 def Proj.rank.k(+sc: Nat, +r: Nat, +ti: String, +a: String, +ro: String, +rest: List<&2, PCand>) -> List<&2, PCand>:
@@ -3706,7 +3792,7 @@ def Proj.items.m(dir: Bool, +u: Ui) -> List<&2, PItem>:
 # from a folder). A typed path goes there, adds it, or creates it. The
 # folders: Proj.folders
 def Proj.items(+u: Ui) -> List<&2, PItem>:
-  Proj.items.m(Proj.browsing(u), u)
+  List.append(&2, PItem, Proj.items.m(Proj.browsing(u), u), Proj.machine.row(u))
 
 # the path a row of the projects list stands for, as it is shown beside it
 def Proj.detail(+u: Ui, it: PItem) -> String:
@@ -3773,7 +3859,7 @@ def Proj.go.p(none: Bool, +u: Ui, +pid: String) -> Act:
 
 # going to a project opens its latest thread, or starts one
 def Proj.go(+u: Ui, +root: String) -> Act:
-  Proj.go.p(String.is_empty(Proj.id_of(Ui.projects(Ui.state(u)), root)), u, Proj.id_of(Ui.projects(Ui.state(u)), root))
+  Proj.go.p(String.is_empty(Proj.id_of(Proj.ps(u), root)), u, Proj.id_of(Proj.ps(u), root))
 
 # the folder browser, where it was last (listed afresh)
 def Proj.browse(+u: Ui) -> Act:
@@ -3799,12 +3885,14 @@ def Proj.run.k(i: Nat, +u: Ui, +v: String) -> Act:
       Proj.browse(u)
     case 7n:
       Act{Proj.mode(u, ""), Nil{}}
+    case 8n:
+      Proj.machine(u, v)
     case _:
       Act{u, Nil{}}
 
 # the picker's actions, in Proj.run.k's order
 def Proj.acts() -> List<&2, String>:
-  ["proj-add", "proj-cd", "proj-mkdir", "proj-new", "proj-pick", "proj-found", "proj-browse", "proj-back"]
+  ["proj-add", "proj-cd", "proj-mkdir", "proj-new", "proj-pick", "proj-found", "proj-browse", "proj-back", "proj-on"]
 
 def Proj.pos(xs: List<&2, String>, +x: String, +i: Nat) -> Nat:
   match xs:
@@ -6144,7 +6232,7 @@ def Want.thread(+u: Ui, id: String) -> Ui:
 def Made.got(go: Bool, u: Ui, +th: String) -> Ui:
   match go:
     case True{}:
-      Want.thread(u, th)
+      Ui.scratch_set(Want.thread(u, th), "@made.far", Bool.pick(String, FR.Fr.is(th), th, ""))
     case False{}:
       u
 
@@ -6288,6 +6376,20 @@ def Want.thread.exists(st: M.State, +id: String) -> Bool:
   match st:
     case M.State{_, ts, _, _, _, _, _, _, _, _, _}:
       Want.thread.has(Map.has(&2, M.Thread, ts, id))
+
+# a thread this client asked for is still to come (the phones show its
+# page at once, waiting, rather than leave the button to be tapped again;
+# the answer, made or failed, ends it: laws made_waiting_*)
+# the hub that owns the project made the thread and told us its id here,
+# but its mirror has not landed yet (the push may follow the answer): still
+# making, until the thread is here or the person goes elsewhere (which
+# clears "@thread.want", Bots.sel.set)
+def Made.coming(+u: Ui) -> Bool:
+  Bool.and(Bool.and(Bool.not(String.is_empty(Ui.scratch(u, "@made.far"))), String.eq(Ui.scratch(u, "@made.far"), Ui.scratch(u, "@thread.want"))),
+    Bool.not(Want.thread.exists(Ui.state.of(u), Ui.scratch(u, "@made.far"))))
+
+def Made.waiting(+u: Ui) -> Bool:
+  Bool.or(Bool.not(String.is_empty(Ui.scratch(u, "@want.new"))), Made.coming(u))
 
 def Bots.wanted.k(bound: Bool, +u: Ui) -> Ui:
   match bound:
@@ -6728,7 +6830,7 @@ def Ui.act.k(i: Nat, u: Ui, +value: String) -> Act:
     case 25n:
       Ui.on_thread.p(u, "git.revert", [J.KV{"turn", J.Num{Bool.pick(String, String.is_empty(value), "0", value)}}])
     case 26n:
-      Proj.open(u)
+      Proj.open.fresh(u)
     case 27n:
       Proj.run.k(1n, u, value)
     case 28n:
@@ -7128,12 +7230,20 @@ def Ui.act.e(emb: Bool, +u: Ui, +action: String, +value: String) -> Act:
     case False{}:
       Emb.sync.sel(Ui.sel(u), Mpage.sync(Ui.act.m(Nat.is_lt(C.Codec.pos(Menu.actions(), action), 16n), C.Codec.pos(Menu.actions(), action), u, action, value)))
 
+# the picker's machine row (routed before the action table)
+def Ui.act.p(pick: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match pick:
+    case True{}:
+      Proj.machine(u, value)
+    case False{}:
+      Ui.act.e(String.starts_with(action, "emb-"), u, action, value)
+
 def Ui.act.t(tour: Bool, +u: Ui, +action: String, +value: String) -> Act:
   match tour:
     case True{}:
       Tour.act(u, action)
     case False{}:
-      Ui.act.e(String.starts_with(action, "emb-"), u, action, value)
+      Ui.act.p(String.eq(action, "proj-on"), u, action, value)
 
 def Ui.act(+u: Ui, +action: String, +value: String) -> Act:
   Ui.act.t(String.starts_with(action, "ob-"), u, action, value)

@@ -92,6 +92,8 @@ def Fr.change(+l: String, c: M.Change) -> Maybe<&2, M.Change>:
       Some{M.ThreadUnsettled{Fr.id(l, id), at}}
     case M.ThreadArchived{+id, b, at}:
       Some{M.ThreadArchived{Fr.id(l, id), b, at}}
+    case M.ThreadPinned{+id, b, at}:
+      Some{M.ThreadPinned{Fr.id(l, id), b, at}}
     case M.ThreadDeleted{+id, at}:
       Some{M.ThreadDeleted{Fr.id(l, id), at}}
     case M.ModesSet{+id, runtime, interaction, model, at}:
@@ -225,6 +227,8 @@ def Fr.shared(+s: M.State, c: M.Change) -> Bool:
       Fr.thread.shared(s, id)
     case M.ThreadArchived{+id, _, _}:
       Fr.thread.shared(s, id)
+    case M.ThreadPinned{+id, _, _}:
+      Fr.thread.shared(s, id)
     case M.ThreadDeleted{+id, _}:
       Fr.thread.shared(s, id)
     case M.ModesSet{+id, _, _, _, _}:
@@ -318,6 +322,8 @@ def Fr.scope(+s: M.State, c: M.Change) -> String:
     case M.ThreadUnsettled{+id, _}:
       Fr.scope.th(s, id)
     case M.ThreadArchived{+id, _, _}:
+      Fr.scope.th(s, id)
+    case M.ThreadPinned{+id, _, _}:
       Fr.scope.th(s, id)
     case M.ThreadDeleted{+id, _}:
       Fr.scope.th(s, id)
@@ -585,6 +591,10 @@ def Fr.st.has.project(s: M.State, +id: String) -> Bool:
   match s:
     case M.State{ps, _, _, _, _, _, _, _, _, _, _}:
       Fr.has.project(Map.has(&2, M.Project, ps, id))
+
+# A project owned here (not a mirror of one elsewhere)
+def Fr.project.shared(+s: M.State, +pid: String) -> Bool:
+  Bool.and(Bool.and(Bool.not(String.is_empty(pid)), Fr.st.has.project(s, pid)), Bool.not(Fr.is(pid)))
 
 def Fr.stand.in(here: Bool, s: M.State, +id: String, +title: String, +at: Nat) -> M.State:
   match here:
@@ -994,7 +1004,9 @@ def Ins.set(ms: List<&2, In>, +i: In) -> List<&2, In>:
 
 def Fr.methods() -> List<&2, String>:
   ["turn.start", "turn.interrupt", "ask.answer", "queue.move", "queue.remove", "queue.resume", "queue.steer", "queue.edit",
-   "thread.settle", "thread.unsettle", "thread.rename", "thread.btw", "thread.modes", "thread.provider", "thread.effort", "bots.space", "bots.routine_run"]
+   "thread.settle", "thread.unsettle", "thread.rename", "thread.btw", "thread.modes", "thread.provider", "thread.effort", "bots.space", "bots.routine_run",
+   "thread.create", "thread.fork", "thread.archive", "thread.unarchive", "thread.pin", "thread.unpin", "thread.delete",
+   "project.add", "project.new", "project.remove", "fs.list", "fs.mkdir", "fs.find"]
 
 def Fr.may.go(ms: List<&2, String>, +m: String) -> Bool:
   match ms:
@@ -1017,7 +1029,8 @@ def Fr.key(+k: String) -> Bool:
 def Fr.params.link(fs: J.Json) -> String:
   match fs:
     case J.Field{+k, J.Str{+v}, t}:
-      Bool.pick(String, Bool.and(Fr.key(k), Fr.is(v)), Fr.link(v), Fr.params.link(t))
+      Bool.pick(String, Bool.and(Fr.key(k), Fr.is(v)), Fr.link(v),
+        Bool.pick(String, Bool.and(String.eq(k, "on"), Bool.and(Bool.not(String.is_empty(v)), Bool.not(Fr.is(v)))), v, Fr.params.link(t)))
     case J.Field{_, _, t}:
       Fr.params.link(t)
     case _:
@@ -1070,10 +1083,24 @@ def Fr.route(+o: J.Json) -> Maybe<&2, Route>:
 # On the owning hub: a request from a linked machine is taken only when it
 # is one of Fr.methods and what it names is shared (a bot's thread, an ask
 # in one, a bot)
+# the methods the owning hub answers from a job (a folder listed or made, a
+# folder added as a project: the server resolves the path first)
+def Fr.async(+m: String) -> Bool:
+  Fr.may.go(["project.add", "project.new", "fs.list", "fs.mkdir", "fs.find"], m)
+
+def Fr.allowed.p(+m: String) -> Bool:
+  Fr.may.go(["thread.create", "project.remove"], m)
+
+# what makes no claim on a thing: browsing and adding folders on the
+# owner's machine (only the owner's own machines ever get this far)
+def Fr.allowed.free(+m: String) -> Bool:
+  Fr.async(m)
+
 def Fr.allowed.k(+s: M.State, +m: String, +p: J.Json) -> Bool:
   Bool.pick(Bool, String.eq(m, "ask.answer"), Fr.ask.shared(s, J.Json.get_str(p, "id", "")),
     Bool.pick(Bool, Bool.or(String.eq(m, "bots.space"), String.eq(m, "bots.routine_run")), Bool.not(String.is_empty(J.Json.get_str(p, "bot", J.Json.get_str(p, "id", "")))),
-      Fr.thread.shared(s, J.Json.get_str(p, "thread", ""))))
+      Bool.pick(Bool, Fr.allowed.p(m), Fr.project.shared(s, J.Json.get_str(p, "project", "")),
+        Bool.pick(Bool, Fr.allowed.free(m), True{}, Fr.thread.shared(s, J.Json.get_str(p, "thread", ""))))))
 
 def Fr.allowed(+s: M.State, +o: J.Json) -> Bool:
   Bool.and(Fr.may(J.Json.get_str(o, "m", "")), Fr.allowed.k(s, J.Json.get_str(o, "m", ""), J.Json.get_obj(o, "p")))
@@ -1089,6 +1116,29 @@ def Fr.reply.fields(fs: J.Json, +id: String) -> J.Json:
 
 def Fr.reply(o: J.Json, +id: String) -> String:
   J.Json.show(J.Obj{Fr.reply.fields(Fr.obj.fields(o), id)})
+
+# The same on the receiving hub of a link: the thread a reply names (a new
+# thread, a fork, a project's first) is named by its id here, which is the
+# id the mirror will give it, so the asking client can go to it
+def Fr.reply.on.thread(+v: J.Json, +link: String) -> J.Json:
+  match v:
+    case J.Str{+x}:
+      J.Str{Bool.pick(String, Fr.is(x), x, Fr.opt(link, x))}
+    case x:
+      x
+
+def Fr.reply.on.value(+k: String, +v: J.Json, +id: String, +link: String) -> J.Json:
+  Bool.pick(J.Json, String.eq(k, "id"), J.Num{id}, Bool.pick(J.Json, String.eq(k, "thread"), Fr.reply.on.thread(v, link), v))
+
+def Fr.reply.on.fields(fs: J.Json, +id: String, +link: String) -> J.Json:
+  match fs:
+    case J.Field{+k, +v, t}:
+      J.Field{k, Fr.reply.on.value(k, v, id, link), Fr.reply.on.fields(t, id, link)}
+    case x:
+      x
+
+def Fr.reply.on(o: J.Json, +id: String, +link: String) -> String:
+  J.Json.show(J.Obj{Fr.reply.on.fields(Fr.obj.fields(o), id, link)})
 
 # A late disk load never replaces a mirror already updated by traffic.
 def In.loaded(+live: In, +disk: In) -> In:
