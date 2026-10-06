@@ -4178,7 +4178,7 @@ def Fm.open.k(i: Nat, +u: Ui, +kind: String, +path: String) -> Act:
       Act{u, Nil{}}
 
 def Fm.open(+u: Ui, +rel: String) -> Act:
-  Fm.open.k(Bool.pick(Nat, String.eq(FM.Fm.kind(rel), "pdf"), 1n, Bool.pick(Nat, String.is_empty(FM.Fm.kind(rel)), 2n, 0n)), u, FM.Fm.kind(rel), FM.Fm.abs(Ui.root(u), rel))
+  Fm.open.k(Bool.pick(Nat, Bool.or(String.is_empty(FM.Fm.kind(rel)), String.is_empty(Ui.root(u))), 2n, Bool.pick(Nat, String.eq(FM.Fm.kind(rel), "pdf"), 1n, 0n)), u, FM.Fm.kind(rel), FM.Fm.abs(Ui.root(u), rel))
 
 # the page a PDF shows in the window, its picture, how many pages, why not
 def Pdf.page(+u: Ui) -> String:
@@ -4491,7 +4491,7 @@ def Fv.stale(+u: Ui) -> Bool:
 # not one that just failed for this file
 def Fv.due(+u: Ui, +w: String) -> Bool:
   Bool.and(Bool.or(Bool.not(String.eq(Fv.t(u, "fv.fly"), "1")), Bool.or(Fv.stale(u), Bool.not(String.eq("w:" ++ w, Fv.t(u, "fv.sent"))))),
-    Bool.not(Bool.and(String.eq("w:" ++ w, Fv.t(u, "fv.err")), Bool.not(String.eq(Fv.t(u, "fv.fly"), "1")))))
+    Bool.or(Fv.stale(u), Bool.not(Bool.and(String.eq("w:" ++ w, Fv.t(u, "fv.err")), Bool.not(String.eq(Fv.t(u, "fv.fly"), "1"))))))
 
 def Fv.mark(+u: Ui, +w: String) -> Ui:
   Ui.info_set(Ui.info_set(Ui.info_set(Ui.info_set(u, "fv.fly:" ++ Ui.sel(u), "1"), "fv.sent:" ++ Ui.sel(u), "w:" ++ w), "fv.at:" ++ Ui.sel(u), Nat.show(Fv.now(u))), "fv.err:" ++ Ui.sel(u), "")
@@ -4578,10 +4578,13 @@ def Fv.sync.far(far: Bool, a: Act) -> Act:
     case False{} _:
       a
 
+# (a phone asks for its own viewer's file, mobile/view.bend's View.fv: on
+# a phone ("local.fixed") this one stays out, so one file is asked for,
+# not two in turn)
 def Fv.sync(a: Act) -> Act:
   match a:
     case Act{+u, cmds}:
-      Fv.sync.far(FR.Fr.is(Ui.sel(u)), Act{u, cmds})
+      Fv.sync.far(Bool.and(FR.Fr.is(Ui.sel(u)), Bool.not(String.eq(Ui.info(u, "local.fixed"), "1"))), Act{u, cmds})
 
 def Mpage.sync.m(a: Act) -> Act:
   match a:

@@ -50,7 +50,7 @@ def Fvs.json(+text: String) -> List<&2, U32>:
 # plain file inside it (a symlink, or a folder that leads out, is not),
 # and stat in the machine's own dialect
 def Fvs.lib() -> String:
-  "cd \"$1\" 2>/dev/null || { echo 'no such folder'; exit 2; }\nrr=$(pwd -P)\nok() { [ -f \"./$1\" ] && [ ! -L \"./$1\" ] && d=$(cd \"$(dirname \"./$1\")\" 2>/dev/null && pwd -P) && case \"$d/\" in \"$rr\"/*) return 0;; esac; return 1; }\nif stat -c %s . >/dev/null 2>&1; then SC=-c; SFMT='%n|%s|%Y'; else SC=-f; SFMT='%N|%z|%m'; fi\n"
+  "cd \"$1\" 2>/dev/null || { echo 'no such folder'; exit 2; }\nrr=$(pwd -P)\nok() { [ -f \"./$1\" ] && [ ! -L \"./$1\" ] && d=$(cd \"$(dirname \"./$1\")\" 2>/dev/null && pwd -P) && case \"$d/\" in \"$rr\"/*) r=${d#\"$rr\"}; case \"$r/\" in */.*) return 1;; esac; return 0;; esac; return 1; }\nif stat -c %s . >/dev/null 2>&1; then SC=-c; SFMT='%n|%s|%.9Y'; else SC=-f; SFMT='%N|%z|%Fm'; fi\n"
 
 # the list: the files asked for, the project's own choice, KiCad's files
 # (four folders down), the small models (five), none hidden, none in a
@@ -198,46 +198,26 @@ def Fvs.todo(ls: List<&2, String>, +m: Map<&2, String>) -> List<&2, String>:
     case +l <> t:
       Fvs.todo.k(Bool.and(FV.Fv.file.ok(Fvs.rel(l)), Bool.not(Fvs.same(m, l))), l, Fvs.todo(t, m))
 
-def Fvs.keep.k(keep: Bool, +l: String, rest: List<&2, String>) -> List<&2, String>:
-  match keep:
-    case True{}:
-      l <> rest
-    case False{}:
-      rest
-
-# the lines the cache now holds: those it held and those that came
-def Fvs.keep(ls: List<&2, String>, +old: Map<&2, String>, +new: Map<&2, String>) -> List<&2, String>:
-  match ls:
-    case Nil{}:
-      Nil{}
-    case +l <> t:
-      Fvs.keep.k(Bool.or(Fvs.same(old, l), Fvs.same(new, l)), l, Fvs.keep(t, old, new))
-
-def Fvs.save(+cache: String, +ls: List<&2, String>) -> IO(Unit):
-  IO.bind(P.Ran, Unit, P.Proc.run("sh", ["-c", "mkdir -p \"$1\" && printf '%s\\n' \"$2\" > \"$1/.farver\"", "sh", cache, String.join(ls, "\n")], "/"), r => IO.pure(Unit, Unit{}))
-
-def Fvs.moved(r: P.Ran) -> Bool:
-  match r:
-    case P.Ran{0, _}:
-      True{}
-    case P.Ran{_, _}:
-      False{}
-
-# one file brought into the cache: written beside its place, then moved
-# there whole, so nothing reads half a file
-def Fvs.pull.done(ok: Bool, +tmp: String, +dest: String) -> IO(Bool):
+def Fvs.pull.kept(ok: Bool, +rel: String, +tmp: String) -> IO(String):
   match ok:
     case True{}:
-      IO.bind(P.Ran, Bool, P.Proc.run("sh", ["-c", "mkdir -p \"$(dirname \"$2\")\" && mv -f \"$1\" \"$2\"", "sh", tmp, dest], "/"), r => IO.pure(Bool, Fvs.moved(r)))
+      IO.pure(String, rel ++ "\t" ++ tmp)
     case False{}:
-      IO.bind(P.Ran, Bool, P.Proc.run("rm", ["-f", tmp], "/"), r => IO.pure(Bool, False{}))
+      IO.bind(P.Ran, String, P.Proc.run("rm", ["-f", tmp], "/"), r => IO.pure(String, ""))
 
-def Fvs.pull(+home: String, +link: String, +url: String, +thread: String, +rel: String, +cache: String) -> IO(Bool):
-  do IO<Bool>:
+def Fvs.pull(+home: String, +link: String, +url: String, +thread: String, +rel: String, +cache: String) -> IO(String):
+  do IO<String>:
     +n : String <- BN.Bn.random(4n)
     +tmp : String = cache ++ "/.farpart-" ++ n
     r : BN.Resp <- Fvs.call(home, link, url, "view.get", [J.KV{"thread", J.Str{thread}}, J.KV{"path", J.Str{rel}}], tmp, 120n, Nat.add(FV.Fv.cap(), 1048576n))
-    Fvs.pull.done(Nat.is_eq(Fvs.code(r), 200n), tmp, cache ++ "/" ++ rel)
+    Fvs.pull.kept(Nat.is_eq(Fvs.code(r), 200n), rel, tmp)
+
+def Fvs.pair.k(blank: Bool, +p: String, rest: List<&2, String>) -> List<&2, String>:
+  match blank:
+    case True{}:
+      rest
+    case False{}:
+      p <> rest
 
 # a lane: each line's file in turn; the lines that came
 def Fvs.lane(ls: List<&2, String>, +home: String, +link: String, +url: String, +thread: String, +cache: String) -> IO(List<&2, String>):
@@ -246,9 +226,9 @@ def Fvs.lane(ls: List<&2, String>, +home: String, +link: String, +url: String, +
       IO.pure(List<&2, String>, Nil{})
     case +l <> t:
       do IO<List<&2, String>>:
-        ok : Bool <- Fvs.pull(home, link, url, thread, Fvs.rel(l), cache)
+        +p : String <- Fvs.pull(home, link, url, thread, Fvs.rel(l), cache)
         rest : List<&2, String> <- Fvs.lane(t, home, link, url, thread, cache)
-        return Fvs.keep.k(ok, l, rest)
+        return Fvs.pair.k(String.is_empty(p), p, rest)
 
 def Fvs.lane.job(ls: List<&2, String>, +home: String, +link: String, +url: String, +thread: String, +cache: String, +out: Chan(List<&2, String>)) -> IO(Unit):
   do IO<Unit>:
@@ -313,18 +293,55 @@ def Fvs.ready(ls: List<&2, String>, +m: Map<&2, String>) -> List<&2, String>:
     case +l <> t:
       Fvs.ready.k(Bool.not(String.is_empty(Fvs.rel(Fvs.at(m, l)))), l, Fvs.ready(t, m))
 
+# Installing what came: one step at a time per cache (a lock folder, as
+# macOS has no flock). A file is replaced only by a version at least as
+# new as the one there, so two syncs racing never roll one back; a KiCad
+# file or model the owner no longer lists is removed (a file a client
+# named stays: another client's list need not name it). Prints the lines
+# the cache now holds (its new .farver).
+def Fvs.install.sh() -> String:
+  "c=$1; n=0\nwhile ! mkdir \"$c/.farlock\" 2>/dev/null; do n=$((n+1)); if [ $n -ge 150 ]; then rm -rf \"$c/.farlock\"; mkdir \"$c/.farlock\" 2>/dev/null; break; fi; sleep 0.1; done\n"
+  ++ "trap 'rmdir \"$c/.farlock\" 2>/dev/null' EXIT\nT=$(printf '\\t')\n"
+  ++ "{ echo '#'; printf '%s\\n' \"$2\"; } > \"$c/.farnew\"; touch \"$c/.farver\"; echo '#' > \"$c/.farins\"\n"
+  ++ "printf '%s\\n' \"$3\" | while IFS=\"$T\" read -r rel tmp; do\n  [ -n \"$rel\" ] || continue\n"
+  ++ "  new=$(awk -F'\\t' -v r=\"$rel\" '$1==r{print $3; exit}' \"$c/.farnew\"); old=$(awk -F'\\t' -v r=\"$rel\" '$1==r{print $3; exit}' \"$c/.farver\")\n"
+  ++ "  if [ -z \"$old\" ] || awk -v a=\"$new\" -v b=\"$old\" 'BEGIN{exit !(a+0>=b+0)}'; then mkdir -p \"$(dirname \"$c/$rel\")\" && mv -f \"$tmp\" \"$c/$rel\" && printf '%s\\n' \"$rel\" >> \"$c/.farins\"; else rm -f \"$tmp\"; fi\ndone\n"
+  ++ "{ echo '#'; cat \"$c/.farver\"; } > \"$c/.farold\"\n"
+  ++ "awk -F'\\t' 'FNR==1{f++; next} f==1{I[$1]=1; next} f==2{N[$1]=$0; next} f==3{if($1!=\"\") O[$1]=$0; next}\n"
+  ++ "  END{for(r in I) if(r in N) print N[r]; for(r in O) if(!(r in I)){ l=tolower(r); if(r in N) print O[r]; else if(l ~ /\\.(kicad_pcb|kicad_sch|kicad_pro|step|stp|wrl|glb)$/ || l ~ /(^|\\/)(sym-lib-table|fp-lib-table)$/) print \"DEL\" FS r; else print O[r]}}' \"$c/.farins\" \"$c/.farnew\" \"$c/.farold\" > \"$c/.farmid\"\n"
+  ++ "grep \"^DEL$T\" \"$c/.farmid\" | cut -f2- | while IFS= read -r rel; do rm -f \"$c/$rel\"; done\n"
+  ++ "grep -v \"^DEL$T\" \"$c/.farmid\" > \"$c/.farver.tmp\"; mv -f \"$c/.farver.tmp\" \"$c/.farver\"; rm -f \"$c/.farmid\" \"$c/.farold\" \"$c/.farnew\" \"$c/.farins\"\ncat \"$c/.farver\"\n"
+
+def Fvs.install.out(r: P.Ran) -> String:
+  match r:
+    case P.Ran{_, +out}:
+      out
+
+def Fvs.install(+cache: String, +files: String, +got: List<&2, String>) -> IO(String):
+  IO.bind(P.Ran, String, P.Proc.run("sh", ["-c", Fvs.install.sh(), "sh", cache, files, String.join(got, "\n")], "/"), r => IO.pure(String, Fvs.install.out(r)))
+
+# (a sync that missed a file says so with no version, so the client asks
+# again at once and the next sync brings what is missing; it waits a
+# little first, so a machine that keeps failing is not asked in a loop)
+def Fvs.sync.ver(+failed: Nat, +ver: String) -> String:
+  Bool.pick(String, Nat.is_eq(failed, 0n), ver, "")
+
+def Fvs.sync.pause(+failed: Nat) -> IO(Unit):
+  Bool.pick(IO(Unit), Nat.is_eq(failed, 0n), IO.pure(Unit, Unit{}), IO.sleep(3000))
+
 # far.view: the thread's files the viewers want, kept in the cache. The
 # owner's list is asked for with the digest this client holds; when that
 # changes (or after a while: same) the files that differ are brought in
 # and the answer says what the cache holds now, for the client to go on.
 def Fvs.sync.done(+home: String, +link: String, +thread: String, +cache: String, +want: String, +ver: String, +files: String, +old: Map<&2, String>, +todo: List<&2, String>, +got: List<&2, String>) -> IO(String):
   do IO<String>:
-    +ls : List<&2, String> = Fvs.lines(files)
-    +keep : List<&2, String> = Fvs.keep(ls, old, Fvs.idx.go(got, Map.new(&2, String)))
-    Fvs.save(cache, keep)
-    return Fvs.ok([J.KV{"farView", J.Flag{True{}}}, J.KV{"thread", J.Str{FR.Fr.id(link, thread)}}, J.KV{"root", J.Str{cache}}, J.KV{"ver", J.Str{ver}}, J.KV{"same", J.Flag{False{}}},
+    +now : String <- Fvs.install(cache, files, got)
+    +keep : List<&2, String> = Fvs.lines(now)
+    +failed : Nat = Nat.sub(List.length(&2, String, todo), List.length(&2, String, got))
+    Fvs.sync.pause(failed)
+    return Fvs.ok([J.KV{"farView", J.Flag{True{}}}, J.KV{"thread", J.Str{FR.Fr.id(link, thread)}}, J.KV{"root", J.Str{cache}}, J.KV{"ver", J.Str{Fvs.sync.ver(failed, ver)}}, J.KV{"same", J.Flag{False{}}},
       J.KV{"want", J.Str{want}}, J.KV{"ready", J.Str{String.join(Fvs.ready(Fvs.lines(want), Fvs.idx.go(keep, Map.new(&2, String))), "\n")}},
-      J.KV{"changed", J.Json.nat(List.length(&2, String, got))}, J.KV{"failed", J.Json.nat(Nat.sub(List.length(&2, String, todo), List.length(&2, String, got)))}])
+      J.KV{"changed", J.Json.nat(List.length(&2, String, got))}, J.KV{"failed", J.Json.nat(failed)}])
 
 def Fvs.sync.fetch(+home: String, +link: String, +url: String, +thread: String, +cache: String, +want: String, +ver: String, +files: String) -> IO(String):
   do IO<String>:
@@ -354,9 +371,28 @@ def Fvs.sync.body(m: Maybe<&2, J.Json>, +home: String, +link: String, +url: Stri
 def Fvs.sync.got(+r: BN.Resp, +home: String, +link: String, +url: String, +thread: String, +want: String, +have: String) -> IO(String):
   Bool.pick(IO(String), Nat.is_eq(Fvs.code(r), 200n), Fvs.sync.body(J.Json.parse(Fvs.body(r)), home, link, url, thread, want, have), IO.pure(String, Fvs.fail(r)))
 
-def Fvs.sync(+home: String, +link: String, +url: String, +thread: String, +want: String, +have: String) -> IO(String):
+def Fvs.sync.ask(+home: String, +link: String, +url: String, +thread: String, +want: String, +have: String) -> IO(String):
   IO.bind(BN.Resp, String, Fvs.call(home, link, url, "view.ver", [J.KV{"thread", J.Str{thread}}, J.KV{"want", J.Str{want}}, J.KV{"have", J.Str{have}}], "", 40n, 1048576n),
     r => Fvs.sync.got(r, home, link, url, thread, want, have))
+
+# A sync that failed (the machine away, an older hub that does not know
+# view.ver, a folder it cannot keep) still answers as far.view, saying
+# down, so the client's ask is over and it asks again later (Fv.due).
+def Fvs.down(+link: String, +thread: String, +want: String, +why: String) -> String:
+  Fvs.ok([J.KV{"farView", J.Flag{True{}}}, J.KV{"thread", J.Str{FR.Fr.id(link, thread)}}, J.KV{"want", J.Str{want}}, J.KV{"down", J.Str{"1"}}, J.KV{"error", J.Str{why}}])
+
+def Fvs.sync.out(m: Maybe<&2, J.Json>, +text: String, +link: String, +thread: String, +want: String) -> String:
+  match m:
+    case Some{+o}:
+      Bool.pick(String, J.Json.get_bool(o, "ok", False{}), text, Fvs.down(link, thread, want, J.Json.get_str(o, "error", "that machine did not take it")))
+    case None{}:
+      Fvs.down(link, thread, want, "invalid reply from that machine")
+
+def Fvs.sync.text(+t: String, +link: String, +thread: String, +want: String) -> String:
+  Fvs.sync.out(J.Json.parse(t), t, link, thread, want)
+
+def Fvs.sync(+home: String, +link: String, +url: String, +thread: String, +want: String, +have: String) -> IO(String):
+  IO.bind(String, String, Fvs.sync.ask(home, link, url, thread, want, have), t => IO.pure(String, Fvs.sync.text(t, link, thread, want)))
 
 # mech.list: the owner's part listing, with its renders brought into the
 # cache first, so a picture is there when a client asks for it
