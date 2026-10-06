@@ -61,13 +61,26 @@ def Fr.local.k(ps: List<&2, String>, +id: String) -> String:
 def Fr.local(+id: String) -> String:
   Fr.local.k(String.split(id, '~'), id)
 
+# The thread that sent a message from another thread, as a machine that
+# mirrors it names it: one of that machine's own ("<link>~<id>" there, the
+# link being this one) is its own again, one of the owner's is named
+# through the link. A message's id carries its sender (M.Link.id:
+# "t:<from>:<n>"), so the mirror's "from" row opens the right thread.
+def Fr.sender(+l: String, +from: String) -> String:
+  Bool.pick(String, Fr.is(from), Bool.pick(String, String.eq(Fr.link(from), l), Fr.local(from), from), Fr.id(l, from))
+
+def Fr.sent.k(+l: String, +from: String, +msg: String) -> String:
+  Bool.pick(String, String.is_empty(from), msg, M.Link.id(Fr.sender(l, from), String.drop(msg, Nat.add(3n, String.length(from)))))
+
+def Fr.sent(+l: String, +msg: String) -> String:
+  Fr.sent.k(l, M.Link.from(msg), msg)
+
 # Changes, as a client here reads them
 # ------------------------------------
 # The owning hub's change renamed into this hub's ids. Only what shows a
 # thread, a bot and its space goes; settings, devices, links, webhooks,
 # rooms (shared rooms travel on their own), ordering and usage stay home
 # (None).
-
 def Fr.change(+l: String, c: M.Change) -> Maybe<&2, M.Change>:
   match c:
     case M.ProjectCreated{+id, title, root, at}:
@@ -78,8 +91,8 @@ def Fr.change(+l: String, c: M.Change) -> Maybe<&2, M.Change>:
       Some{M.ThreadCreated{Fr.id(l, id), Fr.opt(l, project), title, env, branch, worktree, provider, model, at}}
     case M.ThreadRenamed{+id, title, at}:
       Some{M.ThreadRenamed{Fr.id(l, id), title, at}}
-    case M.MessagePosted{+thread, msg, role, text, at}:
-      Some{M.MessagePosted{Fr.id(l, thread), msg, role, text, at}}
+    case M.MessagePosted{+thread, +msg, role, text, at}:
+      Some{M.MessagePosted{Fr.id(l, thread), Fr.sent(l, msg), role, text, at}}
     case M.TurnChanged{+thread, state, at}:
       Some{M.TurnChanged{Fr.id(l, thread), state, at}}
     case M.PendingChanged{+thread, count, at}:
@@ -92,6 +105,10 @@ def Fr.change(+l: String, c: M.Change) -> Maybe<&2, M.Change>:
       Some{M.ThreadUnsettled{Fr.id(l, id), at}}
     case M.ThreadArchived{+id, b, at}:
       Some{M.ThreadArchived{Fr.id(l, id), b, at}}
+    case M.ThreadPinned{+id, b, at}:
+      Some{M.ThreadPinned{Fr.id(l, id), b, at}}
+    case M.ThreadForked{+id, +src, at}:
+      Some{M.ThreadForked{Fr.id(l, id), Fr.id(l, src), at}}
     case M.ThreadDeleted{+id, at}:
       Some{M.ThreadDeleted{Fr.id(l, id), at}}
     case M.ModesSet{+id, runtime, interaction, model, at}:
@@ -225,6 +242,10 @@ def Fr.shared(+s: M.State, c: M.Change) -> Bool:
       Fr.thread.shared(s, id)
     case M.ThreadArchived{+id, _, _}:
       Fr.thread.shared(s, id)
+    case M.ThreadPinned{+id, _, _}:
+      Fr.thread.shared(s, id)
+    case M.ThreadForked{+id, _, _}:
+      Fr.thread.shared(s, id)
     case M.ThreadDeleted{+id, _}:
       Fr.thread.shared(s, id)
     case M.ModesSet{+id, _, _, _, _}:
@@ -318,6 +339,10 @@ def Fr.scope(+s: M.State, c: M.Change) -> String:
     case M.ThreadUnsettled{+id, _}:
       Fr.scope.th(s, id)
     case M.ThreadArchived{+id, _, _}:
+      Fr.scope.th(s, id)
+    case M.ThreadPinned{+id, _, _}:
+      Fr.scope.th(s, id)
+    case M.ThreadForked{+id, _, _}:
       Fr.scope.th(s, id)
     case M.ThreadDeleted{+id, _}:
       Fr.scope.th(s, id)
@@ -585,6 +610,10 @@ def Fr.st.has.project(s: M.State, +id: String) -> Bool:
   match s:
     case M.State{ps, _, _, _, _, _, _, _, _, _, _}:
       Fr.has.project(Map.has(&2, M.Project, ps, id))
+
+# A project owned here (not a mirror of one elsewhere)
+def Fr.project.shared(+s: M.State, +pid: String) -> Bool:
+  Bool.and(Bool.and(Bool.not(String.is_empty(pid)), Fr.st.has.project(s, pid)), Bool.not(Fr.is(pid)))
 
 def Fr.stand.in(here: Bool, s: M.State, +id: String, +title: String, +at: Nat) -> M.State:
   match here:
@@ -953,16 +982,46 @@ def FC.of(done: Bool, +l: String, +nm: String, a: Bool, +h: Nat, +after: Nat, +x
     case False{}:
       FC{Fr.msg.epoch(l, nm, a, after, FC.last(xs, h), xs, e), FC.last(xs, h), False{}}
 
+# whether the first item is past head (True for none: the walk stops there)
+def Fr.first.gt(xs: List<&2, Item>, +head: Nat) -> Bool:
+  match xs:
+    case Nil{}:
+      True{}
+    case Item{+n, _} <> _:
+      Nat.is_gt(n, head)
+
+# the items after head of an ascending list, by a tail-recursive walk that
+# builds nothing (Fr.fresh recurses once per item: a join of a big mirror
+# overflowed the stack and walked it all again for each chunk)
+def Fr.after(xs: List<&2, Item>, +head: Nat, hit: Bool) -> List<&2, Item>:
+  match xs hit:
+    case +r True{}:
+      r
+    case Nil{} _:
+      Nil{}
+    case _ <> +t False{}:
+      Fr.after(t, head, Fr.first.gt(t, head))
+
+# whether more than k items remain
+def Fr.over(xs: List<&2, Item>, +k: Nat) -> Bool:
+  match xs k:
+    case Nil{} _:
+      False{}
+    case _ <> _ 0n:
+      True{}
+    case _ <> +t 1n+p:
+      Fr.over(t, p)
+
 def In.chunk.k(i: In, +after: Nat, +ys: List<&2, Item>) -> FC:
   match i:
     case In{+l, +nm, +h, _, a, +e}:
-      FC.of(Nat.is_le(List.length(&2, Item, ys), In.most()), l, nm, a, h, after, List.take(&2, Item, ys, In.most()), e)
+      FC.of(Bool.not(Fr.over(ys, In.most())), l, nm, a, h, after, List.take(&2, Item, ys, In.most()), e)
 
 # the next chunk of a mirror, after its item `after`
 def In.chunk(+i: In, +after: Nat) -> FC:
   match i:
-    case In{_, _, _, xs, _, _}:
-      In.chunk.k(i, after, Fr.fresh(xs, after))
+    case In{_, _, _, +xs, _, _}:
+      In.chunk.k(i, after, Fr.after(xs, after, Fr.first.gt(xs, after)))
 
 # Mirrors by link
 # ---------------
@@ -987,6 +1046,8 @@ def Ins.set(ms: List<&2, In>, +i: In) -> List<&2, In>:
 
 # Requests to a thread elsewhere
 # ------------------------------
+# (thread.delete is not one: law far_no_delete keeps a linked machine from
+# deleting; a thread elsewhere is deleted on its own machine)
 # A request naming a thread, an ask or a bot elsewhere goes to the hub it
 # lives on, with that hub's ids; only these may (Fr.may): writing to it,
 # stopping it, answering it, its queue, settling it, a side question, its
@@ -994,7 +1055,9 @@ def Ins.set(ms: List<&2, In>, +i: In) -> List<&2, In>:
 
 def Fr.methods() -> List<&2, String>:
   ["turn.start", "turn.interrupt", "ask.answer", "queue.move", "queue.remove", "queue.resume", "queue.steer", "queue.edit",
-   "thread.settle", "thread.unsettle", "thread.rename", "thread.btw", "thread.modes", "thread.provider", "thread.effort", "bots.space", "bots.routine_run"]
+   "thread.settle", "thread.unsettle", "thread.back", "thread.rename", "thread.btw", "thread.modes", "thread.provider", "thread.effort", "bots.space", "bots.routine_run",
+   "thread.create", "thread.fork", "thread.archive", "thread.unarchive", "thread.pin", "thread.unpin",
+   "project.add", "project.new", "project.remove", "fs.list", "fs.mkdir", "fs.find"]
 
 def Fr.may.go(ms: List<&2, String>, +m: String) -> Bool:
   match ms:
@@ -1017,7 +1080,8 @@ def Fr.key(+k: String) -> Bool:
 def Fr.params.link(fs: J.Json) -> String:
   match fs:
     case J.Field{+k, J.Str{+v}, t}:
-      Bool.pick(String, Bool.and(Fr.key(k), Fr.is(v)), Fr.link(v), Fr.params.link(t))
+      Bool.pick(String, Bool.and(Fr.key(k), Fr.is(v)), Fr.link(v),
+        Bool.pick(String, Bool.and(String.eq(k, "on"), Bool.and(Bool.not(String.is_empty(v)), Bool.not(Fr.is(v)))), v, Fr.params.link(t)))
     case J.Field{_, _, t}:
       Fr.params.link(t)
     case _:
@@ -1052,6 +1116,12 @@ def Fr.is.some(m: Maybe<&2, M.Change>) -> Bool:
 type Route is Data:
   Route{link: String, m: String, body: String}
 
+# A routed request carries a nonce of its own (the asking client, its
+# request id and the second), so two equal requests in one second are two
+# signed bodies, not a replay of one. The owner reads only id, m and p.
+def Fr.nonced(+body: String, +n: String) -> String:
+  "{\"n\":" ++ J.Json.show(J.Str{n}) ++ "," ++ String.drop(body, 1n)
+
 def Fr.route.k(+link: String, +m: String, +fs: J.Json) -> Maybe<&2, Route>:
   Bool.pick(Maybe<&2, Route>, String.is_empty(link), None{},
     Some{Route{link, m, J.Json.show(J.Json.obj([J.KV{"id", J.Num{"0"}}, J.KV{"m", J.Str{m}}, J.KV{"p", J.Obj{Fr.params.local(fs, link)}}]))}})
@@ -1070,10 +1140,24 @@ def Fr.route(+o: J.Json) -> Maybe<&2, Route>:
 # On the owning hub: a request from a linked machine is taken only when it
 # is one of Fr.methods and what it names is shared (a bot's thread, an ask
 # in one, a bot)
+# the methods the owning hub answers from a job (a folder listed or made, a
+# folder added as a project: the server resolves the path first)
+def Fr.async(+m: String) -> Bool:
+  Fr.may.go(["project.add", "project.new", "fs.list", "fs.mkdir", "fs.find"], m)
+
+def Fr.allowed.p(+m: String) -> Bool:
+  Fr.may.go(["thread.create", "project.remove"], m)
+
+# what makes no claim on a thing: browsing and adding folders on the
+# owner's machine (only the owner's own machines ever get this far)
+def Fr.allowed.free(+m: String) -> Bool:
+  Fr.async(m)
+
 def Fr.allowed.k(+s: M.State, +m: String, +p: J.Json) -> Bool:
   Bool.pick(Bool, String.eq(m, "ask.answer"), Fr.ask.shared(s, J.Json.get_str(p, "id", "")),
     Bool.pick(Bool, Bool.or(String.eq(m, "bots.space"), String.eq(m, "bots.routine_run")), Bool.not(String.is_empty(J.Json.get_str(p, "bot", J.Json.get_str(p, "id", "")))),
-      Fr.thread.shared(s, J.Json.get_str(p, "thread", ""))))
+      Bool.pick(Bool, Fr.allowed.p(m), Fr.project.shared(s, J.Json.get_str(p, "project", "")),
+        Bool.pick(Bool, Fr.allowed.free(m), True{}, Fr.thread.shared(s, J.Json.get_str(p, "thread", ""))))))
 
 def Fr.allowed(+s: M.State, +o: J.Json) -> Bool:
   Bool.and(Fr.may(J.Json.get_str(o, "m", "")), Fr.allowed.k(s, J.Json.get_str(o, "m", ""), J.Json.get_obj(o, "p")))
@@ -1089,6 +1173,29 @@ def Fr.reply.fields(fs: J.Json, +id: String) -> J.Json:
 
 def Fr.reply(o: J.Json, +id: String) -> String:
   J.Json.show(J.Obj{Fr.reply.fields(Fr.obj.fields(o), id)})
+
+# The same on the receiving hub of a link: the thread a reply names (a new
+# thread, a fork, a project's first) is named by its id here, which is the
+# id the mirror will give it, so the asking client can go to it
+def Fr.reply.on.thread(+v: J.Json, +link: String) -> J.Json:
+  match v:
+    case J.Str{+x}:
+      J.Str{Bool.pick(String, Fr.is(x), x, Fr.opt(link, x))}
+    case x:
+      x
+
+def Fr.reply.on.value(+k: String, +v: J.Json, +id: String, +link: String) -> J.Json:
+  Bool.pick(J.Json, String.eq(k, "id"), J.Num{id}, Bool.pick(J.Json, String.eq(k, "thread"), Fr.reply.on.thread(v, link), v))
+
+def Fr.reply.on.fields(fs: J.Json, +id: String, +link: String) -> J.Json:
+  match fs:
+    case J.Field{+k, +v, t}:
+      J.Field{k, Fr.reply.on.value(k, v, id, link), Fr.reply.on.fields(t, id, link)}
+    case x:
+      x
+
+def Fr.reply.on(o: J.Json, +id: String, +link: String) -> String:
+  J.Json.show(J.Obj{Fr.reply.on.fields(Fr.obj.fields(o), id, link)})
 
 # A late disk load never replaces a mirror already updated by traffic.
 def In.loaded(+live: In, +disk: In) -> In:
@@ -1269,8 +1376,13 @@ def Page.json(p: Page) -> String:
 # the log holds lines this build does not decode (a newer build wrote them:
 # `len` lines against `seq` changes), how many, so the feed's numbering
 # (by changes) starts a history of its own and mirrors pull it afresh.
+# The version of what is shared (Fr.shared): a build that shares more
+# kinds of change bumps it, so every mirror pulls the history afresh once.
+def Fr.view.tag() -> String:
+  "|view:2"
+
 def Fr.history.body(+first: String, +len: Nat, +seq: Nat) -> String:
-  Bool.pick(String, Nat.is_eq(len, seq), first, first ++ "|unknown:" ++ Nat.show(Nat.sub(len, seq)))
+  Bool.pick(String, Nat.is_eq(len, seq), first, first ++ "|unknown:" ++ Nat.show(Nat.sub(len, seq))) ++ Fr.view.tag()
 
 # Pushing to a linked machine
 # ---------------------------

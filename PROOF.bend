@@ -6017,6 +6017,9 @@ def Laws.far_id_here():
 def Laws.far_change_names_link(l, th, msg, role, text, at):
   {==}
 
+def Laws.far_sent_names_sender():
+  {==}
+
 def Laws.far_change_bot_named(l, id, name, th, look, persona, at):
   {==}
 
@@ -7128,6 +7131,66 @@ def Laws.made_waiting_ends_made():
 def Laws.made_waiting_ends_failed():
   {==}
 
+def Laws.far_create_routes():
+  {==}
+
+def Laws.far_fork_routes():
+  {==}
+
+def Laws.far_create_ids_local():
+  {==}
+
+def Laws.far_machine_routes():
+  {==}
+
+def Laws.far_machine_none_here():
+  {==}
+
+def Laws.far_create_in_shared_project():
+  {==}
+
+def Laws.far_create_not_in_unshared_project():
+  {==}
+
+def Laws.far_create_not_in_a_mirror():
+  {==}
+
+def Laws.far_pin_only_shared_thread():
+  {==}
+
+def Laws.far_settings_not_remote():
+  {==}
+
+def Laws.far_reply_names_thread():
+  {==}
+
+def Laws.far_pin_shared():
+  {==}
+
+def Laws.made_far_waits_for_mirror():
+  {==}
+
+def Laws.made_far_selects_when_mirrored():
+  {==}
+
+def Laws.made_far_done_when_mirrored():
+  {==}
+
+def Laws.made_far_failed_not_waiting():
+  {==}
+
+def Laws.proj_machine_cycle_ends_here():
+  {==}
+
+def Laws.proj_machine_cycle_next():
+  {==}
+
+def Laws.proj_on_request_names_machine():
+  {==}
+
+def Laws.proj_here_request_unchanged(p):
+  {==}
+
 def Laws.side_rows_ix_eq():
   {==}
 
@@ -7570,4 +7633,332 @@ def Laws.mate_loopback_lower_asks():
   {==}
 
 def Laws.mate_loopback_higher_waits():
+  {==}
+
+def Laws.fview_file_up():
+  {==}
+
+def Laws.fview_file_abs():
+  {==}
+
+def Laws.fview_file_hidden():
+  {==}
+
+def Laws.fview_file_hidden_deep():
+  {==}
+
+def Laws.fview_file_pick():
+  {==}
+
+def Laws.fview_file_ok():
+  {==}
+
+def Laws.fview_file_empty():
+  {==}
+
+def Laws.fview_dir_root():
+  {==}
+
+def Laws.fview_dir_up():
+  {==}
+
+def Laws.fview_reads_disjoint():
+  {==}
+
+def Laws.fview_no_open():
+  {==}
+
+def Laws.fview_no_pdf():
+  {==}
+
+def Laws.fview_no_fs():
+  {==}
+
+def Laws.fview_allowed_not_write(s, p):
+  {==}
+
+def Laws.fview_allowed_path(s):
+  {==}
+
+def Laws.fview_allowed_want(s):
+  {==}
+
+def Laws.fview_allowed_dir(s):
+  {==}
+
+def Laws.fview_cache_under():
+  {==}
+
+def Laws.fview_cache_dotdot():
+  {==}
+
+def Laws.fview_cache_link_slash():
+  {==}
+
+def Laws.fview_cache_link_dotdot():
+  {==}
+
+def Laws.fview_cache_relative():
+  {==}
+
+def Laws.fview_cache_of_file():
+  {==}
+
+def Laws.fview_cache_of_outside():
+  {==}
+
+def Laws.fview_cache_of_prefix():
+  {==}
+
+def Laws.fview_fix_thread():
+  {==}
+
+def Laws.fview_fix_root():
+  {==}
+
+def Laws.fview_fix_again():
+  {==}
+
+def Laws.fview_fix_leaves_error():
+  {==}
+def Laws.fmc_taken_tool():
+  {==}
+
+def Laws.fmc_only_listed_tools():
+  {==}
+
+def Laws.fmc_no_terminal_or_delegate():
+  {==}
+
+def Laws.fmc_permit_keeps_client_rules(s, p):
+  {==}
+
+def Laws.fmc_unshared_refused():
+  {==}
+
+def Laws.fmc_unshared_changes_nothing():
+  {==}
+
+def Laws.fmc_unshared_interrupt_refused():
+  {==}
+
+def Laws.fmc_plan_here_stays():
+  {==}
+
+def Laws.fmc_plan_wait_polls_here():
+  {==}
+
+def Laws.fmc_plan_unlinked_never_sent():
+  {==}
+
+def Laws.fmc_plan_unlinked_machine_never_sent():
+  {==}
+
+def Laws.fmc_plan_machine_list_answered():
+  {==}
+
+def Laws.fmc_plan_other_tools_here():
+  {==}
+
+def Laws.fmc_args_made_local():
+  {==}
+
+def Laws.fmc_args_other_link_kept():
+  {==}
+
+def Laws.fmc_reply_ids_named_by_link():
+  {==}
+
+def Laws.fmc_give_unlinked_nothing():
+  {==}
+
+def Laws.fmc_give_local_drops_machines():
+  {==}
+def Laws.flive_delta_appends():
+  {==}
+
+def Laws.flive_gap_asks():
+  {==}
+
+def Laws.flive_gap_changes_nothing():
+  {==}
+
+def Laws.flive_end_blocks_old():
+  {==}
+
+def Laws.flive_end_no_resurrect():
+  {==}
+
+def Laws.flive_delta_ended_dropped():
+  {==}
+
+def Laws.flive_end_keeps_newer():
+  {==}
+
+def Laws.flive_end_before_any():
+  {==}
+
+def Laws.flive_next_gen_taken():
+  {==}
+
+def Laws.flive_snap_replaces():
+  {==}
+
+def Laws.flive_snap_older_stale():
+  {==}
+
+def Laws.flive_ended_ids():
+  {==}
+
+def Laws.flive_user_message_keeps():
+  {==}
+
+def Laws.flive_body_no_items():
+  {==}
+
+def Laws.flive_body_has_live():
+  {==}
+
+def Laws.flive_queue_joins():
+  {==}
+
+def Laws.flive_queue_gap_owes_whole():
+  {==}
+
+def Laws.flive_queue_whole_absorbs():
+  {==}
+
+def Laws.flive_queue_threads_apart():
+  {==}
+
+def Laws.flive_one_request_out():
+  {==}
+
+def Laws.flive_due_after_answer():
+  {==}
+
+def Laws.flive_quiet_drops():
+  {==}
+
+def Laws.flive_quiet_ends():
+  {==}
+
+def Laws.flive_whole_from_buffer():
+  {==}
+
+def Laws.flive_whole_ended_dropped():
+  {==}
+
+def Laws.flive_link_gone():
+  {==}
+
+def Laws.flive_far_message_ends_live():
+  {==}
+
+def Laws.flive_far_activity_keeps_live():
+  {==}
+
+def Laws.flive_far_delta_shows():
+  {==}
+
+def Laws.notice_far_key_same():
+  {==}
+
+def Laws.notice_far_fail_key_same():
+  {==}
+
+def Laws.notice_local_key_kept():
+  {==}
+
+def Laws.island_far_once():
+  {==}
+
+def Laws.island_far_owner_wins():
+  {==}
+
+def Laws.island_far_alone_kept():
+  {==}
+
+def Laws.rview_at_under():
+  {==}
+
+def Laws.rview_at_climbs():
+  {==}
+
+def Laws.rview_at_relative():
+  {==}
+
+def Laws.rview_back_at():
+  {==}
+
+def Laws.rview_back_outside():
+  {==}
+
+def Laws.rview_want_hidden():
+  {==}
+
+def Laws.rview_want_file():
+  {==}
+
+def Laws.rview_ask_get_up():
+  {==}
+
+def Laws.rview_ask_get_abs():
+  {==}
+
+def Laws.rview_ask_get_hidden():
+  {==}
+
+def Laws.rview_ask_get_ok():
+  {==}
+
+def Laws.rview_ask_ver_hidden():
+  {==}
+
+def Laws.rview_ask_no_folder():
+  {==}
+
+def Laws.rview_ask_other():
+  {==}
+
+def Laws.rview_git_option():
+  {==}
+
+def Laws.rview_git_dir():
+  {==}
+
+def Laws.rview_git_climbs():
+  {==}
+
+def Laws.rview_git_ok():
+  {==}
+
+def Laws.rview_git_other_repo():
+  {==}
+
+def Laws.rview_git_hidden():
+  {==}
+
+def Laws.rview_root_unknown():
+  {==}
+
+def Laws.rview_root_far_cache():
+  {==}
+
+def Laws.rview_enc_unreserved():
+  {==}
+
+def Laws.rview_enc_breaks():
+  {==}
+
+def Laws.rview_spec_local():
+  {==}
+
+def Laws.rview_root_far_other_link():
+  {==}
+
+def Laws.rview_root_far_climbs():
+  {==}
+
+def Laws.rview_root_own_ignores_claim():
   {==}

@@ -150,6 +150,21 @@ def cat(+since: Nat, +head: Nat) -> J.Json:
 def machines() -> J.Json:
   J.Json.obj([J.KV{"t", J.Json.str("info")}, J.KV{"info", J.Json.obj([J.KV{"machines", J.Json.str("{\"self\":{\"name\":\"me\",\"url\":\"http://100.1.0.1:3787\",\"domain\":\"\"},\"peers\":[{\"name\":\"box\",\"url\":\"http://box:3787\",\"version\":\"1\"},{\"name\":\"lab\",\"url\":\"http://lab:3787\",\"version\":\"1\"}]}")}])}])
 
+# the text of the request an action sends
+def rpc_text(a: U.Act) -> String:
+  match a:
+    case U.Act{_, U.Send{+t} <> _}:
+      t
+    case _:
+      "none"
+
+def pitems(xs: List<&2, U.PItem>) -> String:
+  match xs:
+    case Nil{}:
+      ""
+    case U.PItem{l, a, v} <> t:
+      l ++ "|" ++ a ++ "|" ++ v ++ ";" ++ pitems(t)
+
 def pids(rs: List<&2, U.SRow>) -> String:
   String.join(U.Side.pids(rs), ",")
 
@@ -253,6 +268,58 @@ def main() -> IO(Unit):
       ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("ask.answer", [J.KV{"id", J.Str{"a1"}}]))) ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("ask.answer", [J.KV{"id", J.Str{"a2"}}])))
       ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("setting.set", [J.KV{"key", J.Str{"x"}}]))) ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("thread.delete", [J.KV{"thread", J.Str{"bt1"}}]))),
       "True True True True False False")
+    # create anywhere: a new thread, a fork, pin, archive, delete and a
+    # project's folders go to the machine that owns the thing
+    C.Check.str("route thread.create", route(FR.Fr.route(rpc("thread.create", [J.KV{"project", J.Str{"p1~p"}}, J.KV{"title", J.Str{"New thread"}}]))),
+      "p1 thread.create {\"id\":0,\"m\":\"thread.create\",\"p\":{\"project\":\"p\",\"title\":\"New thread\"}}")
+    C.Check.str("route thread.fork", route(FR.Fr.route(rpc("thread.fork", [J.KV{"thread", J.Str{"p1~pt"}}]))), "p1 thread.fork {\"id\":0,\"m\":\"thread.fork\",\"p\":{\"thread\":\"pt\"}}")
+    C.Check.str("route pin, archive", route(FR.Fr.route(rpc("thread.pin", [J.KV{"thread", J.Str{"p1~pt"}}]))) ++ "|" ++ route(FR.Fr.route(rpc("thread.archive", [J.KV{"thread", J.Str{"p1~pt"}}]))),
+      "p1 thread.pin {\"id\":0,\"m\":\"thread.pin\",\"p\":{\"thread\":\"pt\"}}|p1 thread.archive {\"id\":0,\"m\":\"thread.archive\",\"p\":{\"thread\":\"pt\"}}")
+    C.Check.str("route project.add on a machine", route(FR.Fr.route(rpc("project.add", [J.KV{"on", J.Str{"p1"}}, J.KV{"path", J.Str{"/x"}}]))),
+      "p1 project.add {\"id\":0,\"m\":\"project.add\",\"p\":{\"on\":\"p1\",\"path\":\"/x\"}}")
+    C.Check.str("route fs.list on a machine", route(FR.Fr.route(rpc("fs.list", [J.KV{"path", J.Str{"/x"}}, J.KV{"on", J.Str{"p1"}}]))),
+      "p1 fs.list {\"id\":0,\"m\":\"fs.list\",\"p\":{\"path\":\"/x\",\"on\":\"p1\"}}")
+    C.Check.str("no machine: stays here", route(FR.Fr.route(rpc("fs.list", [J.KV{"on", J.Str{""}}, J.KV{"path", J.Str{"/x"}}]))) ++ "|" ++ route(FR.Fr.route(rpc("project.add", [J.KV{"path", J.Str{"/x"}}]))), "none|none")
+    C.Check.str("allowed: create in a shared project only", Bool.show(FR.Fr.allowed(st, rpc("thread.create", [J.KV{"project", J.Str{"p"}}]))) ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("thread.create", [J.KV{"project", J.Str{"zz"}}])))
+      ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("thread.create", [J.KV{"project", J.Str{"p1~p"}}]))) ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("thread.create", Nil{}))),
+      "True False False False")
+    C.Check.str("allowed: a thread's own", Bool.show(FR.Fr.allowed(st, rpc("thread.fork", [J.KV{"thread", J.Str{"pt"}}]))) ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("thread.pin", [J.KV{"thread", J.Str{"pt"}}])))
+      ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("thread.archive", [J.KV{"thread", J.Str{"nope"}}]))) ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("thread.pin", [J.KV{"thread", J.Str{"x~pt"}}]))),
+      "True True False False")
+    C.Check.str("allowed: projects and folders", Bool.show(FR.Fr.allowed(st, rpc("project.remove", [J.KV{"project", J.Str{"p"}}]))) ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("project.remove", [J.KV{"project", J.Str{"q"}}])))
+      ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("project.add", [J.KV{"path", J.Str{"/x"}}]))) ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("fs.list", Nil{})))
+      ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("project.create", [J.KV{"path", J.Str{"/x"}}]))) ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("thread.reorder", [J.KV{"thread", J.Str{"pt"}}]))),
+      "True False True True False False")
+    C.Check.str("a pin is shared", Bool.show(FR.Fr.shared(st, M.ThreadPinned{"pt", True{}, 9n})) ++ " " ++ Bool.show(FR.Fr.shared(st, M.ThreadPinned{"zz", True{}, 9n})) ++ " " ++ FR.Fr.scope(st, M.ThreadPinned{"pt", True{}, 9n}), "True False p")
+    # the owner's answer names the thread by its id here
+    C.Check.str("reply names the new thread here", FR.Fr.reply.on(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{"0"}}, J.KV{"ok", J.Flag{True{}}}, J.KV{"thread", J.Str{"t5"}}]), "23", "p1"),
+      "{\"t\":\"reply\",\"id\":23,\"ok\":true,\"thread\":\"p1~t5\"}")
+    C.Check.str("reply keeps a refusal", FR.Fr.reply.on(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{"0"}}, J.KV{"ok", J.Flag{False{}}}, J.KV{"error", J.Str{"no"}}]), "23", "p1"),
+      "{\"t\":\"reply\",\"id\":23,\"ok\":false,\"error\":\"no\"}")
+    # a client asks for a thread in a project elsewhere and goes to it when
+    # the mirror has it, whichever comes first
+    +nt : U.Ui = act_ui(U.Ui.new_thread(pu, "p1~p"))
+    +nid : String = Nat.show(U.Made.rid(pu))
+    +ans : J.Json = U.Made.demo(nid, "p1~t9")
+    +born : J.Json = far(18n, 19n, False{}, numbered([M.ThreadCreated{"t9", "p", "New thread", M.Local{}, "", "", "claude", "", 200n}], 19n))
+    C.Check.str("making until its answer", Bool.show(U.Made.waiting(nt)), "True")
+    +na : U.Ui = recv(nt, ans)
+    C.Check.str("answer first: still making, nothing selected", Bool.show(U.Made.waiting(na)) ++ " [" ++ U.Ui.sel(na) ++ "]", "True []")
+    +nb : U.Ui = recv(na, born)
+    C.Check.str("then the mirror: selected, done", Bool.show(U.Made.waiting(nb)) ++ " [" ++ U.Ui.sel(nb) ++ "]", "False [p1~t9]")
+    +mb : U.Ui = recv(recv(nt, born), ans)
+    C.Check.str("mirror first: selected, done", Bool.show(U.Made.waiting(mb)) ++ " [" ++ U.Ui.sel(mb) ++ "]", "False [p1~t9]")
+    +nf : U.Ui = recv(nt, J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{nid}}, J.KV{"ok", J.Flag{False{}}}]))
+    C.Check.str("a failure ends it", Bool.show(U.Made.waiting(nf)), "False")
+    +nl : U.Ui = act_ui(U.Ui.select(na, "p1~pt"))
+    C.Check.str("going elsewhere ends it", Bool.show(U.Made.waiting(nl)) ++ " [" ++ U.Ui.sel(nl) ++ "]", "False [p1~pt]")
+    # the picker works on another machine: its requests carry it
+    C.Check.str("picker machines", String.join(U.Proj.machines(pu), ",") ++ " [" ++ U.Proj.on(pu) ++ "] " ++ U.Proj.next(pu), "p1 [] p1")
+    +pm : U.Ui = act_ui(U.Ui.act(pu, "proj-on", "p1"))
+    C.Check.str("picker on a machine", U.Proj.on(pm) ++ " " ++ U.Proj.next(pm) ++ "|" ++ U.Proj.on.name(pm) ++ "|" ++ String.join(U.Side.pids(U.Side.sorted(U.Ui.state(pm), 1000n)), ","), "p1 |box|p1~p")
+    C.Check.str("picker's request names the machine", rpc_text(U.Proj.rpc(pm, "fs.list", [J.KV{"path", J.Str{"/x"}}])) ++ "|" ++ rpc_text(U.Proj.rpc(pu, "fs.list", [J.KV{"path", J.Str{"/x"}}])),
+      "{\"id\":" ++ Nat.show(U.Made.rid(pm)) ++ ",\"m\":\"fs.list\",\"p\":{\"on\":\"p1\",\"path\":\"/x\"}}|{\"id\":" ++ Nat.show(U.Made.rid(pu)) ++ ",\"m\":\"fs.list\",\"p\":{\"path\":\"/x\"}}")
+    C.Check.str("picker row for the machine", pitems(U.Proj.machine.row(pm)), "On box (change)|proj-on|;")
     # a catalog: the link's projects listed at once, each catching up until
     # the link's head passes its last number; Settings' machines say so
     +uc : U.Ui = recv(recv(joined(), machines()), cat(14n, 14n))

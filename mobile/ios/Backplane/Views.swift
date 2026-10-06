@@ -625,6 +625,7 @@ private struct FoldersSheet: View {
         case "new": "folder.badge.plus"
         case "mkdir": "folder.badge.plus"
         case "off": "checkmark.circle"
+        case "machine": "desktopcomputer"
         default: "folder"
         }
     }

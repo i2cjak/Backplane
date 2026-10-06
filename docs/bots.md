@@ -607,6 +607,26 @@ owner's (`Far.own` in server.bend: the machines list; laws `far_*_stay_home`).
   while it is away the answer says so. Anything
   else about a far thread is refused here (law `far_route_here_stays`,
   `far_allowed_only_methods`).
+- Creating anywhere. `thread.create` (its `project` a `<link>~<id>`),
+  `thread.fork`, `thread.pin`/`unpin`, `thread.archive`/`unarchive` and
+  `project.remove` go to the owning hub like the rest, which makes the thread
+  in its own project; its answer names the new thread by its id here
+  (`Fr.reply.on`: `<link>~<thread>`, the id the mirror will give it). The
+  asking client keeps "making" (`Made.waiting`, `Made.coming`) until the
+  mirrored thread is here, then opens it (`@thread.want`, `Bots.wanted`),
+  whichever of the answer and the push comes first. The project picker can
+  work on another of the owner's machines: a row at its end ("On box
+  (change)", action `proj-on`, `Proj.machine`) cycles this hub and each
+  machine that has answered; its requests (`fs.list`, `fs.mkdir`, `fs.find`,
+  `project.add`, `project.new`) then carry `on: <link>`, which `Fr.params.link`
+  routes. The owning hub runs those from a job (`Far.fs.job`: the same
+  `FsJob` as for its own clients, then `FarDo` for `project.create`) and
+  answers the open request. `Fr.allowed`: a create needs one of its own
+  projects (not a mirror, not one it lacks); pin, archive, fork a thread it
+  shares; folders and adding need nothing but an owner's link. `thread.delete`
+  is not one of them (law `far_no_delete`): a thread elsewhere is deleted on
+  its own machine. Laws `far_create_*`, `made_far_*`, `proj_machine_*`; tests
+  `test/far_test.bend`, `bun test/tools/create_far_e2e.ts`.
 - The same view. A mirrored bot is a bot in the read model, so the window,
   the web and the phones show it with the same header, tabs, space and
   chat, its thread with the same timeline and composer; only its name
@@ -653,10 +673,158 @@ owner's (`Far.own` in server.bend: the machines list; laws `far_*_stay_home`).
   clients through `Label.title`/`Label.syncing` and the phones' `quiet`.
   Projects that have arrived work meanwhile, and nothing pops in or moves.
   Laws `far_catalog_*`, `far_scope_*`.
-- Not mirrored: streamed text while a far turn runs (its messages arrive as
-  they are posted), file viewers for far project threads, and a bot's browser.
+- Live text of a far turn (core/farlive.bend, laws `flive_*`): the owner's
+  streamed reply is not a change, so it never enters the log or the mirror
+  file. It goes hub to hub as an ephemeral `live` body on POST /far/push
+  (deltas of the owner's Live buffer: `off` = length before, `gen` bumps at
+  each end), one queue per peer with one request out at a time (a slow peer
+  gets fewer, bigger deltas, like `Delta.merge`). The receiver keeps it in
+  its own Live buffer under `<link>~<thread>` and sends its clients the
+  ordinary `delta`, so every client renders it like a local reply. A gap
+  asks for the whole text; the durable message arriving first ends the
+  buffer, so a late delta never brings text back. A peer with no client
+  (`watch: false`) is left alone for 8 s; the first delta after finds a gap
+  and gets a snapshot. A far turn's end alerts once, by the owner's key.
+- Join cost: a mirror's chunks are cut by a tail-recursive walk
+  (`Fr.after`), linear in the mirror, not stack-deep (`test/native/far_sync_bench.bend`).
+- Not mirrored: a bot's browser. The viewers of a far project thread are below.
+- Viewers elsewhere. The viewer panel of a thread on another machine (Board,
+  Schematic, 3D, Mech, Files, Diff) works from any client of any hub, the
+  window, the web and both phones, with the same Bend defs (`core/fview.bend`,
+  client.bend's `Fv.*`, `src/server/farview.bend`). The files stay on the owner's
+  machine; the hub the client is on keeps what the viewers read in a cache of
+  its own, `<home>/farfs/<link>/<the owner's project folder>`, and a client
+  of a far thread reads that folder (`Ui.root`, "" until the hub says which)
+  as it reads a project folder here: the window parses the boards itself, the
+  plot actor serves phones and the web, `/img` and `pdf.page` read it, with
+  nothing else to know.
+  - What goes to the owner (`POST /far/rpc`, signed, owner-only like every
+    request between hubs, only for a thread it shares; `Fv.reads`, `Fv.allowed`):
+    `files.dir`, `files.list`, `mech.list`, `history.refs`, `git.diff`,
+    `git.status` (answered by the job a request becomes here, `Fv.jobs`, run on
+    a channel of its own; no hub state touched) and two of its own, `view.ver`
+    and `view.get`. Nothing writes: the render, KiCad, `file.open`, `pdf.page` and
+    `fs.list` are refused or stay local (law `fview_reads_disjoint`). A path
+    never leaves the thread's folder, reaches no hidden file (`.git`, `.env`;
+    `.backplane.json` alone is read) and follows no symlink out (laws
+    `fview_file_*`, `fview_allowed_*`; the owner checks the real path of each
+    file and folder, `Fvs.lib`).
+  - `view.ver {thread, want, have}`: the files the viewers want of the folder
+    (the project's `.kicad_pro/.kicad_pcb/.kicad_sch`, `sym-lib-table`, its small
+    models, `.backplane.json`, and the files in `want`; at most 400, each under
+    24 MB) as `path<TAB>size<TAB>mtime` lines with a cksum digest. With
+    `have` equal to the current digest the owner waits for it to change, at most
+    24 s (one `sh` on its side polling `stat` every 2 s, as the plot actor does for
+    a file here), so changes flow from the owner and no client polls.
+    `view.get {thread, path}` is one file's bytes.
+  - `far.view {thread, want, have}`, a client's ask, is answered by its own hub:
+    it asks the owner `view.ver`, brings the files that differ (size or time)
+    into the cache four at a time, each written beside its place and moved there
+    whole, and answers `{farView, thread, root, ver, same, want, ready, changed,
+    failed}` (or `down` when the owner is away: the viewer then shows the file
+    as it is). The client keeps the digest and asks again at once, so about one
+    request per half minute stays parked at the owner while a far viewer is open
+    (`Fv.sync`, run after every action and message by all four clients; the
+    phones through `View.fv`). The cache index is `<cache>/.farver`.
+  - The viewer shows a far file only when the cache holds it: `Ui.view_get`
+    reads the Files tab until the answer names the path (`fv.ready:<t>`,
+    `Fv.pending`), so a viewer never loads a file that is not there yet.
+  - `mech.list` is answered by the client's hub too: the owner's listing, with
+    the renders it names brought into the cache first, the listing's thread and
+    folder as here (`Fvs.mech`). The other reads come back through the hub with
+    the same fix (`Fv.fix`: the thread's id here, `root` and `fmRoot` the
+    cache).
+  - `viewer_show` by an agent on the owner reaches the clients of the owner's
+    other machines: the owner tells each (`view.show`, only a file inside the
+    folder), each brings it into its cache and sends its clients a `view`
+    message of the thread there with the cache path (`Far.shown`, `Far.show.*`).
+  - Limits: a file over 24 MB is not sent (a large STEP is not viewable
+    remotely), design history versions are not read remotely (the timeline's
+    steps and `history.refs` work, a version of a file does not), a window
+    switched to another machine's hub (`Link`) reads files on this machine, so
+    only a thread that hub keeps in its own folder shows there, and the cache
+    is never cleaned (`<home>/farfs`).
 
 `test/far_test.bend` (the client's fold, routing, sharing) and
 `test/tools/far_e2e.ts` (two hubs: a bot made on one shows on the other,
 a message from the other reaches it and its answer comes back, away when
 it stops, from disk after a restart).
+- A window on another hub. The native window can switch to another machine's
+  hub (the machine switch, `src/app/link.bend`); its viewers read files from
+  the window's own disk, so on another machine's hub they would show nothing.
+  They read copies instead (`core/rview.bend`, `src/app/rvw.bend`, main.bend's
+  `Watch.follow`): the hub lists a thread's viewer files for its clients and
+  sends their bytes, and the window keeps them under
+  `$XDG_CACHE_HOME/backplane-bend/remote/<hub>` in the same folders as on the
+  hub (a hub's path P is read at `<that>P`, `Rview.at`; the source key the
+  viewer holds names the copy, `Nui.source`, client info `local.remote.pre`
+  and `local.remote.url`, set at each connection, "" for this machine's own
+  hub), so the board, schematic, 3D, Mech and sheet-tree readers are as they
+  were. The images and PDFs the window shows (`/img`, `pdf.page`) and the
+  Files tab already came from the hub.
+  - On the hub, read-only, for a client let in as for the websocket
+    (`Conn.allowed`: loopback, the owner's own machine by Tailscale, or the
+    token; else 401): `GET /view/ver?thread&want&have` answers the folder, a
+    digest and the files `Fvs.ver` lists, and holds while `have` is still the
+    digest until a file changes (at most 24 s; the same long poll the owners'
+    machines use); `GET /view/get?thread&path` is one file's bytes;
+    `GET /view/git?thread&path` is one file of a commit (a history version,
+    `git\t<gitdir>\t<commit>...`: the commit must be a hash, the git directory
+    a repository's, a worktree's or `<folder>/.backplane/history.git`). The
+    hub names the folder from the thread itself (`Rview.root`: the thread's own
+    folder, or for a thread it mirrors the cache it keeps of the owner's,
+    `farfs`, which `far.view` fills), so a client names no folder; the paths
+    pass `Fv.file.ok`/`Fv.wants.ok` and the scripts of `Fvs` check the real
+    path (no symlink out). Laws `rview_*`.
+  - In the window (`Rvw.sync`, one round): ask `view.ver` with the digest held,
+    bring the files that differ four at a time and install them with the
+    owners' locked script (never rolling a file back, removing what the hub no
+    longer lists), then say whether the viewers read again. The shell starts
+    the next round only while the viewer is still open on that source of that
+    connection (`RvGot`, `Shell.rvgot`); a source let go is asked for again
+    when the viewer returns (`Shell.stale`). A history version or comparison
+    asks the hub for each commit's bytes (`Watch.hist.r`). A remote source
+    runs no 150 ms stat loop: the viewers read once after each round that
+    changed something. Tests `test/rview_test.bend`, `bun test/tools/remote_view_e2e.ts`,
+    `test/native/rvw_sync.bend`.
+
+### Agents across machines
+
+An agent (Claude, Codex or Grok, through the hub's MCP tools) works with the owner's other machines
+the way it works with its own project. `src/core/fmcp.bend` is the whole of it.
+
+- `machine_list` (every agent): this machine first, then each linked machine (`here` or `away`) with its
+  projects, ids as clients name them (`<link>~<id>`). Every hub starts an agent's prompt with the
+  machines linked then (`<machines>`), and the orchestration paragraph says how to address them.
+- `thread_list` and `thread_launch` take a `machine` (its name or link id; a project there by name or id,
+  or its `<link>~<id>` as `project`). `thread_send` (auto, queue, steer), `thread_wait`,
+  `thread_interrupt` and `thread_update` take a thread's `<link>~<id>`, which any answer carries in
+  its ids. `thread_read` asks the owning hub too (current even before its push reaches the mirror),
+  and reads the mirror (xref.bend) while that machine is away. A word `>machine:slug` in a message
+  gets its id in the `<references>` block.
+- A call for another machine is not run here: the hub (`Hub.mcp.f`, `Fm.plan.o`) turns it into the signed
+  request `mcp.call {tool, from, args}` (POST /far/rpc, the route clients use for threads elsewhere),
+  with that machine's own ids, and answers the agent's call with what returns, its ids named by the
+  link (`Fm.answer`). No linked machine of that name, or one away, is an error and nothing is sent.
+- The owning hub takes `mcp.call` only from one of the owner's own machines (the route's `Far.own.id`;
+  an unsigned or non-owner request never gets this far) and only for the tools in `Fm.names`
+  (thread_send, thread_wait_now, thread_interrupt, thread_update, thread_list, thread_launch,
+  project_list). It runs the same defs as for its own agents, but a named thread must be one it shares
+  (`Fr.thread.shared`): otherwise the answer is an error and nothing is stored. `from` is the calling
+  thread as the owning hub's clients name it, so the message shows where it came from.
+- `thread_wait` on a thread elsewhere is the usual wait loop (a check each second at the hub) where each
+  check asks the owning hub (`thread_wait_now`): the owner's own view, so a message just sent is never
+  missed for a mirror that has not caught up yet. One small signed request a second per waiting agent.
+- `/give >machine:slug` hands the conversation to that thread and `/give %machine:project` to a new
+  thread in that machine's project (`%machine:name` by id, name or slug), by the same route: the owner's
+  `thread_handoff` queues it ahead of the next message, exactly as a local /give does (`Fm.hand`). The
+  person hears ok only once every machine took it, or which did not (`Far.give` in the server); words
+  naming something here run as before, read without the machine words (`Fm.give.local`). A thread that
+  is itself elsewhere is given from its own machine.
+- Sender ids: a message sent by a thread on another machine carries its sender in its id
+  (`t:<from>:<n>`); a mirror names it as its own machine does (`Fr.sent`), so the "from" row opens the
+  right thread both ways.
+- Bots: `@name@machine` already reaches a bot on a linked machine (`Bots.mention.far`); rooms travel
+  with the owner's machines (see "Shared rooms").
+
+Laws `fmc_*`; tests `test/fmcp_test.bend`, `bun test/tools/agents_far_e2e.ts`.

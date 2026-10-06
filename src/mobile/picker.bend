@@ -61,8 +61,20 @@ def MPick.blank(a: U.Act) -> U.Act:
 
 # opens on the projects (asking the hub which it finds on disk), home
 # listed afresh behind them
-def MPick.open(+u: U.Ui) -> U.Act:
+def MPick.open.k(+u: U.Ui) -> U.Act:
   U.Proj.find(MPick.blank(MPick.type(U.Ui.scratch_set(U.Ui.scratch_set(U.Ui.flag_on(U.Proj.mode(u, ""), "proj"), "@mpick.asked", ""), "@mpick.follow", ""), "~/")))
+
+# (the picker opens on the hub this phone is focused on, whichever machine
+# it worked on last, and that machine's home is not this one's)
+def MPick.open.on(away: Bool, +u: U.Ui) -> U.Act:
+  match away:
+    case True{}:
+      MPick.open.k(U.Ui.info_set(U.Ui.info_set(U.Ui.info_set(U.Ui.info_set(u, "proj.on", ""), "proj.home", ""), "proj.found", ""), "proj.dir", ""))
+    case False{}:
+      MPick.open.k(u)
+
+def MPick.open(+u: U.Ui) -> U.Act:
+  MPick.open.on(Bool.not(String.is_empty(U.Proj.on(u))), u)
 
 # a new folder; the field follows into it once the hub has made it
 def MPick.mkdir(+u: U.Ui, +path: String) -> U.Act:
@@ -107,7 +119,7 @@ def MPick.rows(xs: List<&2, U.Scored>, +home: String, +dir: String) -> List<&2, 
 
 # the listed folder as a project (once)
 def MPick.add(+u: U.Ui, +home: String, +dir: String) -> List<&2, J.Json>:
-  Bool.pick(List<&2, J.Json>, U.Proj.is_project(U.Ui.projects(U.Ui.state(u)), dir),
+  Bool.pick(List<&2, J.Json>, U.Proj.is_project(U.Proj.ps(u), dir),
     [MPick.row(MPick.tilde(home, dir) ++ " is already a project", "", "", "off")],
     [MPick.row("Add " ++ MPick.tilde(home, dir) ++ " as a project", "proj-add", dir, "add")])
 
@@ -171,8 +183,12 @@ def MPick.is_path(+text: String) -> Bool:
 
 # what the picker offers: the projects (adding from a folder first, or
 # last under a filter), or for a path the folders (MPick.folders)
+def MPick.machine(+u: U.Ui) -> List<&2, J.Json>:
+  Bool.pick(List<&2, J.Json>, List.is_empty(&2, String, U.Proj.machines(u)), Nil{},
+    [MPick.row("On " ++ U.Proj.on.name(u) ++ " (change)", "proj-on", U.Proj.next(u), "machine")])
+
 def MPick.items(+u: U.Ui) -> List<&2, J.Json>:
-  MPick.items.m(MPick.is_path(U.Ui.scratch(u, "@mpick")), u, U.Ui.scratch(u, "@mpick"))
+  List.append(&2, J.Json, MPick.items.m(MPick.is_path(U.Ui.scratch(u, "@mpick")), u, U.Ui.scratch(u, "@mpick")), MPick.machine(u))
 
 def MPick.json.k(open: Bool, +u: U.Ui) -> J.Json:
   match open:

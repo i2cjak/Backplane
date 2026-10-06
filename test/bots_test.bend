@@ -302,7 +302,7 @@ def main() -> IO(Unit):
     C.Check.str("prompt threads", yes(String.contains(BH.Bots.prompt(s, th.of(s, "Miso"), "/h"), "New work gets its own visible thread: start it with thread_launch and its `project`")), "yes")
     # the schemas a bot sees name every parameter the server takes
     +tl : String = out.reply(BH.Bots.mcp(s, 1n, th.of(s, "Miso"), J.Null{}, "t", J.Json.arr(Nil{}), Nil{}, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}"))
-    C.Check.str("launch schema project", yes(String.contains(tl, "\"project\":{\"type\":\"string\",\"description\":\"The project's name or id (default: this thread's; bots must give one).\"}")), "yes")
+    C.Check.str("launch schema project", yes(String.contains(tl, "\"project\":{\"type\":\"string\",\"description\":\"The project's name or id (default: this thread's; bots must give one); on another machine its <link>~<id> from machine_list.\"}")), "yes")
     C.Check.str("send schema topic", yes(String.contains(tl, "\"topic\":{\"type\":\"string\"")), "yes")
     C.Check.str("send schema direct", yes(String.contains(tl, "\"direct\":{\"type\":\"boolean\"")), "yes")
     C.Check.str("delegate schema project", yes(String.contains(tl, "\"project\":{\"type\":\"string\",\"description\":\"Bots only")), "yes")

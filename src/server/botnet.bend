@@ -10,6 +10,7 @@ import ../core/bot.bend as BO
 import ../core/bothub.bend as BH
 import ../core/far.bend as FR
 import ../core/live.bend as LV
+import ../core/farlive.bend as FL
 
 # Bots' IO that needs secrets (docs/bots.md): webhook and peer secrets,
 # signed requests to linked machines, verifying signed requests to us, and
@@ -25,47 +26,57 @@ import ../core/live.bend as LV
 # threads elsewhere (far.bend: mirrors, pushes, this hub's feed), and each
 # thread's streamed text since its last message (core/live.bend)
 type Bn is Data:
-  Bn{dir: String, seen: SG.Seen, work: BH.DirWork, far: FR.Fh, live: List<&2, LV.Buf>, broken: String}
+  Bn{dir: String, seen: SG.Seen, work: BH.DirWork, far: FR.Fh, live: List<&2, LV.Buf>, broken: String, fl: List<&2, FL.LQ>}
 
 def Bn.empty() -> Bn:
-  Bn{"[]", SG.Seen.empty(), BH.DirWork.empty(), FR.Fh.empty(), Nil{}, ""}
+  Bn{"[]", SG.Seen.empty(), BH.DirWork.empty(), FR.Fh.empty(), Nil{}, "", Nil{}}
 
 def Bn.dir(b: Bn) -> String:
   match b:
-    case Bn{d, _, _, _, lv, _}:
+    case Bn{d, _, _, _, lv, _, _}:
       d
 
 def Bn.far(b: Bn) -> FR.Fh:
   match b:
-    case Bn{_, _, _, f, lv, _}:
+    case Bn{_, _, _, f, lv, _, _}:
       f
 
 def Bn.live(b: Bn) -> List<&2, LV.Buf>:
   match b:
-    case Bn{_, _, _, _, lv, _}:
+    case Bn{_, _, _, _, lv, _, _}:
       lv
+
+def Bn.fl(b: Bn) -> List<&2, FL.LQ>:
+  match b:
+    case Bn{_, _, _, _, _, _, q}:
+      q
+
+def Bn.with_fl(b: Bn, q: List<&2, FL.LQ>) -> Bn:
+  match b:
+    case Bn{d, s, w, f, lv, bk, _}:
+      Bn{d, s, w, f, lv, bk, q}
 
 def Bn.with_live(b: Bn, lv: List<&2, LV.Buf>) -> Bn:
   match b:
-    case Bn{d, s, w, f, _, bk}:
-      Bn{d, s, w, f, lv, bk}
+    case Bn{d, s, w, f, _, bk, fl}:
+      Bn{d, s, w, f, lv, bk, fl}
 
 # why the log can no longer be appended to ("" while it can): a failed
 # write could not be taken back, so nothing more is committed until it is
 def Bn.broken(b: Bn) -> String:
   match b:
-    case Bn{_, _, _, _, _, bk}:
+    case Bn{_, _, _, _, _, bk, _}:
       bk
 
 def Bn.with_broken(b: Bn, +bk: String) -> Bn:
   match b:
-    case Bn{d, s, w, f, lv, _}:
-      Bn{d, s, w, f, lv, bk}
+    case Bn{d, s, w, f, lv, _, fl}:
+      Bn{d, s, w, f, lv, bk, fl}
 
 def Bn.with_far(b: Bn, f: FR.Fh) -> Bn:
   match b:
-    case Bn{d, s, w, _, lv, bk}:
-      Bn{d, s, w, f, lv, bk}
+    case Bn{d, s, w, _, lv, bk, fl}:
+      Bn{d, s, w, f, lv, bk, fl}
 
 # Files
 # -----
@@ -453,18 +464,18 @@ def Bn.seen.k(had: Bool, s: SG.Seen, +key: String, +now: Nat) -> Maybe<&2, SG.Se
 
 def Bn.accept(+b: Bn, +key: String, +now: Nat) -> Maybe<&2, SG.Seen>:
   match b:
-    case Bn{_, +s, _, _, lv, _}:
+    case Bn{_, +s, _, _, lv, _, _}:
       Bn.seen.k(SG.Seen.has(s, key), s, key, now)
 
 def Bn.with_seen(b: Bn, s: SG.Seen) -> Bn:
   match b:
-    case Bn{d, _, w, f, lv, bk}:
-      Bn{d, s, w, f, lv, bk}
+    case Bn{d, _, w, f, lv, bk, fl}:
+      Bn{d, s, w, f, lv, bk, fl}
 
 def Bn.with_dir(b: Bn, d: String) -> Bn:
   match b:
-    case Bn{_, s, w, f, lv, bk}:
-      Bn{d, s, w, f, lv, bk}
+    case Bn{_, s, w, f, lv, bk, fl}:
+      Bn{d, s, w, f, lv, bk, fl}
 
 # Signed requests out
 # -------------------
@@ -550,6 +561,36 @@ def Bn.signed(+home: String, +url: String, +peer: String, +secret: String, +now:
 # a signed request to a peer whose secret is in its file
 def Bn.to_peer(+home: String, +url: String, +peer: String, +now: Nat, +path: String, +post: Bool, +body: String) -> IO(Resp):
   IO.bind(String, Resp, Bn.peer.secret(home, peer), secret => Bn.signed(home, url, peer, secret, now, path, post, body))
+
+# The same for a request that waits or brings a file (the viewers of a
+# thread elsewhere, core/fview.bend): a longer time limit, a bigger body,
+# and the body written to `out` as it came when that is set (a file's bytes
+# are not text); Resp's body is then "".
+def Bn.out(+out: String) -> List<&2, String>:
+  Bool.pick(List<&2, String>, String.is_empty(out), Nil{}, ["-o", out])
+
+def Bn.args.long(+file: String, +url: String, +out: String, +secs: Nat, +max: Nat) -> List<&2, String>:
+  List.concat(&2, String, [["-sS", "--proto", "=http,https", "-m", Nat.show(secs), "--max-filesize", Nat.show(max), "-X", "POST", "-H", "@-", "--data-binary", "@" ++ file],
+    Bn.out(out), ["-w", "\n%{http_code}", "--url", url]])
+
+def Bn.signed.long.k(ok: Bool, +home: String, +url: String, +peer: String, +secret: String, +now: Nat, +path: String, +body: String, +out: String, +secs: Nat, +max: Nat) -> IO(Resp):
+  match ok:
+    case True{}:
+      do IO<Resp>:
+        Bf.secrets(home, "tmp")
+        +name : String <- Bn.random(4n)
+        +file : String = home ++ "/secrets/tmp/" ++ name
+        w : Bool <- Bf.secret(file, body)
+        r : P.Ran <- Bn.curl(Bn.args.long(file, Bn.url.base(url) ++ path, out, secs, max), Bn.headers(peer, now, SG.Sign.header(secret, now, body)))
+        Bn.sent(r, file)
+    case False{}:
+      IO.pure(Resp, Resp{0n, "no secret, or not an http address"})
+
+def Bn.signed.long(+home: String, +url: String, +peer: String, +secret: String, +now: Nat, +path: String, +body: String, +out: String, +secs: Nat, +max: Nat) -> IO(Resp):
+  Bn.signed.long.k(Bool.and(Bn.url.ok(url), Bool.not(String.is_empty(secret))), home, url, peer, secret, now, path, body, out, secs, max)
+
+def Bn.to_peer.long(+home: String, +url: String, +peer: String, +now: Nat, +path: String, +body: String, +out: String, +secs: Nat, +max: Nat) -> IO(Resp):
+  IO.bind(String, Resp, Bn.peer.secret(home, peer), secret => Bn.signed.long(home, url, peer, secret, now, path, body, out, secs, max))
 
 # an unsigned POST with no body, to one of the owner's own machines (it
 # trusts this one because Tailscale says whose it is: POST /bots/pair)
@@ -679,13 +720,13 @@ def Bn.fetched(r: Resp, +peer: String, +pname: String, +now: Nat) -> Maybe<&2, L
 
 def Bn.work(b: Bn) -> BH.DirWork:
   match b:
-    case Bn{_, _, w, _, lv, _}:
+    case Bn{_, _, w, _, lv, _, _}:
       w
 
 def Bn.with_work(b: Bn, w: BH.DirWork) -> Bn:
   match b:
-    case Bn{d, s, _, f, lv, bk}:
-      Bn{d, s, w, f, lv, bk}
+    case Bn{d, s, _, f, lv, bk, fl}:
+      Bn{d, s, w, f, lv, bk, fl}
 
 def Bn.cache(home: String) -> String:
   home ++ "/bots.cache"
