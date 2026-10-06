@@ -38,6 +38,8 @@ import ../gfx/fresh.bend as FR
 import ./render.bend as RN
 import ../core/mech.bend as MC
 import ../core/hist.bend as HS
+import ./rvw.bend as RW
+import ../core/rview.bend as RV
 import ../server/git.bend as GT
 
 # `backplane`: the hub, the web server (for other devices), and the native
@@ -58,6 +60,8 @@ type ShellMsg is Data:
   Status{key: String, text: String}
   Sheets{key: String, text: String}
   Shot{key: String, bmp: BM.Bitmap}
+  # a round of a remote hub's files for a viewer's source came in (RW.Rvw.sync)
+  RvGot{key: String, tag: String, ver: String, reread: Bool}
   PicOk{tag: String, path: String, w: U32, h: U32, rgb: List<&2, U32>}
   PicErr{tag: String, path: String, why: String}
   Blink{}
@@ -620,6 +624,11 @@ def Shell.remember(a: Shell) -> Shell:
     case Shell{+nu, w, d, qd, q, i, Aux{ws, ty, Tie{home, url, tag, n, +ks}, fr}}:
       Shell{nu, w, d, qd, q, i, Aux{ws, ty, Tie{home, url, tag, n, TieKeep.with_cache(ks, U.HubCache.save(N.Nui.ui(nu), TieKeep.cache(ks)))}, fr}}
 
+# the connection's hub is another machine's: where its files are copied to
+# ("" both when it is this machine's own)
+def Shell.remote.set(+n: N.Nui, +url: String, +pre: String) -> N.Nui:
+  N.Nui.with_ui(n, U.Ui.info_set(U.Ui.info_set(N.Nui.ui(n), "local.remote.url", url), "local.remote.pre", pre))
+
 def Shell.connect.k(t: Tie, a: Shell, +url: String) -> IO(Shell):
   match t a:
     case Tie{+home, _, _, +n, ks} Shell{+nu, w, d, qd, +q, +i, Aux{ws, ty, _, fr}}:
@@ -627,7 +636,8 @@ def Shell.connect.k(t: Tie, a: Shell, +url: String) -> IO(Shell):
         +cache : List<&2, U.HubView> = TieKeep.cache(ks)
         ok : Bool <- Chan.send(S.Msg, i, S.Leave{0})
         +tag : String = url ++ "#" ++ Nat.show(n)
-        +nu2 : N.Nui = N.Nui.connection(nu, tag, U.HubCache.get(cache, url))
+        +pre : String <- RW.Rvw.pre(url)
+        +nu2 : N.Nui = Shell.remote.set(N.Nui.connection(nu, tag, U.HubCache.get(cache, url)), url, pre)
         +i2 : Chan(S.Msg) <- Shell.hub(String.is_empty(url), home, url, Shell.local(nu))
         Shell.joined(i2, q, tag, U.Ui.seq(N.Nui.ui(nu2)), U.Ui.info(N.Nui.ui(nu2), "origin"))
         return Shell{N.Nui.desk.reset(nu2), w, True{}, qd, q, i2, Aux{ws, ty, Tie{home, url, tag, 1n+n, [TieKeep{Map.new(&2, BM.Bitmap), Map.new(&2, Bool), cache}]}, Kept{TI.FNone{}, Nil{}, CA.Cats.none(), [N.Park.init()], BV.Bv.wraps.none()}}}
@@ -693,6 +703,25 @@ def Aux.add(a: Aux, r: String) -> Aux:
   match a:
     case Aux{ws, t, ti, fr}:
       Aux{r <> ws, t, ti, fr}
+
+def Aux.drop.k(same: Bool, +w: String, rest: List<&2, String>) -> List<&2, String>:
+  match same:
+    case True{}:
+      rest
+    case False{}:
+      w <> rest
+
+def Aux.drop.go(ws: List<&2, String>, +r: String) -> List<&2, String>:
+  match ws:
+    case Nil{}:
+      Nil{}
+    case +w <> t:
+      Aux.drop.k(String.eq(w, r), w, Aux.drop.go(t, r))
+
+def Aux.drop(a: Aux, +r: String) -> Aux:
+  match a:
+    case Aux{ws, t, ti, fr}:
+      Aux{Aux.drop.go(ws, r), t, ti, fr}
 
 def Aux.tie(a: Aux) -> Tie:
   match a:
@@ -1324,19 +1353,24 @@ def Watch.sent.v(m: Maybe<&2, List<&2, B.Item>>, fixed: Bool, +key: String, +q: 
 def Watch.mark(a: Maybe<&2, List<&2, B.Item>>, b: Maybe<&2, List<&2, B.Item>>) -> Maybe<&2, List<&2, B.Item>>:
   PV.Pv.mark(a, b)
 
-def Watch.version(+path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
+def Watch.version.of(bs: List<&2, U32>, +path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
   do IO<Unit>:
-    bs : List<&2, U32> <- GT.Git.version(path)
     Watch.sent.v(Watch.sorted(PV.Pv.version(Bool.not(Nat.is_eq(HS.Hist.kind(path), 0n)), Src.kind(key), bs)), Bool.not(Nat.is_eq(HS.Hist.kind(path), 0n)), key, q)
     Watch.tree.if(U32.is_eq(Src.kind(key), 1), path, key, q)
 
+def Watch.version(+path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
+  IO.bind(List<&2, U32>, Unit, GT.Git.version(path), bs => Watch.version.of(bs, path, key, q))
+
 # a comparison (core/hist.bend): the new version's items marked against
 # the old one's (none when it cannot be read: the file is new)
+def Watch.compare.of(a: List<&2, U32>, b: List<&2, U32>, +path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
+  Watch.sent.v(Watch.sorted(Watch.mark(PV.Pv.side(Src.kind(key), a), PV.Pv.side(Src.kind(key), b))), PV.Pv.stamp.fixed(path), key, q)
+
 def Watch.compare(+path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
   do IO<Unit>:
     a : List<&2, U32> <- GT.Git.version(HS.Hist.old(path))
     b : List<&2, U32> <- GT.Git.version(HS.Hist.new(path))
-    Watch.sent.v(Watch.sorted(Watch.mark(PV.Pv.side(Src.kind(key), a), PV.Pv.side(Src.kind(key), b))), PV.Pv.stamp.fixed(path), key, q)
+    Watch.compare.of(a, b, path, key, q)
 
 def Watch.read.k(three: Bool, +path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
   match three:
@@ -1464,29 +1498,120 @@ def Watch.go(none: Bool, once: Bool, +key: String, +path: String, +q: Chan(Shell
       Bool.pick(IO(Unit), U32.is_eq(Src.kind(key), 3), Watch.shots(S.Fuel.forever(), key, path, 0, q),
         Bool.pick(IO(Unit), PV.Pv.stamp.fixed(path), Watch.read(path, key, q), Watch.loop(S.Fuel.forever(), key, path, 0, 0, 0n, q)))
 
+# A source on another machine's hub (core/rview.bend): the files are
+# copies in the window's cache that RW.Rvw.sync keeps (spec: the hub, the
+# folder of copies, the thread, the connection), so the viewers read them
+# once after each round that changed something instead of watching them; a
+# version in a commit is asked of the hub (its git directory is there).
+def Watch.hist.r(+spec: String, +path: String) -> IO(List<&2, U32>):
+  RW.Rvw.git(RV.Rview.part(spec, 0n), RV.Rview.part(spec, 1n), RV.Rview.part(spec, 2n), path)
+
+def Watch.version.r(+spec: String, +path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
+  IO.bind(List<&2, U32>, Unit, Watch.hist.r(spec, path), bs => Watch.version.of(bs, path, key, q))
+
+def Watch.compare.r(+spec: String, +path: String, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
+  do IO<Unit>:
+    a : List<&2, U32> <- Watch.hist.r(spec, HS.Hist.old(path))
+    b : List<&2, U32> <- Watch.hist.r(spec, HS.Hist.new(path))
+    Watch.compare.of(a, b, path, key, q)
+
+def Watch.go.r(k: Nat, +spec: String, none: Bool, +key: String, +path: String, +q: Chan(ShellMsg)) -> IO(Unit):
+  match k:
+    case 1n:
+      Watch.version.r(spec, path, key, q)
+    case 2n:
+      Watch.compare.r(spec, path, key, q)
+    case _:
+      Watch.go(none, True{}, key, path, q)
+
 # watch a source (or, when it is watched already, read it once)
-def Watch.start(once: Bool, +key: String, +q: Chan(ShellMsg)) -> IO(Unit):
+def Watch.start(once: Bool, +key: String, +q: Chan(ShellMsg), +spec: String) -> IO(Unit):
   do IO<Unit>:
     +path : String <- Watch.file(key)
-    Watch.go(String.is_empty(path), once, key, path, q)
+    Bool.pick(IO(Unit), String.is_empty(spec), Watch.go(String.is_empty(path), once, key, path, q),
+      Watch.go.r(HS.Hist.kind(path), spec, String.is_empty(path), key, path, q))
 
-def Shell.watch.go(go: Bool, +key: String, a: Shell) -> IO(Shell):
-  match go a:
-    case True{} Shell{n, w, d, qd, +q, i, +wa}:
+# one round for a source on another hub; the window decides whether
+# another follows (RvGot, Shell.rvgot), so a shut viewer asks no more
+def Watch.follow.done(g: RW.Got, +key: String, +q: Chan(ShellMsg), +tag: String) -> IO(Unit):
+  match g:
+    case RW.Got{+ok, +ver, reread, +why}:
+      do IO<Unit>:
+        Bool.pick(IO(Unit), ok, IO.pure(Unit, Unit{}), Watch.say(key, why, q))
+        Bool.pick(IO(Unit), ok, IO.pure(Unit, Unit{}), IO.sleep(5000))
+        sent : Bool <- Chan.send(ShellMsg, q, RvGot{key, tag, ver, reread})
+        return Unit{}
+
+def Watch.follow(+key: String, +q: Chan(ShellMsg), +spec: String, +have: String) -> IO(Unit):
+  IO.bind(RW.Got, Unit, RW.Rvw.sync(RV.Rview.part(spec, 0n), RV.Rview.part(spec, 1n), RV.Rview.part(spec, 2n), RV.Rview.want(RV.Rview.part(spec, 1n), Src.at(key, 1n), Src.at(key, 2n)), have),
+    g => Watch.follow.done(g, key, q, RV.Rview.part(spec, 3n)))
+
+def Watch.begin.k(remote: Bool, once: Bool, +key: String, +q: Chan(ShellMsg), +spec: String) -> IO(Unit):
+  match remote once:
+    case True{} False{}:
+      Watch.follow(key, q, spec, "")
+    case _ _:
+      Watch.start(once, key, q, spec)
+
+# a source starts: a hub's own file is watched, another hub's followed
+def Watch.begin(once: Bool, +key: String, +q: Chan(ShellMsg), +spec: String) -> IO(Unit):
+  Watch.begin.k(Bool.not(String.is_empty(spec)), once, key, q, spec)
+
+# what a fetching fiber is told when the window's hub is another machine's
+# (core/rview.bend's Rview.spec; "" when it is this machine's)
+def Shell.remote(+n: N.Nui, +tag: String) -> String:
+  RV.Rview.spec(U.Ui.info(N.Nui.ui(n), "local.remote.url"), U.Ui.info(N.Nui.ui(n), "local.remote.pre"), U.Ui.sel(N.Nui.ui(n)), tag)
+
+def Shell.watch.run(go: Bool, +key: String, +n: N.Nui, w: Window, d: Bool, qd: Bool, +q: Chan(ShellMsg), i: Chan(S.Msg), +wa: Aux) -> IO(Shell):
+  match go:
+    case True{}:
       do IO<Shell>:
-        IO.spawn(Unit, Watch.start(Shell.has(Aux.watched(wa), key), key, q))
+        IO.spawn(Unit, Watch.begin(Shell.has(Aux.watched(wa), key), key, q, Shell.remote(n, Tie.tag(Aux.tie(wa)))))
         return Shell{N.Nui.asked(n, key), w, True{}, qd, q, i, Aux.add(wa, key)}
-    case False{} _:
-      IO.pure(Shell, a)
+    case False{}:
+      IO.pure(Shell, Shell{n, w, d, qd, q, i, wa})
+
+# a source of another hub whose rounds stopped (its viewer was shut) is
+# asked for again when the viewer is open on it
+def Shell.stale(+n: N.Nui, +wa: Aux, +key: String) -> Bool:
+  Bool.and(Bool.not(String.is_empty(Shell.remote(n, ""))), Bool.not(Shell.has(Aux.watched(wa), key)))
+
+def Shell.watch.go(open: Bool, differs: Bool, +key: String, a: Shell) -> IO(Shell):
+  match a:
+    case Shell{+n, w, d, qd, q, i, +wa}:
+      Shell.watch.run(Bool.and(Bool.and(open, Bool.or(differs, Shell.stale(n, wa, key))), Bool.not(String.ends_with(key, "||"))), key, n, w, d, qd, q, i, wa)
 
 # when the viewer is open on a source it has not asked for, ask
-def Shell.watch.k(open: Bool, +key: String, +shown: String, a: Shell) -> IO(Shell):
-  Shell.watch.go(Bool.and(Bool.and(open, Bool.not(String.eq(key, shown))), Bool.not(String.ends_with(key, "||"))), key, a)
-
 def Shell.watch(a: Shell) -> IO(Shell):
   match a:
     case Shell{+n, w, d, qd, q, i, wa}:
-      Shell.watch.k(N.Nui.panel(n), N.Nui.source(n), N.Vx.shown(N.Vw.x(N.Nui.vw(n))), Shell{n, w, d, qd, q, i, wa})
+      Shell.watch.go(N.Nui.panel(n), Bool.not(String.eq(N.Nui.source(n), N.Vx.shown(N.Vw.x(N.Nui.vw(n))))), N.Nui.source(n), Shell{n, w, d, qd, q, i, wa})
+
+# a round of a remote hub's files came in: the viewer reads the copies
+# again when they changed, and another round starts while the viewer is
+# still open on that source of that connection; else the source is let go
+# (Shell.stale asks for it again when the viewer returns)
+def Watch.reread(reread: Bool, +key: String, +q: Chan(ShellMsg), +spec: String) -> IO(Unit):
+  match reread:
+    case True{}:
+      IO.spawn(Unit, Watch.start(True{}, key, q, spec))
+    case False{}:
+      IO.pure(Unit, Unit{})
+
+def Shell.rvgot.k(wanted: Bool, +key: String, +ver: String, reread: Bool, a: Shell) -> IO(Shell):
+  match wanted a:
+    case True{} Shell{+n, w, d, qd, +q, i, +wa}:
+      do IO<Shell>:
+        IO.spawn(Unit, Watch.follow(key, q, Shell.remote(n, Tie.tag(Aux.tie(wa))), ver))
+        Watch.reread(reread, key, q, Shell.remote(n, Tie.tag(Aux.tie(wa))))
+        return Shell{n, w, d, qd, q, i, wa}
+    case False{} Shell{n, w, d, qd, q, i, wa}:
+      IO.pure(Shell, Shell{n, w, d, qd, q, i, Aux.drop(wa, key)})
+
+def Shell.rvgot(a: Shell, +key: String, +tag: String, +ver: String, reread: Bool) -> IO(Shell):
+  match a:
+    case Shell{+n, w, d, qd, q, i, +wa}:
+      Shell.rvgot.k(Bool.and(String.eq(tag, Tie.tag(Aux.tie(wa))), Bool.and(N.Nui.panel(n), String.eq(N.Nui.source(n), key))), key, ver, reread, Shell{n, w, d, qd, q, i, wa})
 
 def Shell.board(a: Shell, +key: String, +items: List<&2, B.Item>) -> IO(Shell):
   match a:
@@ -1914,6 +2039,8 @@ def Shell.handle(a: Shell, m: ShellMsg) -> IO(Shell):
       Shell.sheets(a, text)
     case Shot{key, b}:
       Shell.shot(a, key, b)
+    case RvGot{key, tag, ver, reread}:
+      Shell.rvgot(a, key, tag, ver, reread)
     case PicOk{tag, path, w, h, rgb}:
       Shell.tagged(a, PicOk{tag, path, w, h, rgb})
     case PicErr{tag, path, why}:
@@ -1974,6 +2101,8 @@ def ShellMsg.kind(m: ShellMsg) -> String:
       "sheets"
     case Shot{_, _}:
       "shot"
+    case RvGot{_, _, _, _}:
+      "rvgot"
     case PicOk{_, _, _, _, _}:
       "pic"
     case PicErr{_, _, _}:
