@@ -36,6 +36,7 @@ import ../core/far.bend as FR
 import ../core/fview.bend as FV
 import ./farview.bend as FVS
 import ../core/xref.bend as XR
+import ../core/fmcp.bend as FM
 import ../core/client.bend as UC
 import ../core/bothub.bend as BH
 import ../core/bot.bend as BO
@@ -2732,11 +2733,22 @@ def Hub.prompt.files(+cwd: String, fs: K.Files) -> String:
 # one thread's instructions: the shared runtime and skills, then this
 # machine's KiCad, the project's canonical files, and what it may delegate
 # (keys: the API keys' block, server/apikeys.bend's Ak.prompt, "" for none)
+def Cfg.bn(c: Cfg) -> BN.Bn:
+  match c:
+    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}:
+      bnx
+
+def Hub.prompt.machines.k(+m: String) -> String:
+  Bool.pick(String, String.is_empty(m), "", "\n\n" ++ m)
+
+def Hub.prompt.machines(+cfg: Cfg) -> String:
+  Hub.prompt.machines.k(FM.Fm.prompt(FR.Fh.ins(BN.Bn.far(Cfg.bn(cfg)))))
+
 def Hub.prompt(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, fs: K.Files, +keys: String) -> String:
   String.join([Cfg.prompt(cfg),
     Hub.prompt.kicad(Cfg.rt(cfg), Bool.not(String.eq(M.Setting.get(st, "kicad.ipc", "on"), "off"))),
     Hub.prompt.files(cwd, fs),
-    Q.Prompt.orchestration(M.Task.may_delegate(B.Task.depth(st, thread)), Cfg.mtext(cfg)), Q.Prompt.background()], "\n\n") ++ Bool.pick(String, String.is_empty(keys), "", "\n\n" ++ keys) ++ BH.Bots.prompt(st, thread, Cfg.home(cfg))
+    Q.Prompt.orchestration(M.Task.may_delegate(B.Task.depth(st, thread)), Cfg.mtext(cfg)), Q.Prompt.background()], "\n\n") ++ Bool.pick(String, String.is_empty(keys), "", "\n\n" ++ keys) ++ Hub.prompt.machines(cfg) ++ BH.Bots.prompt(st, thread, Cfg.home(cfg))
 
 def Hub.agent_args(+cfg: Cfg, +thread: String, +model: String, +session: String, +r: M.RuntimeMode, +i: M.InteractionMode, prompt: String, +effort: String, +gen: String) -> List<&2, String>:
   match cfg:
@@ -4536,11 +4548,6 @@ def Cfg.machines(c: Cfg) -> String:
     case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, _, _, _, mc, _, _, _, _, _}}:
       mc
 
-def Cfg.bn(c: Cfg) -> BN.Bn:
-  match c:
-    case Cfg{_, _, _, _, _, _, _, Net{_, _, _, _, _, _, brx, pkx, tmx, mc, pvx, bnx, mgd, lk, fc}}:
-      bnx
-
 def Live.of(+cfg: Cfg) -> List<&2, LV.Buf>:
   BN.Bn.live(Cfg.bn(cfg))
 
@@ -5556,6 +5563,16 @@ def Far.near.job(+client: U32, +id: String, +link: String, +meth: String, +body:
   do IO<Unit>:
     +text : String <- Far.near.run(meth, home, link, url, Far.near.p(body))
     Far.send(inbox, FarReplied{client, id, link, 200n, text})
+
+# a tool call of an agent here, for a machine of the owner's: its owner runs
+# it (fmcp.bend) and the answer goes straight back to the agent's request
+def Far.mcp.job(+id: J.Json, +link: String, +body: String, +home: String, +url: String, +reply: Chan(String)) -> IO(Unit):
+  do IO<Unit>:
+    now : Nat <- Now.nat()
+    +n : String <- BN.Bn.random(4n)
+    +r : BN.Resp <- BN.Bn.to_peer(home, url, link, now, "/far/rpc", True{}, FR.Fr.nonced(body, n))
+    ok : Bool <- Chan.send(String, reply, FM.Fm.answer(id, link, Far.code(r), Far.body(r)))
+    return Unit{}
 
 # this hub's shared lines, made from its log (newest first)
 def Far.feed.job(+ls: List<&2, String>, +st: M.State, +inbox: Chan(Msg)) -> IO(Unit):
@@ -6762,6 +6779,11 @@ def Hub.rpc.o(m: Maybe<&2, J.Json>, h: Hub, +client: U32, +text: String, +now: N
       Hub.rpc.here(h, client, text, now)
 
 # a request about something on a linked machine goes there (Far.rpc.go)
+# whether a request may be for another machine: it names a thing there
+# (`~`) or a machine (`on`); Hub.rpc.o decides from its parsed params
+def Hub.rpc.farish(+text: String) -> Bool:
+  Bool.or(String.contains(text, "~"), String.contains(text, "\"on\""))
+
 def Hub.rpc.far(maybe: Bool, h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
   match maybe:
     case True{}:
@@ -6769,8 +6791,51 @@ def Hub.rpc.far(maybe: Bool, h: Hub, +client: U32, +text: String, +now: Nat) -> 
     case False{}:
       Hub.rpc.here(h, client, text, now)
 
+# `/give` naming threads or projects on the owner's other machines: each is
+# sent there (fmcp.bend's Fm.give, as an agent's tool call is); the hub's
+# own part, if the text names any, runs as usual, else the client is told ok
+def Far.give.go(ps: List<&2, FM.Plan>, h: Hub) -> IO(Hub):
+  match ps h:
+    case Nil{} _:
+      IO.pure(Hub, h)
+    case FM.PFar{+link, +rq} <> t Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
+      do IO<Hub>:
+        +r : Chan(String) <- Chan.new(String, 1)
+        IO.spawn(Unit, Far.mcp.job(J.Null{}, link, rq, Cfg.home(cfg), Bot.peer.url(st, link), r))
+        Far.give.go(t, Hub{st, f, ls, cl, as, inbox, cfg, note})
+    case _ <> t _:
+      Far.give.go(t, h)
+
+def Far.give.k(here: Bool, h: Hub, +client: U32, +id: String, +text: String, +now: Nat) -> IO(Hub):
+  match here:
+    case True{}:
+      Hub.rpc.far(Hub.rpc.farish(text), h, client, text, now)
+    case False{}:
+      Hub.push(h, client, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{id}}, J.KV{"ok", J.Flag{True{}}}])))
+
+def Far.give.p(ps: List<&2, FM.Plan>, +here: Bool, h: Hub, +client: U32, +id: String, +text: String, +now: Nat) -> IO(Hub):
+  match ps:
+    case Nil{}:
+      Hub.rpc.far(Hub.rpc.farish(text), h, client, text, now)
+    case _ <> _:
+      IO.bind(Hub, Hub, Far.give.go(ps, h), h2 => Far.give.k(here, h2, client, id, text, now))
+
+def Far.give(m: Maybe<&2, J.Json>, h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
+  match m h:
+    case Some{+o} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      Far.give.p(FM.Fm.give(st, FR.Fh.ins(BN.Bn.far(Cfg.bn(cfg))), o), FM.Fm.give.here(st, o), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, J.Json.as_raw(J.Json.get(o, "id"), "0"), text, now)
+    case None{} _:
+      Hub.rpc.far(Hub.rpc.farish(text), h, client, text, now)
+
+def Hub.rpc.g(give: Bool, h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
+  match give:
+    case True{}:
+      Far.give(J.Json.parse(text), h, client, text, now)
+    case False{}:
+      Hub.rpc.far(Hub.rpc.farish(text), h, client, text, now)
+
 def Hub.rpc(h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
-  Hub.rpc.far(Bool.or(String.contains(text, "~"), String.contains(text, "\"on\"")), h, client, text, now)
+  Hub.rpc.g(String.contains(text, "bots.give"), h, client, text, now)
 
 def Hub.line.k(p: M.State & Hub, +thread: String, +line: String, +now: Nat) -> IO(Hub):
   (st, h) = p
@@ -7212,10 +7277,19 @@ def Hub.far.rpc.fs(async: Bool, h: Hub, +o: J.Json, +text: String, +reply: Chan(
     case False{} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       Hub.far.rpc.step(Bot.request(Some{o}, st, now, Far.client(), text), Hub{st, f, ls, cl, as, inbox, cfg, note}, reply)
 
+# a remote agent's tool call is run by fmcp.bend (Fm.serve); any other
+# request is a client's about a shared thread or the owner's folders
+def Hub.far.rpc.m(mcp: Bool, h: Hub, +o: J.Json, +text: String, +reply: Chan(List<&2, U32>), +now: Nat) -> IO(Hub):
+  match mcp h:
+    case True{} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+      Hub.far.rpc.step(FM.Fm.serve(st, now, Far.client(), o), Hub{st, f, ls, cl, as, inbox, cfg, note}, reply)
+    case False{} _:
+      Hub.far.rpc.fs(FR.Fr.async(J.Json.get_str(o, "m", "")), h, o, text, reply, now)
+
 def Hub.far.rpc.k(may: Bool, h: Hub, +o: J.Json, +text: String, +reply: Chan(List<&2, U32>), +now: Nat) -> IO(Hub):
   match may h:
     case True{} h2:
-      Hub.far.rpc.fs(FR.Fr.async(J.Json.get_str(o, "m", "")), h2, o, text, reply, now)
+      Hub.far.rpc.m(FM.Fm.is(o), h2, o, text, reply, now)
     case False{} _:
       Hub.answer(h, reply, W.Http.text("403 Forbidden", "not something this machine shares"))
 
@@ -7314,7 +7388,7 @@ def Hub.far.rpc.v(view: Bool, +st: M.State, h: Hub, +o: J.Json, +text: String, +
     case True{}:
       Hub.far.view(FV.Fv.allowed(st, o), h, o, text, reply, now)
     case False{}:
-      Hub.far.rpc.k(FR.Fr.allowed(st, o), h, o, text, reply, now)
+      Hub.far.rpc.k(FM.Fm.permit(st, o), h, o, text, reply, now)
 
 # On the other machine: the file comes into the cache, then the view message
 def Far.show.root(+res: String) -> String:
@@ -8214,8 +8288,35 @@ def Hub.mcp.x(x: Bool, h: Hub, +thread: String, +o: J.Json, body: String, +reply
     case False{} _:
       Hub.mcp.tr(TermRead.is(o), h, thread, o, body, reply, now)
 
+# (only to the owner's own machines with sync on)
+def Hub.mcp.far(own: Bool, h: Hub, +link: String, +rq: String, +o: J.Json, body: String, +reply: Chan(String)) -> IO(Hub):
+  match own h:
+    case True{} Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, Far.mcp.job(Maybe.default(&2, J.Json, J.Json.get(o, "id"), J.Null{}), link, rq, Cfg.home(cfg), Bot.peer.url(st, link), reply))
+        return Hub{st, f, ls, cl, as, inbox, cfg, note}
+    case False{} _:
+      Hub.mcp.k(MC.Mcp.reply(Maybe.default(&2, J.Json, J.Json.get(o, "id"), J.Null{}), MC.Res.fail("sync with that machine is off here")), h, reply, body)
+
+
+# a tool call for a machine of the owner's goes there (fmcp.bend); machine_list
+# is answered here; any other runs as before
+def Hub.mcp.f(p: FM.Plan, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match p h:
+    case FM.PHere{} _:
+      Hub.mcp.x(XR.Xref.read.is(o), h, thread, o, body, reply, now)
+    case FM.PAnswer{r} _:
+      Hub.mcp.k(MC.Mcp.reply(Maybe.default(&2, J.Json, J.Json.get(o, "id"), J.Null{}), r), h, reply, body)
+    case FM.PFar{+link, +rq} Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
+      Hub.mcp.far(Far.own.id(st, cfg, link), Hub{st, f, ls, cl, as, inbox, cfg, note}, link, rq, o, body, reply)
+
+def Hub.mcp.p(+o: J.Json, h: Hub, +thread: String, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      Hub.mcp.f(FM.Fm.plan.o(o, st, FR.Fh.ins(BN.Bn.far(Cfg.bn(cfg))), thread), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, o, body, reply, now)
+
 def Hub.mcp(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
-  Hub.mcp.x(XR.Xref.read.is(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{})), h, thread, Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), body, reply, now)
+  Hub.mcp.p(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), h, thread, body, reply, now)
 
 def Msg.kind(m: Msg) -> String:
   match m:
