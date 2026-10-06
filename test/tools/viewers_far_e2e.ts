@@ -286,7 +286,9 @@ try {
   const fo = await signed("file.open", { path: "/etc/passwd", how: "open" });
   check("the owner does not open a path it was named", fo.status === 403, fo);
   const fl = await signed("fs.list", { path: "/" });
-  check("the owner does not list its disk", fl.status === 403, fl);
+  // folders are browsed on the owner by its own machines (create anywhere: the
+  // project picker's machine row, Fr.async); only the owner's machines get here
+  check("the owner's folders are browsed by its own machines", fl.status === 200, fl);
 } finally {
   for (const c of clients) { try { c.ws.close(); } catch {} }
   for (const h of [a, b]) if (h.proc) { h.proc.kill(); await h.proc.exited; }

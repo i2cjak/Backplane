@@ -261,10 +261,14 @@ try {
   await sleep(2000); // the rename reaches alpha's mirror
   const given = await rpc(ca, "bots.give", { thread: ta, text: "/give >beta:renamed-by-alpha with a note" });
   check("/give >beta:slug is ok", !!given?.ok, given);
-  check("beta's thread got the conversation", !!await until(15000, () => cb.seen.find((c) => c.$ === "MessagePosted" && c.thread === pt && c.text.includes("a conversation to give"))), cb.seen.filter((c) => c.$ === "MessagePosted" && c.thread === pt).map((c) => c.text.slice(0, 80)));
+  // a handoff waits in the thread's queue for its next message, as a local /give does
+  check("beta's thread got the conversation queued", !!await until(15000, () => cb.seen.find((c) => c.$ === "TurnQueued" && c.thread === pt && String(c.msg).includes("give:") && c.text.includes("a conversation to give"))), cb.seen.filter((c) => c.$ === "TurnQueued" && c.thread === pt).map((c) => String(c.text).slice(0, 80)));
+  check("and it did not start a turn by itself", !cb.seen.find((c) => c.$ === "MessagePosted" && c.thread === pt && c.text.includes("a conversation to give")));
   const givenP = await rpc(ca, "bots.give", { thread: ta, text: "/give %beta:board" });
   check("/give %beta:project is ok", !!givenP?.ok, givenP);
-  check("beta's project got a new thread with the conversation", !!await until(15000, () => cb.seen.find((c) => c.$ === "MessagePosted" && c.text.includes("a conversation to give") && c.thread !== pt)));
+  check("beta's project got a new thread with the conversation queued", !!await until(15000, () => cb.seen.find((c) => c.$ === "TurnQueued" && c.text.includes("a conversation to give") && c.thread !== pt && cb.seen.find((d) => d.$ === "ThreadCreated" && d.id === c.thread && d.project === pcB?.id))));
+  const givenX = await rpc(ca, "bots.give", { thread: ta, text: "/give >beta:no-such-thread" });
+  check("/give to a thread beta does not have is an error", givenX && givenX.ok === false, givenX);
 
   // the signed route's limits
   const secret = JSON.parse(readFileSync(join(a.home, "secrets", "peers", link), "utf8")).secret;
