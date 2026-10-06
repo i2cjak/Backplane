@@ -443,6 +443,21 @@ redirect there (`Google.hop`: only to a `*.ts.net` address, only once;
 laws `google_state_*`, `google_hop_*`). With no hub on the browser's
 machine, paste the address the browser ended on instead.
 
+The phone apps sign in with no hub on the phone (RFC 8252 7.3): Connect
+Google (or Add account) opens a listener on a loopback port of the app's
+own (`GoogleLoop` in `GoogleLoop.swift` and `GoogleLoop.kt`) and sends
+the `google` action `connect@<port>`, so the hub begins the sign-in with
+`http://127.0.0.1:<port>/oauth/google` as its redirect (the RPC's
+`redirect`; the hub takes only exactly that shape, `Google.loopback`,
+else its own: laws `google_loopback_*`). The app opens the link the hub
+answers when its `redirect_uri` is the listener's (iOS in an
+`ASWebAuthenticationSession`, Android in the browser), the listener
+catches Google's redirect, sends the browser back to the app
+(`backplane://google`), and the app sends `done:<address>`: the hub's
+`finish` with that address, traded with the redirect the sign-in began
+with. It finishes on the hub in focus; the pasted address stays as the
+fallback.
+
 Several accounts: each sign-in adds one (Google shows its account
 chooser; signing in to an address already there replaces it). They live
 in `<home>/secrets/google.json` under `accounts`, the default first (a
