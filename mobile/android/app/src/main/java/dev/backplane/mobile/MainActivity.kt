@@ -63,7 +63,8 @@ class MainActivity : ComponentActivity() {
     // backplane://pair?url=... pairs with that hub too
     private fun pairFrom(intent: Intent?) {
         val data = intent?.data ?: return
-        if (data.scheme == "backplane") model.pair(data.toString())
+        // (backplane://google ends a Google sign-in: GoogleLoop)
+        if (data.scheme == "backplane" && data.host != "google") model.pair(data.toString())
     }
 }
 

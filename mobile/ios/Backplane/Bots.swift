@@ -471,7 +471,7 @@ private struct SettingsTab: View {
                             .buttonStyle(.borderless)
                     }
                 }
-                Button(settings.google.accounts.isEmpty ? "Connect Google" : "Add account") { model.act("google", "connect") }
+                Button(settings.google.accounts.isEmpty ? "Connect Google" : "Add account") { GoogleLoop.shared.start { model.act($0, $1) } }
                 DisclosureGroup("Own client") {
                     TextField("Client ID (Desktop app)", text: $gid)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -521,6 +521,7 @@ private struct SettingsTab: View {
                 Button("Delete bot", role: .destructive) { deleting = true }
             }
         }
+        .onChange(of: settings.google.url) { _, u in GoogleLoop.shared.open(u) }
         .onAppear {
             persona = settings.personaField.isEmpty ? settings.persona : settings.personaField
             gid = settings.google.gid

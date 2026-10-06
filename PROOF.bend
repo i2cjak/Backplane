@@ -5083,6 +5083,24 @@ def Laws.google_hop_tailnet_only():
 def Laws.google_hop_no_path():
   {==}
 
+def Laws.google_loopback_phone():
+  {==}
+
+def Laws.google_loopback_none():
+  {==}
+
+def Laws.google_loopback_not_host():
+  {==}
+
+def Laws.google_loopback_not_userinfo():
+  {==}
+
+def Laws.google_loopback_not_path():
+  {==}
+
+def Laws.google_loopback_no_port():
+  {==}
+
 def Laws.google_own_client_wins(mine, sh, h):
   %Equal.sym(Bool, GO.Client.has(mine), True{}, h) : {GO.Google.client.k(_, mine, sh) == mine : GO.Client}
   {==}
