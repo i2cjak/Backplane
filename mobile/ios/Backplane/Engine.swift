@@ -102,6 +102,9 @@ final class Engine: @unchecked Sendable {
     func register(_ kind: String, _ token: String, env: String, bundle: String) async -> Out? {
         await out("register", ["ios", token, kind, "", env, bundle], screen: false)
     }
+    func register(at hub: String, _ kind: String, _ token: String, env: String, bundle: String) async -> Out? {
+        await out("registerAt", [hub, "ios", token, kind, "", env, bundle], screen: false)
+    }
     func screen() async -> Out? { await out("screen", []) }
     func recv(_ key: String, _ text: String) async -> Out? { await out("recv", [key, text], quiet: true) }
     // the whole client state as text (StateStore), and the state loaded back

@@ -134,6 +134,14 @@ def main() -> IO(Unit):
     C.Check.str("a hub quiet three hours leaves the island", island(unheard(11800n)), "0")
     C.Check.str("it comes back when the hub answers", island(H.Hubs.after(H.Hubs.online(unheard(50000n), "box:3787", True{}))), "1")
     C.Check.str("a hub never heard and away shows nothing", island(tick(H.Hubs.after(H.Hubs.online(busy(), "box:3787", False{})), 20000n)), "0")
+    # a Live Activity per hub: each hub's island alone, named by its machine
+    C.Check.str("an island per hub", list(busy(), "islands", "hub"), "100.1.1.1:3787;box:3787;")
+    C.Check.str("a hub's island is its own", J.Json.show(J.Json.get_obj(Maybe.default(&2, J.Json, List.get(&2, J.Json, J.Json.elems(J.Json.get_obj(H.Hubs.screen(busy()), "islands")), 1n), J.Null{}), "island")),
+      "{\"running\":1,\"headline\":\"Two · box\",\"lines\":[{\"thread\":\"box:3787|t2\",\"title\":\"Two\",\"doing\":\"Working\"}]}")
+    C.Check.str("an idle hub's island is empty", J.Json.show(J.Json.get_obj(Maybe.default(&2, J.Json, List.head(&2, J.Json, J.Json.elems(J.Json.get_obj(H.Hubs.screen(busy()), "islands"))), J.Null{}), "island")),
+      "{\"running\":0,\"headline\":\"All agents idle · lap\",\"lines\":[]}")
+    C.Check.str("an activity's token goes to its hub alone", cmds(H.Hubs.cmds(H.Hubs.register.at(two(), "box:3787", "ios", "tok", "activity", "", "", "b"))), "send@box:3787 ")
+    C.Check.str("an alert token goes to every hub", cmds(H.Hubs.cmds(H.Hubs.register(two(), "ios", "tok", "alert", "", "", "b"))), "send@100.1.1.1:3787 send@box:3787 ")
     C.Check.str("an unfocused hub's screen has no thread", J.Json.show(J.Json.get_obj(S.Mob.screen.f(False{}, H.Hubs.ui(busy(), "box:3787")), "thread")), "null")
     # a typed draft builds no screen unless what the composer offers changes
     C.Check.str("nothing offered", A.offer(act(two(), "select", "box:3787|t2")), "")

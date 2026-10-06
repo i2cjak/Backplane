@@ -530,6 +530,11 @@ def Hubs.tick(hs: Hubs, +now: Nat) -> HAct:
 def Hubs.register(hs: Hubs, p: String, t: String, k: String, th: String, e: String, b: String) -> HAct:
   Hubs.step(hs, True{}, "", Reg{p, t, k, th, e, b})
 
+# a token for one hub alone: the Live Activity a hub keeps (iOS runs one
+# per paired hub, Hubs.islands), so no hub updates or ends another's
+def Hubs.register.at(hs: Hubs, +key: String, p: String, t: String, k: String, th: String, e: String, b: String) -> HAct:
+  Hubs.step(hs, False{}, key, Reg{p, t, k, th, e, b})
+
 # Actions
 # -------
 
@@ -999,6 +1004,22 @@ def Hubs.lines(ss: List<&2, Shown>) -> List<&2, J.Json>:
     case +s <> t:
       List.append(&2, J.Json, J.Json.elems(J.Json.get_obj(J.Json.get_obj(Shown.j(s), "island"), "lines")), Hubs.lines(t))
 
+# Each hub's own island, for iOS's Live Activity per hub: a hub pushes and
+# ends only its own (push.bend), so one machine going idle never ends or
+# overwrites another's. With several hubs the headline names the machine.
+def Hubs.island.named(+many: Bool, +name: String, +i: J.Json) -> J.Json:
+  N.Note.island.k.named(J.Json.elems(J.Json.get_obj(i, "lines")), Bool.pick(String, many, name, ""))
+
+def Hubs.islands.go(ss: List<&2, Shown>, +many: Bool) -> List<&2, J.Json>:
+  match ss:
+    case Nil{}:
+      Nil{}
+    case Shown{+k, +n, +j} <> t:
+      J.Json.obj([J.KV{"hub", J.Json.str(k)}, J.KV{"island", Hubs.island.named(many, n, J.Json.get_obj(j, "island"))}]) <> Hubs.islands.go(t, many)
+
+def Hubs.islands(+ss: List<&2, Shown>) -> List<&2, J.Json>:
+  Hubs.islands.go(ss, Nat.is_gt(List.length(&2, Shown, ss), 1n))
+
 def Hubs.rows(ss: List<&2, Shown>) -> List<&2, J.Json>:
   match ss:
     case Nil{}:
@@ -1326,6 +1347,7 @@ def Hubs.screen.k(+ss: List<&2, Shown>, +cur: String, +list: List<&2, Hub>) -> J
     J.KV{"tour", J.Json.get_obj(Hubs.of(ss, cur), "tour")},
     J.KV{"find", J.Json.get_obj(Hubs.of(ss, cur), "find")},
     J.KV{"island", N.Note.island.k(Hubs.lines(ss))},
+    J.KV{"islands", J.Json.arr(Hubs.islands(ss))},
     J.KV{"thread", Hubs.origin.focus(ss, cur, "thread")},
     J.KV{"bots", J.Json.arr(Hubs.bots(ss, list, Nat.is_gt(List.length(&2, Shown, ss), 1n)))},
     J.KV{"rooms", J.Json.arr(Hubs.rooms(ss, Nat.is_gt(List.length(&2, Shown, ss), 1n)))},

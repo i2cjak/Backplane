@@ -230,6 +230,15 @@ def Note.island.k(+ls: List<&2, J.Json>) -> J.Json:
     J.KV{"headline", J.Json.str(Note.headline(List.length(&2, J.Json, ls), Note.first(ls)))},
     J.KV{"lines", J.Json.arr(ls)}])
 
+# the same with a machine's name after the headline ("" for none)
+def Note.named(+h: String, +name: String) -> String:
+  Bool.pick(String, String.is_empty(name), h, h ++ " · " ++ name)
+
+def Note.island.k.named(+ls: List<&2, J.Json>, +name: String) -> J.Json:
+  J.Json.obj([J.KV{"running", J.Json.nat(List.length(&2, J.Json, ls))},
+    J.KV{"headline", J.Json.str(Note.named(Note.headline(List.length(&2, J.Json, ls), Note.first(ls)), name))},
+    J.KV{"lines", J.Json.arr(ls)}])
+
 def Note.island(ts: List<&2, M.Thread>, +es: List<&2, M.Entry>) -> J.Json:
   Note.island.k(Note.lines(ts, es))
 
