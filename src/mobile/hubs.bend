@@ -353,14 +353,14 @@ def One.seen(+u: U.Ui, +o: J.Json) -> List<&2, N.Seen>:
 def One.got.d(delta: Bool, +u: U.Ui, +o: J.Json) -> Did:
   match delta:
     case True{}:
-      Did{One.got.seen(U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o)), Nil{}}
+      Did{One.got.seen(VW.View.far(o, U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o))), Nil{}}
     case False{}:
-      One.got.b(U.Boot.on(u), One.seen(u, o), One.got.seen(U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o)))
+      One.got.b(U.Boot.on(u), One.seen(u, o), One.got.seen(VW.View.far(o, U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o))))
 
 # the same comparing every thread (the spec One.got.d keeps to: law
 # alerts_ids_same)
 def One.got.all(+u: U.Ui, +o: J.Json) -> Did:
-  One.got.b(U.Boot.on(u), N.Note.seen(U.Ui.threads(S.Mob.st(u))), One.got.seen(U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o)))
+  One.got.b(U.Boot.on(u), N.Note.seen(U.Ui.threads(S.Mob.st(u))), One.got.seen(VW.View.far(o, U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o))))
 
 def One.got(+u: U.Ui, +o: J.Json) -> Did:
   One.got.d(String.eq(J.Json.get_str(o, "t", ""), "delta"), u, o)
