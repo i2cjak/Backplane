@@ -321,3 +321,13 @@ def Fm.give(+s: M.State, +ins: List<&2, FR.In>, +o: J.Json) -> List<&2, Plan>:
 # whether the text also names something here (bothub.bend's Give.*)
 def Fm.give.here(+s: M.State, +o: J.Json) -> Bool:
   Bool.not(List.is_empty(&2, RF.Hit, RF.Refs.found(s, J.Json.get_str(J.Json.get_obj(o, "p"), "thread", ""), J.Json.get_str(J.Json.get_obj(o, "p"), "text", ""))))
+
+# a plan's name (laws and logs)
+def Fm.plan.name(p: Plan) -> String:
+  match p:
+    case PHere{}:
+      "here"
+    case PAnswer{_}:
+      "answer"
+    case PFar{_, _}:
+      "far"

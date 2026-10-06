@@ -20,6 +20,7 @@ import ./src/core/onboard.bend as OBD
 import ./src/core/fm.bend as FMG
 import ./src/core/acp.bend as AC
 import ./src/core/mcp.bend as MC
+import ./src/core/fmcp.bend as FMC
 import ./src/core/handoff.bend as HD
 import ./src/core/agent.bend as AG
 import ./src/core/tailnet.bend as TN
@@ -5834,3 +5835,74 @@ law mate_loopback_lower_asks:
 
 law mate_loopback_higher_waits:
   {U.Mate.due(False{}, U.Mate.demo.lo("4003"), Nil{}, M.State.empty()) == Nil{} : List<&2, U.MRow>}
+
+# Agents across machines (core/fmcp.bend)
+# ----------------------------------------
+# An agent's thread tool naming another machine is a signed request to that
+# machine's hub, which runs it only for what it shares; a machine that is
+# not linked here is never sent anything, and only the listed tools are
+# taken from the owner's machines.
+
+# a tool call as the hub hears it
+def Fx.call(+tool: String, +a: J.Json) -> J.Json:
+  J.Json.obj([J.KV{"method", J.Str{"tools/call"}}, J.KV{"params", J.Json.obj([J.KV{"name", J.Str{tool}}, J.KV{"arguments", a}])}])
+
+def Fx.ask(+tool: String) -> J.Json:
+  J.Json.obj([J.KV{"m", J.Str{"mcp.call"}}, J.KV{"p", J.Json.obj([J.KV{"tool", J.Str{tool}}])}])
+
+law fmc_taken_tool:
+  {FMC.Fm.allowed(Fx.ask("thread_send")) == True{} : Bool}
+
+law fmc_only_listed_tools:
+  {FMC.Fm.allowed(Fx.ask("work_run")) == False{} : Bool}
+
+law fmc_no_terminal_or_delegate:
+  {FMC.Fm.allowed(Fx.ask("terminal_open")) == False{} : Bool}
+
+law fmc_permit_keeps_client_rules:
+  for +s: M.State
+  for +p: J.Json
+  {FMC.Fm.permit(s, J.Json.obj([J.KV{"m", J.Str{"thread.delete"}}, J.KV{"p", p}])) == False{} : Bool}
+
+# a thread this machine does not share is neither written to nor changed
+law fmc_unshared_refused:
+  {MC.Res.good(FMC.Fm.call(M.State.empty(), 1000n, "thread_send", "p1~t9", J.Json.obj([J.KV{"threadId", J.Str{"t1"}}, J.KV{"text", J.Str{"hi"}}]))) == False{} : Bool}
+
+law fmc_unshared_changes_nothing:
+  {List.is_empty(&2, M.Change, MC.Res.changes(FMC.Fm.call(M.State.empty(), 1000n, "thread_send", "p1~t9", J.Json.obj([J.KV{"threadId", J.Str{"t1"}}, J.KV{"text", J.Str{"hi"}}])))) == True{} : Bool}
+
+law fmc_unshared_interrupt_refused:
+  {MC.Res.good(FMC.Fm.call(M.State.empty(), 1000n, "thread_interrupt", "p1~t9", J.Json.obj([J.KV{"threadId", J.Str{"t1"}}]))) == False{} : Bool}
+
+# where a call goes
+law fmc_plan_here_stays:
+  {FMC.Fm.plan.name(FMC.Fm.plan.o(Fx.call("thread_send", J.Json.obj([J.KV{"threadId", J.Str{"t1"}}])), M.State.empty(), Nil{}, "t0")) == "here" : String}
+
+law fmc_plan_wait_polls_here:
+  {FMC.Fm.plan.name(FMC.Fm.plan.o(Fx.call("thread_wait", J.Json.obj([J.KV{"threadId", J.Str{"p1~t1"}}])), M.State.empty(), Nil{}, "t0")) == "here" : String}
+
+law fmc_plan_unlinked_never_sent:
+  {FMC.Fm.plan.name(FMC.Fm.plan.o(Fx.call("thread_send", J.Json.obj([J.KV{"threadId", J.Str{"p1~t1"}}])), M.State.empty(), Nil{}, "t0")) == "answer" : String}
+
+law fmc_plan_unlinked_machine_never_sent:
+  {FMC.Fm.plan.name(FMC.Fm.plan.o(Fx.call("thread_launch", J.Json.obj([J.KV{"machine", J.Str{"beta"}}])), M.State.empty(), Nil{}, "t0")) == "answer" : String}
+
+law fmc_plan_machine_list_answered:
+  {FMC.Fm.plan.name(FMC.Fm.plan.o(Fx.call("machine_list", J.Json.obj(Nil{})), M.State.empty(), Nil{}, "t0")) == "answer" : String}
+
+law fmc_plan_other_tools_here:
+  {FMC.Fm.plan.name(FMC.Fm.plan.o(Fx.call("work_run", J.Json.obj([J.KV{"command", J.Str{"ls"}}])), M.State.empty(), Nil{}, "t0")) == "here" : String}
+
+# ids: the machine's own going out, its link coming back
+law fmc_args_made_local:
+  {J.Json.show(J.Obj{FMC.Fm.args.local(FR.Fr.obj.fields(J.Json.obj([J.KV{"threadId", J.Str{"p1~t1"}}, J.KV{"text", J.Str{"a~b"}}])), "p1")}) == "{\"threadId\":\"t1\",\"text\":\"a~b\"}" : String}
+
+law fmc_args_other_link_kept:
+  {J.Json.show(J.Obj{FMC.Fm.args.local(FR.Fr.obj.fields(J.Json.obj([J.KV{"threadId", J.Str{"p2~t1"}}])), "p1")}) == "{\"threadId\":\"p2~t1\"}" : String}
+
+law fmc_reply_ids_named_by_link:
+  {J.Json.show(FMC.Fm.far.json(J.Json.obj([J.KV{"threadId", J.Str{"t1"}}, J.KV{"title", J.Str{"t1"}}, J.KV{"threads", J.Json.arr([J.Json.obj([J.KV{"id", J.Str{"t2"}}, J.KV{"project", J.Str{""}}])])}]), "p1")) == "{\"threadId\":\"p1~t1\",\"title\":\"t1\",\"threads\":[{\"id\":\"p1~t2\",\"project\":\"\"}]}" : String}
+
+# /give names nothing elsewhere when no machine is linked
+law fmc_give_unlinked_nothing:
+  {List.is_empty(&2, FMC.Plan, FMC.Fm.give(M.State.empty(), Nil{}, J.Json.obj([J.KV{"m", J.Str{"bots.give"}}, J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{"t1"}}, J.KV{"text", J.Str{"/give >beta:fix and %beta:board"}}])}]))) == True{} : Bool}

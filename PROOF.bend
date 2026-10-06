@@ -7541,3 +7541,54 @@ def Laws.mate_loopback_lower_asks():
 
 def Laws.mate_loopback_higher_waits():
   {==}
+
+def Laws.fmc_taken_tool():
+  {==}
+
+def Laws.fmc_only_listed_tools():
+  {==}
+
+def Laws.fmc_no_terminal_or_delegate():
+  {==}
+
+def Laws.fmc_permit_keeps_client_rules(s, p):
+  {==}
+
+def Laws.fmc_unshared_refused():
+  {==}
+
+def Laws.fmc_unshared_changes_nothing():
+  {==}
+
+def Laws.fmc_unshared_interrupt_refused():
+  {==}
+
+def Laws.fmc_plan_here_stays():
+  {==}
+
+def Laws.fmc_plan_wait_polls_here():
+  {==}
+
+def Laws.fmc_plan_unlinked_never_sent():
+  {==}
+
+def Laws.fmc_plan_unlinked_machine_never_sent():
+  {==}
+
+def Laws.fmc_plan_machine_list_answered():
+  {==}
+
+def Laws.fmc_plan_other_tools_here():
+  {==}
+
+def Laws.fmc_args_made_local():
+  {==}
+
+def Laws.fmc_args_other_link_kept():
+  {==}
+
+def Laws.fmc_reply_ids_named_by_link():
+  {==}
+
+def Laws.fmc_give_unlinked_nothing():
+  {==}
