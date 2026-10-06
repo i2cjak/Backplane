@@ -997,6 +997,8 @@ def Ins.set(ms: List<&2, In>, +i: In) -> List<&2, In>:
 
 # Requests to a thread elsewhere
 # ------------------------------
+# (thread.delete is not one: law far_no_delete keeps a linked machine from
+# deleting; a thread elsewhere is deleted on its own machine)
 # A request naming a thread, an ask or a bot elsewhere goes to the hub it
 # lives on, with that hub's ids; only these may (Fr.may): writing to it,
 # stopping it, answering it, its queue, settling it, a side question, its
@@ -1005,7 +1007,7 @@ def Ins.set(ms: List<&2, In>, +i: In) -> List<&2, In>:
 def Fr.methods() -> List<&2, String>:
   ["turn.start", "turn.interrupt", "ask.answer", "queue.move", "queue.remove", "queue.resume", "queue.steer", "queue.edit",
    "thread.settle", "thread.unsettle", "thread.rename", "thread.btw", "thread.modes", "thread.provider", "thread.effort", "bots.space", "bots.routine_run",
-   "thread.create", "thread.fork", "thread.archive", "thread.unarchive", "thread.pin", "thread.unpin", "thread.delete",
+   "thread.create", "thread.fork", "thread.archive", "thread.unarchive", "thread.pin", "thread.unpin",
    "project.add", "project.new", "project.remove", "fs.list", "fs.mkdir", "fs.find"]
 
 def Fr.may.go(ms: List<&2, String>, +m: String) -> Bool:

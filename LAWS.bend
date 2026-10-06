@@ -5292,6 +5292,77 @@ law made_waiting_ends_made:
 law made_waiting_ends_failed:
   {U.Made.waiting(U.Ui.recv(U.Act.ui(U.Ui.new_thread(U.Ui.init(0n), "p1")), J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{"0"}}, J.KV{"ok", J.Flag{False{}}}]))) == False{} : Bool}
 
+# Create anywhere: a request to make, fork, pin, archive or delete a thread
+# in a project elsewhere, or to add or browse a folder on another machine,
+# goes to the machine that owns it with its ids made local; the owning hub
+# takes it only for what it shares; the answer names the new thread by its
+# id here, and the client making it waits for the mirror (laws far_create_*,
+# made_far_*)
+law far_create_routes:
+  {FR.Route.link.of(FR.Fr.route(J.Json.obj([J.KV{"id", J.Num{"7"}}, J.KV{"m", J.Str{"thread.create"}}, J.KV{"p", J.Json.obj([J.KV{"project", J.Str{"p1~p"}}, J.KV{"title", J.Str{"New thread"}}])}]))) == "p1" : String}
+
+law far_fork_routes:
+  {FR.Route.link.of(FR.Fr.route(J.Json.obj([J.KV{"id", J.Num{"7"}}, J.KV{"m", J.Str{"thread.fork"}}, J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{"p1~pt"}}])}]))) == "p1" : String}
+
+law far_create_ids_local:
+  {FR.Fr.params.local(FR.Fr.obj.fields(J.Json.obj([J.KV{"project", J.Str{"p1~p"}}, J.KV{"title", J.Str{"x~y"}}])), "p1") == FR.Fr.obj.fields(J.Json.obj([J.KV{"project", J.Str{"p"}}, J.KV{"title", J.Str{"x~y"}}])) : J.Json}
+
+law far_machine_routes:
+  {FR.Fr.params.link(FR.Fr.obj.fields(J.Json.obj([J.KV{"on", J.Str{"p1"}}, J.KV{"path", J.Str{"/x"}}]))) == "p1" : String}
+
+law far_machine_none_here:
+  {FR.Fr.params.link(FR.Fr.obj.fields(J.Json.obj([J.KV{"on", J.Str{""}}, J.KV{"path", J.Str{"/x"}}]))) == "" : String}
+
+law far_create_in_shared_project:
+  {FR.Fr.allowed(M.State.apply(M.State.empty(), M.ProjectCreated{"p", "b", "/b", 1n}),
+    J.Json.obj([J.KV{"m", J.Str{"thread.create"}}, J.KV{"p", J.Json.obj([J.KV{"project", J.Str{"p"}}])}])) == True{} : Bool}
+
+law far_create_not_in_unshared_project:
+  {FR.Fr.allowed(M.State.apply(M.State.empty(), M.ProjectCreated{"p", "b", "/b", 1n}),
+    J.Json.obj([J.KV{"m", J.Str{"thread.create"}}, J.KV{"p", J.Json.obj([J.KV{"project", J.Str{"q"}}])}])) == False{} : Bool}
+
+law far_create_not_in_a_mirror:
+  {FR.Fr.allowed(M.State.apply(M.State.empty(), M.ProjectCreated{"p1~p", "b", "/b", 1n}),
+    J.Json.obj([J.KV{"m", J.Str{"thread.create"}}, J.KV{"p", J.Json.obj([J.KV{"project", J.Str{"p1~p"}}])}])) == False{} : Bool}
+
+law far_pin_only_shared_thread:
+  {FR.Fr.allowed(M.State.empty(), J.Json.obj([J.KV{"m", J.Str{"thread.pin"}}, J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{"t"}}])}])) == False{} : Bool}
+
+law far_settings_not_remote:
+  {FR.Fr.allowed(M.State.empty(), J.Json.obj([J.KV{"m", J.Str{"setting.set"}}, J.KV{"p", J.Json.obj([J.KV{"key", J.Str{"k"}}])}])) == False{} : Bool}
+
+law far_reply_names_thread:
+  {FR.Fr.reply.on(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{"0"}}, J.KV{"ok", J.Flag{True{}}}, J.KV{"thread", J.Str{"t5"}}]), "9", "p1") ==
+    "{\"t\":\"reply\",\"id\":9,\"ok\":true,\"thread\":\"p1~t5\"}" : String}
+
+law far_pin_shared:
+  {FR.Fr.shared(M.State.apply(M.State.apply(M.State.empty(), M.ProjectCreated{"p", "b", "/b", 1n}), M.ThreadCreated{"t", "p", "x", M.Local{}, "", "", "claude", "", 2n}), M.ThreadPinned{"t", True{}, 3n}) == True{} : Bool}
+
+law made_far_waits_for_mirror:
+  {U.Made.waiting(U.Ui.recv(U.Act.ui(U.Ui.new_thread(U.Ui.init(0n), "p1~p")), U.Made.demo("0", "p1~t9"))) == True{} : Bool}
+
+law made_far_selects_when_mirrored:
+  {U.Ui.sel(U.Ui.recv(U.Ui.recv(U.Act.ui(U.Ui.new_thread(U.Ui.init(0n), "p1~p")), U.Made.demo("0", "p1~t9")), U.Made.made("changes", "p1~t9"))) == "p1~t9" : String}
+
+law made_far_done_when_mirrored:
+  {U.Made.waiting(U.Ui.recv(U.Ui.recv(U.Act.ui(U.Ui.new_thread(U.Ui.init(0n), "p1~p")), U.Made.demo("0", "p1~t9")), U.Made.made("changes", "p1~t9"))) == False{} : Bool}
+
+law made_far_failed_not_waiting:
+  {U.Made.waiting(U.Ui.recv(U.Act.ui(U.Ui.new_thread(U.Ui.init(0n), "p1~p")), J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{"0"}}, J.KV{"ok", J.Flag{False{}}}]))) == False{} : Bool}
+
+law proj_machine_cycle_ends_here:
+  {U.Proj.cycle(["", "p1", "p2"], "p2", "") == "" : String}
+
+law proj_machine_cycle_next:
+  {U.Proj.cycle(["", "p1", "p2"], "p1", "") == "p2" : String}
+
+law proj_on_request_names_machine:
+  {U.Proj.on.kv("p1", [J.KV{"path", J.Str{"/x"}}]) == [J.KV{"on", J.Str{"p1"}}, J.KV{"path", J.Str{"/x"}}] : List<&2, J.KV>}
+
+law proj_here_request_unchanged:
+  for p: List<&2, J.KV>
+  {U.Proj.on.kv("", p) == p : List<&2, J.KV>}
+
 # The sidebar's index (client.bend's Side.ix, gathered once a frame) gives
 # what walking the state gives: rows, phases, subagent counts, the active
 # view, and work for the settle tick; phones compare only the threads a

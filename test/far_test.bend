@@ -267,15 +267,14 @@ def main() -> IO(Unit):
     C.Check.str("allowed", Bool.show(FR.Fr.allowed(st, rpc("turn.start", [J.KV{"thread", J.Str{"bt1"}}]))) ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("turn.start", [J.KV{"thread", J.Str{"pt"}}])))
       ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("ask.answer", [J.KV{"id", J.Str{"a1"}}]))) ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("ask.answer", [J.KV{"id", J.Str{"a2"}}])))
       ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("setting.set", [J.KV{"key", J.Str{"x"}}]))) ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("thread.delete", [J.KV{"thread", J.Str{"bt1"}}]))),
-      "True True True True False True")
+      "True True True True False False")
     # create anywhere: a new thread, a fork, pin, archive, delete and a
     # project's folders go to the machine that owns the thing
     C.Check.str("route thread.create", route(FR.Fr.route(rpc("thread.create", [J.KV{"project", J.Str{"p1~p"}}, J.KV{"title", J.Str{"New thread"}}]))),
       "p1 thread.create {\"id\":0,\"m\":\"thread.create\",\"p\":{\"project\":\"p\",\"title\":\"New thread\"}}")
     C.Check.str("route thread.fork", route(FR.Fr.route(rpc("thread.fork", [J.KV{"thread", J.Str{"p1~pt"}}]))), "p1 thread.fork {\"id\":0,\"m\":\"thread.fork\",\"p\":{\"thread\":\"pt\"}}")
-    C.Check.str("route pin, archive, delete", route(FR.Fr.route(rpc("thread.pin", [J.KV{"thread", J.Str{"p1~pt"}}]))) ++ "|" ++ route(FR.Fr.route(rpc("thread.archive", [J.KV{"thread", J.Str{"p1~pt"}}])))
-      ++ "|" ++ route(FR.Fr.route(rpc("thread.delete", [J.KV{"thread", J.Str{"p1~pt"}}]))),
-      "p1 thread.pin {\"id\":0,\"m\":\"thread.pin\",\"p\":{\"thread\":\"pt\"}}|p1 thread.archive {\"id\":0,\"m\":\"thread.archive\",\"p\":{\"thread\":\"pt\"}}|p1 thread.delete {\"id\":0,\"m\":\"thread.delete\",\"p\":{\"thread\":\"pt\"}}")
+    C.Check.str("route pin, archive", route(FR.Fr.route(rpc("thread.pin", [J.KV{"thread", J.Str{"p1~pt"}}]))) ++ "|" ++ route(FR.Fr.route(rpc("thread.archive", [J.KV{"thread", J.Str{"p1~pt"}}]))),
+      "p1 thread.pin {\"id\":0,\"m\":\"thread.pin\",\"p\":{\"thread\":\"pt\"}}|p1 thread.archive {\"id\":0,\"m\":\"thread.archive\",\"p\":{\"thread\":\"pt\"}}")
     C.Check.str("route project.add on a machine", route(FR.Fr.route(rpc("project.add", [J.KV{"on", J.Str{"p1"}}, J.KV{"path", J.Str{"/x"}}]))),
       "p1 project.add {\"id\":0,\"m\":\"project.add\",\"p\":{\"on\":\"p1\",\"path\":\"/x\"}}")
     C.Check.str("route fs.list on a machine", route(FR.Fr.route(rpc("fs.list", [J.KV{"path", J.Str{"/x"}}, J.KV{"on", J.Str{"p1"}}]))),
@@ -285,7 +284,7 @@ def main() -> IO(Unit):
       ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("thread.create", [J.KV{"project", J.Str{"p1~p"}}]))) ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("thread.create", Nil{}))),
       "True False False False")
     C.Check.str("allowed: a thread's own", Bool.show(FR.Fr.allowed(st, rpc("thread.fork", [J.KV{"thread", J.Str{"pt"}}]))) ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("thread.pin", [J.KV{"thread", J.Str{"pt"}}])))
-      ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("thread.archive", [J.KV{"thread", J.Str{"nope"}}]))) ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("thread.delete", [J.KV{"thread", J.Str{"x~pt"}}]))),
+      ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("thread.archive", [J.KV{"thread", J.Str{"nope"}}]))) ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("thread.pin", [J.KV{"thread", J.Str{"x~pt"}}]))),
       "True True False False")
     C.Check.str("allowed: projects and folders", Bool.show(FR.Fr.allowed(st, rpc("project.remove", [J.KV{"project", J.Str{"p"}}]))) ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("project.remove", [J.KV{"project", J.Str{"q"}}])))
       ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("project.add", [J.KV{"path", J.Str{"/x"}}]))) ++ " " ++ Bool.show(FR.Fr.allowed(st, rpc("fs.list", Nil{})))

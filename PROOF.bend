@@ -7098,6 +7098,66 @@ def Laws.made_waiting_ends_made():
 def Laws.made_waiting_ends_failed():
   {==}
 
+def Laws.far_create_routes():
+  {==}
+
+def Laws.far_fork_routes():
+  {==}
+
+def Laws.far_create_ids_local():
+  {==}
+
+def Laws.far_machine_routes():
+  {==}
+
+def Laws.far_machine_none_here():
+  {==}
+
+def Laws.far_create_in_shared_project():
+  {==}
+
+def Laws.far_create_not_in_unshared_project():
+  {==}
+
+def Laws.far_create_not_in_a_mirror():
+  {==}
+
+def Laws.far_pin_only_shared_thread():
+  {==}
+
+def Laws.far_settings_not_remote():
+  {==}
+
+def Laws.far_reply_names_thread():
+  {==}
+
+def Laws.far_pin_shared():
+  {==}
+
+def Laws.made_far_waits_for_mirror():
+  {==}
+
+def Laws.made_far_selects_when_mirrored():
+  {==}
+
+def Laws.made_far_done_when_mirrored():
+  {==}
+
+def Laws.made_far_failed_not_waiting():
+  {==}
+
+def Laws.proj_machine_cycle_ends_here():
+  {==}
+
+def Laws.proj_machine_cycle_next():
+  {==}
+
+def Laws.proj_on_request_names_machine():
+  {==}
+
+def Laws.proj_here_request_unchanged(p):
+  {==}
+
 def Laws.side_rows_ix_eq():
   {==}
 
