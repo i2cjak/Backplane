@@ -192,7 +192,7 @@ try {
   console.log(`  far.view first answer ${tView} ms (${v1?.result?.changed} files)`);
   const same = (rel: string) => existsSync(join(cache, rel)) && readFileSync(join(cache, rel)).equals(readFileSync(join(project, rel)));
   check("the board, schematic and project are in alpha's cache, byte for byte", same("ecc83-pp.kicad_pcb") && same("ecc83-pp.kicad_sch") && same("ecc83-pp.kicad_pro"));
-  check("the second board comes only when asked for", !existsSync(join(cache, "hw", "second.kicad_pcb")));
+  check("every KiCad file of the project is brought (the listing's own rule), nothing hidden", existsSync(join(cache, "hw", "second.kicad_pcb")) && !existsSync(join(cache, ".env")));
   check("nothing hidden or linked came", !existsSync(join(cache, ".env")) && !existsSync(join(cache, ".git")) && !existsSync(join(cache, "leak.kicad_pcb")) && !existsSync(join(cache, "hw", "etclink")));
   check("no part files left behind", !readdirSync(cache).some((f) => f.startsWith(".farpart")), readdirSync(cache));
 
