@@ -16,6 +16,7 @@ import ./space.bend as SPC
 import ./refs.bend as RF
 import ./mech.bend as MC
 import ./far.bend as FR
+import ./fview.bend as FV
 import ./desk.bend as DK
 import ./hist.bend as HI
 import ./links.bend as LK
@@ -1156,8 +1157,42 @@ def Ui.reselect.act(+old: String, a: Act) -> Act:
       Act{Ui.reselect(old, u), cs}
 
 # the selected thread's view: its kind, path, change count and diff
-def Ui.view_get(+u: Ui, +k: String) -> String:
+# What a thread elsewhere's viewer shows waits for the file: its kind and
+# path read as the Files tab and nothing until the hub that keeps the cache
+# says the file is in it ("fv.ready:<t>" names the path it had then).
+def Fv.kinds() -> List<&2, String>:
+  ["board", "schematic", "3d", "image", "pdf"]
+
+def Fv.kind(+k: String) -> Bool:
+  FR.Fr.may.go(Fv.kinds(), k)
+
+# a path as the owner's folder names it ("" for one outside, or no folder yet)
+def Fv.rel.of(+root: String, +path: String) -> String:
+  Bool.pick(String, String.is_empty(root), "", Bool.pick(String, String.starts_with(path, "/"), FV.Fv.rel(root, path), path))
+
+def Fv.t(+u: Ui, +k: String) -> String:
   Ui.info(u, k ++ ":" ++ Ui.sel(u))
+
+def Fv.pending(+u: Ui) -> Bool:
+  Bool.and(Bool.and(FR.Fr.is(Ui.sel(u)), Fv.kind(Fv.t(u, "view.kind"))),
+    Bool.and(Bool.not(String.is_empty(Fv.rel.of(Fv.t(u, "fv.root"), Fv.t(u, "view.path")))), Bool.not(String.eq(Fv.t(u, "view.path"), Fv.t(u, "fv.ready")))))
+
+def Ui.view_get.k(held: Bool, +u: Ui, +k: String) -> String:
+  match held:
+    case True{}:
+      Bool.pick(String, String.eq(k, "view.kind"), "files", "")
+    case False{}:
+      Ui.info(u, k ++ ":" ++ Ui.sel(u))
+
+def Ui.view_get.far(far: Bool, +u: Ui, +k: String) -> String:
+  match far:
+    case True{}:
+      Ui.view_get.k(Bool.and(Bool.or(String.eq(k, "view.kind"), String.eq(k, "view.path")), Fv.pending(u)), u, k)
+    case False{}:
+      Ui.info(u, k ++ ":" ++ Ui.sel(u))
+
+def Ui.view_get(+u: Ui, +k: String) -> String:
+  Ui.view_get.far(FR.Fr.is(Ui.sel(u)), u, k)
 
 def Ui.diff(+u: Ui, +r: J.Json) -> Ui:
   Ui.diff.k(u, Viewer.of(J.Json.get_str(r, "thread", ""), Ui.sel(u)), r)
@@ -1237,10 +1272,16 @@ def Ui.dir(+st: M.State, +wt: String, +project: String) -> String:
 
 # the selected thread's directory: its worktree, else its project's folder
 # ("" with nothing selected). The viewer shows the board the thread edits.
+def Ui.root.here(+st: M.State, +sel: String) -> String:
+  Bool.pick(String, String.is_empty(sel), "", Ui.dir(st, Ui.thread_worktree(Ui.thread(st, sel)), Ui.thread_project(Ui.thread(st, sel))))
+
+# A thread elsewhere shows the folder its hub keeps its files in (the
+# cache core/fview.bend names; "" until the first answer of far.view says
+# which): the viewers read it as they read a folder here.
 def Ui.root(u: Ui) -> String:
   match u:
-    case Ui{+st, +sel, _, _, _, _, _, _, _, _, _, _, _, _, nf, ob, tr}:
-      Bool.pick(String, String.is_empty(sel), "", Ui.dir(st, Ui.thread_worktree(Ui.thread(st, sel)), Ui.thread_project(Ui.thread(st, sel))))
+    case Ui{+st, +sel, _, _, _, _, _, _, _, _, _, _, _, _, +nf, ob, tr}:
+      Bool.pick(String, FR.Fr.is(sel), Str.get(nf, "fv.root:" ++ sel), Ui.root.here(st, sel))
 
 # Views both clients share
 # ------------------------
@@ -4118,12 +4159,21 @@ def Fm.again(log: Bool, a: Act) -> Act:
 def Pdf.ask(+u: Ui, +path: String, +page: String) -> Act:
   Ui.rpc(Ui.info_set(u, "pdf.page:" ++ Ui.sel(u), page), "pdf.page", [J.KV{"path", J.Str{path}}, J.KV{"page", J.Str{page}}])
 
+# a PDF opened: its first page is asked for; on a thread elsewhere once the
+# file is in the cache (Fv.sync)
+def Fm.pdf(far: Bool, +u: Ui, +path: String) -> Act:
+  match far:
+    case True{}:
+      Act{Ui.info_set(Ui.view_put(u, "pdf", path), "pdf.page:" ++ Ui.sel(u), ""), Nil{}}
+    case False{}:
+      Pdf.ask(Ui.view_put(u, "pdf", path), path, "1")
+
 def Fm.open.k(i: Nat, +u: Ui, +kind: String, +path: String) -> Act:
   match i:
     case 0n:
       Act{Ui.view_put(u, kind, path), Nil{}}
     case 1n:
-      Pdf.ask(Ui.view_put(u, "pdf", path), path, "1")
+      Fm.pdf(FR.Fr.is(Ui.sel(u)), u, path)
     case _:
       Act{u, Nil{}}
 
@@ -4408,10 +4458,138 @@ def Mpage.sync.if(on: Bool, a: Act) -> Act:
     case Act{+u, cmds}:
       Mpage.sync.k(Bool.and(on, Bool.not(String.eq(Mpage.at(u), Ui.scratch(u, "@mech.at")))), u, Mpage.at(u), cmds)
 
-def Mpage.sync(a: Act) -> Act:
+# Viewers for a thread elsewhere (core/fview.bend)
+# ------------------------------------------------
+# The hub this client is on keeps the thread's files in a cache the viewers
+# read, brought from the owning hub by far.view. The client asks, naming
+# the file on screen and the digest of the list it last got; the answer
+# comes when the owner's files change (or after about half a minute, "same"),
+# and the next ask follows it, so the cache follows the owner with no timer
+# here. Kept per thread in the info map: fv.root (the cache folder),
+# fv.have (the digest), fv.sent ("w:" and the file asked for), fv.fly ("1"
+# while an ask is out) and fv.at (when), fv.ready (the path that was in the
+# cache when the last answer came), fv.err (what could not be reached).
+def Fv.now(u: Ui) -> Nat:
+  match u:
+    case Ui{_, _, _, _, _, _, now, _, _, _, _, _, _, _, _, _, _}:
+      now
+
+# the viewer needs the cache: a thread elsewhere with its panel open on the
+# board, the schematic, 3D, an image, a PDF, or the Files tab
+def Fv.on(+u: Ui) -> Bool:
+  Bool.and(Bool.and(FR.Fr.is(Ui.sel(u)), Ui.panel(u)),
+    Bool.or(Bool.or(String.is_empty(Fv.t(u, "view.kind")), Fv.kind(Fv.t(u, "view.kind"))), String.eq(Fv.t(u, "view.kind"), "files")))
+
+# the file on screen, from the owner's folder
+def Fv.want(+u: Ui) -> String:
+  Bool.pick(String, Fv.kind(Fv.t(u, "view.kind")), Fv.rel.of(Fv.t(u, "fv.root"), Fv.t(u, "view.path")), "")
+
+def Fv.stale(+u: Ui) -> Bool:
+  Nat.is_gt(Fv.now(u), Nat.add(Maybe.default(&2, Nat, Nat.read(Fv.t(u, "fv.at")), 0n), 45n))
+
+# an ask is due: none out, or one out for too long, or for another file; and
+# not one that just failed for this file
+def Fv.due(+u: Ui, +w: String) -> Bool:
+  Bool.and(Bool.or(Bool.not(String.eq(Fv.t(u, "fv.fly"), "1")), Bool.or(Fv.stale(u), Bool.not(String.eq("w:" ++ w, Fv.t(u, "fv.sent"))))),
+    Bool.not(Bool.and(String.eq("w:" ++ w, Fv.t(u, "fv.err")), Bool.not(String.eq(Fv.t(u, "fv.fly"), "1")))))
+
+def Fv.mark(+u: Ui, +w: String) -> Ui:
+  Ui.info_set(Ui.info_set(Ui.info_set(Ui.info_set(u, "fv.fly:" ++ Ui.sel(u), "1"), "fv.sent:" ++ Ui.sel(u), "w:" ++ w), "fv.at:" ++ Ui.sel(u), Nat.show(Fv.now(u))), "fv.err:" ++ Ui.sel(u), "")
+
+# the digest to hold the answer on: the last one, when it was for this file
+def Fv.have(+u: Ui, +w: String) -> String:
+  Bool.pick(String, String.eq("w:" ++ w, Fv.t(u, "fv.sent")), Fv.t(u, "fv.have"), "")
+
+def Fv.send(+u: Ui, +w: String, cmds: List<&2, Cmd>) -> Act:
+  Ui.also(Ui.rpc(Fv.mark(u, w), "far.view", [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"want", J.Str{w}}, J.KV{"have", J.Str{Fv.have(u, w)}}]), cmds)
+
+def Fv.sync.k(go: Bool, +u: Ui, +w: String, cmds: List<&2, Cmd>) -> Act:
+  match go:
+    case True{}:
+      Fv.send(u, w, cmds)
+    case False{}:
+      Act{u, cmds}
+
+# a PDF that came: its first page is asked for
+def Fv.pdf.k(go: Bool, +u: Ui, cmds: List<&2, Cmd>) -> Act:
+  match go:
+    case True{}:
+      Ui.also(Pdf.ask(u, Fv.t(u, "view.path"), "1"), cmds)
+    case False{}:
+      Act{u, cmds}
+
+# An answer of far.view: the folder, the digest, and the file on screen
+# either in the cache or not on the owner (it shows then, as a file that is
+# not there); one for a file no longer asked for is dropped.
+def Fv.at(+u: Ui, +th: String, +k: String) -> String:
+  Ui.info(u, k ++ ":" ++ th)
+
+def Fv.put(+u: Ui, +th: String, +k: String, +v: String) -> Ui:
+  Ui.info_set(u, k ++ ":" ++ th, v)
+
+def Fv.got.fresh(+u: Ui, +th: String, +r: J.Json) -> Ui:
+  Fv.put(Fv.put(Fv.put(Fv.put(Fv.put(u, th, "fv.fly", ""), th, "fv.root", J.Json.get_str(r, "root", "")), th, "fv.have", J.Json.get_str(r, "ver", "")),
+    th, "fv.err", ""), th, "fv.ready", Bool.pick(String, J.Json.get_bool(r, "same", False{}), Fv.at(u, th, "fv.ready"), Fv.at(u, th, "view.path")))
+
+def Fv.got.down(+u: Ui, +th: String, +r: J.Json) -> Ui:
+  Fv.put(Fv.put(Fv.put(u, th, "fv.fly", ""), th, "fv.err", "w:" ++ J.Json.get_str(r, "want", "")), th, "fv.ready", Fv.at(u, th, "view.path"))
+
+def Fv.got.k(down: Bool, +u: Ui, +th: String, +r: J.Json) -> Ui:
+  match down:
+    case True{}:
+      Fv.got.down(u, th, r)
+    case False{}:
+      Fv.got.fresh(u, th, r)
+
+def Fv.got(+u: Ui, +r: J.Json) -> Ui:
+  Bool.pick(Ui, String.eq("w:" ++ J.Json.get_str(r, "want", ""), Fv.at(u, J.Json.get_str(r, "thread", ""), "fv.sent")),
+    Fv.got.k(Bool.not(String.is_empty(J.Json.get_str(r, "down", ""))), u, J.Json.get_str(r, "thread", ""), r), u)
+
+def Fv.reply(has: Bool, +u: Ui, +r: J.Json) -> Ui:
+  match has:
+    case True{}:
+      Fv.got(u, r)
+    case False{}:
+      u
+
+def Fv.pdf.due(+u: Ui) -> Bool:
+  Bool.and(Bool.and(String.eq(Fv.t(u, "view.kind"), "pdf"), Bool.not(String.is_empty(Fv.t(u, "view.path")))),
+    Bool.and(String.eq(Fv.t(u, "fv.ready"), Fv.t(u, "view.path")), String.is_empty(Fv.t(u, "pdf.page"))))
+
+def Fv.pdf(a: Act) -> Act:
+  match a:
+    case Act{+u, cmds}:
+      Fv.pdf.k(Fv.pdf.due(u), u, cmds)
+
+# (w: the file the viewer shows, from the owner's folder; the phones pass
+# their own viewer's, mobile/view.bend)
+def Fv.sync.on(on: Bool, +w: String, a: Act) -> Act:
+  match on a:
+    case True{} Act{+u, cmds}:
+      Fv.pdf(Fv.sync.k(Fv.due(u, w), u, w, cmds))
+    case False{} _:
+      a
+
+# (only a thread elsewhere does anything here)
+def Fv.sync.far(far: Bool, a: Act) -> Act:
+  match far a:
+    case True{} Act{+u, cmds}:
+      Fv.sync.on(Fv.on(u), Fv.want(u), Act{u, cmds})
+    case False{} _:
+      a
+
+def Fv.sync(a: Act) -> Act:
+  match a:
+    case Act{+u, cmds}:
+      Fv.sync.far(FR.Fr.is(Ui.sel(u)), Act{u, cmds})
+
+def Mpage.sync.m(a: Act) -> Act:
   match a:
     case Act{+u, cmds}:
       Mpage.sync.if(Bool.or(String.eq(Ui.view_get(u, "view.kind"), "mech"), Mpage.onpart(u)), Act{u, cmds})
+
+def Mpage.sync(a: Act) -> Act:
+  Fv.sync(Mpage.sync.m(a))
 
 # The web's viewer: the board, the schematic and a 3D model (the board's,
 # or a part's) come as they come to the phones. The page asks the hub for
@@ -4444,10 +4622,13 @@ def Solid.sync.k(same: Bool, u: Ui, +want: String, +kind: String, +path: String,
       Ui.also(Ui.rpc(Ui.scratch_set(u, "@solid.at", want), "kicad.watch",
         [J.KV{"kind", J.Str{Bool.pick(String, String.is_empty(want), "", Solid.ask(kind))}}, J.KV{"root", J.Str{root}}, J.KV{"path", J.Str{path}}]), cmds)
 
-def Solid.sync(a: Act) -> Act:
+def Solid.sync.m(a: Act) -> Act:
   match a:
     case Act{+u, cmds}:
       Solid.sync.k(String.eq(Solid.want(u), Ui.scratch(u, "@solid.at")), u, Solid.want(u), Solid.kind(u), Ui.view_get(u, "view.path"), Ui.root(u), cmds)
+
+def Solid.sync(a: Act) -> Act:
+  Fv.sync(Solid.sync.m(a))
 
 # what the page says under its parts: where to get FreeCAD when the hub
 # has none, else nothing
@@ -5918,7 +6099,7 @@ def Hs.refs.store(has: Bool, u: Ui, +o: J.Json) -> Ui:
       u
 
 def Ui.reply.skills(u: Ui, +o: J.Json) -> Ui:
-  Skills.got(Skills.has(o), Mpage.reply(Mpage.has(o), Hs.refs.store(Hs.refs.has(o), Ui.reply.body(u, o), o), o), o)
+  Fv.reply(Fm.has(J.Json.get_obj(o, "result"), "farView"), Skills.got(Skills.has(o), Mpage.reply(Mpage.has(o), Hs.refs.store(Hs.refs.has(o), Ui.reply.body(u, o), o), o), o), J.Json.get_obj(o, "result"))
 
 # The bar
 # -------

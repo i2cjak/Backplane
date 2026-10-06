@@ -7601,3 +7601,90 @@ def Laws.mate_loopback_lower_asks():
 
 def Laws.mate_loopback_higher_waits():
   {==}
+
+def Laws.fview_file_up():
+  {==}
+
+def Laws.fview_file_abs():
+  {==}
+
+def Laws.fview_file_hidden():
+  {==}
+
+def Laws.fview_file_hidden_deep():
+  {==}
+
+def Laws.fview_file_pick():
+  {==}
+
+def Laws.fview_file_ok():
+  {==}
+
+def Laws.fview_file_empty():
+  {==}
+
+def Laws.fview_dir_root():
+  {==}
+
+def Laws.fview_dir_up():
+  {==}
+
+def Laws.fview_reads_disjoint():
+  {==}
+
+def Laws.fview_no_open():
+  {==}
+
+def Laws.fview_no_pdf():
+  {==}
+
+def Laws.fview_no_fs():
+  {==}
+
+def Laws.fview_allowed_not_write(s, p):
+  {==}
+
+def Laws.fview_allowed_path(s):
+  {==}
+
+def Laws.fview_allowed_want(s):
+  {==}
+
+def Laws.fview_allowed_dir(s):
+  {==}
+
+def Laws.fview_cache_under():
+  {==}
+
+def Laws.fview_cache_dotdot():
+  {==}
+
+def Laws.fview_cache_link_slash():
+  {==}
+
+def Laws.fview_cache_link_dotdot():
+  {==}
+
+def Laws.fview_cache_relative():
+  {==}
+
+def Laws.fview_cache_of_file():
+  {==}
+
+def Laws.fview_cache_of_outside():
+  {==}
+
+def Laws.fview_cache_of_prefix():
+  {==}
+
+def Laws.fview_fix_thread():
+  {==}
+
+def Laws.fview_fix_root():
+  {==}
+
+def Laws.fview_fix_again():
+  {==}
+
+def Laws.fview_fix_leaves_error():
+  {==}

@@ -1,5 +1,6 @@
 import Base
 import ../core/json.bend as J
+import ../core/far.bend as FR
 import ../core/client.bend as U
 import ../app/viewer.bend as V
 import ../core/look.bend as LO
@@ -151,10 +152,38 @@ def View.sync.u(+u: U.Ui, cmds: List<&2, U.Cmd>) -> U.Act:
 # when that changed (law view_asks_once)
 # (and the Mechanical page's parts, when that is the phone's view: its
 # own slot, kept across launches, which the client's view kind is not)
-def View.sync(a: U.Act) -> U.Act:
+# A thread elsewhere's viewer needs its hub's cache of the owner's files
+# (client.bend's Fv): the file on screen, from the owner's folder.
+def View.fv.want(+u: U.Ui) -> String:
+  Bool.pick(String, String.eq(View.kind(u), "mech"), U.Fv.rel.of(U.Ui.root(u), View.part(u)),
+    Bool.pick(String, Bool.or(View.known(View.kind(u)), Bool.or(String.eq(View.kind(u), "image"), String.eq(View.kind(u), "pdf"))),
+      Bool.pick(String, Bool.or(String.eq(View.kind(u), "image"), String.eq(View.kind(u), "pdf")), U.Fv.rel.of(U.Ui.root(u), U.Fv.t(u, "view.path")),
+        Bool.pick(String, Nat.is_eq(HS.Hist.kind(View.src(u)), 0n), U.Fv.rel.of(U.Ui.root(u), View.src(u)), "")), ""))
+
+def View.fv(a: U.Act) -> U.Act:
+  match a:
+    case U.Act{+u, cmds}:
+      U.Fv.sync.on(Bool.and(FR.Fr.is(U.Ui.sel(u)), Bool.not(String.is_empty(View.kind(u)))), View.fv.want(u), U.Act{u, cmds})
+
+def View.sync.m(a: U.Act) -> U.Act:
   match a:
     case U.Act{+u, cmds}:
       U.Mpage.sync.if(View.mech(u), View.sync.u(u, cmds))
+
+def View.sync(a: U.Act) -> U.Act:
+  View.fv(View.sync.m(a))
+
+# a hub's answer to far.view: the viewer asks for the source again, now
+# that the folder is known
+def View.far.k(far: Bool, a: U.Act) -> U.Act:
+  match far a:
+    case True{} +x:
+      View.sync(x)
+    case False{} +x:
+      x
+
+def View.far(o: J.Json, a: U.Act) -> U.Act:
+  View.far.k(U.Fm.has(J.Json.get_obj(o, "result"), "farView"), a)
 
 # open a viewer ("board", "schematic", "3d") or close it (""); what was
 # picked is let go
