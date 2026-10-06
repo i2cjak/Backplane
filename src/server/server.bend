@@ -6221,6 +6221,53 @@ def Line.skills(has: Bool, h: Hub, +thread: String, +line: String, +cwd: String)
     case False{}:
       Claude.put(h, thread, line)
 
+def Far.view.cwd(+st: M.State, +thread: String) -> String:
+  B.Hub.cwd(st, B.Hub.thread(st, thread))
+
+# viewer_show on a thread the owner's other machines mirror: the owner
+# tells them (view.show), each brings the file into its cache and shows it
+# to its clients as a view message of the thread there.
+def Far.shown.job(+link: String, +url: String, +home: String, +thread: String, +rel: String, +kind: String) -> IO(Unit):
+  do IO<Unit>:
+    now : Nat <- Now.nat()
+    +n : String <- BN.Bn.random(4n)
+    r : BN.Resp <- BN.Bn.to_peer(home, url, link, now, "/far/rpc", True{},
+      J.Json.show(J.Json.obj([J.KV{"id", J.Num{"0"}}, J.KV{"m", J.Str{"view.show"}}, J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{thread}}, J.KV{"path", J.Str{rel}}, J.KV{"kind", J.Str{kind}}, J.KV{"n", J.Str{n}}])}])))
+    return Unit{}
+
+def Far.shown.go(ps: List<&2, BO.Peer>, +home: String, +thread: String, +rel: String, +kind: String) -> IO(Unit):
+  match ps:
+    case Nil{}:
+      IO.pure(Unit, Unit{})
+    case BO.Peer{+link, _, +url, _, _} <> t:
+      do IO<Unit>:
+        IO.spawn(Unit, Far.shown.job(link, url, home, thread, rel, kind))
+        Far.shown.go(t, home, thread, rel, kind)
+
+# the file's path from the thread's folder ("" when it is outside it)
+def Far.shown.rel(+cwd: String, +path: String) -> String:
+  Bool.pick(String, String.starts_with(path, "/"), FV.Fv.rel(cwd, path), path)
+
+def Far.shown.k(ok: Bool, +st: M.State, +cfg: Cfg, +thread: String, +rel: String, +kind: String) -> IO(Unit):
+  match ok:
+    case True{}:
+      Far.shown.go(Far.own.go(BO.World.peers(M.State.bots(st)), st, cfg), Cfg.home(cfg), thread, rel, kind)
+    case False{}:
+      IO.pure(Unit, Unit{})
+
+def Far.shown.o(m: Maybe<&2, J.Json>, +st: M.State, +cfg: Cfg) -> IO(Unit):
+  match m:
+    case Some{+o}:
+      Far.shown.k(Bool.and(FR.Fr.thread.shared(st, J.Json.get_str(o, "thread", "")),
+        Bool.and(Bool.not(String.is_empty(J.Json.get_str(o, "path", ""))), FV.Fv.file.ok(Far.shown.rel(Far.view.cwd(st, J.Json.get_str(o, "thread", "")), J.Json.get_str(o, "path", ""))))),
+        st, cfg, J.Json.get_str(o, "thread", ""), Far.shown.rel(Far.view.cwd(st, J.Json.get_str(o, "thread", "")), J.Json.get_str(o, "path", "")), J.Json.get_str(o, "kind", ""))
+    case None{}:
+      IO.pure(Unit, Unit{})
+
+# a view message the hub broadcast (viewer_show), told on
+def Far.shown(+st: M.State, +cfg: Cfg, +text: String) -> IO(Unit):
+  Bool.pick(IO(Unit), String.starts_with(text, "{\"t\":\"view\""), Far.shown.o(J.Json.parse(text), st, cfg), IO.pure(Unit, Unit{}))
+
 def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
   match h o:
     case Hub{st, f, ls, cl, as, inbox, cfg, note} B.Send{+client, +text}:
@@ -6232,9 +6279,10 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         +now : Nat <- Now.nat()
         cl2 : List<&2, Client> <- Wire.delta(cl, B.Delta.msg(thread, text))
         return Hub{st, f, ls, cl2, as, inbox, Live.with(cfg, LV.Live.add.at(Live.of(cfg), thread, text, Nat.mul(now, 1000n))), note}
-    case Hub{st, f, ls, cl, as, inbox, cfg, note} B.Broadcast{+text}:
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note} B.Broadcast{+text}:
       do IO<Hub>:
         cl2 : List<&2, Client> <- Wire.all.of(cl, text, All{Bool.pick(Nat, String.starts_with(text, "{\"t\":\"delta"), 2n, 0n), 0n, 0n, Nil{}})
+        Far.shown(st, cfg, text)
         return Hub{st, f, ls, cl2, as, inbox, cfg, note}
     case Hub{+st, f, ls, cl, +as, inbox, cfg, note} B.AgentStart{+thread, +cwd, _, +model, +session, r, i}:
       Hub.start.k(Agents.get(as, thread), Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, cwd, model, session, r, i, Hub.effort_of(st, thread))
@@ -7190,9 +7238,6 @@ def Far.view.ver.job(+root: String, +thread: String, +want: String, +have: Strin
 def Far.view.get.job(+root: String, +path: String, +reply: Chan(List<&2, U32>)) -> IO(Unit):
   IO.bind(List<&2, U32>, Unit, FVS.Fvs.get(root, path), bs => Bot.answer(reply, bs))
 
-def Far.view.cwd(+st: M.State, +thread: String) -> String:
-  B.Hub.cwd(st, B.Hub.thread(st, thread))
-
 def Hub.far.view.k(i: Nat, h: Hub, +o: J.Json, +text: String, +reply: Chan(List<&2, U32>), +now: Nat) -> IO(Hub):
   match i h:
     case 0n Hub{+st, f, ls, cl, as, inbox, cfg, note}:
@@ -7223,11 +7268,42 @@ def Hub.far.rpc.v(view: Bool, +st: M.State, h: Hub, +o: J.Json, +text: String, +
     case False{}:
       Hub.far.rpc.k(FR.Fr.allowed(st, o), h, o, text, reply, now)
 
+# On the other machine: the file comes into the cache, then the view message
+def Far.show.root(+res: String) -> String:
+  Bool.pick(String, J.Json.get_bool(Maybe.default(&2, J.Json, J.Json.parse(res), J.Null{}), "ok", False{}),
+    J.Json.get_str(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(res), J.Null{}), "result"), "root", ""), "")
+
+def Far.show.text(+link: String, +thread: String, +path: String, +kind: String) -> String:
+  J.Json.show(J.Json.obj([J.KV{"t", J.Str{"view"}}, J.KV{"thread", J.Str{FR.Fr.id(link, thread)}}, J.KV{"path", J.Str{path}}, J.KV{"kind", J.Str{kind}}]))
+
+def Far.show.say(+root: String, +inbox: Chan(Msg), +link: String, +thread: String, +rel: String, +kind: String) -> IO(Unit):
+  Bool.pick(IO(Unit), String.is_empty(root), IO.pure(Unit, Unit{}), Far.send(inbox, Shot{Far.show.text(link, thread, root ++ "/" ++ rel, kind)}))
+
+def Far.show.job(+link: String, +url: String, +home: String, +thread: String, +rel: String, +kind: String, +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    +res : String <- FVS.Fvs.sync(home, link, url, thread, rel, "")
+    Far.show.say(Far.show.root(res), inbox, link, thread, rel, kind)
+
+def Hub.far.show(h: Hub, +link: String, +o: J.Json, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, Far.show.job(link, Bot.peer.url(st, link), Cfg.home(cfg), J.Json.get_str(J.Json.get_obj(o, "p"), "thread", ""), J.Json.get_str(J.Json.get_obj(o, "p"), "path", ""),
+          J.Json.get_str(J.Json.get_obj(o, "p"), "kind", ""), inbox))
+        Hub.answer(Hub{st, f, ls, cl, as, inbox, cfg, note}, reply, Bot.json("200 OK", FVS.Fvs.ok(Nil{})))
+
 # POST /far/rpc: a request about one of this hub's shared threads (Fr.allowed)
-def Hub.far.rpc(ok: Bool, m: Maybe<&2, J.Json>, h: Hub, +text: String, +reply: Chan(List<&2, U32>), +now: Nat) -> IO(Hub):
+def Hub.far.rpc.s(show: Bool, +arg: String, view: Bool, +st: M.State, h: Hub, +o: J.Json, +text: String, +reply: Chan(List<&2, U32>), +now: Nat) -> IO(Hub):
+  match show:
+    case True{}:
+      Hub.far.show(h, arg, o, reply)
+    case False{}:
+      Hub.far.rpc.v(view, st, h, o, text, reply, now)
+
+def Hub.far.rpc(ok: Bool, +arg: String, m: Maybe<&2, J.Json>, h: Hub, +text: String, +reply: Chan(List<&2, U32>), +now: Nat) -> IO(Hub):
   match ok m h:
     case True{} Some{+o} Hub{+st, f, ls, cl, as, inbox, cfg, note}:
-      Hub.far.rpc.v(FV.Fv.read(J.Json.get_str(o, "m", "")), st, Hub{st, f, ls, cl, as, inbox, cfg, note}, o, text, reply, now)
+      Hub.far.rpc.s(FV.Fv.show.is(J.Json.get_str(o, "m", "")), arg, FV.Fv.read(J.Json.get_str(o, "m", "")), st, Hub{st, f, ls, cl, as, inbox, cfg, note}, o, text, reply, now)
     case True{} None{} _:
       Hub.answer(h, reply, W.Http.text("400 Bad Request", "not JSON"))
     case False{} _ _:
@@ -7546,7 +7622,7 @@ def Hub.bot.act(i: Nat, h: Hub, +arg: String, +body: String, +me: String, +reply
     case 5n Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       Hub.far.log(Far.own.id(st, cfg, arg), J.Json.parse(body), Hub{st, f, ls, cl, as, inbox, cfg, note}, reply)
     case 6n Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
-      Hub.far.rpc(Far.own.id(st, cfg, arg), J.Json.parse(body), Hub{st, f, ls, cl, as, inbox, cfg, note}, body, reply, now)
+      Hub.far.rpc(Far.own.id(st, cfg, arg), arg, J.Json.parse(body), Hub{st, f, ls, cl, as, inbox, cfg, note}, body, reply, now)
     case _ _:
       Hub.answer(h, reply, W.Http.text("404 Not Found", "not found"))
 

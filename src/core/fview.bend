@@ -27,6 +27,12 @@ def Fv.reads() -> List<&2, String>:
 def Fv.read(+m: String) -> Bool:
   FR.Fr.may.go(Fv.reads(), m)
 
+# The owner tells its other machines which file an agent's viewer_show put
+# on screen (the thread's own id, the path from its folder): they bring it
+# into their cache and show it to their clients.
+def Fv.show.is(+m: String) -> Bool:
+  String.eq(m, "view.show")
+
 # the jobs those run on the owning hub (the job a request becomes, B.Git):
 # none writes, starts a program or opens a path; anything else is dropped
 def Fv.jobs() -> List<&2, String>:
