@@ -258,10 +258,12 @@ def Island.state(+ts: List<&2, M.Thread>) -> J.Json:
     J.KV{"headline", J.Str{Island.headline(List.length(&2, M.Thread, ts), Island.first(ts))}},
     J.KV{"lines", J.Json.arr(Island.lines(ts))}])
 
+# an ended island goes at once: one left on the lock screen read "All
+# agents idle" beside the next one started
 def Island.end(ends: Bool, +now: Nat) -> List<&2, J.KV>:
   match ends:
     case True{}:
-      [J.KV{"event", J.Str{"end"}}, J.KV{"dismissal-date", J.Num{Nat.show(Nat.add(now, 900n))}}]
+      [J.KV{"event", J.Str{"end"}}, J.KV{"dismissal-date", J.Num{Nat.show(now)}}]
     case False{}:
       [J.KV{"event", J.Str{"update"}}]
 

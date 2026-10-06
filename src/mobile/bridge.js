@@ -324,6 +324,9 @@ globalThis.Backplane = {
   register(platform, token, kind, thread, env, bundle) {
     return step(App.register(hubs, platform, token, kind, thread, env, bundle), true);
   },
+  registerAt(hub, platform, token, kind, thread, env, bundle) {
+    return step(App.register_at(hubs, hub, platform, token, kind, thread, env, bundle), true);
+  },
   act(action, value) {
     return step(App.act(hubs, action, value));
   },

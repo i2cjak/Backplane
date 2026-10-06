@@ -159,3 +159,7 @@ def origin(+hs: H.Hubs, +key: String) -> String:
 # ("start"). Every paired hub gets it, kept in each outbox until answered.
 def register(+hs: H.Hubs, platform: String, token: String, kind: String, thread: String, env: String, bundle: String) -> H.HAct:
   H.Hubs.register(hs, platform, token, kind, thread, env, bundle)
+
+# the same for one hub alone (a Live Activity's token goes to its own hub)
+def register_at(+hs: H.Hubs, +hub: String, platform: String, token: String, kind: String, thread: String, env: String, bundle: String) -> H.HAct:
+  H.Hubs.register.at(hs, hub, platform, token, kind, thread, env, bundle)
