@@ -6725,6 +6725,18 @@ def Laws.island_busy_shows():
 def Laws.island_gone_hidden():
   {==}
 
+def Laws.island_unheard_empty(ts, st):
+  {==}
+
+def Laws.island_heard_online(now, heard, fresh):
+  {==}
+
+def Laws.island_unheard_late():
+  {==}
+
+def Laws.island_unheard_recent():
+  {==}
+
 def Laws.upload_thread_local():
   {==}
 

@@ -96,6 +96,17 @@ def split() -> H.Hubs:
 def busy() -> H.Hubs:
   H.Hubs.after(H.Hubs.recv(two(), "box:3787", changes([M.TurnChanged{"t2", M.Running{}, 200n}])))
 
+# how many threads the merged island shows
+def island(+h: H.Hubs) -> String:
+  Nat.show(J.Json.get_nat(J.Json.get_obj(H.Hubs.screen(h), "island"), "running", 0n))
+
+def tick(h: H.Hubs, +now: Nat) -> H.Hubs:
+  H.Hubs.after(H.Hubs.tick(h, now))
+
+# busy() heard at 1000, then box gone quiet
+def unheard(+now: Nat) -> H.Hubs:
+  tick(H.Hubs.after(H.Hubs.online(tick(busy(), 1000n), "box:3787", False{})), now)
+
 def main() -> IO(Unit):
   do IO<Unit>:
     C.Check.str("first hub is current", H.Hubs.cur(two()), "100.1.1.1:3787")
@@ -115,6 +126,22 @@ def main() -> IO(Unit):
     C.Check.str("streamed text alerts nothing", Nat.show(alerts(H.Hubs.recv(busy(), "box:3787", delta("t2")))), "0")
     C.Check.str("connecting raises no old alerts", Nat.show(alerts(H.Hubs.recv(H.Hubs.set(H.Hubs.init(0n, "c"), ["box:3787"]), "box:3787",
       log([M.ProjectCreated{"p2", "Box", "/box", 50n}, M.ThreadCreated{"t2", "p2", "Two", M.Local{}, "", "", "claude", "", 100n}, M.TurnChanged{"t2", M.Completed{}, 120n}], "")))), "0")
+    # a hub the phone no longer reaches keeps its last state, but its
+    # running threads leave the island once it has been quiet as long as
+    # the hub's own island holds (notify.bend's Note.fresh)
+    C.Check.str("a working hub's thread is on the island", island(tick(busy(), 1000n)), "1")
+    C.Check.str("a hub just gone keeps its threads there", island(unheard(11799n)), "1")
+    C.Check.str("a hub quiet three hours leaves the island", island(unheard(11800n)), "0")
+    C.Check.str("it comes back when the hub answers", island(H.Hubs.after(H.Hubs.online(unheard(50000n), "box:3787", True{}))), "1")
+    C.Check.str("a hub never heard and away shows nothing", island(tick(H.Hubs.after(H.Hubs.online(busy(), "box:3787", False{})), 20000n)), "0")
+    # a Live Activity per hub: each hub's island alone, named by its machine
+    C.Check.str("an island per hub", list(busy(), "islands", "hub"), "100.1.1.1:3787;box:3787;")
+    C.Check.str("a hub's island is its own", J.Json.show(J.Json.get_obj(Maybe.default(&2, J.Json, List.get(&2, J.Json, J.Json.elems(J.Json.get_obj(H.Hubs.screen(busy()), "islands")), 1n), J.Null{}), "island")),
+      "{\"running\":1,\"headline\":\"Two · box\",\"lines\":[{\"thread\":\"box:3787|t2\",\"title\":\"Two\",\"doing\":\"Working\"}]}")
+    C.Check.str("an idle hub's island is empty", J.Json.show(J.Json.get_obj(Maybe.default(&2, J.Json, List.head(&2, J.Json, J.Json.elems(J.Json.get_obj(H.Hubs.screen(busy()), "islands"))), J.Null{}), "island")),
+      "{\"running\":0,\"headline\":\"All agents idle · lap\",\"lines\":[]}")
+    C.Check.str("an activity's token goes to its hub alone", cmds(H.Hubs.cmds(H.Hubs.register.at(two(), "box:3787", "ios", "tok", "activity", "", "", "b"))), "send@box:3787 ")
+    C.Check.str("an alert token goes to every hub", cmds(H.Hubs.cmds(H.Hubs.register(two(), "ios", "tok", "alert", "", "", "b"))), "send@100.1.1.1:3787 send@box:3787 ")
     C.Check.str("an unfocused hub's screen has no thread", J.Json.show(J.Json.get_obj(S.Mob.screen.f(False{}, H.Hubs.ui(busy(), "box:3787")), "thread")), "null")
     # a typed draft builds no screen unless what the composer offers changes
     C.Check.str("nothing offered", A.offer(act(two(), "select", "box:3787|t2")), "")

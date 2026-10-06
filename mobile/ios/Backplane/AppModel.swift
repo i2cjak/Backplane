@@ -17,6 +17,8 @@ final class AppModel {
     @ObservationIgnored private var hubs: [String: Hub] = [:]
     // push tokens by kind, sent again to a hub paired later
     @ObservationIgnored private var tokens: [String: String] = [:]
+    // each hub's Live Activity token, sent again when that hub reconnects
+    @ObservationIgnored private var hubTokens: [String: String] = [:]
     @ObservationIgnored private let notifier = Notifier()
     @ObservationIgnored private var island: IslandController?
     @ObservationIgnored private var ready = false
@@ -115,7 +117,7 @@ final class AppModel {
                 for l in links { if let k = Pairing.key(l) { apply(await e.offline(k)) } }
             }
             ready = true
-            island = IslandController { [weak self] kind, token in self?.register(kind, token) }
+            island = IslandController { [weak self] kind, token, hub in self?.register(kind, token, hub: hub) }
             connect()
             #if DEBUG
             // headless checks pair from the environment: no permission prompt over the screen
@@ -159,9 +161,15 @@ final class AppModel {
         register("alert", token.map { String(format: "%02x", $0) }.joined())
     }
 
-    private func register(_ kind: String, _ token: String) {
-        tokens[kind] = token
+    // a token with a hub (a Live Activity's) goes to that hub alone
+    private func register(_ kind: String, _ token: String, hub: String? = nil) {
         let bundle = Bundle.main.bundleIdentifier ?? ""
+        if let h = hub {
+            hubTokens[h] = token
+            run { await $0.register(at: h, kind, token, env: Self.env, bundle: bundle) }
+            return
+        }
+        tokens[kind] = token
         run { await $0.register(kind, token, env: Self.env, bundle: bundle) }
     }
 
@@ -183,7 +191,10 @@ final class AppModel {
             apply(await e.hubs(keys))
             for (k, l) in keyed where hubs[k] == nil { open(k, l) }
             // a hub paired later learns this phone's push tokens too
-            if fresh { for (kind, token) in tokens { register(kind, token) } }
+            if fresh {
+                for (kind, token) in tokens { register(kind, token) }
+                for (hub, token) in hubTokens where keyed[hub] != nil { register("activity", token, hub: hub) }
+            }
         }
     }
 
@@ -385,7 +396,7 @@ final class AppModel {
     func foreground(_ yes: Bool) {
         active = yes
         if !yes { keep() }
-        if yes, let s = screen { island?.show(s.island, foreground: true) }
+        if yes, let s = screen { island?.show(s.islands ?? [], foreground: true) }
     }
 
     private func apply(_ out: Out?, sent: String? = nil) {
@@ -414,7 +425,7 @@ final class AppModel {
                 shownMaking = making
                 if making { path = [Self.making] } else if path == [Self.making] { path = nav.isEmpty ? [] : [nav] }
             }
-            island?.show(s.island, foreground: active)
+            island?.show(s.islands ?? [], foreground: active)
             #if DEBUG
             if let id = opening, let row = s.projects.lazy.flatMap(\.threads).first(where: { $0.id == id || $0.id.hasSuffix("|" + id) }) {
                 opening = nil

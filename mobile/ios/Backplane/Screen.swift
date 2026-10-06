@@ -615,6 +615,11 @@ struct BotView: Decodable {
     let posts: [BotPost]?
 }
 
+struct HubIsland: Decodable {
+    let hub: String
+    let island: IslandAttributes.ContentState
+}
+
 struct Screen: Decodable {
     let online: Bool
     // hub: the one in focus (its thread is shown, its plots are drawn)
@@ -645,6 +650,9 @@ struct Screen: Decodable {
     let settings: Settings?
     let find: Find?
     let island: IslandAttributes.ContentState
+    // each paired hub's own island, for its Live Activity (hubs.bend's
+    // Hubs.islands); island above is all of them, for the picker
+    let islands: [HubIsland]?
     let thread: ThreadView?
     // the hub's theme ("light", "dark"; empty follows the phone's)
     let theme: String?
