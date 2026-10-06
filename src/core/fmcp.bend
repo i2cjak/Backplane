@@ -24,20 +24,25 @@ import ./bothub.bend as BH
 # only the tools in Fm.names: a request from a machine that is not the
 # owner's never gets this far (the route checks Far.own), and one for a
 # thread this machine does not share is answered with an error and no
-# change. thread_read is the mirror's (xref.bend), thread_wait polls its
-# owner through thread_wait_now.
+# change. thread_read asks the owner too (what it answers is current even
+# before its push reaches the mirror; the mirror's (xref.bend) while the
+# machine is away), thread_wait polls its owner through thread_wait_now,
+# and thread_handoff is /give's (below; no agent calls it).
 
 # the tools a remote agent may call here (thread_wait is its poll)
 def Fm.names() -> List<&2, String>:
-  ["thread_send", "thread_wait_now", "thread_interrupt", "thread_update", "thread_list", "thread_launch", "project_list", "machine_list"]
+  ["thread_send", "thread_wait_now", "thread_interrupt", "thread_update", "thread_list", "thread_launch", "project_list", "machine_list", "thread_read", "thread_handoff"]
 
 # a request from another machine: `mcp.call` of one of the tools the owner's
 # machines may call here (machine_list is each hub's own answer)
 def Fm.is(+o: J.Json) -> Bool:
   String.eq(J.Json.get_str(o, "m", ""), "mcp.call")
 
+def Fm.remote.k(+i: Nat) -> Bool:
+  Bool.or(Nat.is_lt(i, 7n), Bool.and(Nat.is_ge(i, 8n), Nat.is_lt(i, 10n)))
+
 def Fm.remote(+tool: String) -> Bool:
-  Nat.is_lt(C.Codec.pos(Fm.names(), tool), 7n)
+  Fm.remote.k(C.Codec.pos(Fm.names(), tool))
 
 def Fm.allowed(+o: J.Json) -> Bool:
   Bool.and(Fm.is(o), Fm.remote(J.Json.get_str(J.Json.get_obj(o, "p"), "tool", "")))
@@ -90,6 +95,55 @@ def Fm.list(+s: M.State, +project: String) -> MC.Res:
     case M.State{_, ts, _, _, _, _, _, _, _, _, _}:
       Fm.list.k(String.is_empty(String.trim(project)), s, MC.Mcp.project.find(s, project), Map.values(&2, M.Thread, ts))
 
+# /give from another machine: the conversation queued ahead of the
+# thread's next message, as a local /give queues it (bothub.bend's
+# Give.thread.k), or a new thread in a project with it queued
+# (Give.project.k); the project named by id, name or slug
+def Fm.pslug.go(ps: List<&2, M.Project>, +w: String) -> String:
+  match ps:
+    case Nil{}:
+      ""
+    case M.Project{+i, +t, _, _, rm} <> rest:
+      Bool.pick(String, Bool.and(Bool.not(rm), String.eq(RF.Slug.of(t), w)), i, Fm.pslug.go(rest, w))
+
+def Fm.pslug(+s: M.State, +name: String) -> String:
+  match s:
+    case M.State{ps, _, _, _, _, _, _, _, _, _, _}:
+      Fm.pslug.go(Map.values(&2, M.Project, ps), RF.Slug.of(name))
+
+def Fm.pick.p(+s: M.State, +name: String) -> String:
+  Bool.pick(String, String.is_empty(MC.Mcp.project.find(s, name)), Fm.pslug(s, name), MC.Mcp.project.find(s, name))
+
+def Fm.hand.key(+from: String, +key: String) -> String:
+  HD.Hand.prefix() ++ "give:" ++ from ++ ":" ++ key
+
+def Fm.hand.thread(ok: Bool, +s: M.State, +now: Nat, +from: String, +to: String, +a: J.Json) -> MC.Res:
+  match ok:
+    case True{}:
+      MC.Res{True{}, J.Json.obj([J.KV{"threadId", J.Str{to}}, J.KV{"state", J.Str{"queued"}}]),
+        B.Step{[M.TurnQueued{to, Fm.hand.key(from, J.Json.get_str(a, "key", "")), J.Json.get_str(a, "hand", ""), now},
+          M.ActivityLogged{to, "k" ++ J.Json.get_str(a, "key", "") ++ ".in", "info", "fork", "\"" ++ J.Json.get_str(a, "title", "") ++ "\" was handed over from another machine; it goes with the next message", now}], Nil{}}}
+    case False{}:
+      MC.Res.fail("that thread is not shared with you (it is not on this machine)")
+
+def Fm.hand.project(ok: Bool, +s: M.State, +now: Nat, +from: String, +pid: String, +a: J.Json) -> MC.Res:
+  match ok:
+    case True{}:
+      +th = B.Hub.id("t", now, B.Hub.seq(s))
+      +mode = M.Setting.get(s, "thread.env", "auto")
+      MC.Res{True{}, J.Json.obj([J.KV{"threadId", J.Str{th}}, J.KV{"state", J.Str{"queued"}}]),
+        B.Step{[M.ThreadCreated{th, pid, J.Json.get_str(a, "title", "Handed over"), B.Hub.new.env(M.Scratch.is(pid), mode), "", B.Hub.new.wt(M.Scratch.is(pid), B.Hub.project.root(B.Hub.project(s, pid)), th),
+            J.Json.get_str(a, "provider", "claude"), J.Json.get_str(a, "model", ""), now},
+          M.TurnQueued{th, Fm.hand.key(from, J.Json.get_str(a, "key", "")), J.Json.get_str(a, "hand", ""), now}],
+          B.Hub.new.outs(M.Scratch.is(pid), th, B.Hub.project.root(B.Hub.project(s, pid)), mode)}}
+    case False{}:
+      MC.Res.fail("no project called " ++ J.Json.get_str(a, "project", "") ++ " is shared on this machine")
+
+def Fm.hand(+s: M.State, +now: Nat, +from: String, +a: J.Json) -> MC.Res:
+  Bool.pick(MC.Res, String.is_empty(J.Json.get_str(a, "threadId", "")),
+    Fm.hand.project(FR.Fr.project.shared(s, Fm.pick.p(s, J.Json.get_str(a, "project", ""))), s, now, from, Fm.pick.p(s, J.Json.get_str(a, "project", "")), a),
+    Fm.hand.thread(FR.Fr.thread.shared(s, J.Json.get_str(a, "threadId", "")), s, now, from, J.Json.get_str(a, "threadId", ""), a))
+
 def Fm.call.k(i: Nat, +s: M.State, +now: Nat, +from: String, +a: J.Json, +id: String, +ok: Bool) -> MC.Res:
   match i:
     case 0n:
@@ -106,6 +160,10 @@ def Fm.call.k(i: Nat, +s: M.State, +now: Nat, +from: String, +a: J.Json, +id: St
       MC.Mcp.launch(s, now, "", a)
     case 6n:
       MC.Res.ok(J.Json.obj([J.KV{"projects", J.Json.arr(Fm.proj.rows(s))}]))
+    case 8n:
+      Fm.say(ok, MC.Mcp.read.k(ok, s, id, M.Switch.num(J.Json.as_raw(J.Json.get(a, "limit"), "40"), 40n)))
+    case 9n:
+      Fm.hand(s, now, from, a)
     case _:
       MC.Res.fail("unknown tool")
 
@@ -167,10 +225,26 @@ type Plan is Data:
   PFar{link: String, body: String}
 
 # one machine as the agent sees it
+# (a mirror's projects, from its project changes alone: the rest of its
+# history is not decoded for a listing)
+def Fm.pitems.k(keep: Bool, i: FR.Item, rest: List<&2, FR.Item>) -> List<&2, FR.Item>:
+  match keep:
+    case True{}:
+      i <> rest
+    case False{}:
+      rest
+
+def Fm.pitems(xs: List<&2, FR.Item>) -> List<&2, FR.Item>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case FR.Item{+n, +c} <> t:
+      Fm.pitems.k(String.starts_with(J.Json.get_str(c, "$", ""), "Project"), FR.Item{n, c}, Fm.pitems(t))
+
 def Fm.machine(+i: FR.In) -> J.Json:
   J.Json.obj([J.KV{"machine", J.Str{FR.In.name.of(i)}}, J.KV{"link", J.Str{FR.In.link(i)}},
     J.KV{"state", J.Str{Bool.pick(String, FR.In.away(i), "away", "here")}},
-    J.KV{"projects", J.Json.arr(Fm.proj.rows(XR.Xref.state(i)))}])
+    J.KV{"projects", J.Json.arr(Fm.proj.rows(FR.Fr.apply(Fm.pitems(FR.In.items(i)), FR.In.link(i), M.State.empty())))}])
 
 def Fm.machines.go(ins: List<&2, FR.In>) -> List<&2, J.Json>:
   match ins:
@@ -186,8 +260,8 @@ def Fm.machines(+s: M.State, ins: List<&2, FR.In>) -> MC.Res:
     J.KV{"note", J.Str{"Name a machine in thread_list and thread_launch (`machine`), or use the ids shown here (<link>~<id>) with thread_send, thread_read, thread_wait and thread_interrupt."}}]))
 
 # the machine word a call names ("" for none: it is this hub's)
-def Fm.word(i: Nat, +a: J.Json) -> String:
-  Bool.pick(String, Nat.is_lt(i, 4n),
+def Fm.word(+i: Nat, +a: J.Json) -> String:
+  Bool.pick(String, Bool.or(Nat.is_lt(i, 4n), Nat.is_eq(i, 8n)),
     Bool.pick(String, FR.Fr.is(J.Json.get_str(a, "threadId", "")), FR.Fr.link(J.Json.get_str(a, "threadId", "")), ""),
     Bool.pick(String, FR.Fr.is(J.Json.get_str(a, "project", "")), FR.Fr.link(J.Json.get_str(a, "project", "")), J.Json.get_str(a, "machine", "")))
 
@@ -202,10 +276,25 @@ def Fm.plan.i(m: Maybe<&2, FR.In>, +word: String, +tool: String, +thread: String
 def Fm.plan.w(+word: String, +ins: List<&2, FR.In>, +tool: String, +thread: String, a: J.Json) -> Plan:
   Bool.pick(Plan, String.is_empty(word), PHere{}, Fm.plan.i(XR.Xref.pick(ins, RF.Slug.of(word)), word, tool, thread, a))
 
+# (thread_read on a machine that is away reads its mirror here)
+def Fm.plan.read.i(m: Maybe<&2, FR.In>, +word: String, +tool: String, +thread: String, a: J.Json) -> Plan:
+  match m:
+    case Some{+i}:
+      Bool.pick(Plan, FR.In.away(i), PHere{}, PFar{FR.In.link(i), Fm.request(FR.In.link(i), tool, FR.Fr.id(FR.In.link(i), thread), a)})
+    case None{}:
+      PHere{}
+
+def Fm.plan.read(+word: String, +ins: List<&2, FR.In>, +tool: String, +thread: String, a: J.Json) -> Plan:
+  Bool.pick(Plan, String.is_empty(word), PHere{}, Fm.plan.read.i(XR.Xref.pick(ins, RF.Slug.of(word)), word, tool, thread, a))
+
 def Fm.plan.k(i: Nat, +s: M.State, +ins: List<&2, FR.In>, +tool: String, +thread: String, +a: J.Json) -> Plan:
   match i:
-    case 8n:
+    case 10n:
       PHere{}
+    case 9n:
+      PHere{}
+    case 8n:
+      Fm.plan.read(Fm.word(i, a), ins, tool, thread, a)
     case 7n:
       PAnswer{Fm.machines(s, ins)}
     case _:
@@ -265,62 +354,150 @@ def Fm.prompt(ins: List<&2, FR.In>) -> String:
 # /give elsewhere
 # ---------------
 # `/give >machine:slug` hands the conversation to a thread on another
-# machine (thread_send, queued there), and `/give %machine:project` makes a
-# new thread in that machine's project with it (thread_launch): the same
-# signed request an agent's call becomes (PFar). Words naming something
-# here are the hub's own (bothub.bend's Give.*).
+# machine, and `/give %machine:project` to a new thread in that machine's
+# project: thread_handoff there queues it ahead of the next message, as a
+# local /give does (Fm.hand), and the person hears back only once each
+# machine took it (the server's Far.give). Words naming something here are
+# the hub's own (bothub.bend's Give.*), read from the text with the machine
+# words left out (Fm.give.local), so `%beta:board` is never also a local
+# `%beta`. A thread elsewhere gives from its own machine.
 
 # a project on another machine: `%machine:name`
 def Fm.pword(+w: String) -> Bool:
   Bool.and(String.eq(RF.Refs.kind(w), "project"), Bool.and(String.contains(w, ":"), Bool.not(String.is_empty(RF.Slug.of(RF.Refs.x.m(String.drop(w, 1n)))))))
 
-def Fm.give.thread(m: Maybe<&2, RF.Cand>, +link: String, +src: String, +hand: String) -> List<&2, Plan>:
+def Fm.far.word(+w: String) -> Bool:
+  Bool.or(XR.Xref.named(w), Fm.pword(w))
+
+# what the source thread gives: its conversation, title, provider and model
+type Src is Data:
+  Src{id: String, hand: String, title: String, provider: String, model: String, key: String}
+
+def Fm.src.of(t: M.Thread, +id: String, +hand: String, +key: String) -> Src:
+  match t:
+    case M.Thread{_, _, +ti, _, _, _, _, _, _, _, _, _, _, _, _, +pr, +mo, _, _, _, _}:
+      Src{id, hand, ti, pr, mo, key}
+
+def Fm.hand.req(+link: String, +i: Nat, src: Src, +target: J.KV) -> Plan:
+  match src:
+    case Src{+id, +hand, +ti, +pr, +mo, +key}:
+      PFar{link, Fm.request(link, "thread_handoff", FR.Fr.id(link, id), J.Json.obj([target, J.KV{"hand", J.Str{hand}}, J.KV{"key", J.Str{key ++ "." ++ Nat.show(i)}},
+        J.KV{"title", J.Str{ti}}, J.KV{"provider", J.Str{pr}}, J.KV{"model", J.Str{mo}}]))}
+
+# (a mirror's threads, from its thread and project changes alone)
+def Fm.titems.k(keep: Bool, i: FR.Item, rest: List<&2, FR.Item>) -> List<&2, FR.Item>:
+  match keep:
+    case True{}:
+      i <> rest
+    case False{}:
+      rest
+
+def Fm.titems(xs: List<&2, FR.Item>) -> List<&2, FR.Item>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case FR.Item{+n, +c} <> t:
+      Fm.titems.k(Bool.or(String.starts_with(J.Json.get_str(c, "$", ""), "Thread"), String.starts_with(J.Json.get_str(c, "$", ""), "Project")), FR.Item{n, c}, Fm.titems(t))
+
+def Fm.give.thread(m: Maybe<&2, RF.Cand>, +link: String, +word: String, +i: Nat, src: Src) -> Plan:
   match m:
     case Some{RF.Cand{+id, _, _, _}}:
-      [PFar{link, Fm.request(link, "thread_send", FR.Fr.id(link, src), J.Json.obj([J.KV{"threadId", J.Str{id}}, J.KV{"text", J.Str{hand}}, J.KV{"mode", J.Str{"queue"}}]))}]
+      Fm.hand.req(link, i, src, J.KV{"threadId", J.Str{id}})
     case None{}:
-      Nil{}
+      PAnswer{MC.Res.fail("no thread " ++ word ++ " on that machine")}
 
-def Fm.give.t(m: Maybe<&2, FR.In>, +slug: String, +src: String, +hand: String) -> List<&2, Plan>:
+def Fm.give.t(m: Maybe<&2, FR.In>, +slug: String, +word: String, +i: Nat, src: Src) -> Plan:
   match m:
-    case Some{+i}:
-      Fm.give.thread(List.head(&2, RF.Cand, List.sort(~RF.Cand, ~RF.Cand.before, RF.Refs.t.hits(XR.Xref.threads(XR.Xref.state(i)), slug, ""))), FR.In.link(i), src, hand)
+    case Some{+in}:
+      Fm.give.thread(List.head(&2, RF.Cand, List.sort(~RF.Cand, ~RF.Cand.before, RF.Refs.t.hits(XR.Xref.threads(FR.Fr.apply(Fm.titems(FR.In.items(in)), FR.In.link(in), M.State.empty())), slug, ""))), FR.In.link(in), word, i, src)
     case None{}:
-      Nil{}
+      PAnswer{MC.Res.fail("no machine of yours called " ++ RF.Refs.x.m(String.drop(word, 1n)) ++ " is linked here")}
 
-def Fm.give.p(m: Maybe<&2, FR.In>, +name: String, +src: String, +hand: String, +title: String) -> List<&2, Plan>:
+def Fm.give.p(m: Maybe<&2, FR.In>, +name: String, +word: String, +i: Nat, src: Src) -> Plan:
   match m:
-    case Some{+i}:
-      [PFar{FR.In.link(i), Fm.request(FR.In.link(i), "thread_launch", FR.Fr.id(FR.In.link(i), src), J.Json.obj([J.KV{"project", J.Str{name}}, J.KV{"prompt", J.Str{hand}}, J.KV{"title", J.Str{title}}]))}]
+    case Some{+in}:
+      Fm.hand.req(FR.In.link(in), i, src, J.KV{"project", J.Str{name}})
     case None{}:
+      PAnswer{MC.Res.fail("no machine of yours called " ++ RF.Refs.x.m(String.drop(word, 1n)) ++ " is linked here")}
+
+# (match on the word's kind, so only its own lookup runs)
+def Fm.give.word.k(named: Bool, proj: Bool, +w: String, +ins: List<&2, FR.In>, +i: Nat, src: Src) -> List<&2, Plan>:
+  match named proj:
+    case True{} _:
+      [Fm.give.t(XR.Xref.pick(ins, RF.Slug.of(RF.Refs.x.m(String.drop(w, 1n)))), RF.Slug.of(RF.Slug.take(RF.Refs.x.q(String.drop(w, 1n)))), w, i, src)]
+    case False{} True{}:
+      [Fm.give.p(XR.Xref.pick(ins, RF.Slug.of(RF.Refs.x.m(String.drop(w, 1n)))), RF.Refs.x.q(String.drop(w, 1n)), w, i, src)]
+    case False{} False{}:
       Nil{}
 
-def Fm.give.word(+w: String, +ins: List<&2, FR.In>, +src: String, +hand: String, +title: String) -> List<&2, Plan>:
-  Bool.pick(List<&2, Plan>, XR.Xref.named(w),
-    Fm.give.t(XR.Xref.pick(ins, RF.Slug.of(RF.Refs.x.m(String.drop(w, 1n)))), RF.Slug.of(RF.Slug.take(RF.Refs.x.q(String.drop(w, 1n)))), src, hand),
-    Bool.pick(List<&2, Plan>, Fm.pword(w),
-      Fm.give.p(XR.Xref.pick(ins, RF.Slug.of(RF.Refs.x.m(String.drop(w, 1n)))), RF.Refs.x.q(String.drop(w, 1n)), src, hand, title),
-      Nil{}))
-
-def Fm.give.words(ws: List<&2, String>, +ins: List<&2, FR.In>, +src: String, +hand: String, +title: String) -> List<&2, Plan>:
+def Fm.give.words(ws: List<&2, String>, +ins: List<&2, FR.In>, +i: Nat, +src: Src) -> List<&2, Plan>:
   match ws:
     case Nil{}:
       Nil{}
     case +w <> t:
-      List.append(&2, Plan, Fm.give.word(w, ins, src, hand, title), Fm.give.words(t, ins, src, hand, title))
+      List.append(&2, Plan, Fm.give.word.k(XR.Xref.named(w), Fm.pword(w), w, ins, i, src), Fm.give.words(t, ins, 1n+i, src))
 
-def Fm.give.go(+s: M.State, +ins: List<&2, FR.In>, +src: String, +text: String) -> List<&2, Plan>:
-  Fm.give.words(RF.Refs.sigil.words(text), ins, src, String.take(HD.Hand.give(B.Hub.entries(s), src, HD.Hand.title(B.Hub.thread(s, src)), BH.Give.note(text)), 100000n), HD.Hand.title(B.Hub.thread(s, src)))
+def Fm.give.any(ws: List<&2, String>) -> Bool:
+  match ws:
+    case Nil{}:
+      False{}
+    case +w <> t:
+      Bool.or(Fm.far.word(w), Fm.give.any(t))
+
+# the text without its machine words (what the hub's own Give.* reads)
+def Fm.give.drop.k(far: Bool, +w: String, rest: List<&2, String>) -> List<&2, String>:
+  match far:
+    case True{}:
+      rest
+    case False{}:
+      w <> rest
+
+def Fm.give.drop(ws: List<&2, String>) -> List<&2, String>:
+  match ws:
+    case Nil{}:
+      Nil{}
+    case +w <> t:
+      Fm.give.drop.k(Fm.far.word(w), w, Fm.give.drop(t))
+
+def Fm.give.text(+text: String) -> String:
+  String.join(Fm.give.drop(String.split(text, ' ')), " ")
+
+def Fm.give.go(far: Bool, +s: M.State, +ins: List<&2, FR.In>, +src: String, +text: String, +now: Nat) -> List<&2, Plan>:
+  match far:
+    case True{}:
+      [PAnswer{MC.Res.fail("give this thread from its own machine")}]
+    case False{}:
+      Fm.give.words(RF.Refs.sigil.words(text), ins, 0n, Fm.src.of(B.Hub.thread(s, src), src,
+        String.take(HD.Hand.give(B.Hub.entries(s), src, HD.Hand.title(B.Hub.thread(s, src)), BH.Give.note(Fm.give.text(text))), 100000n), Nat.show(now) ++ "-" ++ Nat.show(B.Hub.seq(s))))
+
+def Fm.give.k(any: Bool, +s: M.State, +ins: List<&2, FR.In>, +src: String, +text: String, +now: Nat) -> List<&2, Plan>:
+  match any:
+    case True{}:
+      Fm.give.go(FR.Fr.is(src), s, ins, src, text, now)
+    case False{}:
+      Nil{}
 
 # the requests a `bots.give` makes of other machines (none for any other
 # request, or a text that names nothing elsewhere: a cheap test first)
-def Fm.give(+s: M.State, +ins: List<&2, FR.In>, +o: J.Json) -> List<&2, Plan>:
+def Fm.give(+s: M.State, +ins: List<&2, FR.In>, +o: J.Json, +now: Nat) -> List<&2, Plan>:
   Bool.pick(List<&2, Plan>, Bool.and(String.eq(J.Json.get_str(o, "m", ""), "bots.give"), String.contains(J.Json.get_str(J.Json.get_obj(o, "p"), "text", ""), ":")),
-    Fm.give.go(s, ins, J.Json.get_str(J.Json.get_obj(o, "p"), "thread", ""), J.Json.get_str(J.Json.get_obj(o, "p"), "text", "")), Nil{})
+    Fm.give.k(Fm.give.any(RF.Refs.sigil.words(J.Json.get_str(J.Json.get_obj(o, "p"), "text", ""))), s, ins, J.Json.get_str(J.Json.get_obj(o, "p"), "thread", ""), J.Json.get_str(J.Json.get_obj(o, "p"), "text", ""), now), Nil{})
+
+# the request as the hub runs it here: the same, its text without the
+# machine words
+def Fm.give.local(+o: J.Json) -> J.Json:
+  J.Json.obj([J.KV{"id", Maybe.default(&2, J.Json, J.Json.get(o, "id"), J.Num{"0"})}, J.KV{"m", J.Str{"bots.give"}},
+    J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{J.Json.get_str(J.Json.get_obj(o, "p"), "thread", "")}}, J.KV{"text", J.Str{Fm.give.text(J.Json.get_str(J.Json.get_obj(o, "p"), "text", ""))}}])}])
 
 # whether the text also names something here (bothub.bend's Give.*)
 def Fm.give.here(+s: M.State, +o: J.Json) -> Bool:
   Bool.not(List.is_empty(&2, RF.Hit, RF.Refs.found(s, J.Json.get_str(J.Json.get_obj(o, "p"), "thread", ""), J.Json.get_str(J.Json.get_obj(o, "p"), "text", ""))))
+
+# what a plan that failed says
+def Fm.res.msg(r: MC.Res) -> String:
+  match r:
+    case MC.Res{_, +b, _}:
+      J.Json.get_str(b, "error", "it could not be given")
 
 # a plan's name (laws and logs)
 def Fm.plan.name(p: Plan) -> String:
@@ -331,3 +508,11 @@ def Fm.plan.name(p: Plan) -> String:
       "answer"
     case PFar{_, _}:
       "far"
+
+# the plans' names, in order (laws)
+def Fm.give.names(ps: List<&2, Plan>) -> String:
+  match ps:
+    case Nil{}:
+      ""
+    case p <> t:
+      Fm.plan.name(p) ++ " " ++ Fm.give.names(t)

@@ -3693,7 +3693,13 @@ law far_change_names_link:
   for role: M.Role
   for +text: String
   for +at: Nat
-  {FR.Fr.change(l, M.MessagePosted{th, msg, role, text, at}) == Some{M.MessagePosted{FR.Fr.id(l, th), msg, role, text, at}} : Maybe<&2, M.Change>}
+  {FR.Fr.change(l, M.MessagePosted{th, msg, role, text, at}) == Some{M.MessagePosted{FR.Fr.id(l, th), FR.Fr.sent(l, msg), role, text, at}} : Maybe<&2, M.Change>}
+
+# a message id names its sender (M.Link.id) as the mirror names it: a
+# thread of the mirroring machine's own is its own again, one of the
+# owner's goes through the link; an id with no sender is left as it is
+law far_sent_names_sender:
+  {FR.Fr.sent("p1", M.Link.id("p1~ta", "m5")) ++ " " ++ FR.Fr.sent("p1", M.Link.id("tb", "m6")) ++ " " ++ FR.Fr.sent("p1", "m1790715007-3") == "t:ta:m5 t:p1~tb:m6 m1790715007-3" : String}
 
 law far_change_bot_named:
   for +l: String
@@ -6072,6 +6078,11 @@ law fmc_args_other_link_kept:
 law fmc_reply_ids_named_by_link:
   {J.Json.show(FMC.Fm.far.json(J.Json.obj([J.KV{"threadId", J.Str{"t1"}}, J.KV{"title", J.Str{"t1"}}, J.KV{"threads", J.Json.arr([J.Json.obj([J.KV{"id", J.Str{"t2"}}, J.KV{"project", J.Str{""}}])])}]), "p1")) == "{\"threadId\":\"p1~t1\",\"title\":\"t1\",\"threads\":[{\"id\":\"p1~t2\",\"project\":\"\"}]}" : String}
 
-# /give names nothing elsewhere when no machine is linked
+# /give sends nothing to a machine that is not linked: each word naming
+# one is an error the person hears
 law fmc_give_unlinked_nothing:
-  {List.is_empty(&2, FMC.Plan, FMC.Fm.give(M.State.empty(), Nil{}, J.Json.obj([J.KV{"m", J.Str{"bots.give"}}, J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{"t1"}}, J.KV{"text", J.Str{"/give >beta:fix and %beta:board"}}])}]))) == True{} : Bool}
+  {FMC.Fm.give.names(FMC.Fm.give(M.State.empty(), Nil{}, J.Json.obj([J.KV{"m", J.Str{"bots.give"}}, J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{"t1"}}, J.KV{"text", J.Str{"/give >beta:fix and %beta:board"}}])}]), 5n)) == "answer answer " : String}
+
+# the hub's own /give never reads a machine's word as one of its own
+law fmc_give_local_drops_machines:
+  {FMC.Fm.give.text("/give >beta:fix %mine %beta:board now") == "/give %mine now" : String}

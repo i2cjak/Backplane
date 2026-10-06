@@ -4440,8 +4440,9 @@ def Media.run(+tx: AG.Tx, +job: String, +inbox: Chan(Msg), +client: U32, +id: St
   Media.run.k(C.Codec.pos(["attach.put", "attach.file", "attach.claude", "update.check"], job), tx, job, inbox, client, id, thread, cwd, a, b, home, managed, gen)
 
 # thread_wait: the check (MC.Wait.now) goes through the hub each second,
-# off the hub, until the thread is done or the time is up; its last answer
-# is the reply
+# off the hub, until the thread is done or the time is up (by the clock: a
+# check of a thread elsewhere asks its machine, which takes a while); its
+# last answer is the reply
 def Wait.next(stop: Bool, text: String, +reply: Chan(String), k: Unit -> IO(Unit)) -> IO(Unit):
   match stop:
     case True{}:
@@ -4449,14 +4450,14 @@ def Wait.next(stop: Bool, text: String, +reply: Chan(String), k: Unit -> IO(Unit
     case False{}:
       IO.bind(Unit, Unit, IO.sleep(1000), k)
 
-def Wait.got(m: Maybe<&1, String>, +left: Nat, +reply: Chan(String), k: Unit -> IO(Unit)) -> IO(Unit):
+def Wait.got(m: Maybe<&1, String>, last: Bool, +reply: Chan(String), k: Unit -> IO(Unit)) -> IO(Unit):
   match m:
     case Some{+text}:
-      Wait.next(Bool.or(MC.Wait.done(text), Nat.is_eq(left, 0n)), text, reply, k)
+      Wait.next(Bool.or(MC.Wait.done(text), last), text, reply, k)
     case None{}:
       IO.pure(Unit, Unit{})
 
-def Wait.loop(+fuel: Nat, +thread: String, +check: String, +reply: Chan(String), +inbox: Chan(Msg)) -> IO(Unit):
+def Wait.loop(+fuel: Nat, +end: Nat, +thread: String, +check: String, +reply: Chan(String), +inbox: Chan(Msg)) -> IO(Unit):
   match fuel:
     case 0n:
       IO.pure(Unit, Unit{})
@@ -4465,7 +4466,8 @@ def Wait.loop(+fuel: Nat, +thread: String, +check: String, +reply: Chan(String),
         +r2 : Chan(String) <- Chan.new(String, 1)
         ok : Bool <- Chan.send(Msg, inbox, Mcp{thread, check, r2})
         m : Maybe<&1, String> <- Chan.recv(String, r2)
-        Wait.got(m, f, reply, _ => Wait.loop(f, thread, check, reply, inbox))
+        t : Nat <- Now.nat()
+        Wait.got(m, Bool.or(Nat.is_eq(f, 0n), Nat.is_ge(t, end)), reply, _ => Wait.loop(f, end, thread, check, reply, inbox))
 
 # a message's line, its images read: it goes once every message the hub
 # took before it has gone (Claude.ready)
@@ -6791,39 +6793,104 @@ def Hub.rpc.far(maybe: Bool, h: Hub, +client: U32, +text: String, +now: Nat) -> 
     case False{}:
       Hub.rpc.here(h, client, text, now)
 
-# `/give` naming threads or projects on the owner's other machines: each is
-# sent there (fmcp.bend's Fm.give, as an agent's tool call is); the hub's
-# own part, if the text names any, runs as usual, else the client is told ok
-def Far.give.go(ps: List<&2, FM.Plan>, h: Hub) -> IO(Hub):
-  match ps h:
-    case Nil{} _:
-      IO.pure(Hub, h)
-    case FM.PFar{+link, +rq} <> t Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
-      do IO<Hub>:
-        +r : Chan(String) <- Chan.new(String, 1)
-        IO.spawn(Unit, Far.mcp.job(J.Null{}, link, rq, Cfg.home(cfg), Bot.peer.url(st, link), r))
-        Far.give.go(t, Hub{st, f, ls, cl, as, inbox, cfg, note})
-    case _ <> t _:
-      Far.give.go(t, h)
+# `/give` naming threads or projects on the owner's other machines
+# (fmcp.bend's Fm.give): each machine is asked in turn, off the hub, to
+# queue the conversation (thread_handoff). When the text names nothing here
+# the client's answer waits for them: ok only when every machine took it.
+# Otherwise the hub's own part answers as usual (its text without the
+# machine words, Fm.give.local), and a machine that did not take it is
+# told to the client as an error.
+type GiveTo is Data:
+  GiveTo{link: String, url: String, body: String, own: Bool, err: String}
 
-def Far.give.k(here: Bool, h: Hub, +client: U32, +id: String, +text: String, +now: Nat) -> IO(Hub):
+def Far.give.tos(ps: List<&2, FM.Plan>, +st: M.State, +cfg: Cfg) -> List<&2, GiveTo>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case FM.PFar{+link, +rq} <> t:
+      GiveTo{link, Bot.peer.url(st, link), rq, Far.own.id(st, cfg, link), ""} <> Far.give.tos(t, st, cfg)
+    case FM.PAnswer{r} <> t:
+      GiveTo{"", "", "", False{}, FM.Fm.res.msg(r)} <> Far.give.tos(t, st, cfg)
+    case _ <> t:
+      Far.give.tos(t, st, cfg)
+
+def Far.give.res.m(m: Maybe<&2, J.Json>) -> String:
+  match m:
+    case Some{+o}:
+      Bool.pick(String, J.Json.get_bool(J.Json.get_obj(o, "mcp"), "ok", False{}), "",
+        J.Json.get_str(J.Json.get_obj(J.Json.get_obj(o, "mcp"), "body"), "error", J.Json.get_str(o, "error", "that machine did not take it")))
+    case None{}:
+      "that machine's answer was not understood"
+
+def Far.give.res(+code: Nat, +body: String) -> String:
+  Bool.pick(String, Nat.is_eq(code, 200n), Far.give.res.m(J.Json.parse(body)),
+    Bool.pick(String, Nat.is_eq(code, 0n), "that machine is away", "that machine did not take it: " ++ String.take(body, 120n)))
+
+def Far.give.ask(+home: String, +url: String, +link: String, +body: String) -> IO(String):
+  do IO<String>:
+    now : Nat <- Now.nat()
+    +n : String <- BN.Bn.random(4n)
+    +r : BN.Resp <- BN.Bn.to_peer(home, url, link, now, "/far/rpc", True{}, FR.Fr.nonced(body, n))
+    return Far.give.res(Far.code(r), Far.body(r))
+
+def Far.give.one(g: GiveTo, +home: String) -> IO(String):
+  match g:
+    case GiveTo{+link, +url, +body, own, +err}:
+      Bool.pick(IO(String), Bool.not(String.is_empty(err)), IO.pure(String, err),
+        Bool.pick(IO(String), own, Far.give.ask(home, url, link, body), IO.pure(String, "sync with that machine is off here")))
+
+def Far.give.keep(+e: String, +rest: List<&2, String>) -> List<&2, String>:
+  Bool.pick(List<&2, String>, String.is_empty(e), rest, e <> rest)
+
+def Far.give.run(gs: List<&2, GiveTo>, +home: String) -> IO(List<&2, String>):
+  match gs:
+    case Nil{}:
+      IO.pure(List<&2, String>, Nil{})
+    case g <> t:
+      do IO<List<&2, String>>:
+        +e : String <- Far.give.one(g, home)
+        rest : List<&2, String> <- Far.give.run(t, home)
+        return Far.give.keep(e, rest)
+
+def Far.give.said(here: Bool, +client: U32, +id: String, es: List<&2, String>, +inbox: Chan(Msg)) -> IO(Unit):
+  match here es:
+    case False{} Nil{}:
+      Far.send(inbox, Push{client, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{id}}, J.KV{"ok", J.Flag{True{}}}]))})
+    case False{} +e <> +t:
+      Far.send(inbox, Push{client, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{id}}, J.KV{"ok", J.Flag{False{}}}, J.KV{"error", J.Str{String.join(e <> t, "; ")}}]))})
+    case True{} Nil{}:
+      IO.pure(Unit, Unit{})
+    case True{} +e <> +t:
+      Far.send(inbox, Push{client, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"update"}}, J.KV{"error", J.Str{"/give: " ++ String.join(e <> t, "; ")}}]))})
+
+def Far.give.job(gs: List<&2, GiveTo>, here: Bool, +client: U32, +id: String, +home: String, +inbox: Chan(Msg)) -> IO(Unit):
+  IO.bind(List<&2, String>, Unit, Far.give.run(gs, home), es => Far.give.said(here, client, id, es, inbox))
+
+def Far.give.k(here: Bool, h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
   match here:
     case True{}:
       Hub.rpc.far(Hub.rpc.farish(text), h, client, text, now)
     case False{}:
-      Hub.push(h, client, J.Json.show(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{id}}, J.KV{"ok", J.Flag{True{}}}])))
+      IO.pure(Hub, h)
 
-def Far.give.p(ps: List<&2, FM.Plan>, +here: Bool, h: Hub, +client: U32, +id: String, +text: String, +now: Nat) -> IO(Hub):
+def Far.give.start(ps: List<&2, FM.Plan>, +here: Bool, h: Hub, +client: U32, +o: J.Json, +now: Nat) -> IO(Hub):
+  match h:
+    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
+      do IO<Hub>:
+        IO.spawn(Unit, Far.give.job(Far.give.tos(ps, st, cfg), here, client, J.Json.as_raw(J.Json.get(o, "id"), "0"), Cfg.home(cfg), inbox))
+        Far.give.k(here, Hub{st, f, ls, cl, as, inbox, cfg, note}, client, J.Json.show(FM.Fm.give.local(o)), now)
+
+def Far.give.p(ps: List<&2, FM.Plan>, +st: M.State, h: Hub, +client: U32, +o: J.Json, +text: String, +now: Nat) -> IO(Hub):
   match ps:
     case Nil{}:
       Hub.rpc.far(Hub.rpc.farish(text), h, client, text, now)
-    case _ <> _:
-      IO.bind(Hub, Hub, Far.give.go(ps, h), h2 => Far.give.k(here, h2, client, id, text, now))
+    case +p <> +t:
+      Far.give.start(p <> t, FM.Fm.give.here(st, FM.Fm.give.local(o)), h, client, o, now)
 
 def Far.give(m: Maybe<&2, J.Json>, h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
   match m h:
     case Some{+o} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
-      Far.give.p(FM.Fm.give(st, FR.Fh.ins(BN.Bn.far(Cfg.bn(cfg))), o), FM.Fm.give.here(st, o), Hub{st, f, ls, cl, as, inbox, cfg, note}, client, J.Json.as_raw(J.Json.get(o, "id"), "0"), text, now)
+      Far.give.p(FM.Fm.give(st, FR.Fh.ins(BN.Bn.far(Cfg.bn(cfg))), o, now), st, Hub{st, f, ls, cl, as, inbox, cfg, note}, client, o, text, now)
     case None{} _:
       Hub.rpc.far(Hub.rpc.farish(text), h, client, text, now)
 
@@ -6942,13 +7009,13 @@ def Hub.newproj.made(h: Hub, +root: String, +name: String, +id: String, +reply: 
       Hub.mcp.k(MC.Mcp.reply(Maybe.default(&2, J.Json, J.Json.parse(id), J.Null{}), BH.Bots.newproj.made(st, now, root, name)),
         Hub{st, f, ls, cl, as, inbox, cfg, note}, reply, "")
 
-def Hub.mcp.w(secs: Nat, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
+def Hub.mcp.w(+secs: Nat, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match secs h:
     case 0n _:
       Hub.mcp.hub(h, thread, body, reply, now)
     case 1n+k Hub{st, f, ls, cl, as, +inbox, cfg, note}:
       do IO<Hub>:
-        IO.spawn(Unit, Wait.loop(1n+k, thread, MC.Wait.now(o), reply, inbox))
+        IO.spawn(Unit, Wait.loop(1n+k, Nat.add(now, 1n+k), thread, MC.Wait.now(o), reply, inbox))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
 
 # a line from an agent: a turn process's only while it is the one the hub
@@ -7237,12 +7304,19 @@ def Far.rpc.reply(os: List<&2, B.Out>) -> String:
     case _ <> t:
       Far.rpc.reply(t)
 
+# (the answer says done only once the step is stored: a write that failed
+# is an error to the asking machine, as it is to a client here)
+def Far.rpc.stored(r: Hub & Bool, +text: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+  match r:
+    case (h, True{}):
+      Hub.answer(h, reply, Bot.json("200 OK", text))
+    case (h, False{}):
+      Hub.answer(h, reply, W.Http.text("500 Internal Server Error", "that machine could not store it"))
+
 def Hub.far.rpc.step(step: B.Step, h: Hub, +reply: Chan(List<&2, U32>)) -> IO(Hub):
   match step:
     case B.Step{cs, +os}:
-      do IO<Hub>:
-        h2 : Hub <- Hub.step(h, B.Step{cs, os})
-        Hub.answer(h2, reply, Bot.json("200 OK", Far.rpc.reply(os)))
+      IO.bind(Hub & Bool, Hub, Hub.step.ok(h, B.Step{cs, os}), r => Far.rpc.stored(r, Far.rpc.reply(os), reply))
 
 # a folder listed, made or added for a linked machine: the job resolves it
 # off the hub and the hub answers (FarDo) once the project is made

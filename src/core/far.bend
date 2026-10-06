@@ -61,13 +61,26 @@ def Fr.local.k(ps: List<&2, String>, +id: String) -> String:
 def Fr.local(+id: String) -> String:
   Fr.local.k(String.split(id, '~'), id)
 
+# The thread that sent a message from another thread, as a machine that
+# mirrors it names it: one of that machine's own ("<link>~<id>" there, the
+# link being this one) is its own again, one of the owner's is named
+# through the link. A message's id carries its sender (M.Link.id:
+# "t:<from>:<n>"), so the mirror's "from" row opens the right thread.
+def Fr.sender(+l: String, +from: String) -> String:
+  Bool.pick(String, Fr.is(from), Bool.pick(String, String.eq(Fr.link(from), l), Fr.local(from), from), Fr.id(l, from))
+
+def Fr.sent.k(+l: String, +from: String, +msg: String) -> String:
+  Bool.pick(String, String.is_empty(from), msg, M.Link.id(Fr.sender(l, from), String.drop(msg, Nat.add(3n, String.length(from)))))
+
+def Fr.sent(+l: String, +msg: String) -> String:
+  Fr.sent.k(l, M.Link.from(msg), msg)
+
 # Changes, as a client here reads them
 # ------------------------------------
 # The owning hub's change renamed into this hub's ids. Only what shows a
 # thread, a bot and its space goes; settings, devices, links, webhooks,
 # rooms (shared rooms travel on their own), ordering and usage stay home
 # (None).
-
 def Fr.change(+l: String, c: M.Change) -> Maybe<&2, M.Change>:
   match c:
     case M.ProjectCreated{+id, title, root, at}:
@@ -78,8 +91,8 @@ def Fr.change(+l: String, c: M.Change) -> Maybe<&2, M.Change>:
       Some{M.ThreadCreated{Fr.id(l, id), Fr.opt(l, project), title, env, branch, worktree, provider, model, at}}
     case M.ThreadRenamed{+id, title, at}:
       Some{M.ThreadRenamed{Fr.id(l, id), title, at}}
-    case M.MessagePosted{+thread, msg, role, text, at}:
-      Some{M.MessagePosted{Fr.id(l, thread), msg, role, text, at}}
+    case M.MessagePosted{+thread, +msg, role, text, at}:
+      Some{M.MessagePosted{Fr.id(l, thread), Fr.sent(l, msg), role, text, at}}
     case M.TurnChanged{+thread, state, at}:
       Some{M.TurnChanged{Fr.id(l, thread), state, at}}
     case M.PendingChanged{+thread, count, at}:

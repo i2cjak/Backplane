@@ -106,8 +106,18 @@ def main() -> IO(Unit):
     # /give elsewhere
     +here : M.State = M.State.replay([M.ProjectCreated{"q", "mine", "/m", 1n}, M.ThreadCreated{"t0", "q", "chat", M.Local{}, "", "", "claude", "", 2n}], M.State.empty())
     +gv : J.Json = J.Json.obj([J.KV{"m", J.Str{"bots.give"}}, J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{"t0"}}, J.KV{"text", J.Str{"/give >box:layout please"}}])}])
-    C.Check.str("/give to a thread elsewhere sends it queued", Nat.show(List.length(&2, F.Plan, F.Fm.give(here, [mirror()], gv))) ++ " "
-      ++ Bool.show(String.contains(body(Maybe.default(&2, F.Plan, List.head(&2, F.Plan, F.Fm.give(here, [mirror()], gv)), F.PHere{})), "\"threadId\":\"pt\"")), "1 True")
+    C.Check.str("/give to a thread elsewhere hands it over queued", Nat.show(List.length(&2, F.Plan, F.Fm.give(here, [mirror()], gv, 100n))) ++ " "
+      ++ Bool.show(String.contains(body(Maybe.default(&2, F.Plan, List.head(&2, F.Plan, F.Fm.give(here, [mirror()], gv, 100n)), F.PHere{})), "\"threadId\":\"pt\""))
+      ++ Bool.show(String.contains(body(Maybe.default(&2, F.Plan, List.head(&2, F.Plan, F.Fm.give(here, [mirror()], gv, 100n)), F.PHere{})), "\"tool\":\"thread_handoff\"")), "1 TrueTrue")
     +gp : J.Json = J.Json.obj([J.KV{"m", J.Str{"bots.give"}}, J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{"t0"}}, J.KV{"text", J.Str{"/give %box:board"}}])}])
-    C.Check.str("/give to a project elsewhere launches there", Bool.show(String.contains(body(Maybe.default(&2, F.Plan, List.head(&2, F.Plan, F.Fm.give(here, [mirror()], gp)), F.PHere{})), "\"tool\":\"thread_launch\"")), "True")
-    C.Check.str("/give naming no machine of yours sends nothing", Nat.show(List.length(&2, F.Plan, F.Fm.give(here, Nil{}, gv))), "0")
+    C.Check.str("/give to a project elsewhere hands it to a new thread there", Bool.show(String.contains(body(Maybe.default(&2, F.Plan, List.head(&2, F.Plan, F.Fm.give(here, [mirror()], gp, 100n)), F.PHere{})), "\"project\":\"board\"")), "True")
+    C.Check.str("/give naming no machine of yours is an error", F.Fm.plan.name(Maybe.default(&2, F.Plan, List.head(&2, F.Plan, F.Fm.give(here, Nil{}, gv, 100n)), F.PHere{})), "answer")
+    +gf : J.Json = J.Json.obj([J.KV{"m", J.Str{"bots.give"}}, J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{"p1~pt"}}, J.KV{"text", J.Str{"/give >box:layout"}}])}])
+    C.Check.str("/give from a thread elsewhere is refused here", F.Fm.plan.name(Maybe.default(&2, F.Plan, List.head(&2, F.Plan, F.Fm.give(here, [mirror()], gf, 100n)), F.PHere{})), "answer")
+    C.Check.str("the hub's own /give reads no machine words", F.Fm.give.text("/give >box:layout %mine %box:board please"), "/give %mine please")
+    C.Check.str("a handoff queues on a shared thread", Nat.show(changed(F.Fm.serve(s, 100n, 1, asked("thread_handoff", [J.KV{"threadId", J.Str{"pt"}}, J.KV{"hand", J.Str{"ctx"}}, J.KV{"key", J.Str{"k1"}}])))), "2")
+    C.Check.str("a handoff to a project makes a thread", Nat.show(changed(F.Fm.serve(s, 100n, 1, asked("thread_handoff", [J.KV{"project", J.Str{"board"}}, J.KV{"hand", J.Str{"ctx"}}, J.KV{"key", J.Str{"k2"}}])))), "2")
+    C.Check.str("a handoff to nothing shared changes nothing", Nat.show(changed(F.Fm.serve(s, 100n, 1, asked("thread_handoff", [J.KV{"threadId", J.Str{"nope"}}, J.KV{"hand", J.Str{"ctx"}}])))), "0")
+    C.Check.str("thread_read elsewhere asks its machine", F.Fm.plan.name(plan("thread_read", [J.KV{"threadId", J.Str{"p1~pt"}}], ins)), "far")
+    C.Check.str("thread_read on a machine away reads the mirror", F.Fm.plan.name(plan("thread_read", [J.KV{"threadId", J.Str{"p1~pt"}}], [FR.In.away.set(mirror(), True{})])), "here")
+    C.Check.str("a sender of this machine's comes back as its own", FR.Fr.sent("p1", M.Link.id("p1~ta", "m5")) ++ " " ++ FR.Fr.sent("p1", M.Link.id("tb", "m6")) ++ " " ++ FR.Fr.sent("p1", "m7"), "t:ta:m5 t:p1~tb:m6 m7")

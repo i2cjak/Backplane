@@ -5999,6 +5999,9 @@ def Laws.far_id_here():
 def Laws.far_change_names_link(l, th, msg, role, text, at):
   {==}
 
+def Laws.far_sent_names_sender():
+  {==}
+
 def Laws.far_change_bot_named(l, id, name, th, look, persona, at):
   {==}
 
@@ -7687,6 +7690,7 @@ def Laws.fview_fix_again():
   {==}
 
 def Laws.fview_fix_leaves_error():
+  {==}
 def Laws.fmc_taken_tool():
   {==}
 
@@ -7736,4 +7740,7 @@ def Laws.fmc_reply_ids_named_by_link():
   {==}
 
 def Laws.fmc_give_unlinked_nothing():
+  {==}
+
+def Laws.fmc_give_local_drops_machines():
   {==}
