@@ -953,16 +953,46 @@ def FC.of(done: Bool, +l: String, +nm: String, a: Bool, +h: Nat, +after: Nat, +x
     case False{}:
       FC{Fr.msg.epoch(l, nm, a, after, FC.last(xs, h), xs, e), FC.last(xs, h), False{}}
 
+# whether the first item is past head (True for none: the walk stops there)
+def Fr.first.gt(xs: List<&2, Item>, +head: Nat) -> Bool:
+  match xs:
+    case Nil{}:
+      True{}
+    case Item{+n, _} <> _:
+      Nat.is_gt(n, head)
+
+# the items after head of an ascending list, by a tail-recursive walk that
+# builds nothing (Fr.fresh recurses once per item: a join of a big mirror
+# overflowed the stack and walked it all again for each chunk)
+def Fr.after(xs: List<&2, Item>, +head: Nat, hit: Bool) -> List<&2, Item>:
+  match xs hit:
+    case +r True{}:
+      r
+    case Nil{} _:
+      Nil{}
+    case _ <> +t False{}:
+      Fr.after(t, head, Fr.first.gt(t, head))
+
+# whether more than k items remain
+def Fr.over(xs: List<&2, Item>, +k: Nat) -> Bool:
+  match xs k:
+    case Nil{} _:
+      False{}
+    case _ <> _ 0n:
+      True{}
+    case _ <> +t 1n+p:
+      Fr.over(t, p)
+
 def In.chunk.k(i: In, +after: Nat, +ys: List<&2, Item>) -> FC:
   match i:
     case In{+l, +nm, +h, _, a, +e}:
-      FC.of(Nat.is_le(List.length(&2, Item, ys), In.most()), l, nm, a, h, after, List.take(&2, Item, ys, In.most()), e)
+      FC.of(Bool.not(Fr.over(ys, In.most())), l, nm, a, h, after, List.take(&2, Item, ys, In.most()), e)
 
 # the next chunk of a mirror, after its item `after`
 def In.chunk(+i: In, +after: Nat) -> FC:
   match i:
-    case In{_, _, _, xs, _, _}:
-      In.chunk.k(i, after, Fr.fresh(xs, after))
+    case In{_, _, _, +xs, _, _}:
+      In.chunk.k(i, after, Fr.after(xs, after, Fr.first.gt(xs, after)))
 
 # Mirrors by link
 # ---------------
