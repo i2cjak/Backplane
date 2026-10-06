@@ -168,6 +168,8 @@ try {
   const tB = await until(5000, () => cb.seen.find((c) => c.$ === "ThreadCreated" && c.project === pcB?.id && c.title === "REMOTE REVIEW"));
   const pt = tB?.id as string;
   check("beta has a project and a thread", !!pcB && !!pt, [pcB, tB]);
+  // ids are time + counter, and an agent's systemd scope is named by its thread id and generation: two hubs on one machine making a thread in the same second would collide (a second `systemd-run --unit` of one name fails), so alpha makes its things a second later
+  await sleep(1100);
   const homePath = join(root, "home");
   mkdirSync(homePath);
   await rpc(ca, "project.add", { path: homePath });
@@ -198,7 +200,7 @@ try {
   const farId = `${link}~${pt}`;
   check("thread_list machine=beta lists its threads in far ids", !lst.isError && lst.body.threads?.some?.((t: any) => t.id === farId && t.title === "REMOTE REVIEW" && t.project === `${link}~${pcB?.id}`), lst.body);
   const lstP = await mcp(a, ta, "thread_list", { machine: "beta", project: "board" });
-  check("and narrowed to a project", !lstP.isError && lstP.body.threads?.length === 1, lstP.body);
+  check("and narrowed to a project", !lstP.isError && lstP.body.threads?.some?.((t: any) => t.title === "REMOTE REVIEW") && lstP.body.threads.every((t: any) => t.project === `${link}~${pcB?.id}`), lstP.body);
   const local = await mcp(a, ta, "thread_list", {});
   check("thread_list with no machine is alpha's own", !local.isError && local.body.threads?.some?.((t: any) => t.id === ta) && !local.body.threads.some((t: any) => String(t.id).includes("~")), local.body);
 
