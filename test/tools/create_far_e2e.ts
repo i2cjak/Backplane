@@ -25,11 +25,21 @@ const check = (name: string, ok: boolean, got?: unknown) => {
   if (!ok) failed = true;
 };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// a free port, from CREATE_FAR_PORT_BASE (default: any the system gives)
+let nextPort = Number(process.env.CREATE_FAR_PORT_BASE ?? 0);
 function freePort(): number {
-  const s = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
-  const p = s.port;
-  s.stop(true);
-  return p;
+  for (;;) {
+    try {
+      const s = Bun.listen({ hostname: "127.0.0.1", port: nextPort, socket: { data() {} } });
+      const p = s.port;
+      s.stop(true);
+      if (nextPort) nextPort = p + 1;
+      return p;
+    } catch {
+      if (!nextPort) throw new Error("no free port");
+      nextPort++;
+    }
+  }
 }
 
 const root = mkdtempSync(join(tmpdir(), "bp-far-e2e-"));
