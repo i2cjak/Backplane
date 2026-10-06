@@ -551,6 +551,36 @@ def Bn.signed(+home: String, +url: String, +peer: String, +secret: String, +now:
 def Bn.to_peer(+home: String, +url: String, +peer: String, +now: Nat, +path: String, +post: Bool, +body: String) -> IO(Resp):
   IO.bind(String, Resp, Bn.peer.secret(home, peer), secret => Bn.signed(home, url, peer, secret, now, path, post, body))
 
+# The same for a request that waits or brings a file (the viewers of a
+# thread elsewhere, core/fview.bend): a longer time limit, a bigger body,
+# and the body written to `out` as it came when that is set (a file's bytes
+# are not text); Resp's body is then "".
+def Bn.out(+out: String) -> List<&2, String>:
+  Bool.pick(List<&2, String>, String.is_empty(out), Nil{}, ["-o", out])
+
+def Bn.args.long(+file: String, +url: String, +out: String, +secs: Nat, +max: Nat) -> List<&2, String>:
+  List.concat(&2, String, [["-sS", "--proto", "=http,https", "-m", Nat.show(secs), "--max-filesize", Nat.show(max), "-X", "POST", "-H", "@-", "--data-binary", "@" ++ file],
+    Bn.out(out), ["-w", "\n%{http_code}", "--url", url]])
+
+def Bn.signed.long.k(ok: Bool, +home: String, +url: String, +peer: String, +secret: String, +now: Nat, +path: String, +body: String, +out: String, +secs: Nat, +max: Nat) -> IO(Resp):
+  match ok:
+    case True{}:
+      do IO<Resp>:
+        Bf.secrets(home, "tmp")
+        +name : String <- Bn.random(4n)
+        +file : String = home ++ "/secrets/tmp/" ++ name
+        w : Bool <- Bf.secret(file, body)
+        r : P.Ran <- Bn.curl(Bn.args.long(file, Bn.url.base(url) ++ path, out, secs, max), Bn.headers(peer, now, SG.Sign.header(secret, now, body)))
+        Bn.sent(r, file)
+    case False{}:
+      IO.pure(Resp, Resp{0n, "no secret, or not an http address"})
+
+def Bn.signed.long(+home: String, +url: String, +peer: String, +secret: String, +now: Nat, +path: String, +body: String, +out: String, +secs: Nat, +max: Nat) -> IO(Resp):
+  Bn.signed.long.k(Bool.and(Bn.url.ok(url), Bool.not(String.is_empty(secret))), home, url, peer, secret, now, path, body, out, secs, max)
+
+def Bn.to_peer.long(+home: String, +url: String, +peer: String, +now: Nat, +path: String, +body: String, +out: String, +secs: Nat, +max: Nat) -> IO(Resp):
+  IO.bind(String, Resp, Bn.peer.secret(home, peer), secret => Bn.signed.long(home, url, peer, secret, now, path, body, out, secs, max))
+
 # an unsigned POST with no body, to one of the owner's own machines (it
 # trusts this one because Tailscale says whose it is: POST /bots/pair)
 def Bn.plain.k(ok: Bool, +url: String) -> IO(Resp):
