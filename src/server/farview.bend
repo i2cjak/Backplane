@@ -296,8 +296,9 @@ def Fvs.ready(ls: List<&2, String>, +m: Map<&2, String>) -> List<&2, String>:
 # Installing what came: one step at a time per cache (a lock folder, as
 # macOS has no flock). A file is replaced only by a version at least as
 # new as the one there, so two syncs racing never roll one back; a KiCad
-# file or model the owner no longer lists is removed (a file a client
-# named stays: another client's list need not name it). Prints the lines
+# file the owner no longer lists is removed (every list names all of them:
+# a model or a file a client named stays, as another client's list need
+# not name it). Prints the lines
 # the cache now holds (its new .farver).
 def Fvs.install.sh() -> String:
   "c=$1; n=0\nwhile ! mkdir \"$c/.farlock\" 2>/dev/null; do n=$((n+1)); if [ $n -ge 150 ]; then rm -rf \"$c/.farlock\"; mkdir \"$c/.farlock\" 2>/dev/null; break; fi; sleep 0.1; done\n"
@@ -308,7 +309,7 @@ def Fvs.install.sh() -> String:
   ++ "  if [ -z \"$old\" ] || awk -v a=\"$new\" -v b=\"$old\" 'BEGIN{exit !(a+0>=b+0)}'; then mkdir -p \"$(dirname \"$c/$rel\")\" && mv -f \"$tmp\" \"$c/$rel\" && printf '%s\\n' \"$rel\" >> \"$c/.farins\"; else rm -f \"$tmp\"; fi\ndone\n"
   ++ "{ echo '#'; cat \"$c/.farver\"; } > \"$c/.farold\"\n"
   ++ "awk -F'\\t' 'FNR==1{f++; next} f==1{I[$1]=1; next} f==2{N[$1]=$0; next} f==3{if($1!=\"\") O[$1]=$0; next}\n"
-  ++ "  END{for(r in I) if(r in N) print N[r]; for(r in O) if(!(r in I)){ l=tolower(r); if(r in N) print O[r]; else if(l ~ /\\.(kicad_pcb|kicad_sch|kicad_pro|step|stp|wrl|glb)$/ || l ~ /(^|\\/)(sym-lib-table|fp-lib-table)$/) print \"DEL\" FS r; else print O[r]}}' \"$c/.farins\" \"$c/.farnew\" \"$c/.farold\" > \"$c/.farmid\"\n"
+  ++ "  END{for(r in I) if(r in N) print N[r]; for(r in O) if(!(r in I)){ l=tolower(r); if(r in N) print O[r]; else if(l ~ /\\.(kicad_pcb|kicad_sch|kicad_pro)$/ || l ~ /(^|\\/)(sym-lib-table|fp-lib-table)$/) print \"DEL\" FS r; else print O[r]}}' \"$c/.farins\" \"$c/.farnew\" \"$c/.farold\" > \"$c/.farmid\"\n"
   ++ "grep \"^DEL$T\" \"$c/.farmid\" | cut -f2- | while IFS= read -r rel; do rm -f \"$c/$rel\"; done\n"
   ++ "grep -v \"^DEL$T\" \"$c/.farmid\" > \"$c/.farver.tmp\"; mv -f \"$c/.farver.tmp\" \"$c/.farver\"; rm -f \"$c/.farmid\" \"$c/.farold\" \"$c/.farnew\" \"$c/.farins\"\ncat \"$c/.farver\"\n"
 

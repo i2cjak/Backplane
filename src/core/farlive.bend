@@ -46,7 +46,7 @@ def FL.quiet() -> Nat:
 # the most of a buffer a snapshot carries (its end), so a request stays far
 # under /far/push's limit
 def FL.snap.cap() -> Nat:
-  65536n
+  16384n
 
 # The receiver
 # ------------

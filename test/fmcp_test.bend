@@ -114,6 +114,7 @@ def main() -> IO(Unit):
     C.Check.str("/give naming no machine of yours is an error", F.Fm.plan.name(Maybe.default(&2, F.Plan, List.head(&2, F.Plan, F.Fm.give(here, Nil{}, gv, 100n)), F.PHere{})), "answer")
     +gf : J.Json = J.Json.obj([J.KV{"m", J.Str{"bots.give"}}, J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{"p1~pt"}}, J.KV{"text", J.Str{"/give >box:layout"}}])}])
     C.Check.str("/give from a thread elsewhere is refused here", F.Fm.plan.name(Maybe.default(&2, F.Plan, List.head(&2, F.Plan, F.Fm.give(here, [mirror()], gf, 100n)), F.PHere{})), "answer")
+    C.Check.str("a machine word on its own line is left out too", F.Fm.give.text("/give note\n%box:board\t%mine"), "/give note\n\t%mine")
     C.Check.str("the hub's own /give reads no machine words", F.Fm.give.text("/give >box:layout %mine %box:board please"), "/give %mine please")
     C.Check.str("a handoff queues on a shared thread", Nat.show(changed(F.Fm.serve(s, 100n, 1, asked("thread_handoff", [J.KV{"threadId", J.Str{"pt"}}, J.KV{"hand", J.Str{"ctx"}}, J.KV{"key", J.Str{"k1"}}])))), "2")
     C.Check.str("a handoff to a project makes a thread", Nat.show(changed(F.Fm.serve(s, 100n, 1, asked("thread_handoff", [J.KV{"project", J.Str{"board"}}, J.KV{"hand", J.Str{"ctx"}}, J.KV{"key", J.Str{"k2"}}])))), "2")

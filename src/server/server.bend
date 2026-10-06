@@ -5701,6 +5701,13 @@ def Far.push(h: Hub, +cs: List<&2, M.Change>, +fresh: List<&2, String>, +from: N
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       Far.push.lines(FR.Fr.feed.add(cs, List.reverse(&2, String, fresh), from, st, Nil{}), Far.history.first(Nat.is_eq(from, 0n), Far.fh(Far.lasts.k(Far.fh(Hub{st, f, ls, cl, as, inbox, cfg, note}), cs, from, st)), fresh), from, M.State.seq(st))
 
+# where retained work for a link may go now: its address while it is one
+# of the owner's machines with sync on (Far.own.id), else nowhere ("": a
+# request that fails at once, nothing leaves), so turning sync off stops
+# what was queued before as well
+def Far.url.now(+st: M.State, +cfg: Cfg, +link: String) -> String:
+  Bool.pick(String, Far.own.id(st, cfg, link), Bot.peer.url(st, link), "")
+
 # Live text of threads elsewhere (core/farlive.bend)
 # ---------------------------------------------------
 # The owner's streamed reply goes to the owner's other machines as it is
@@ -5776,8 +5783,10 @@ def Far.live.need(ns: List<&2, String>, q: FLV.LQ) -> FLV.LQ:
     case +n <> t:
       Far.live.need(t, FLV.LQ.need(q, n, 0n))
 
+# (a request too big for the peer is no sign it has no client: the next
+# delta finds the gap and asks for a snapshot, bounded by FL.snap.cap())
 def Far.live.watch(+code: Nat, +o: J.Json) -> Bool:
-  Bool.and(Nat.is_eq(code, 200n), J.Json.get_bool(o, "watch", False{}))
+  Bool.or(Nat.is_eq(code, 413n), Bool.and(Nat.is_eq(code, 200n), J.Json.get_bool(o, "watch", False{})))
 
 def Far.live.ack.k(r: FLV.LQ & Hub, +link: String, +url: String, +watch: Bool, +now: Nat, ns: List<&2, String>) -> IO(Hub):
   (q, h) = r
@@ -5786,10 +5795,10 @@ def Far.live.ack.k(r: FLV.LQ & Hub, +link: String, +url: String, +watch: Bool, +
 # a request's answer: the peer watches or not; the threads it wants whole
 def Far.live.ack.o(+o: J.Json, h: Hub, +link: String, +code: Nat) -> IO(Hub):
   match h:
-    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       do IO<Hub>:
         +now : Nat <- Now.nat()
-        Far.live.ack.k(Far.live.q(Hub{st, f, ls, cl, as, inbox, cfg, note}, link), link, Bot.peer.url(st, link), Far.live.watch(code, o), now, FLV.FL.needs.of(J.Json.elems(J.Json.get_obj(o, "need"))))
+        Far.live.ack.k(Far.live.q(Hub{st, f, ls, cl, as, inbox, cfg, note}, link), link, Far.url.now(st, cfg, link), Far.live.watch(code, o), now, FLV.FL.needs.of(J.Json.elems(J.Json.get_obj(o, "need"))))
 
 def Far.live.ack(h: Hub, +link: String, +code: Nat, +body: String) -> IO(Hub):
   Far.live.ack.o(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), h, link, code)
@@ -5919,10 +5928,10 @@ def Far.retry.arm(holding: Bool, +link: String, +secs: Nat, +inbox: Chan(Msg)) -
 
 def Far.pushed.go(+o: FR.Out, h: Hub, +ok: Bool, +to: Nat) -> IO(Hub):
   match h:
-    case Hub{+st, f, ls, cl, as, +inbox, cfg, note}:
+    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
       do IO<Hub>:
         Far.retry.arm(Bool.not(ok), FR.Out.link(o), FR.Out.delay(Nat.add(FR.Out.fails(o), 1n)), inbox)
-        Far.push.next(FR.Out.next(FR.Out.done(o, ok, to)), Hub{st, f, ls, cl, as, inbox, cfg, note}, Bot.peer.url(st, FR.Out.link(o)))
+        Far.push.next(FR.Out.next(FR.Out.done(o, ok, to)), Hub{st, f, ls, cl, as, inbox, cfg, note}, Far.url.now(st, cfg, FR.Out.link(o)))
 
 def Far.pushed.k(r: FR.Out & Hub, ok: Bool, +to: Nat) -> IO(Hub):
   (o, h) = r
@@ -5934,8 +5943,8 @@ def Hub.far.pushed(h: Hub, +link: String, ok: Bool, +to: Nat) -> IO(Hub):
 
 def Far.retry.go(+o: FR.Out, h: Hub) -> IO(Hub):
   match h:
-    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
-      Far.push.next(FR.Out.next(FR.Out.release(o)), Hub{st, f, ls, cl, as, inbox, cfg, note}, Bot.peer.url(st, FR.Out.link(o)))
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      Far.push.next(FR.Out.next(FR.Out.release(o)), Hub{st, f, ls, cl, as, inbox, cfg, note}, Far.url.now(st, cfg, FR.Out.link(o)))
 
 def Far.retry.k(r: FR.Out & Hub) -> IO(Hub):
   (o, h) = r
@@ -6066,7 +6075,8 @@ def Far.reset.put(+i: FR.In, h: Hub) -> IO(Hub):
       do IO<Hub>:
         BN.Bf.dir(Far.dir(Cfg.home(cfg)))
         ok : Bool <- BN.Bf.secret(Far.file(Cfg.home(cfg), FR.In.link(i)), J.Json.show(J.Json.obj([J.KV{"epoch", J.Str{FR.In.epoch(i)}}])) ++ "\n")
-        Far.tell(Far.in.put(Hub{st, f, ls, cl, as, inbox, cfg, note}, i), FR.In.msg(i))
+        h2 : Hub <- Far.live.gone(Hub{st, f, ls, cl, as, inbox, cfg, note}, FR.In.link(i))
+        Far.tell(Far.in.put(h2, i), FR.In.msg(i))
 
 def Far.reset.k(reset: Bool, +i: FR.In, h: Hub, +epoch: String) -> IO(Hub):
   match reset:
@@ -7001,8 +7011,10 @@ def Hub.rpc.o(m: Maybe<&2, J.Json>, h: Hub, +client: U32, +text: String, +now: N
 # a request about something on a linked machine goes there (Far.rpc.go)
 # whether a request may be for another machine: it names a thing there
 # (`~`) or a machine (`on`); Hub.rpc.o decides from its parsed params
+# (a text with JSON escapes is parsed whatever it holds: an escaped key or
+# value could name a machine the raw text does not show)
 def Hub.rpc.farish(+text: String) -> Bool:
-  Bool.or(String.contains(text, "~"), String.contains(text, "\"on\""))
+  Bool.or(Bool.or(String.contains(text, "~"), String.contains(text, "\"on\"")), String.contains(text, "\\u"))
 
 def Hub.rpc.far(maybe: Bool, h: Hub, +client: U32, +text: String, +now: Nat) -> IO(Hub):
   match maybe:

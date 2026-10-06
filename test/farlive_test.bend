@@ -80,7 +80,7 @@ def main() -> IO(Unit):
     # a long buffer's snapshot carries its end only, marked cut
     +long : List<&2, LV.Buf> = LV.Live.add.at(Nil{}, "t", dbl(17n, "x") ++ "END", 5n)
     +snap : List<&2, FLV.LI> = FLV.FL.fill([FLV.LI{"t", 0n, 0n, "", 0n, True{}}], long)
-    C.Check.str("a snapshot is bounded and ends with the text's end", Nat.show(String.length(J.Json.get_str(Maybe.default(&2, J.Json, List.head(&2, J.Json, J.Json.elems(J.Json.get_obj(parsed(FLV.FL.body("a", 1n, snap)), "live"))), J.Null{}), "text", ""))) ++ " " ++ Bool.show(J.Json.get_bool(Maybe.default(&2, J.Json, List.head(&2, J.Json, J.Json.elems(J.Json.get_obj(parsed(FLV.FL.body("a", 1n, snap)), "live"))), J.Null{}), "trunc", False{})), "65536 True")
+    C.Check.str("a snapshot is bounded and ends with the text's end", Nat.show(String.length(J.Json.get_str(Maybe.default(&2, J.Json, List.head(&2, J.Json, J.Json.elems(J.Json.get_obj(parsed(FLV.FL.body("a", 1n, snap)), "live"))), J.Null{}), "text", ""))) ++ " " ++ Bool.show(J.Json.get_bool(Maybe.default(&2, J.Json, List.head(&2, J.Json, J.Json.elems(J.Json.get_obj(parsed(FLV.FL.body("a", 1n, snap)), "live"))), J.Null{}), "trunc", False{})), "16384 True")
     C.Check.str("a far thread's delta shows live", U.Ui.live.of(u1, "b~t"), "Hel")
     +u2 : U.Ui = U.Ui.recv(u1, parsed(FR.Fr.msg("b", "Beta", False{}, 8n, 9n, [FR.Item{9n, J.Json.obj([J.KV{"$", J.Str{"TurnChanged"}}, J.KV{"thread", J.Str{"t"}}, J.KV{"state", J.Str{"completed"}}, J.KV{"at", J.Json.nat(3n)}])}])))
     C.Check.str("a far turn's end clears it", "[" ++ U.Ui.live.of(u2, "b~t") ++ "]", "[]")

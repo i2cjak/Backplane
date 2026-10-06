@@ -459,8 +459,24 @@ def Fm.give.drop(ws: List<&2, String>) -> List<&2, String>:
     case +w <> t:
       Fm.give.drop.k(Fm.far.word(w), w, Fm.give.drop(t))
 
+# (words are cut at spaces, tabs and new lines alike, as Refs.sigil.words
+# cuts them, and each kept where it was)
+def Fm.give.spaces(xs: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +x <> t:
+      String.join(Fm.give.drop(String.split(x, ' ')), " ") <> Fm.give.spaces(t)
+
+def Fm.give.tabs(xs: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +x <> t:
+      String.join(Fm.give.spaces(String.split(x, '\t')), "\t") <> Fm.give.tabs(t)
+
 def Fm.give.text(+text: String) -> String:
-  String.join(Fm.give.drop(String.split(text, ' ')), " ")
+  String.join(Fm.give.tabs(String.split(text, '\n')), "\n")
 
 def Fm.give.go(far: Bool, +s: M.State, +ins: List<&2, FR.In>, +src: String, +text: String, +now: Nat) -> List<&2, Plan>:
   match far:
