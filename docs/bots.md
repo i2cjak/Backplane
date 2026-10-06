@@ -645,3 +645,37 @@ owner's (`Far.own` in server.bend: the machines list; laws `far_*_stay_home`).
 `test/tools/far_e2e.ts` (two hubs: a bot made on one shows on the other,
 a message from the other reaches it and its answer comes back, away when
 it stops, from disk after a restart).
+
+### Agents across machines
+
+An agent (Claude, Codex or Grok, through the hub's MCP tools) works with the owner's other machines
+the way it works with its own project. `src/core/fmcp.bend` is the whole of it.
+
+- `machine_list` (every agent): this machine first, then each linked machine (`here` or `away`) with its
+  projects, ids as clients name them (`<link>~<id>`). Every hub starts an agent's prompt with the
+  machines linked then (`<machines>`), and the orchestration paragraph says how to address them.
+- `thread_list` and `thread_launch` take a `machine` (its name or link id; a project there by name or id,
+  or its `<link>~<id>` as `project`). `thread_send` (auto, queue, steer), `thread_wait`,
+  `thread_interrupt` and `thread_update` take a thread's `<link>~<id>`, which any answer carries in
+  its ids. `thread_read` reads the mirror (xref.bend), no request. A word `>machine:slug` in a message
+  gets its id in the `<references>` block.
+- A call for another machine is not run here: the hub (`Hub.mcp.f`, `Fm.plan.o`) turns it into the signed
+  request `mcp.call {tool, from, args}` (POST /far/rpc, the route clients use for threads elsewhere),
+  with that machine's own ids, and answers the agent's call with what returns, its ids named by the
+  link (`Fm.answer`). No linked machine of that name, or one away, is an error and nothing is sent.
+- The owning hub takes `mcp.call` only from one of the owner's own machines (the route's `Far.own.id`;
+  an unsigned or non-owner request never gets this far) and only for the tools in `Fm.names`
+  (thread_send, thread_wait_now, thread_interrupt, thread_update, thread_list, thread_launch,
+  project_list). It runs the same defs as for its own agents, but a named thread must be one it shares
+  (`Fr.thread.shared`): otherwise the answer is an error and nothing is stored. `from` is the calling
+  thread as the owning hub's clients name it, so the message shows where it came from.
+- `thread_wait` on a thread elsewhere is the usual wait loop (a check each second at the hub) where each
+  check asks the owning hub (`thread_wait_now`): the owner's own view, so a message just sent is never
+  missed for a mirror that has not caught up yet. One small signed request a second per waiting agent.
+- `/give >machine:slug` hands the conversation to that thread (`thread_send`, queued), and
+  `/give %machine:project` makes a new thread in that machine's project with it (`thread_launch`), by
+  the same route (`Fm.give`, `Far.give` in the server); words naming something here run as before.
+- Bots: `@name@machine` already reaches a bot on a linked machine (`Bots.mention.far`); rooms travel
+  with the owner's machines (see "Shared rooms").
+
+Laws `fmc_*`; tests `test/fmcp_test.bend`, `bun test/tools/agents_far_e2e.ts`.
