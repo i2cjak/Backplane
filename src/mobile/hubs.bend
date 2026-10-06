@@ -654,10 +654,42 @@ def Hubs.list(hs: Hubs) -> List<&2, Hub>:
     case Hubs{_, _, _, l}:
       l
 
+# A thread named with no hub (a notification's tap: the hub that pushed it
+# named it in its own ids, maybe a mirror's `<link>~<id>`) belongs to the
+# hub that holds it: the focused one when it does, else the first that does.
+def Hub.holds(h: Hub, +id: String) -> Bool:
+  match h:
+    case Hub{_, +u}:
+      FR.Fr.has(Map.has(&2, M.Thread, FR.Fr.st.threads(U.Ui.state(u)), id))
+
+def Hubs.holder(hs: List<&2, Hub>, +id: String) -> String:
+  match hs:
+    case Nil{}:
+      ""
+    case +h <> t:
+      Bool.pick(String, Hub.holds(h, id), Hub.key(h), Hubs.holder(t, id))
+
+def Hubs.held.k(+hs: Hubs, +cur: String, +other: String, +action: String, +value: String) -> HAct:
+  Bool.pick(HAct, String.is_empty(other), Hubs.act.k(hs, cur, False{}, action, value), Hubs.act.k(hs, cur, True{}, action, other ++ "|" ++ value))
+
+def Hubs.held(here: Bool, +hs: Hubs, +action: String, +value: String) -> HAct:
+  match here:
+    case True{}:
+      Hubs.act.k(hs, Hubs.cur(hs), False{}, action, value)
+    case False{}:
+      Hubs.held.k(hs, Hubs.cur(hs), Hubs.holder(Hubs.list(hs), value), action, value)
+
+def Hubs.act.r.k(known: Bool, +hs: Hubs, +action: String, +value: String) -> HAct:
+  match known:
+    case True{}:
+      Hubs.act.k(hs, Hubs.cur(hs), True{}, action, value)
+    case False{}:
+      Hubs.held(Bool.or(Bool.not(String.eq(action, "select")), Hub.holds(Hub{Hubs.cur(hs), Hubs.ui(hs, Hubs.cur(hs))}, value)), hs, action, value)
+
 def Hubs.act.r(routed: Bool, +hs: Hubs, +action: String, +value: String) -> HAct:
   match routed:
     case True{}:
-      Hubs.act.k(hs, Hubs.cur(hs), Hubs.has(Hubs.list(hs), Hubs.key_of(value)), action, value)
+      Hubs.act.r.k(Hubs.has(Hubs.list(hs), Hubs.key_of(value)), hs, action, value)
     case False{}:
       Hubs.act.k(hs, Hubs.cur(hs), False{}, action, value)
 
@@ -1003,8 +1035,13 @@ def Hubs.lines(ss: List<&2, Shown>) -> List<&2, J.Json>:
 # one thread: the island lists it once, as its owner's hub gives it (the
 # once list keeps the last of a key, so the owner's lines go last), else
 # one mirror's (law island_far_once)
+# (a line's thread is qualified by its hub, "host:port|id": the key is the
+# owner's own id, so a mirror's "<link>~t" and its owner's "t" are one)
+def Hubs.line.id(+t: String) -> String:
+  Bool.pick(String, String.contains(t, "|"), Hubs.rest(t), t)
+
 def Hubs.line.is.far(+l: J.Json) -> Bool:
-  FR.Fr.is(J.Json.get_str(l, "thread", ""))
+  FR.Fr.is(Hubs.line.id(J.Json.get_str(l, "thread", "")))
 
 def Hubs.line.keep(take: Bool, l: J.Json, rest: List<&2, J.Json>) -> List<&2, J.Json>:
   match take:
@@ -1026,7 +1063,7 @@ def Hubs.lines.keyed(ls: List<&2, J.Json>) -> List<&2, BU.RK<J.Json>>:
     case Nil{}:
       Nil{}
     case +l <> t:
-      BU.RK{FR.Fr.local(J.Json.get_str(l, "thread", "")), l} <> Hubs.lines.keyed(t)
+      BU.RK{FR.Fr.local(Hubs.line.id(J.Json.get_str(l, "thread", ""))), l} <> Hubs.lines.keyed(t)
 
 def Hubs.lines.once(+ls: List<&2, J.Json>) -> List<&2, J.Json>:
   BU.BU.once.vals(J.Json, BU.BU.once.of(J.Json, Hubs.lines.keyed(List.append(&2, J.Json, Hubs.lines.part(ls, True{}), Hubs.lines.part(ls, False{})))))

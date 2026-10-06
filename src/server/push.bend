@@ -557,6 +557,22 @@ def Push.turn_ended.done(dead: List<&2, String>) -> IO(Unit):
 def Push.turn_ended(+home: String, st: M.State, +thread: String, +state: String, seen: Bool) -> IO(Unit):
   IO.bind(List<&2, String>, Unit, Push.turn_ended.dead(home, st, thread, state, seen), Push.turn_ended.done)
 
+# (a far turn's end is an alert only: each hub's Live Activity is its own
+# threads', so this hub never ends or rewrites it for another's)
+def Push.alerts.keep(alert: Bool, d: M.Device, rest: List<&2, M.Device>) -> List<&2, M.Device>:
+  match alert:
+    case True{}:
+      d <> rest
+    case False{}:
+      rest
+
+def Push.alerts.only(ds: List<&2, M.Device>) -> List<&2, M.Device>:
+  match ds:
+    case Nil{}:
+      Nil{}
+    case M.Device{+t, +p, +k, th, e, b, x} <> r:
+      Push.alerts.keep(Nat.is_eq(Push.kind(p, k), 1n), M.Device{t, p, k, th, e, b, x}, Push.alerts.only(r))
+
 # A turn that ended on another of the owner's machines (core/farlive.bend):
 # that machine decided it is news and under which key; this hub pushes it
 # to its own phones like any alert (same key: one collapse id, so a phone
@@ -573,7 +589,7 @@ def Push.note.send(+home: String, +st: M.State, +thread: String, +title: String,
     base : String <- Push.env("BACKPLANE_APNS_URL")
     +others : List<&2, M.Thread> = Island.others(st, thread)
     +job : Job = Job{dir, base, jwt, now, thread, Push.alert(thread, akey, title, body), Island.state(others), List.is_empty(&2, M.Thread, others), akey}
-    Push.gate(String.is_empty(jwt), Push.devices(st), job, prefix)
+    Push.gate(String.is_empty(jwt), Push.alerts.only(Push.devices(st)), job, prefix)
 
 def Push.note.go(ok: Bool, phones: Bool, +home: String, +st: M.State, +thread: String, +title: String, +body: String, +akey: String, +pkey: String, +kid: String, +team: String) -> IO(List<&2, String>):
   match ok:

@@ -7759,6 +7759,15 @@ def Laws.flive_end_blocks_old():
 def Laws.flive_end_no_resurrect():
   {==}
 
+def Laws.flive_delta_ended_dropped():
+  {==}
+
+def Laws.flive_end_keeps_newer():
+  {==}
+
+def Laws.flive_end_before_any():
+  {==}
+
 def Laws.flive_next_gen_taken():
   {==}
 

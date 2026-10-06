@@ -5712,11 +5712,11 @@ def Far.push(h: Hub, +cs: List<&2, M.Change>, +fresh: List<&2, String>, +from: N
 # threads it wants whole. A peer takes them into its own Live buffers under
 # the far id and tells its clients the same delta a local stream sends.
 
-def Far.live.job(+link: String, xs: List<&2, FLV.LI>, +home: String, +url: String, +inbox: Chan(Msg)) -> IO(Unit):
+def Far.live.job(+link: String, +at: Nat, xs: List<&2, FLV.LI>, +home: String, +url: String, +inbox: Chan(Msg)) -> IO(Unit):
   do IO<Unit>:
     +now : Nat <- Now.nat()
     +name : String <- BN.Bn.name()
-    +r : BN.Resp <- BN.Bn.to_peer(home, url, link, now, "/far/push", True{}, FLV.FL.body(name, xs))
+    +r : BN.Resp <- BN.Bn.to_peer(home, url, link, now, "/far/push", True{}, FLV.FL.body(name, at, xs))
     Far.send(inbox, FarLiveAck{link, Far.code(r), Far.body(r)})
 
 def Far.live.set(h: Hub, +q: FLV.LQ) -> Hub:
@@ -5733,10 +5733,10 @@ def Far.live.q(h: Hub, +link: String) -> FLV.LQ & Hub:
 # from the buffers
 def Far.live.next.k(due: Bool, h: Hub, +q: FLV.LQ, +link: String, +url: String) -> IO(Hub):
   match due h:
-    case True{} Hub{st, f, ls, cl, as, +inbox, +cfg, note}:
+    case True{} Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
       do IO<Hub>:
         +xs : List<&2, FLV.LI> = FLV.FL.fill(FLV.LQ.pend(q), Live.of(cfg))
-        IO.spawn(Unit, Far.live.job(link, xs, Cfg.home(cfg), url, inbox))
+        IO.spawn(Unit, Far.live.job(link, M.State.seq(st), xs, Cfg.home(cfg), url, inbox))
         return Far.live.set(Hub{st, f, ls, cl, as, inbox, cfg, note}, FLV.LQ.start(q))
     case False{} _:
       IO.pure(Hub, h)
@@ -5814,12 +5814,37 @@ def Far.live.snap(snap: Bool, +cl: List<&2, Client>, bs: List<&2, LV.Buf>) -> IO
 
 # a batch of durable changes arrived: the live text of what it ends goes
 # (the clients clear theirs when they fold it)
-def Far.live.ended(h: Hub, +link: String, xs: List<&2, FR.Item>) -> Hub:
+def Far.live.ended.k(+es: List<&2, FLV.End>, h: Hub) -> Hub:
   match h:
     case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
-      Hub{st, f, ls, cl, as, inbox, Live.with(cfg, FLV.FL.ends(FLV.FL.ended(xs, link), Live.of(cfg))), note}
+      Hub{st, f, ls, cl, as, inbox, Live.with(cfg, FLV.FL.ends(es, Live.of(cfg))), note}
 
-# a link that went away leaves no live text behind
+def Far.live.ended(h: Hub, +link: String, xs: List<&2, FR.Item>) -> Hub:
+  Far.live.ended.k(FLV.FL.ended(xs, link), h)
+
+# (an end that left a newer stream's text standing: the clients, which
+# cleared it as they folded the end, take the buffers again)
+def Far.live.resync(kept: Bool, h: Hub) -> IO(Hub):
+  match kept h:
+    case True{} Hub{st, f, ls, +cl, as, inbox, +cfg, note}:
+      do IO<Hub>:
+        cl2 : List<&2, Client> <- Wire.all(cl, LV.Live.msg(Live.of(cfg)))
+        return Hub{st, f, ls, cl2, as, inbox, cfg, note}
+    case False{} _:
+      IO.pure(Hub, h)
+
+def Far.live.resync.k(p: Bool & Hub) -> IO(Hub):
+  (k, h) = p
+  Far.live.resync(k, h)
+
+def Far.live.kept.p(h: Hub, +link: String, xs: List<&2, FR.Item>) -> Bool & Hub:
+  match h:
+    case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
+      (FLV.FL.kept(FLV.FL.ended(xs, link), Live.of(cfg)), Hub{st, f, ls, cl, as, inbox, cfg, note})
+
+def Far.live.resync.h(h: Hub, +link: String, xs: List<&2, FR.Item>) -> IO(Hub):
+  Far.live.resync.k(Far.live.kept.p(h, link, xs))
+
 def Far.live.gone(h: Hub, +link: String) -> IO(Hub):
   match h:
     case Hub{st, f, ls, +cl, as, inbox, +cfg, note}:
@@ -5846,20 +5871,23 @@ def Far.note.go(ps: List<&2, BO.Peer>, +home: String, +n: J.Json) -> IO(Unit):
         IO.spawn(Unit, Far.note.job(i, n, home, u))
         Far.note.go(t, home, n)
 
-def Far.note.k(send: Bool, h: Hub, +n: NO.Notice, +thread: String, +title: String, +body: String) -> IO(Hub):
+# (the title and preview are read only when the note goes: a turn's end
+# with no peer to tell reads nothing of its reply)
+def Far.note.k(send: Bool, h: Hub, +n: NO.Notice, +thread: String, +state: String) -> IO(Hub):
   match send h:
     case True{} Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       do IO<Hub>:
-        Far.note.go(Far.own.go(BO.World.peers(M.State.bots(st)), st, cfg), Cfg.home(cfg), FLV.FL.note.json(thread, NO.Notice.kind(n), NO.Notice.key(n), title, body))
+        Far.note.go(Far.own.go(BO.World.peers(M.State.bots(st)), st, cfg), Cfg.home(cfg), FLV.FL.note.json(thread, NO.Notice.kind(n), NO.Notice.key(n),
+          PU.Push.title(B.Hub.thread(st, thread)), PU.Push.body(String.eq(state, "failed"), PU.Push.first(String.take(B.Task.last(st, thread), 4000n)))))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case False{} _:
       IO.pure(Hub, h)
 
 def Far.note.n(+n: NO.Notice, h: Hub, +thread: String, +state: String, seen: Bool) -> IO(Hub):
   match h:
-    case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
-      Far.note.k(Bool.and(Bool.not(seen), Bool.and(FR.Fr.thread.shared(st, thread), Bool.not(String.is_empty(NO.Notice.kind(n))))),
-        Hub{st, f, ls, cl, as, inbox, cfg, note}, n, thread, PU.Push.title(B.Hub.thread(st, thread)), PU.Push.body(String.eq(state, "failed"), PU.Push.first(B.Task.last(st, thread))))
+    case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
+      Far.note.k(Bool.and(Bool.and(Bool.not(seen), Bool.not(List.is_empty(&2, BO.Peer, Far.own.go(BO.World.peers(M.State.bots(st)), st, cfg)))), Bool.and(FR.Fr.thread.shared(st, thread), Bool.not(String.is_empty(NO.Notice.kind(n))))),
+        Hub{st, f, ls, cl, as, inbox, cfg, note}, n, thread, state)
 
 # a turn ended here and nobody here is watching it: the owner's other
 # machines raise it too (once per machine, under the alert's one key)
@@ -5997,6 +6025,13 @@ def Far.store(h: Hub, +link: String, +text: String) -> IO(Hub):
         Far.keep.job(Far.file(Cfg.home(cfg), link), text)
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
 
+def Far.took.told(h: Hub, +link: String, ys: List<&2, FR.Item>) -> IO(Hub):
+  Far.live.resync.h(h, link, ys)
+
+def Far.took.ended(h: Hub, +link: String, +from: Nat, +hd: Nat, +ys: List<&2, FR.Item>, +name: String) -> IO(Hub):
+  IO.bind(Hub, Hub, IO.bind(Hub, Hub, Far.store(h, link, FR.Fr.file.batch(ys, hd)), h2 => Far.tell(h2, FR.Fr.msg(link, name, False{}, from, hd, ys))),
+    h3 => Far.took.told(h3, link, ys))
+
 def Far.took.go(none: Bool, moved: Bool, h: Hub, +link: String, +from: Nat, +hd: Nat, +ys: List<&2, FR.Item>, +name: String) -> IO(Hub):
   match none moved:
     case True{} False{}:
@@ -6004,7 +6039,7 @@ def Far.took.go(none: Bool, moved: Bool, h: Hub, +link: String, +from: Nat, +hd:
     case True{} True{}:
       Far.tell(h, FR.Fr.msg(link, name, False{}, from, hd, Nil{}))
     case False{} _:
-      IO.bind(Hub, Hub, Far.store(Far.live.ended(h, link, ys), link, FR.Fr.file.batch(ys, hd)), h2 => Far.tell(h2, FR.Fr.msg(link, name, False{}, from, hd, ys)))
+      Far.took.ended(Far.live.ended(h, link, ys), link, from, hd, ys, name)
 
 # a batch taken into the mirror: kept, told, and on a gap the rest pulled
 def Far.took.k(g: FR.Got, +i: FR.In, h: Hub, +since: Nat, +to: Nat, +xs: List<&2, FR.Item>, +name: String, moved: Bool) -> IO(Hub):
@@ -7452,10 +7487,10 @@ def Far.live.in.k(+a: FLV.Applied, h: Hub, +reply: Chan(List<&2, U32>)) -> IO(Hu
         return Hub{st, f, ls, cl3, as, inbox, Live.with(cfg, FLV.Applied.bs(a)), note}
 
 # POST /far/push with `live`: the owner's streamed text
-def Far.live.in(h: Hub, +link: String, xs: List<&2, J.Json>, +reply: Chan(List<&2, U32>)) -> IO(Hub):
+def Far.live.in(h: Hub, +link: String, +at: Nat, xs: List<&2, J.Json>, +reply: Chan(List<&2, U32>)) -> IO(Hub):
   match h:
     case Hub{st, f, ls, cl, as, inbox, +cfg, note}:
-      Far.live.in.k(FLV.FL.apply(xs, link, Live.of(cfg)), Hub{st, f, ls, cl, as, inbox, cfg, note}, reply)
+      Far.live.in.k(FLV.FL.apply(xs, link, at, Live.of(cfg)), Hub{st, f, ls, cl, as, inbox, cfg, note}, reply)
 
 # a peer's turn ended there, and is news: this hub's desk and phones
 def Far.note.in.k(+o: J.Json, h: Hub, +link: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
@@ -7485,7 +7520,7 @@ def Far.push.in.n(note: Maybe<&2, J.Json>, +o: J.Json, h: Hub, +peer: String, +r
 def Far.push.in.k(live: Maybe<&2, J.Json>, +o: J.Json, h: Hub, +peer: String, +reply: Chan(List<&2, U32>)) -> IO(Hub):
   match live:
     case Some{+l}:
-      Far.live.in(h, peer, J.Json.elems(l), reply)
+      Far.live.in(h, peer, J.Json.get_nat(o, "at", 0n), J.Json.elems(l), reply)
     case None{}:
       Far.push.in.n(J.Json.get(o, "note"), o, h, peer, reply)
 

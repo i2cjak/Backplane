@@ -20,11 +20,18 @@ import ./far.bend as FR
 # Order and loss. `off` is the length of the buffer before the delta: the
 # receiver takes a delta only at that length and otherwise asks (`need`)
 # for the whole buffer, which comes as a snapshot (`snap`) that replaces
-# its text. `gen` is the owner's buffer generation, bumped by each end
-# (the message posted, the turn over): a receiver whose buffer ended (the
-# durable message arrived first, Live.end) ignores a delta of an older gen,
-# so a late delta never brings back the text of a posted reply (laws
-# `flive_stale_ignored`, `flive_end_blocks_old`).
+# its text. Each request says `at`: the owner's log sequence when it was
+# sent, and the owner sends only deltas of a stream still open then (a
+# delta of a buffer that ended since, or truncated, is left out or becomes
+# a snapshot: FL.fill). So a stream is older than a durable change numbered
+# n exactly when its `at` is below n. The receiver keeps, as its buffer's
+# `gen`, the `at` of the last request it took for the thread; a durable end
+# numbered n (the message posted, the turn over: FL.ended) clears only a
+# buffer whose `at` is below n, and leaves an empty one at n where there
+# was none, so a late delta (at < n) of a posted reply never shows, while a
+# newer stream that came first is kept (laws `flive_stale_ignored`,
+# `flive_end_blocks_old`, `flive_end_keeps_newer`). A snapshot holds at
+# most FL.snap.cap() characters, the end of the text (`trunc` then).
 #
 # Sender: one queue per peer (LQ), one item per thread (a delta joins the
 # one waiting when it follows it, else the thread's snapshot is owed), one
@@ -35,6 +42,11 @@ import ./far.bend as FR
 
 def FL.quiet() -> Nat:
   8n
+
+# the most of a buffer a snapshot carries (its end), so a request stays far
+# under /far/push's limit
+def FL.snap.cap() -> Nat:
+  65536n
 
 # The receiver
 # ------------
@@ -136,37 +148,78 @@ def FL.drop.link(bs: List<&2, LV.Buf>, +prefix: String) -> List<&2, LV.Buf>:
 def FL.tag.end(+t: String) -> Bool:
   Bool.or(String.eq(t, "MessagePosted"), String.eq(t, "TurnChanged"))
 
-def FL.ended.id(+link: String, +t: String) -> List<&2, String>:
-  Bool.pick(List<&2, String>, String.is_empty(t), Nil{}, [FR.Fr.id(link, t)])
+# an end: the far id and the owner's number for the change that ended it
+type End is Data:
+  End{th: String, n: Nat}
 
-def FL.ended.m(m: Maybe<&2, M.Change>, +link: String) -> List<&2, String>:
+def FL.ended.id(+link: String, +t: String, +n: Nat) -> List<&2, End>:
+  Bool.pick(List<&2, End>, String.is_empty(t), Nil{}, [End{FR.Fr.id(link, t), n}])
+
+def FL.ended.m(m: Maybe<&2, M.Change>, +link: String, +n: Nat) -> List<&2, End>:
   match m:
     case Some{c}:
-      FL.ended.id(link, LV.Live.ended(c))
+      FL.ended.id(link, LV.Live.ended(c), n)
     case None{}:
       Nil{}
 
-def FL.ended.k(end: Bool, +c: J.Json, +link: String) -> List<&2, String>:
+def FL.ended.k(end: Bool, +c: J.Json, +link: String, +n: Nat) -> List<&2, End>:
   match end:
     case True{}:
-      FL.ended.m(C.Change.decode(c), link)
+      FL.ended.m(C.Change.decode(c), link, n)
     case False{}:
       Nil{}
 
-# the far ids whose live text a batch of items ends
-def FL.ended(xs: List<&2, FR.Item>, +link: String) -> List<&2, String>:
+# the far ids whose live text a batch of items ends, with their numbers
+def FL.ended(xs: List<&2, FR.Item>, +link: String) -> List<&2, End>:
   match xs:
     case Nil{}:
       Nil{}
-    case FR.Item{_, +c} <> t:
-      List.append(&2, String, FL.ended.k(FL.tag.end(J.Json.get_str(c, "$", "")), c, link), FL.ended(t, link))
+    case FR.Item{+n, +c} <> t:
+      List.append(&2, End, FL.ended.k(FL.tag.end(J.Json.get_str(c, "$", "")), c, link, n), FL.ended(t, link))
 
-def FL.ends(ids: List<&2, String>, bs: List<&2, LV.Buf>) -> List<&2, LV.Buf>:
-  match ids:
+# the far ids alone (a client clears their live text as it folds the batch)
+def FL.ended.ids(es: List<&2, End>) -> List<&2, String>:
+  match es:
+    case Nil{}:
+      Nil{}
+    case End{+th, _} <> t:
+      th <> FL.ended.ids(t)
+
+# one end: a buffer of an older stream (its `at` below n) is emptied and
+# kept at n; none becomes an empty one at n; a newer one stays
+def FL.end.b(older: Bool, b: LV.Buf, +th: String, +n: Nat) -> LV.Buf:
+  match older:
+    case True{}:
+      LV.Buf{th, Nil{}, 0n, False{}, n}
+    case False{}:
+      b
+
+def FL.end.k(has: Bool, +bs: List<&2, LV.Buf>, +th: String, +n: Nat) -> List<&2, LV.Buf>:
+  match has:
+    case True{}:
+      FL.end.b(Nat.is_lt(FL.gen(bs, th), n), FL.get(bs, th), th, n) <> FL.drop(bs, th)
+    case False{}:
+      LV.Buf{th, Nil{}, 0n, False{}, n} <> bs
+
+def FL.end.one(+bs: List<&2, LV.Buf>, +th: String, +n: Nat) -> List<&2, LV.Buf>:
+  FL.end.k(LV.Live.has(bs, th), bs, th, n)
+
+def FL.ends(es: List<&2, End>, +bs: List<&2, LV.Buf>) -> List<&2, LV.Buf>:
+  match es:
     case Nil{}:
       bs
-    case +id <> t:
-      FL.ends(t, LV.Live.end(bs, id))
+    case End{+th, +n} <> t:
+      FL.ends(t, FL.end.one(bs, th, n))
+
+# whether an end left a newer stream's text standing (the clients, which
+# clear a thread's live text when they fold its end, then take the hub's
+# snapshot again)
+def FL.kept(es: List<&2, End>, +bs: List<&2, LV.Buf>) -> Bool:
+  match es:
+    case Nil{}:
+      False{}
+    case End{+th, +n} <> t:
+      Bool.or(Bool.and(Nat.is_ge(FL.gen(bs, th), n), Nat.is_gt(FL.size(bs, th), 0n)), FL.kept(t, bs))
 
 # The sender
 # ----------
@@ -337,8 +390,8 @@ def LQs.set(qs: List<&2, LQ>, +q: LQ) -> List<&2, LQ>:
 
 def LI.json(i: LI) -> J.Json:
   match i:
-    case LI{+t, +g, _, +x, _, True{}}:
-      J.Json.obj([J.KV{"th", J.Str{t}}, J.KV{"gen", J.Json.nat(g)}, J.KV{"off", J.Json.nat(0n)}, J.KV{"text", J.Str{x}}, J.KV{"snap", J.Json.bool(True{})}])
+    case LI{+t, +g, +o, +x, _, True{}}:
+      J.Json.obj([J.KV{"th", J.Str{t}}, J.KV{"gen", J.Json.nat(g)}, J.KV{"off", J.Json.nat(0n)}, J.KV{"text", J.Str{x}}, J.KV{"snap", J.Json.bool(True{})}, J.KV{"trunc", J.Json.bool(Nat.is_gt(o, 0n))}])
     case LI{+t, +g, +o, +x, _, False{}}:
       J.Json.obj([J.KV{"th", J.Str{t}}, J.KV{"gen", J.Json.nat(g)}, J.KV{"off", J.Json.nat(o)}, J.KV{"text", J.Str{x}}])
 
@@ -350,8 +403,8 @@ def LI.items(xs: List<&2, LI>) -> List<&2, J.Json>:
       LI.json(x) <> LI.items(t)
 
 # a request's body: `live`, never `items`
-def FL.body(+name: String, xs: List<&2, LI>) -> String:
-  J.Json.show(J.Json.obj([J.KV{"name", J.Str{name}}, J.KV{"live", J.Json.arr(LI.items(xs))}]))
+def FL.body(+name: String, +at: Nat, xs: List<&2, LI>) -> String:
+  J.Json.show(J.Json.obj([J.KV{"name", J.Str{name}}, J.KV{"at", J.Json.nat(at)}, J.KV{"live", J.Json.arr(LI.items(xs))}]))
 
 def FL.strs(xs: List<&2, String>) -> List<&2, J.Json>:
   match xs:
@@ -392,22 +445,23 @@ def FL.apply.t(t: Took, a: Applied, +th: String, +local: String, +text: String, 
     case Took{+bs, +v}:
       FL.apply.k(v, bs, a, th, local, text, snap)
 
-def FL.apply.one(+o: J.Json, +link: String, a: Applied) -> Applied:
+def FL.apply.one(+o: J.Json, +link: String, +at: Nat, a: Applied) -> Applied:
   match a:
     case Applied{+bs, ns, ds, sn}:
-      FL.apply.t(FL.take(bs, FR.Fr.id(link, J.Json.get_str(o, "th", "")), J.Json.get_str(o, "text", ""), J.Json.get_nat(o, "gen", 0n), J.Json.get_nat(o, "off", 0n), False{}, J.Json.get_bool(o, "snap", False{})),
+      FL.apply.t(FL.take(bs, FR.Fr.id(link, J.Json.get_str(o, "th", "")), J.Json.get_str(o, "text", ""), at, J.Json.get_nat(o, "off", 0n), J.Json.get_bool(o, "trunc", False{}), J.Json.get_bool(o, "snap", False{})),
         Applied{bs, ns, ds, sn}, FR.Fr.id(link, J.Json.get_str(o, "th", "")), J.Json.get_str(o, "th", ""), J.Json.get_str(o, "text", ""), J.Json.get_bool(o, "snap", False{}))
 
-def FL.apply.go(xs: List<&2, J.Json>, +link: String, a: Applied) -> Applied:
+def FL.apply.go(xs: List<&2, J.Json>, +link: String, +at: Nat, a: Applied) -> Applied:
   match xs:
     case Nil{}:
       a
     case +x <> t:
-      FL.apply.go(t, link, FL.apply.one(x, link, a))
+      FL.apply.go(t, link, at, FL.apply.one(x, link, at, a))
 
-# a request's `live` items taken into the buffers
-def FL.apply(xs: List<&2, J.Json>, +link: String, +bs: List<&2, LV.Buf>) -> Applied:
-  FL.apply.go(xs, link, Applied{bs, Nil{}, Nil{}, False{}})
+# a request's `live` items taken into the buffers (`at`: the owner's
+# sequence when it sent them, each buffer's `gen` here)
+def FL.apply(xs: List<&2, J.Json>, +link: String, +at: Nat, +bs: List<&2, LV.Buf>) -> Applied:
+  FL.apply.go(xs, link, at, Applied{bs, Nil{}, Nil{}, False{}})
 
 def Applied.bs(a: Applied) -> List<&2, LV.Buf>:
   match a:
@@ -467,11 +521,34 @@ def FL.size.b(b: LV.Buf) -> Nat:
     case LV.Buf{_, _, n, _, _}:
       n
 
+def FL.trunc.b(b: LV.Buf) -> Bool:
+  match b:
+    case LV.Buf{_, _, _, tr, _}:
+      tr
+
+# a snapshot: the buffer's text, its end only past FL.snap.cap() (`off` 1
+# says the text was cut, LI.json's `trunc`)
+def FL.snap.li(+t: String, +g: Nat, +x: String, +tr: Bool) -> LI:
+  Bool.pick(LI, Nat.is_gt(String.length(x), FL.snap.cap()),
+    LI{t, g, 1n, String.drop(x, Nat.sub(String.length(x), FL.snap.cap())), FL.snap.cap(), True{}},
+    LI{t, g, Bool.pick(Nat, tr, 1n, 0n), x, String.length(x), True{}})
+
 def FL.fill.k(has: Bool, +t: String, +b: LV.Buf) -> List<&2, LI>:
   match has:
     case True{}:
-      [LI{t, FL.gen.b(b), 0n, FL.text(b), FL.size.b(b), True{}}]
+      [FL.snap.li(t, FL.gen.b(b), FL.text(b), FL.trunc.b(b))]
     case False{}:
+      Nil{}
+
+# a delta: sent while its stream is the buffer's (same gen); a buffer that
+# ended since sends nothing of it, a truncated one its snapshot
+def FL.fill.d(open: Bool, trunc: Bool, +t: String, +b: LV.Buf, +i: LI) -> List<&2, LI>:
+  match open trunc:
+    case True{} False{}:
+      [i]
+    case True{} True{}:
+      FL.fill.k(True{}, t, b)
+    case False{} _:
       Nil{}
 
 def FL.fill.one(i: LI, +bs: List<&2, LV.Buf>) -> List<&2, LI>:
@@ -479,7 +556,7 @@ def FL.fill.one(i: LI, +bs: List<&2, LV.Buf>) -> List<&2, LI>:
     case LI{+t, _, _, _, _, True{}}:
       FL.fill.k(Nat.is_gt(FL.size(bs, t), 0n), t, FL.get(bs, t))
     case LI{+t, +g, +o, +x, +n, False{}}:
-      [LI{t, g, o, x, n, False{}}]
+      FL.fill.d(Bool.and(LV.Live.has(bs, t), Nat.is_eq(FL.gen(bs, t), g)), FL.trunc.b(FL.get(bs, t)), t, FL.get(bs, t), LI{t, g, o, x, n, False{}})
 
 def FL.fill(xs: List<&2, LI>, +bs: List<&2, LV.Buf>) -> List<&2, LI>:
   match xs:

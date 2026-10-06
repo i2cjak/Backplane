@@ -6496,7 +6496,7 @@ def Ui.far.live(ids: List<&2, String>, u: Ui) -> Ui:
       Ui.far.live(t, Ui.live.gone(u, id))
 
 def Ui.far(+u: Ui, +o: J.Json) -> Ui:
-  Far.arrived(Ui.far.live(FLV.FL.ended(FR.Fr.items.of(J.Json.elems(J.Json.get_obj(o, "items"))), J.Json.get_str(o, "link", "")), Ui.far.k(u, J.Json.get_str(o, "link", ""), o)))
+  Far.arrived(Ui.far.live(FLV.FL.ended.ids(FLV.FL.ended(FR.Fr.items.of(J.Json.elems(J.Json.get_obj(o, "items"))), J.Json.get_str(o, "link", ""))), Ui.far.k(u, J.Json.get_str(o, "link", ""), o)))
 
 # whether the machine a thing elsewhere lives on did not answer last time
 def Ui.far.away(+u: Ui, +id: String) -> Bool:

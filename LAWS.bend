@@ -6100,31 +6100,40 @@ law flive_gap_changes_nothing:
   {FLV.FL.text(FLV.FL.get(FLV.Took.bs(FLV.FL.take(FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{})), "b~t", "zz", 5n, 9n, False{}, False{})), "b~t")) == "ab" : String}
 
 law flive_end_blocks_old:
-  {FLV.Took.v(FLV.FL.take(LV.Live.end(FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{})), "b~t"), "b~t", "ab", 5n, 0n, False{}, False{})) == 1n : Nat}
+  {FLV.Took.v(FLV.FL.take(FLV.FL.ends([FLV.End{"b~t", 9n}], FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{}))), "b~t", "ab", 5n, 0n, False{}, False{})) == 1n : Nat}
 
 law flive_end_no_resurrect:
-  {FLV.FL.text(FLV.FL.get(FLV.Took.bs(FLV.FL.take(LV.Live.end(FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{})), "b~t"), "b~t", "ab", 5n, 0n, False{}, False{})), "b~t")) == "" : String}
+  {FLV.FL.text(FLV.FL.get(FLV.Took.bs(FLV.FL.take(FLV.FL.ends([FLV.End{"b~t", 9n}], FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{}))), "b~t", "ab", 5n, 0n, False{}, False{})), "b~t")) == "" : String}
 
 law flive_next_gen_taken:
-  {FLV.FL.text(FLV.FL.get(FLV.Took.bs(FLV.FL.take(LV.Live.end(FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{})), "b~t"), "b~t", "cd", 6n, 0n, False{}, False{})), "b~t")) == "cd" : String}
+  {FLV.FL.text(FLV.FL.get(FLV.Took.bs(FLV.FL.take(FLV.FL.ends([FLV.End{"b~t", 9n}], FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{}))), "b~t", "cd", 9n, 0n, False{}, False{})), "b~t")) == "cd" : String}
+
+# the durable end came first (a restart, a reordering): a delta of the
+# stream it ended, arriving after, never shows
+law flive_end_before_any:
+  {FLV.Took.v(FLV.FL.take(FLV.FL.ends([FLV.End{"b~t", 9n}], Nil{}), "b~t", "ab", 5n, 0n, False{}, False{})) == 1n : Nat}
+
+# an end of an older stream leaves a newer one that came first standing
+law flive_end_keeps_newer:
+  {FLV.FL.text(FLV.FL.get(FLV.FL.ends([FLV.End{"b~t", 9n}], FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "cd", 10n, 0n, False{}, False{}))), "b~t")) == "cd" : String}
 
 law flive_snap_replaces:
   {FLV.FL.text(FLV.FL.get(FLV.Took.bs(FLV.FL.take(FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{})), "b~t", "abcdef", 5n, 0n, False{}, True{})), "b~t")) == "abcdef" : String}
 
 law flive_snap_older_stale:
-  {FLV.Took.v(FLV.FL.take(LV.Live.end(FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{})), "b~t"), "b~t", "ab", 5n, 0n, False{}, True{})) == 1n : Nat}
+  {FLV.Took.v(FLV.FL.take(FLV.FL.ends([FLV.End{"b~t", 9n}], FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{}))), "b~t", "ab", 5n, 0n, False{}, True{})) == 1n : Nat}
 
 law flive_ended_ids:
-  {FLV.FL.ended([FR.Item{4n, C.Change.encode(M.MessagePosted{"t", "m:1", M.Assistant{}, "hi", 3n})}, FR.Item{5n, C.Change.encode(M.TurnChanged{"u", M.Completed{}, 4n})}, FR.Item{6n, C.Change.encode(M.TurnChanged{"v", M.Running{}, 5n})}], "b") == ["b~t", "b~u"] : List<&2, String>}
+  {FLV.FL.ended.ids(FLV.FL.ended([FR.Item{4n, C.Change.encode(M.MessagePosted{"t", "m:1", M.Assistant{}, "hi", 3n})}, FR.Item{5n, C.Change.encode(M.TurnChanged{"u", M.Completed{}, 4n})}, FR.Item{6n, C.Change.encode(M.TurnChanged{"v", M.Running{}, 5n})}], "b")) == ["b~t", "b~u"] : List<&2, String>}
 
 law flive_user_message_keeps:
-  {FLV.FL.ended([FR.Item{4n, C.Change.encode(M.MessagePosted{"t", "m:1", M.User{}, "hi", 3n})}], "b") == Nil{} : List<&2, String>}
+  {FLV.FL.ended.ids(FLV.FL.ended([FR.Item{4n, C.Change.encode(M.MessagePosted{"t", "m:1", M.User{}, "hi", 3n})}], "b")) == Nil{} : List<&2, String>}
 
 law flive_body_no_items:
-  {List.length(&2, FR.Item, FR.Fr.items.of(J.Json.elems(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(FLV.FL.body("a", [FLV.LI{"t", 5n, 0n, "ab", 2n, False{}}])), J.Null{}), "items")))) == 0n : Nat}
+  {List.length(&2, FR.Item, FR.Fr.items.of(J.Json.elems(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(FLV.FL.body("a", 0n, [FLV.LI{"t", 5n, 0n, "ab", 2n, False{}}])), J.Null{}), "items")))) == 0n : Nat}
 
 law flive_body_has_live:
-  {List.length(&2, J.Json, J.Json.elems(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(FLV.FL.body("a", [FLV.LI{"t", 5n, 0n, "ab", 2n, False{}}])), J.Null{}), "live"))) == 1n : Nat}
+  {List.length(&2, J.Json, J.Json.elems(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(FLV.FL.body("a", 0n, [FLV.LI{"t", 5n, 0n, "ab", 2n, False{}}])), J.Null{}), "live"))) == 1n : Nat}
 
 law flive_queue_joins:
   {FLV.LQ.pend(FLV.LQ.add(FLV.LQ.add(FLV.LQ.new("b"), 10n, "t", 5n, 0n, "ab"), 10n, "t", 5n, 2n, "cd")) == [FLV.LI{"t", 5n, 0n, "abcd", 4n, False{}}] : List<&2, FLV.LI>}
@@ -6152,6 +6161,10 @@ law flive_quiet_ends:
 
 law flive_whole_from_buffer:
   {FLV.FL.fill([FLV.LI{"t", 0n, 0n, "", 0n, True{}}], LV.Live.add(LV.Live.add(Nil{}, "t", "ab"), "t", "cd")) == [FLV.LI{"t", 0n, 0n, "abcd", 4n, True{}}] : List<&2, FLV.LI>}
+
+# a delta of a stream that ended before its request went is not sent
+law flive_delta_ended_dropped:
+  {FLV.FL.fill([FLV.LI{"t", 0n, 0n, "ab", 2n, False{}}], LV.Live.end(LV.Live.add(Nil{}, "t", "ab"), "t")) == Nil{} : List<&2, FLV.LI>}
 
 law flive_whole_ended_dropped:
   {FLV.FL.fill([FLV.LI{"t", 0n, 0n, "", 0n, True{}}], LV.Live.end(LV.Live.add(Nil{}, "t", "ab"), "t")) == Nil{} : List<&2, FLV.LI>}
