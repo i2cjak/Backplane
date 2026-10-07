@@ -370,6 +370,12 @@ struct TodoLine: Decodable {
 struct Todos: Decodable {
     let head: String
     let lines: [TodoLine]
+    // open, and a tap on the head sends fold with toggle; more: a long
+    // list's last line ("Show all 24", "Show fewer"; "" when it fits)
+    let open: Bool?
+    let toggle: String?
+    let more: String?
+    let moreValue: String?
 }
 
 struct QueueRow: Decodable {

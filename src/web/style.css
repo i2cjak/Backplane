@@ -182,7 +182,7 @@ button.fold span { overflow: hidden; text-overflow: ellipsis; white-space: nowra
 .composer .skills .desc { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .composer textarea:focus, .add input:focus { outline: none; border-color: var(--accent); }
 .thread-view.dropping .composer { outline: 2px dashed var(--accent); outline-offset: -4px; background: var(--raise); }
-.subs { border: 1px solid var(--line); background: var(--panel); max-width: 860px; position: sticky; top: 0; z-index: 2; max-height: 40vh; overflow-y: auto; }
+.subs { border: 1px solid var(--line); background: var(--panel); max-width: 860px; position: sticky; top: 0; z-index: 2; max-height: 30vh; overflow-y: auto; overscroll-behavior: contain; }
 .subs.busy { border-color: var(--accent); }
 .subs-head { display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 10px; color: var(--faint); font-size: 11px; background: none; border: 0; text-align: left; cursor: pointer; }
 .subs-head:hover { color: var(--text); }
@@ -380,7 +380,11 @@ button.chip:hover { border-color: var(--bad); color: var(--bad); }
 .ask-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .todos { display: flex; flex-direction: column; gap: 2px; margin: 0 16px 4px; padding: 6px 10px; border: 1px solid var(--line); background: var(--raise); font-size: 12px; }
 .todos:empty { display: none; }
-.todos .head { color: var(--soft, inherit); margin-bottom: 2px; } .todos .todo.completed { color: var(--faint); } .todos .todo.pending { color: var(--dim, inherit); }
+.todos .head { display: flex; align-items: center; gap: 6px; width: 100%; color: var(--soft, inherit); margin-bottom: 2px; background: none; border: 0; padding: 0; text-align: left; cursor: pointer; font-size: inherit; }
+.todos .head svg { margin-left: auto; color: var(--faint); }
+.todos .more { align-self: flex-start; background: none; border: 0; padding: 2px 0; color: var(--accent); cursor: pointer; font-size: inherit; }
+/* every step: the card scrolls, never taller than a third of the page */
+.todos.all { max-height: 34vh; overflow-y: auto; } .todos .todo.completed { color: var(--faint); } .todos .todo.pending { color: var(--dim, inherit); }
 .queue { display: flex; flex-direction: column; gap: 4px; margin: 0 16px; }
 .queue:empty { display: none; }
 .queued { display: flex; gap: 8px; align-items: center; padding: 4px 6px 4px 10px; border: 1px solid var(--line); background: var(--raise); font-size: 12px; }

@@ -964,12 +964,25 @@ def Conn.put(s: Socket, +bs: List<&2, U32>, +out: Chan(Wire), k: Socket -> Nat -
 # a join chunk's frames (OB.Items.texts: each within the byte bound), put
 # out one by one; to the writer's count they are one frame of no bytes, as
 # the hub offered it (it charged none)
-def Conn.items(ts: List<&2, String>, s: Socket, +out: Chan(Wire), k: Socket -> Nat -> IO(Unit)) -> IO(Unit):
-  match ts:
-    case Nil{}:
-      k(s, 0n)
-    case +t <> rest:
-      Conn.out(s, W.Ws.cbor(t), out, s2 => Conn.items(rest, s2, out, k))
+# the wire's dictionaries as host.c's send_cbor takes them
+def Conn.keys() -> String:
+  String.join(CB.Cbor.keys(), "\n")
+
+def Conn.words() -> String:
+  String.join(CB.Cbor.words(), "\n")
+
+# a chunk's frame out: its CBOR made and sent in C (H.Sock.send_cbor, the
+# same bytes as W.Ws.cbor): Bend's encoder sent a long log's join at ~1.5 MB/s
+def Conn.out.cbor(s: Socket, +t: String, +out: Chan(Wire), k: Socket -> IO(Unit)) -> IO(Unit):
+  IO.bind(Socket & Result<&1, &1, U32 & String, Unit>, Unit, H.Sock.send_cbor(s, t, Conn.keys(), Conn.words(), Conn.deadline()), r => Conn.sent.k(r, out, k))
+
+# a join frame's lines out as OB.Items.texts.s splits them, each frame's
+# CBOR: measured, joined, encoded and sent in C (H.Sock.send_items, the same
+# bytes, test/native/cbor_frame_test.bend)
+def Conn.out.items(s: Socket, +hd: String, +pl: String, +sp: String, +xs: List<&2, String>, +tl: String, +ends: Bool, +out: Chan(Wire), k: Socket -> Nat -> IO(Unit)) -> IO(Unit):
+  IO.bind(Socket & Result<&1, &1, U32 & String, Unit>, Unit,
+    H.Sock.send_items(s, hd, pl, sp, xs, tl, Bool.pick(U32, ends, 1, 0), U32.from_nat(OB.Join.most()), U32.from_nat(OB.Join.bytes()), Conn.keys(), Conn.words(), Conn.deadline()),
+    r => Conn.sent.k(r, out, s2 => k(s2, 0n)))
 
 def Conn.write(m: Maybe<&1, Wire>, s: Socket, +out: Chan(Wire), k: Socket -> Nat -> IO(Unit)) -> IO(Unit):
   match m:
@@ -984,7 +997,7 @@ def Conn.write(m: Maybe<&1, Wire>, s: Socket, +out: Chan(Wire), k: Socket -> Nat
     case Some{WState{_, _}}:
       k(s, 0n)
     case Some{WItems{hd, pl, sp, xs, tl, ends}}:
-      Conn.items(OB.Items.texts.s(hd, pl, sp, xs, tl, ends, OB.Join.most(), OB.Join.bytes()), s, out, k)
+      Conn.out.items(s, hd, pl, sp, xs, tl, ends, out, k)
     case None{}:
       Socket.close(s)
 
@@ -6865,11 +6878,21 @@ def Boot.go(log: Bool, +c: Client, h: Hub, +n: Nat, +id: U32) -> IO(Hub):
     case False{} Hub{st, f, ls, cl, as, inbox, +cfg, note}:
       Boot.far.k(List.get(&2, FR.In, Far.mirrors(cfg), OB.Cr.fl(Boot.r(c))), Hub{st, f, ls, cl, as, inbox, cfg, note}, c, id)
 
-def Boot.k(due: Bool, +c: Client, h: Hub, +id: U32) -> IO(Hub):
-  match due h:
+# the log's length is walked only when the next window is due: a chunk
+# with lines left over takes them (Boot.src), and walking a long log for
+# every 64 lines made a join quadratic (11 ms a chunk on 43k lines)
+def Boot.k.rest(empty: Bool, +c: Client, h: Hub, +id: U32) -> IO(Hub):
+  match empty h:
     case True{} Hub{st, f, +ls, cl, as, inbox, cfg, note}:
       Boot.go(Nat.is_lt(OB.Cr.at(Boot.r(c)), List.length(&2, String, ls)), c, Hub{st, f, ls, cl, as, inbox, cfg, note}, List.length(&2, String, ls), id)
     case False{} _:
+      Boot.go(True{}, c, h, 0n, id)
+
+def Boot.k(due: Bool, +c: Client, h: Hub, +id: U32) -> IO(Hub):
+  match due:
+    case True{}:
+      Boot.k.rest(List.is_empty(&2, String, OB.Cr.rest(Boot.r(c))), c, h, id)
+    case False{}:
       IO.pure(Hub, h)
 
 def Boot.m(m: Maybe<&2, Client>, h: Hub, +id: U32, +gen: U32) -> IO(Hub):

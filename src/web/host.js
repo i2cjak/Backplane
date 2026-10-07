@@ -8,27 +8,7 @@
 import App from "./app.bend";
 import * as Solid from "./solid.js";
 import * as Plot2d from "./plot2d.js";
-
-// JSON <-> Bend Json
-// ------------------
-
-function toJson(v) {
-  if (v === null || v === undefined) return { $: "Null" };
-  if (typeof v === "boolean") return { $: "Flag", value: v };
-  if (typeof v === "number") return { $: "Num", raw: String(v) };
-  if (typeof v === "string") return { $: "Str", text: v };
-  if (Array.isArray(v)) {
-    let items = { $: "End" };
-    for (let i = v.length - 1; i >= 0; i -= 1) items = { $: "Item", head: toJson(v[i]), tail: items };
-    return { $: "Arr", items };
-  }
-  let fields = { $: "End" };
-  const keys = Object.keys(v);
-  for (let i = keys.length - 1; i >= 0; i -= 1) {
-    fields = { $: "Field", key: keys[i], value: toJson(v[keys[i]]), tail: fields };
-  }
-  return { $: "Obj", fields };
-}
+import * as Wire from "./wire.js";
 
 // bytes <-> Bend List<U32>
 function toList(u8) {
@@ -172,6 +152,11 @@ const cid = (() => {
   return c;
 })();
 
+// the wire's dictionaries (core/cbor.bend), for wire.js
+const listOf = (l) => { const out = []; for (let x = l; x && x.$ === "Con"; x = x.tail) out.push(x.head); return out; };
+const KEYS = listOf(App.cbor_keys());
+const WORDS = listOf(App.cbor_words());
+
 let ui = App.page(App.init(now(), cid), location.origin);
 // opened from another hub to show one of this machine's bots ("#bot=<name>")
 if (location.hash) {
@@ -233,6 +218,10 @@ function render() {
   Solid.mount(document.getElementById("solid"));
   Plot2d.mount(document.getElementById("plot"));
   earlierAsked = false;
+  // a page of entries the timeline does not draw (todo steps, a fold's
+  // calls) moves nothing and, at the very top, no scroll comes to ask for
+  // the next: still near the top after a render, it is asked for
+  if (tl2 && tl2.querySelector("[data-earlier]") && tl2.scrollTop <= tl2.clientHeight * 2) requestAnimationFrame(() => earlierCheck(document.getElementById("timeline")));
   if (focus) {
     document.getElementById(focus)?.focus();
     focus = null;
@@ -245,6 +234,25 @@ function later() {
     queued = true;
     requestAnimationFrame(render);
   }
+}
+
+// A keystroke in the composer changes only the composer and the asks (an
+// answer with the draft): those two are redrawn alone (app.bend's composer
+// and asks, the same nodes the page draws), not the whole page, which on a
+// long thread took 280 ms a key. Anything else draws the page as before.
+let partly = false;
+function laterPart() {
+  if (queued || partly) return;
+  partly = true;
+  requestAnimationFrame(() => {
+    partly = false;
+    if (queued) return;
+    const c = document.querySelector(".thread-view .composer");
+    if (!c || !c.__v) { render(); return; }
+    patch(c, App.composer(ui));
+    const a = document.getElementById("asks");
+    if (a && a.__v) patch(a, App.asks(ui));
+  });
 }
 
 function copy(text) {
@@ -338,7 +346,8 @@ function dispatch(action, value) {
   const did = r.cmds && r.cmds.$ === "Con";
   run(r.cmds);
   deskCheck();
-  later();
+  if (action === "draft") laterPart();
+  else later();
   return did;
 }
 
@@ -765,14 +774,14 @@ document.addEventListener("click", (e) => {
 });
 // the timeline scrolled within two screens of its top while earlier
 // entries are left out (view.bend's mark): ask for them, once a render
-document.addEventListener("scroll", (e) => {
-  const tl = e.target;
+function earlierCheck(tl) {
   if (earlierAsked || !(tl instanceof Element) || tl.id !== "timeline") return;
   const mark = tl.querySelector("[data-earlier]");
   if (!mark || tl.scrollTop > tl.clientHeight * 2) return;
   earlierAsked = true;
   dispatch("earlier", mark.getAttribute("data-earlier") ?? "");
-}, true);
+}
+document.addEventListener("scroll", (e) => earlierCheck(e.target), true);
 
 document.addEventListener("click", (e) => {
   if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey) return;
@@ -864,64 +873,60 @@ const token = (() => {
 if (token) document.cookie = `bp_token=${token}; path=/; SameSite=Strict`;
 
 // The event log this page holds, kept across reloads: a reload shows it at
-// once and the socket then brings only what is new (since=, origin=). Raw
-// server items only; the page state is rebuilt from them by app.bend.
-const CACHE = "backplane-log";
-let cache = (() => {
+// once and the socket then brings only what is new (since=, origin=). The
+// hub's log frames are kept as they came (their CBOR bytes, one record each,
+// in IndexedDB: a long log is many MB, past what localStorage holds), and a
+// reload folds them again as if they had just arrived. A log from the start
+// (since 0: a new page, or another log at the hub) clears what was kept.
+const FRAMES = "frames";
+let db = null;
+const opened = new Promise((done) => {
   try {
-    return JSON.parse(localStorage.getItem(CACHE) ?? "null");
+    const r = indexedDB.open("backplane-log", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(FRAMES, { autoIncrement: true });
+    r.onsuccess = () => { db = r.result; done(); };
+    r.onerror = () => done();
+    r.onblocked = () => done();
   } catch {
-    return null;
+    done();
   }
-})();
-
-// The log grows in place and is written out at most every 2 s (and when
-// the page is hidden or left), not stringified whole for every message;
-// a reload before a write catches up from the server (since). Over quota,
-// the page keeps its copy in memory and drops only the stored one.
-let dirty = false;
-let flushing = null;
-
-function flush() {
-  if (flushing !== null) {
-    clearTimeout(flushing);
-    flushing = null;
-  }
-  if (!dirty || !cache) return;
-  dirty = false;
-  try {
-    localStorage.setItem(CACHE, JSON.stringify(cache));
-  } catch {
-    try { localStorage.removeItem(CACHE); } catch {} // over quota: start from the server next time
-  }
-}
-
-function keep(msg) {
-  if (msg.t === "log") {
-    if (msg.since > 0 && cache) {
-      for (const x of msg.items) cache.items.push(x);
-    } else {
-      cache = { origin: msg.origin ?? "", items: msg.items };
-    }
-  } else if (msg.t === "changes" && cache) {
-    for (const x of msg.items) cache.items.push(x);
-  } else {
-    return;
-  }
-  dirty = true;
-  if (flushing === null) flushing = setTimeout(flush, 2000);
-}
-
-addEventListener("pagehide", flush);
-document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "hidden") flush();
 });
+try { localStorage.removeItem("backplane-log"); } catch {} // the copy kept before
 
-if (cache && Array.isArray(cache.items)) {
-  ui = App.recv(ui, toJson({ t: "log", since: 0, origin: cache.origin, items: cache.items })).ui;
-  // a saved log is not this connection's: the hub's own log says when
-  ui = App.unsync(ui);
+// the number in field k of a frame's top object, as Bend's Json holds it
+function field(j, k) {
+  for (let c = j && j.fields; c && c.$ === "Field"; c = c.tail) if (c.key === k) return c.value && c.value.raw;
+  return undefined;
 }
+
+function keep(kind, j, bytes) {
+  if (!db || (kind !== "log" && kind !== "changes")) return;
+  try {
+    const tx = db.transaction(FRAMES, "readwrite");
+    const st = tx.objectStore(FRAMES);
+    if (kind === "log" && Number(field(j, "since") ?? 0) === 0) st.clear();
+    st.add(bytes.slice().buffer);
+  } catch {}
+}
+
+// the kept frames, folded in order before the page first connects
+const restored = opened.then(() => new Promise((done) => {
+  if (!db) return done();
+  try {
+    const r = db.transaction(FRAMES, "readonly").objectStore(FRAMES).getAll();
+    r.onsuccess = () => {
+      try {
+        for (const buf of r.result ?? []) ui = App.recv(ui, Wire.cbor(new Uint8Array(buf), KEYS, WORDS)).ui;
+        // a saved log is not this connection's: the hub's own log says when
+        if ((r.result ?? []).length) ui = App.unsync(ui);
+      } catch {}
+      done();
+    };
+    r.onerror = () => done();
+  } catch {
+    done();
+  }
+}));
 
 function connect() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -955,13 +960,15 @@ function connect() {
       else if (o) Plot2d.got(o, at);
       return;
     }
-    const j = App.wire_in(toList(bytes));
+    // decoded here, straight into Bend's Json tree (wire.js): Bend's own
+    // decoder walked a list cell per byte, most of a long log's load
+    const j = Wire.cbor(bytes, KEYS, WORDS);
     // another thread's streamed text draws nothing and is not kept: only
     // the log and its changes are, and the page renders when the message
     // shows or gives commands
     const t = App.kind(j);
     const vis = App.shows(ui, j);
-    if (t === "log" || t === "changes") keep(JSON.parse(App.show(j)));
+    keep(t, j, bytes);
     const r = App.recv(ui, j);
     ui = r.ui;
     let acts = false;
@@ -1006,8 +1013,11 @@ setInterval(() => {
   later();
 }, 30000);
 
-connect();
 render();
+restored.then(() => {
+  render();
+  connect();
+});
 
 // the app shell works offline where the browser allows it (HTTPS or localhost)
 if ("serviceWorker" in navigator && window.isSecureContext) {

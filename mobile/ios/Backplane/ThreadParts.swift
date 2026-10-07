@@ -294,35 +294,42 @@ struct SubsView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            ForEach(subs.rows) { r in
-                Button { model.act(r.act, r.value) } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 8) {
-                            Rectangle().fill(subColor(r.state)).frame(width: r.live ? 8 : 6, height: r.live ? 8 : 6)
-                            Text(r.agent ? (r.open ? "▾" : "▸") : r.who).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                            Text(r.title).lineLimit(1)
-                            Spacer(minLength: 0)
-                            if let c = r.cancel, !c.isEmpty {
-                                Button("Stop") { model.act(c, r.id) }.font(.caption2).foregroundStyle(PhaseColor.warn).buttonStyle(.plain)
+            // many subagents scroll within a third of the screen
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(subs.rows) { r in
+                        Button { model.act(r.act, r.value) } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 8) {
+                                    Rectangle().fill(subColor(r.state)).frame(width: r.live ? 8 : 6, height: r.live ? 8 : 6)
+                                    Text(r.agent ? (r.open ? "▾" : "▸") : r.who).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                                    Text(r.title).lineLimit(1)
+                                    Spacer(minLength: 0)
+                                    if let c = r.cancel, !c.isEmpty {
+                                        Button("Stop") { model.act(c, r.id) }.font(.caption2).foregroundStyle(PhaseColor.warn).buttonStyle(.plain)
+                                    }
+                                    Text(r.state).font(.caption2).foregroundStyle(subColor(r.state))
+                                }
+                                if !r.doing.isEmpty {
+                                    Text(r.doing).font(.caption2).foregroundStyle(PhaseColor.accent).lineLimit(1).padding(.leading, 16)
+                                }
+                                ForEach(Array(r.steps.enumerated()), id: \.offset) { _, st in
+                                    HStack(spacing: 6) {
+                                        if !st.kind.isEmpty { Text(st.kind).foregroundStyle(.tertiary) }
+                                        Text(st.text).foregroundStyle(.secondary).lineLimit(1)
+                                    }
+                                    .font(.caption2.monospaced())
+                                    .padding(.leading, 16)
+                                }
                             }
-                            Text(r.state).font(.caption2).foregroundStyle(subColor(r.state))
+                            .contentShape(.rect)
                         }
-                        if !r.doing.isEmpty {
-                            Text(r.doing).font(.caption2).foregroundStyle(PhaseColor.accent).lineLimit(1).padding(.leading, 16)
-                        }
-                        ForEach(Array(r.steps.enumerated()), id: \.offset) { _, st in
-                            HStack(spacing: 6) {
-                                if !st.kind.isEmpty { Text(st.kind).foregroundStyle(.tertiary) }
-                                Text(st.text).foregroundStyle(.secondary).lineLimit(1)
-                            }
-                            .font(.caption2.monospaced())
-                            .padding(.leading, 16)
-                        }
+                        .buttonStyle(.plain)
                     }
-                    .contentShape(.rect)
                 }
-                .buttonStyle(.plain)
             }
+            .frame(maxHeight: 260)
+            .fixedSize(horizontal: false, vertical: true)
         }
         .padding(10)
         .background(Color(.secondarySystemBackground))

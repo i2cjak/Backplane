@@ -5789,6 +5789,17 @@ def OnbUi.phone() -> Hb.Hubs:
 law onboard_live_log_shows:
   {U.Tour.at(OnbUi.live()) == 0n : Nat}
 
+# a long log comes in chunks: the tour waits for the last, which may hold
+# the "onboard.done" that keeps it shut
+def OnbUi.chunk() -> U.Ui:
+  U.Ui.recv.b(0n, U.Ui.init(1n), U.Boot.demo("log", True{}, False{}, [C.Change.encode(M.ProjectCreated{"p1", "p", "/p", 1n})]))
+
+law onboard_join_waits:
+  {U.Tour.at(OnbUi.chunk()) == OBD.Ob.count() : Nat}
+
+law onboard_join_shows:
+  {U.Tour.at(U.Ui.recv.b(1n, OnbUi.chunk(), U.Boot.demo("changes", False{}, False{}, Nil{}))) == 0n : Nat}
+
 law onboard_cache_unsynced:
   {U.Tour.at(U.Ui.unsync(OnbUi.live())) == OBD.Ob.count() : Nat}
 

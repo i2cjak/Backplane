@@ -2,6 +2,7 @@ import Base
 import ./vt.bend as VT
 import ./utf8.bend as U8
 import ./model.bend as M
+import ./diff.bend as DF
 
 # Terminals in the chat (pure). An agent opens one with the terminal_open
 # tool: a program on a pty, started in the thread's folder, shown in the
@@ -72,11 +73,14 @@ def Emb.rows(+n: U32) -> U32:
 def Emb.summary(+title: String, +cols: U32, +rows: U32, +cmd: String) -> String:
   title ++ "\n" ++ U32.show(cols) ++ "x" ++ U32.show(rows) ++ "\n" ++ cmd
 
+# (lines cut by DF.Diff.lines and the title by DF.Diff.first, tail calls:
+# String.split recurses once per character, and a long summary overflowed
+# the phones' stack)
 def Emb.part(+summary: String, +i: Nat) -> String:
-  Maybe.default(&2, String, List.get(&2, String, String.split(summary, '\n'), i), "")
+  Maybe.default(&2, String, List.get(&2, String, DF.Diff.lines(summary), i), "")
 
 def Emb.title(+summary: String) -> String:
-  Emb.part(summary, 0n)
+  DF.Diff.first(summary)
 
 def Emb.size(+summary: String, +i: Nat) -> String:
   Maybe.default(&2, String, List.get(&2, String, String.split(Emb.part(summary, 1n), 'x'), i), "")
@@ -89,7 +93,7 @@ def Emb.tall(+summary: String) -> U32:
 
 # the command (it may hold newlines of its own)
 def Emb.cmd(+summary: String) -> String:
-  String.join(List.drop(&2, String, String.split(summary, '\n'), 2n), "\n")
+  String.join(List.drop(&2, String, DF.Diff.lines(summary), 2n), "\n")
 
 # The screen as text, and as bytes
 # --------------------------------
@@ -299,12 +303,19 @@ def Emb.pin.of(+s: M.State, +e: M.Entry) -> Bool:
     case _:
       False{}
 
-def Emb.pins.go(es: List<&2, M.Entry>, +s: M.State, +last: Nat, +now: Nat) -> List<&2, EV>:
+# (each walk over a thread's entries is a tail call onto a reversed
+# accumulator: a thread holds thousands, and a walk that built its result
+# around the recursive call overflowed the web's and phones' JS stack, so a
+# long thread could not be opened)
+def Emb.pins.acc(es: List<&2, M.Entry>, +s: M.State, +last: Nat, +now: Nat, acc: List<&2, EV>) -> List<&2, EV>:
   match es:
     case Nil{}:
-      Nil{}
+      acc
     case +e <> t:
-      Emb.pins.k(Emb.pin.of(s, e), s, e, last, now, Emb.pins.go(t, s, last, now))
+      Emb.pins.acc(t, s, last, now, Emb.pins.k(Emb.pin.of(s, e), s, e, last, now, acc))
+
+def Emb.pins.go(es: List<&2, M.Entry>, +s: M.State, +last: Nat, +now: Nat) -> List<&2, EV>:
+  List.reverse(&2, EV, Emb.pins.acc(es, s, last, now, Nil{}))
 
 # a thread's pinned terminals
 def Emb.pins(+s: M.State, +th: String, +now: Nat) -> List<&2, EV>:
@@ -326,19 +337,25 @@ def Emb.keys.k(hit: Bool, +e: M.Entry, rest: List<&2, String>) -> List<&2, Strin
 
 # the keys of a thread's terminals that are not pinned (they stop when the
 # person sends the next message)
-def Emb.loose(es: List<&2, M.Entry>, +s: M.State) -> List<&2, String>:
+def Emb.loose.acc(es: List<&2, M.Entry>, +s: M.State, acc: List<&2, String>) -> List<&2, String>:
   match es:
     case Nil{}:
-      Nil{}
+      acc
     case +e <> t:
-      Emb.keys.k(Bool.and(Emb.is(e), Bool.not(Emb.pin.of(s, e))), e, Emb.loose(t, s))
+      Emb.loose.acc(t, s, Emb.keys.k(Bool.and(Emb.is(e), Bool.not(Emb.pin.of(s, e))), e, acc))
+
+def Emb.loose(es: List<&2, M.Entry>, +s: M.State) -> List<&2, String>:
+  List.reverse(&2, String, Emb.loose.acc(es, s, Nil{}))
+
+def Emb.any.go(es: List<&2, M.Entry>, +found: Bool) -> Bool:
+  match es:
+    case Nil{}:
+      found
+    case +e <> t:
+      Emb.any.go(t, Bool.or(found, Emb.is(e)))
 
 def Emb.any(es: List<&2, M.Entry>) -> Bool:
-  match es:
-    case Nil{}:
-      False{}
-    case +e <> t:
-      Bool.or(Emb.is(e), Emb.any(t))
+  Emb.any.go(es, False{})
 
 def Emb.sum.of(+e: M.Entry) -> String:
   match e:
@@ -361,10 +378,21 @@ def Emb.hit(+e: M.Entry, +id: String) -> Bool:
     case _:
       False{}
 
-# the summary of terminal id among es ("" when there is none)
-def Emb.sum(es: List<&2, M.Entry>, +id: String) -> String:
+def Emb.sum.pick(got: Bool, +hit: Bool, +e: M.Entry, +acc: String) -> String:
+  match got:
+    case True{}:
+      acc
+    case False{}:
+      Emb.sum.k(hit, e, acc)
+
+def Emb.sum.go(es: List<&2, M.Entry>, +id: String, +got: Bool, +acc: String) -> String:
   match es:
     case Nil{}:
-      ""
+      acc
     case +e <> t:
-      Emb.sum.k(Emb.hit(e, id), e, Emb.sum(t, id))
+      Emb.sum.go(t, id, Bool.or(got, Emb.hit(e, id)), Emb.sum.pick(got, Emb.hit(e, id), e, acc))
+
+# the summary of terminal id among es, the first that has it ("" when
+# there is none)
+def Emb.sum(es: List<&2, M.Entry>, +id: String) -> String:
+  Emb.sum.go(es, id, False{}, "")
