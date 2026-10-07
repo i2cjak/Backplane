@@ -140,10 +140,14 @@ jobs:
           BACKPLANE_GOOGLE_CLIENT_SECRET: ${{ secrets.BACKPLANE_GOOGLE_CLIENT_SECRET }}
       - run: scripts/smoke.sh
       - run: scripts/package.sh "$TAG" darwin-arm64
+      # Backplane.app: the same hub in a window of its own (mac/Backplane)
+      - run: scripts/package-mac.sh "$TAG"
       - uses: actions/upload-artifact@v4
         with:
           name: backplane-darwin-arm64
-          path: dist/backplane-*.tar.gz
+          path: |
+            dist/backplane-*.tar.gz
+            dist/backplane-*.app.zip
 
   android:
     name: Build Android
@@ -189,7 +193,7 @@ jobs:
         run: |
           set -eu
           cd out
-          sha256sum backplane-*.tar.gz backplane-*.AppImage backplane_*.deb backplane-*.apk > SHA256SUMS
+          sha256sum backplane-*.tar.gz backplane-*.app.zip backplane-*.AppImage backplane_*.deb backplane-*.apk > SHA256SUMS
           cat SHA256SUMS
           sum() { grep "backplane-$TAG-$1.tar.gz" SHA256SUMS | cut -d' ' -f1; }
           sed -e "s/@VERSION@/$TAG/" \
@@ -213,7 +217,7 @@ jobs:
           case "$TAG" in *-*) pre="--prerelease" ;; esac
           # each release's installer installs that release (latest/ never
           # names a prerelease, so a nightly's must be its own)
-          notes="Linux (x64, arm64) and macOS (Apple silicon; the hub and web UI at http://127.0.0.1:3787, no native window yet).
+          notes="Linux (x64, arm64) and macOS (Apple silicon). On a Mac, Backplane.app (backplane-$TAG-darwin-arm64.app.zip) opens it in a window; it is not notarized yet, so the first time open it from System Settings > Privacy & Security > Open Anyway.
 
           Install: \`curl -fsSL https://github.com/${{ github.repository }}/releases/download/$TAG/install.sh | sh\`"
           if gh release view "$TAG" >/dev/null 2>&1; then
