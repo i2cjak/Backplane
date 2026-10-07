@@ -7968,3 +7968,39 @@ def Laws.rview_root_far_climbs():
 
 def Laws.rview_root_own_ignores_claim():
   {==}
+
+def Laws.lyr_board_order_kicad():
+  {==}
+
+def Laws.lyr_plain_as_is():
+  {==}
+
+def Laws.lyr_dim_quarter():
+  {==}
+
+def Laws.lyr_only_hides():
+  {==}
+
+def Laws.lyr_active_shows():
+  {==}
+
+def Laws.lyr_copper_keeps_vias():
+  {==}
+
+def Laws.lyr_outline_stays():
+  {==}
+
+def Laws.lyr_pick_again_all():
+  {==}
+
+def Laws.lyr_cycle_round():
+  {==}
+
+def Laws.lyr_kind_round():
+  {==}
+
+def Laws.lyr_kind_base():
+  {==}
+
+def Laws.lyr_masks_only():
+  {==}
