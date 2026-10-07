@@ -25,6 +25,7 @@ import ./apikeys.bend as AK
 import ./diff.bend as DF
 import ./fm.bend as FM
 import ./onboard.bend as OB
+import ./layers.bend as LY
 
 # The client state, Elm-style, shared by the native window and the web
 # page: a host feeds server messages to Ui.recv and user actions to Ui.act,
@@ -1134,7 +1135,8 @@ def Ui.actions() -> List<&2, String>:
    "mech", "mech-part", "mech-3d", "mech-refresh", "mech-renders", "mech-render", "view-kind", "view-sheet", "view-layer",
    "attach-up", "attach-end",
    "hist-go", "hist-prev", "hist-next", "hist-first", "hist-last", "hist-play", "hist-tick", "hist-diff", "hist-live", "hist-jump",
-   "hist-show", "cmp", "cmp-pick", "cmp-close", "cmp-side", "cmp-shut", "key-add", "key-del", "fm", "fm-cd", "fm-up", "fm-open", "pdf-page", "fm-page", "update-now", "work-cancel", "task-cancel"]
+   "hist-show", "cmp", "cmp-pick", "cmp-close", "cmp-side", "cmp-shut", "key-add", "key-del", "fm", "fm-cd", "fm-up", "fm-open", "pdf-page", "fm-page", "update-now", "work-cancel", "task-cancel",
+   "view-layer-pick", "view-layer-mode"]
 
 # Reading the client state
 # ------------------------
@@ -4194,6 +4196,33 @@ def Pdf.pages(+u: Ui) -> String:
 def Pdf.err(+u: Ui) -> String:
   Ui.info(u, "pdf.err:" ++ Ui.view_get(u, "view.path"))
 
+# The web's layer focus (core/layers.bend): the active layer and how the
+# others show, for the board and for the schematic apart ("@focus.<kind>",
+# beside Solid.off's "@off.<kind>"); "view-layer-pick" makes a layer the
+# active one (LY.Lyr.pick), "view-layer-mode" sets how the others show
+# (0 as they are, 1 dimmed, 2 hidden)
+def Lfocus.kind.of(+u: Ui) -> String:
+  Bool.pick(String, String.is_empty(Ui.view_get(u, "view.kind")), "board", Ui.view_get(u, "view.kind"))
+
+def Lfocus.key(+u: Ui) -> String:
+  "@focus." ++ Lfocus.kind.of(u)
+
+def Lfocus.of(+u: Ui) -> LY.Focus:
+  LY.Lyr.read(Ui.scratch(u, Lfocus.key(u)))
+
+# the look kind of what the web shows (0 a board, 1 a schematic)
+def Lfocus.kind(+u: Ui) -> U32:
+  Bool.pick(U32, String.eq(Lfocus.kind.of(u), "schematic"), 1, 0)
+
+def Lfocus.put(+u: Ui, +f: LY.Focus) -> Act:
+  Act{Ui.scratch_set(u, Lfocus.key(u), LY.Lyr.show(f)), Nil{}}
+
+def Lfocus.pick(+u: Ui, +value: String) -> Act:
+  Lfocus.put(u, LY.Lyr.pick(Lfocus.of(u), LY.Lyr.num(value, LY.Lyr.none())))
+
+def Lfocus.mode(+u: Ui, +value: String) -> Act:
+  Lfocus.put(u, LY.Lyr.set(Lfocus.kind(u), Lfocus.of(u), LY.Lyr.num(value, 0)))
+
 def Fm.act(i: Nat, +u: Ui, +value: String) -> Act:
   match i:
     case 0n:
@@ -4217,6 +4246,10 @@ def Fm.act(i: Nat, +u: Ui, +value: String) -> Act:
       Ui.rpc(u, "work.cancel", [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"id", J.Str{value}}])
     case 8n:
       Ui.rpc(u, "task.cancel", [J.KV{"child", J.Str{value}}])
+    case 9n:
+      Lfocus.pick(u, value)
+    case 10n:
+      Lfocus.mode(u, value)
     case _:
       Act{u, Nil{}}
 

@@ -267,8 +267,19 @@ button.fold span { overflow: hidden; text-overflow: ellipsis; white-space: nowra
 .layers[open] summary { border-color: var(--accent); }
 .layer-list { position: absolute; top: 100%; left: 0; z-index: 4; margin-top: 4px; display: grid; gap: 2px; padding: 6px; min-width: 150px; max-height: 60vh; overflow: auto;
   background: var(--panel); border: 1px solid var(--line); box-shadow: 0 6px 18px rgba(0,0,0,0.35); }
-.layer-list .layer { text-align: left; color: var(--faint); text-decoration: line-through; }
-.layer-list .layer.on { color: var(--text); text-decoration: none; }
+.layer-list { gap: 0; min-width: 190px; }
+.layer-row { display: flex; align-items: center; gap: 8px; }
+.layer-row[hidden] { display: none; }
+.layer-row .swatch { width: 14px; height: 14px; padding: 0; border: 1px solid var(--line); flex: none; cursor: pointer; }
+.layer-row.off .swatch { opacity: 0.2; }
+.layer-row .lname { flex: 1; text-align: left; padding: 3px 6px; border: 0; background: none; color: var(--text); cursor: pointer; }
+.layer-row.off .lname { color: var(--faint); text-decoration: line-through; }
+.layer-row.active .lname { background: var(--sel, var(--raise)); color: var(--accent); }
+.layer-row .lname:hover { background: var(--raise); }
+.layer-modes { display: flex; gap: 0; margin-bottom: 6px; }
+.layer-modes .lmode { flex: 1; padding: 3px 6px; border: 1px solid var(--line); background: var(--raise); color: var(--faint); cursor: pointer; }
+.layer-modes .lmode + .lmode { border-left: 0; }
+.layer-modes .lmode.on { color: var(--text); border-color: var(--accent); }
 .viewer-say { display: block; padding: 6px 10px; color: var(--faint); font-size: 12px; border-bottom: 1px solid var(--line); }
 .viewer-stage canvas { position: absolute; inset: 0; touch-action: none; cursor: grab; }
 .viewer-stage canvas.dragging { cursor: grabbing; }

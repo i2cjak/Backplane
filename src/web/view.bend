@@ -10,6 +10,7 @@ import ../core/diff.bend as DF
 import ../core/mech.bend as MC
 import ../core/look.bend as LO
 import ../core/board.bend as B
+import ../core/layers.bend as LY
 import ../core/schematic.bend as SC
 import ../core/hier.bend as HI
 import ../core/images.bend as IM
@@ -1428,33 +1429,65 @@ def View.sheets(+u: U.Ui) -> List<&2, D.Node>:
   Bool.pick(List<&2, D.Node>, Nat.is_gt(List.length(&2, HI.Row, HI.Hier.read(U.Ui.info(u, "sheets:" ++ U.Ui.root(u)))), 1n),
     View.sheet.chips(HI.Hier.read(U.Ui.info(u, "sheets:" ++ U.Ui.root(u))), 0n, U.Ui.view_get(u, "view.path")), [D.Dom.span("what", "The project's schematic")])
 
-# the Layers menu: a button for each layer shown by default (as the
-# phones list them; plot2d.js hides those the file has nothing on), lit
-# while on
-def View.layer.btn(shown: Bool, +i: U32, +name: String, +off: U32, rest: List<&2, D.Node>) -> List<&2, D.Node>:
-  match shown:
-    case True{}:
-      D.El{"button", "", [D.At{"class", Bool.pick(String, U32.is_eq(U32.and(U32.shrn(off, U32.to_nat(i)), 1), 1), "layer", "layer on")},
-        D.At{"title", "Show or hide " ++ name}, D.At{"data-value", U32.show(i)}, D.At{"data-layer", U32.show(i)}, D.On{"click", "view-layer"}], [D.Txt{name}]} <> rest
-    case False{}:
-      rest
-
+# the Layers menu (core/layers.bend): each layer shown by default, in
+# KiCad's order (plot2d.js hides those the file has nothing on), a row of
+# its colour (a click shows or hides it) and its name (a click makes it the
+# active layer and dims the rest; a click on it again puts all back). Over
+# a board's rows, how the layers other than the active one show: All, Dim
+# or Only.
 def View.layer.alpha(l: U32 & U32) -> U32:
   (_, a) = l
   a
 
-def View.layer.btns(ns: List<&2, String>, +k: U32, +i: U32, +off: U32) -> List<&2, D.Node>:
-  match ns:
+def View.layer.color(l: U32 & U32) -> U32:
+  (c, _) = l
+  c
+
+def View.layer.row(shown: Bool, +i: U32, +name: String, +color: U32, +off: U32, +act: Bool, rest: List<&2, D.Node>) -> List<&2, D.Node>:
+  match shown:
+    case True{}:
+      D.El{"div", "", [D.At{"class", "layer-row" ++ Bool.pick(String, act, " active", "") ++ Bool.pick(String, LY.Lyr.has(off, i), " off", "")}, D.At{"data-layer", U32.show(i)}],
+        [D.El{"button", "", [D.At{"class", "swatch"}, D.At{"title", "Show or hide " ++ name}, D.At{"data-value", U32.show(i)},
+            D.At{"style", "background:" ++ View.hex(color)}, D.On{"click", "view-layer"}], Nil{}},
+         D.El{"button", "", [D.At{"class", "lname"}, D.At{"title", Bool.pick(String, act, "Show every layer again", name ++ " stands out")}, D.At{"data-value", U32.show(i)},
+            D.On{"click", "view-layer-pick"}], [D.Txt{name}]}]} <> rest
+    case False{}:
+      rest
+
+def View.layer.rows(ls: List<&2, U32>, +k: U32, +off: U32, +f: LY.Focus) -> List<&2, D.Node>:
+  match ls:
     case Nil{}:
       Nil{}
-    case +n <> t:
-      View.layer.btn(U32.is_gt(View.layer.alpha(LO.Look.of.t(False{}, k, i)), 0), i, n, off, View.layer.btns(t, k, (i + 1 : U32), off))
+    case +i <> t:
+      View.layer.row(U32.is_gt(View.layer.alpha(LO.Look.of.t(False{}, k, i)), 0), i, LY.Lyr.name(k, i), View.layer.color(LO.Look.of.t(False{}, k, i)), off,
+        Bool.and(LY.Lyr.on(f), U32.is_eq(i, LY.Lyr.active(f))), View.layer.rows(t, k, off, f))
 
-# (a comparison lists its marks too: removed, changed, added)
-def View.layers(+sch: Bool, +cmp: Bool, +off: U32) -> D.Node:
-  +k = {U32.or(Bool.pick(U32, sch, 1, 0), Bool.pick(U32, cmp, LO.Look.diff(), 0)) : U32}
-  D.El{"details", "", [D.At{"class", "layers"}], [D.El{"summary", "", [D.At{"title", "Turn layers on and off"}], [D.Txt{"Layers"}]},
-    D.El{"div", "", [D.At{"class", "layer-list"}], View.layer.btns(LO.Look.names(k, Bool.pick(List<&2, String>, sch, SC.Sch.layer_names(), B.Layer.names())), k, 0, off)}]}
+def View.layer.mode(+m: U32, +cur: U32, +label: String, +tip: String) -> D.Node:
+  D.El{"button", "", [D.At{"class", Bool.pick(String, U32.is_eq(m, cur), "lmode on", "lmode")}, D.At{"title", tip}, D.At{"data-value", U32.show(m)}, D.On{"click", "view-layer-mode"}], [D.Txt{label}]}
+
+# KiCad's high contrast: the other layers as they are, dimmed, or hidden
+def View.layer.modes(sch: Bool, +f: LY.Focus) -> List<&2, D.Node>:
+  match sch:
+    case True{}:
+      Nil{}
+    case False{}:
+      +cur = {Bool.pick(U32, LY.Lyr.on(f), LY.Lyr.mode(f), 0) : U32}
+      [D.El{"div", "", [D.At{"class", "layer-modes"}], [View.layer.mode(0, cur, "All", "Every layer as it is"),
+        View.layer.mode(1, cur, "Dim", "The active layer stands out, the rest dimmed"),
+        View.layer.mode(2, cur, "Only", "Only the active layer, with the outline (and a copper layer's pads and vias)")]}]
+
+# the menu's button names the active layer while one stands out
+def View.layer.head(+k: U32, +f: LY.Focus) -> String:
+  Bool.pick(String, LY.Lyr.on(f), "Layers · " ++ LY.Lyr.name(k, LY.Lyr.active(f)), "Layers")
+
+# the look kind of a plot: a board or schematic, a comparison's marks too
+def View.layer.kind(sch: Bool, cmp: Bool) -> U32:
+  U32.or(Bool.pick(U32, sch, 1, 0), Bool.pick(U32, cmp, LO.Look.diff(), 0))
+
+def View.layers(+sch: Bool, +cmp: Bool, +off: U32, +f: LY.Focus) -> D.Node:
+  +k = View.layer.kind(sch, cmp)
+  D.El{"details", "", [D.At{"class", "layers"}], [D.El{"summary", "", [D.At{"title", "Layers: show, hide or single one out"}], [D.Txt{View.layer.head(k, f)}]},
+    D.El{"div", "", [D.At{"class", "layer-list"}], List.append(&2, D.Node, View.layer.modes(sch, f), View.layer.rows(LY.Lyr.order(k), k, off, f))}]}
 
 # The design history bar (client.bend's Hs.bar): the arrows, play and
 # the position, the changes, compare and live buttons; a scrubber with a
@@ -1554,8 +1587,10 @@ def View.hist.menu(+u: U.Ui) -> D.Node:
 # a board or schematic: host.js (plot2d.js) draws the hub's plot of it on
 # the canvas whose data-key it carries, less the layers data-off names
 def View.plot(+u: U.Ui, +what: List<&2, D.Node>) -> List<&2, D.Node>:
-  View.bar(List.append(&2, D.Node, what, [View.layers(String.eq(U.Solid.kind(u), "schematic"), Nat.is_eq(HS.Hist.kind(U.Ui.view_get(u, "view.path")), 2n), U.Solid.off(u))]), "drag or two fingers to pan · wheel or pinch to zoom · double-click to fit")
-   <> D.El{"div", "", [D.At{"class", "viewer-stage"}], [D.El{"canvas", "plot", [D.At{"id", "plot"}, D.At{"data-key", U.Solid.want(u)}, D.At{"data-off", U32.show(U.Solid.off(u))},
+  View.bar(List.append(&2, D.Node, what, [View.layers(String.eq(U.Solid.kind(u), "schematic"), Nat.is_eq(HS.Hist.kind(U.Ui.view_get(u, "view.path")), 2n), U.Solid.off(u), U.Lfocus.of(u))]), "drag or two fingers to pan · wheel or pinch to zoom · double-click to fit")
+   <> D.El{"div", "", [D.At{"class", "viewer-stage"}], [D.El{"canvas", "plot", [D.At{"id", "plot"}, D.At{"data-key", U.Solid.want(u)},
+        D.At{"data-off", U32.show(LY.Masks.off(LY.Lyr.masks(U.Lfocus.kind(u), U.Solid.off(u), U.Lfocus.of(u))))},
+        D.At{"data-dim", U32.show(LY.Masks.dim(LY.Lyr.masks(U.Lfocus.kind(u), U.Solid.off(u), U.Lfocus.of(u))))}, D.At{"data-lift", U32.show(LY.Lyr.top(U.Lfocus.of(u)))},
         D.At{"data-fade", Nat.show(U.Hs.fade())}, D.At{"data-fam", HS.Hist.key.family(U.Solid.want(u))}], Nil{}}, View.hist.menu(u)]}
    <> View.hist(U.Hs.bar(u), u)
 
