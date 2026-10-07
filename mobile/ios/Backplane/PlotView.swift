@@ -136,6 +136,16 @@ final class PlotRenderer: NSObject, MTKViewDelegate {
     // the layers the user turned off, a bit each
     var hiddenLayers: UInt32 = 0
     func shown(_ layer: Int) -> Bool { layer < 0 || layer > 31 || (hiddenLayers >> UInt32(layer)) & 1 == 0 }
+    // the layer focus (core/layers.bend): layers drawn at a quarter, a bit
+    // each, and the active one, drawn after the rest (255 none)
+    var dimLayers: UInt32 = 0
+    var liftLayer = 255
+    func dimmed(_ layer: Int) -> Bool { layer >= 0 && layer <= 31 && (dimLayers >> UInt32(layer)) & 1 == 1 }
+    private func tint(_ l: LayerDraw) -> SIMD4<Float> {
+        var c = l.color
+        if dimmed(l.layer) { c.w *= 0.25 }
+        return c
+    }
     // 2D view: pixels per micrometre and where 0,0 lands, in points
     var scale: Float = 0.01
     var off = SIMD2<Float>(0, 0)
@@ -474,9 +484,14 @@ final class PlotRenderer: NSObject, MTKViewDelegate {
             }
         } else {
             frame(cb, t, clear: true, depth: false) { _ in }
-            for l in layers where shown(l.layer) {
+            // the active layer on top, as KiCad draws it
+            for l in layers where shown(l.layer) && l.layer != liftLayer {
                 let (c, tr) = draws(l)
-                layer(cb, t, &u, color: l.color, caps: c, tris: tr)
+                layer(cb, t, &u, color: tint(l), caps: c, tris: tr)
+            }
+            for l in layers where shown(l.layer) && l.layer == liftLayer {
+                let (c, tr) = draws(l)
+                layer(cb, t, &u, color: tint(l), caps: c, tris: tr)
             }
             hi(cb, t, &u)
         }
@@ -804,8 +819,10 @@ struct PlotCanvasView: UIViewRepresentable {
             c.renderer.three = three
             c.refit()
         }
-        if c.renderer.hiddenLayers != (viewer.off ?? 0) {
+        if c.renderer.hiddenLayers != (viewer.off ?? 0) || c.renderer.dimLayers != (viewer.dim ?? 0) || c.renderer.liftLayer != (viewer.lift ?? 255) {
             c.renderer.hiddenLayers = viewer.off ?? 0
+            c.renderer.dimLayers = viewer.dim ?? 0
+            c.renderer.liftLayer = viewer.lift ?? 255
             c.setNeedsDisplay()
         }
         if let f = frame, f.at != context.coordinator.shown || (viewer.look ?? []) != context.coordinator.look {
@@ -899,15 +916,32 @@ struct ViewerControls: View {
                 .buttonStyle(.bordered)
             }
             if !layers.isEmpty {
-                // stays open: several layers are turned on and off in a row
+                // stays open: several layers are turned on and off in a row.
+                // Over a board's rows, how the layers other than the active one
+                // show (All, Dim, Only); each row shows or hides its layer, and
+                // its "stand out" button makes it the active layer (again: all
+                // back) (core/layers.bend)
                 Menu {
+                    if viewer.layerModes ?? false {
+                        Picker("Others", selection: Binding(get: { viewer.layerMode ?? 0 }, set: { model.act("view-layer-mode", String($0)) })) {
+                            Text("All").tag(0)
+                            Text("Dim").tag(1)
+                            Text("Only").tag(2)
+                        }
+                        .pickerStyle(.segmented)
+                    }
                     ForEach(layers, id: \.layer) { l in
-                        Button { model.act("view-layer", String(l.layer)) } label: {
-                            Label(l.name, systemImage: l.on ? "checkmark.square" : "square")
+                        ControlGroup {
+                            Button { model.act("view-layer", String(l.layer)) } label: {
+                                Label(l.name, systemImage: l.on ? "checkmark.square" : "square")
+                            }
+                            Button { model.act("view-layer-pick", String(l.layer)) } label: {
+                                Label(l.active ?? false ? "All back" : "Stand out", systemImage: l.active ?? false ? "scope" : "circle.dotted")
+                            }
                         }
                     }
                 } label: {
-                    Label("Layers", systemImage: "square.3.layers.3d")
+                    Label(viewer.layerHead ?? "Layers", systemImage: "square.3.layers.3d")
                 }
                 .buttonStyle(.bordered)
                 .menuActionDismissBehavior(.disabled)

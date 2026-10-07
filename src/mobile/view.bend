@@ -11,6 +11,7 @@ import ../core/mech.bend as MC
 import ../core/hist.bend as HS
 import ../core/fm.bend as FM
 import ../core/images.bend as IM
+import ../core/layers.bend as LY
 
 # The phones' board viewer, as the Bend client decides it. The viewer
 # shows the selected thread's project board, schematic or 3D model
@@ -330,29 +331,64 @@ def View.off(+u: U.Ui) -> U32:
 def View.layer(+u: U.Ui, +v: String) -> U.Act:
   U.Act{Pick.clear(U.Ui.scratch_set(u, View.off.key(u), U32.show(V.Look.toggle(View.off(u), Maybe.default(&2, U32, U32.read(v), 31))))), Nil{}}
 
+# The focus (core/layers.bend): the active layer and how the others show
+# ("@view.focus.<kind>"); "view-layer-pick" makes a layer stand out (again,
+# all back), "view-layer-mode" sets All, Dim or Only
+
+def View.focus.key(+u: U.Ui) -> String:
+  "@view.focus." ++ View.kind(u)
+
+def View.focus(+u: U.Ui) -> LY.Focus:
+  LY.Lyr.read(U.Ui.scratch(u, View.focus.key(u)))
+
+# the look kind (0 a board, 1 a schematic)
+def View.lkind(+u: U.Ui) -> U32:
+  Bool.pick(U32, String.eq(View.kind(u), "schematic"), 1, 0)
+
+def View.focus.put(+u: U.Ui, +f: LY.Focus) -> U.Act:
+  U.Act{Pick.clear(U.Ui.scratch_set(u, View.focus.key(u), LY.Lyr.show(f))), Nil{}}
+
+def View.layer.pick(+u: U.Ui, +v: String) -> U.Act:
+  View.focus.put(u, LY.Lyr.pick(View.focus(u), LY.Lyr.num(v, LY.Lyr.none())))
+
+def View.layer.mode(+u: U.Ui, +v: String) -> U.Act:
+  View.focus.put(u, LY.Lyr.set(View.lkind(u), View.focus(u), LY.Lyr.num(v, 0)))
+
+# what the phone draws from: the layers not drawn and those dimmed
+def View.masks(+u: U.Ui) -> LY.Masks:
+  LY.Lyr.masks(View.lkind(u), View.off(u), View.focus(u))
+
+# the list's mode switch: as it is (0), dimmed (1), hidden (2)
+def View.lmode(+u: U.Ui) -> U32:
+  Bool.pick(U32, LY.Lyr.on(View.focus(u)), LY.Lyr.mode(View.focus(u)), 0)
+
+# the Layers button names the active layer while one stands out
+def View.lhead(+u: U.Ui) -> String:
+  Bool.pick(String, LY.Lyr.on(View.focus(u)), "Layers · " ++ LY.Lyr.name(View.lkind(u), LY.Lyr.active(View.focus(u))), "Layers")
+
 def View.names(+kind: String) -> List<&2, String>:
   Bool.pick(List<&2, String>, String.eq(kind, "schematic"), SC.Sch.layer_names(), B.Layer.names())
 
-def View.layer.row(shown: Bool, +i: U32, +name: String, +off: U32, rest: List<&2, J.Json>) -> List<&2, J.Json>:
+def View.layer.row(shown: Bool, +i: U32, +name: String, +off: U32, +act: Bool, rest: List<&2, J.Json>) -> List<&2, J.Json>:
   match shown:
     case True{}:
-      J.Json.obj([J.KV{"layer", J.Num{U32.show(i)}}, J.KV{"name", J.Str{name}}, J.KV{"on", J.Flag{Bool.not(V.Look.flipped(off, i))}}]) <> rest
+      J.Json.obj([J.KV{"layer", J.Num{U32.show(i)}}, J.KV{"name", J.Str{name}}, J.KV{"on", J.Flag{Bool.not(V.Look.flipped(off, i))}}, J.KV{"active", J.Flag{act}}]) <> rest
     case False{}:
       rest
 
-def View.layer.rows(ns: List<&2, String>, +k: U32, +i: U32, +off: U32) -> List<&2, J.Json>:
-  match ns:
+def View.layer.rows(ls: List<&2, U32>, +k: U32, +off: U32, +f: LY.Focus) -> List<&2, J.Json>:
+  match ls:
     case Nil{}:
       Nil{}
-    case +n <> t:
-      View.layer.row(U32.is_gt(V.Look.alpha(k, i, 0), 0), i, n, off, View.layer.rows(t, k, (i + 1 : U32), off))
+    case +i <> t:
+      View.layer.row(U32.is_gt(V.Look.alpha(k, i, 0), 0), i, LY.Lyr.name(k, i), off, Bool.and(LY.Lyr.on(f), U32.is_eq(i, LY.Lyr.active(f))), View.layer.rows(t, k, off, f))
 
-# the list the phone's Layers menu shows (none for 3D)
-# (a comparison's marks too: removed, changed, added)
+# the list the phone's Layers menu shows (none for 3D), in KiCad's order
+# (core/layers.bend; a comparison's marks too: removed, changed, added)
 def View.layer.list(+u: U.Ui) -> List<&2, J.Json>:
   +k = {U32.or(Bool.pick(U32, String.eq(View.kind(u), "schematic"), 1, 0), Bool.pick(U32, Bool.and(View.hist(u), Nat.is_eq(HS.Hist.kind(U.Ui.view_get(u, "view.path")), 2n)), LO.Look.diff(), 0)) : U32}
   Bool.pick(List<&2, J.Json>, Bool.or(String.eq(View.kind(u), "board"), String.eq(View.kind(u), "schematic")),
-    View.layer.rows(LO.Look.names(k, View.names(View.kind(u))), k, 0, View.off(u)), Nil{})
+    View.layer.rows(LY.Lyr.order(k), k, View.off(u), View.focus(u)), Nil{})
 
 # Sheets
 # ------
@@ -514,7 +550,7 @@ def Pick.ask(m: Maybe<&2, Cand>, +u: U.Ui) -> U.Act:
 # picks is highlighted and its info asked of the hub; a tap on nothing
 # clears the card (law pick_nothing_there)
 def View.pick(+u: U.Ui, +text: String) -> U.Act:
-  Pick.ask(Pick.of(text, View.off(u)), u)
+  Pick.ask(Pick.of(text, LY.Masks.off(View.masks(u))), u)
 
 def View.picked.k(mine: Bool, +u: U.Ui, +o: J.Json) -> U.Ui:
   match mine:
@@ -670,7 +706,9 @@ def View.json(+u: U.Ui) -> J.Json:
     J.KV{"layers", J.Str{Bool.pick(String, View.mech(u), "", View.layers.at(View.kind(u), U.Ui.root(u), View.src(u)))}},
     J.KV{"hist", Hist.json(U.Hs.bar.for(View.as_client(u), Nat.is_lt(View.hist.num(View.kind(u)), 2n)), View.as_client(u))},
     J.KV{"mech", Mech.json(View.mech(u), u)},
-    J.KV{"sheets", J.Json.arr(View.sheet.list(u))}, J.KV{"layerList", J.Json.arr(View.layer.list(u))}, J.KV{"off", J.Num{U32.show(View.off(u))}},
+    J.KV{"sheets", J.Json.arr(View.sheet.list(u))}, J.KV{"layerList", J.Json.arr(View.layer.list(u))},
+    J.KV{"off", J.Num{U32.show(LY.Masks.off(View.masks(u)))}}, J.KV{"dim", J.Num{U32.show(LY.Masks.dim(View.masks(u)))}}, J.KV{"lift", J.Num{U32.show(LY.Lyr.top(View.focus(u)))}},
+    J.KV{"layerMode", J.Num{U32.show(View.lmode(u))}}, J.KV{"layerModes", J.Flag{String.eq(View.kind(u), "board")}}, J.KV{"layerHead", J.Str{View.lhead(u)}},
     J.KV{"parts", J.Flag{Bool.not(View.bare(u))}}, J.KV{"note", J.Str{View.note(u)}},
     J.KV{"choices", J.Json.arr(Bool.pick(List<&2, J.Json>, String.is_empty(U.Ui.root(u)), Nil{},
       [View.choice("Board", "board", View.kind(u)), View.choice("Schematic", "schematic", View.kind(u)), View.choice("3D", "3d", View.kind(u)), View.choice("Mech", "mech", Bool.pick(String, View.mech(u), "mech", "")),
