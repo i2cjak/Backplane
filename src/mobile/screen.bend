@@ -1167,6 +1167,23 @@ def Mob.up(j: J.Json) -> Bool:
 # and in the thread on screen its viewer, diff, terminal, history menu, and
 # a bot's routine form. The apps add only what they keep to themselves (a
 # picture opened large, the hubs sheet, the camera).
+# when this phone last heard its hub (seconds; 0 never): the scratch
+# "@heard", stamped while it is online (hubs.bend's One.run)
+def Mob.heard(+u: U.Ui) -> Nat:
+  M.Switch.num(U.Ui.scratch(u, "@heard"), 0n)
+
+def Mob.heard.k(on: Bool, u: U.Ui, +now: Nat) -> U.Ui:
+  match on:
+    case True{}:
+      U.Ui.scratch_set(u, "@heard", Nat.show(now))
+    case False{}:
+      u
+
+def Mob.heard.set(u: U.Ui) -> U.Ui:
+  match u:
+    case U.Ui{st, sel, dr, live, op, +on, +now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      Mob.heard.k(on, U.Ui{st, sel, dr, live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}, now)
+
 def Mob.covered.thread(+th: J.Json, +bot: J.Json) -> Bool:
   Bool.or(Bool.or(Bool.not(String.is_empty(J.Json.get_str(J.Json.get_obj(th, "viewer"), "open", ""))), Mob.up(J.Json.get_obj(th, "diff"))),
     Bool.or(Bool.or(Mob.up(J.Json.get_obj(th, "term")), Mob.up(J.Json.get_obj(J.Json.get_obj(J.Json.get_obj(th, "viewer"), "hist"), "menu"))),
@@ -1220,7 +1237,7 @@ def Mob.screen.go(+focus: Bool, +u: U.Ui, +ix: U.SIx, +g: U.SGroups, +side: MSid
         J.KV{"settings", settings},
         J.KV{"find", find},
         J.KV{"folders", folders},
-        J.KV{"island", N.Note.island.w(U.Ui.threads(st), st)},
+        J.KV{"island", N.Note.island.h(N.Note.heard(on, now, Mob.heard(u)), U.Ui.threads(st), st)},
         J.KV{"thread", thread},
         J.KV{"bots", J.Json.arr(MB.MBots.rows(B.BU.rows(u)))},
         J.KV{"rooms", J.Json.arr(MB.MBots.rooms(B.BU.rooms(u)))},

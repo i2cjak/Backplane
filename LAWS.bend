@@ -2,6 +2,8 @@ import Base
 import ./src/core/bothub.bend as BHS
 import ./src/core/bot.bend as BOT
 import ./src/core/far.bend as FR
+import ./src/core/fview.bend as FVW
+import ./src/core/rview.bend as RVW
 import ./src/core/botui.bend as BU
 import ./src/core/model.bend as M
 import ./src/app/viewer.bend as V
@@ -20,6 +22,7 @@ import ./src/core/onboard.bend as OBD
 import ./src/core/fm.bend as FMG
 import ./src/core/acp.bend as AC
 import ./src/core/mcp.bend as MC
+import ./src/core/fmcp.bend as FMC
 import ./src/core/handoff.bend as HD
 import ./src/core/agent.bend as AG
 import ./src/core/tailnet.bend as TN
@@ -81,6 +84,7 @@ import ./src/core/desk.bend as DK
 import ./src/core/emb.bend as EMB
 import ./src/core/outbox.bend as OB
 import ./src/core/live.bend as LV
+import ./src/core/farlive.bend as FLV
 import ./src/core/contain.bend as CTN
 import ./src/core/qr.bend as QR
 
@@ -2935,6 +2939,27 @@ law google_hop_tailnet_only:
 law google_hop_no_path:
   {GO.Google.hop("state=" ++ GO.Google.state("n0", "https://evil.example.com/x.ts.net") ++ "&code=c", "") == "" : String}
 
+# a phone's own loopback redirect begins a sign-in (RFC 8252 7.3)
+law google_loopback_phone:
+  {GO.Google.redirect.pick("http://127.0.0.1:49152/oauth/google", "http://127.0.0.1:3787/oauth/google") == "http://127.0.0.1:49152/oauth/google" : String}
+
+# none asked: the hub's own
+law google_loopback_none:
+  {GO.Google.redirect.pick("", "http://127.0.0.1:3787/oauth/google") == "http://127.0.0.1:3787/oauth/google" : String}
+
+# only loopback: Google's code never goes to another host
+law google_loopback_not_host:
+  {GO.Google.loopback("http://evil.example.com:80/oauth/google") == False{} : Bool}
+
+law google_loopback_not_userinfo:
+  {GO.Google.loopback("http://127.0.0.1:1@evil.example.com/oauth/google") == False{} : Bool}
+
+law google_loopback_not_path:
+  {GO.Google.loopback("http://127.0.0.1:80/x/oauth/google") == False{} : Bool}
+
+law google_loopback_no_port:
+  {GO.Google.loopback("http://127.0.0.1:/oauth/google") == False{} : Bool}
+
 # a To, Cc or Subject cannot start a header of its own
 law google_header_no_newline_example:
   {GO.Mail.clean("a@x.org\r\nBcc: e@x.org") == "a@x.org  Bcc: e@x.org" : String}
@@ -3691,7 +3716,13 @@ law far_change_names_link:
   for role: M.Role
   for +text: String
   for +at: Nat
-  {FR.Fr.change(l, M.MessagePosted{th, msg, role, text, at}) == Some{M.MessagePosted{FR.Fr.id(l, th), msg, role, text, at}} : Maybe<&2, M.Change>}
+  {FR.Fr.change(l, M.MessagePosted{th, msg, role, text, at}) == Some{M.MessagePosted{FR.Fr.id(l, th), FR.Fr.sent(l, msg), role, text, at}} : Maybe<&2, M.Change>}
+
+# a message id names its sender (M.Link.id) as the mirror names it: a
+# thread of the mirroring machine's own is its own again, one of the
+# owner's goes through the link; an id with no sender is left as it is
+law far_sent_names_sender:
+  {FR.Fr.sent("p1", M.Link.id("p1~ta", "m5")) ++ " " ++ FR.Fr.sent("p1", M.Link.id("tb", "m6")) ++ " " ++ FR.Fr.sent("p1", "m1790715007-3") == "t:ta:m5 t:p1~tb:m6 m1790715007-3" : String}
 
 law far_change_bot_named:
   for +l: String
@@ -4806,6 +4837,26 @@ law island_gone_hidden:
   {Nt.Note.lines.w(U.Ui.threads(M.State.replay([M.ThreadArchived{"t1", True{}, 3n}], H.Rec.demo(M.Running{}))), M.Work.kids.map(H.Rec.demo(M.Running{})),
     M.State.replay([M.ThreadArchived{"t1", True{}, 3n}], H.Rec.demo(M.Running{}))) == [] : List<&2, J.Json>}
 
+# a hub the phone no longer reaches adds nothing to the island once it has
+# been quiet Note.fresh() seconds (its saved turns are stale); one that
+# answers always counts
+law island_unheard_empty:
+  for ts: List<&2, M.Thread>
+  for +st: M.State
+  {Nt.Note.island.h(False{}, ts, st) == Nt.Note.island.k([]) : J.Json}
+
+law island_heard_online:
+  for +now: Nat
+  for +heard: Nat
+  for +fresh: Nat
+  {Nt.Note.heard.in(True{}, now, heard, fresh) == True{} : Bool}
+
+law island_unheard_late:
+  {Nt.Note.heard.in(False{}, 20n, 5n, 10n) == False{} : Bool}
+
+law island_unheard_recent:
+  {Nt.Note.heard.in(False{}, 12n, 5n, 10n) == True{} : Bool}
+
 # a phone's upload ends under the thread it started in, though the phone
 # named it with its hub ("<hub>|<id>"): the reply's thread is read as the
 # hub's own id, so the spinner clears and the path joins that thread
@@ -5292,6 +5343,77 @@ law made_waiting_ends_made:
 law made_waiting_ends_failed:
   {U.Made.waiting(U.Ui.recv(U.Act.ui(U.Ui.new_thread(U.Ui.init(0n), "p1")), J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{"0"}}, J.KV{"ok", J.Flag{False{}}}]))) == False{} : Bool}
 
+# Create anywhere: a request to make, fork, pin, archive or delete a thread
+# in a project elsewhere, or to add or browse a folder on another machine,
+# goes to the machine that owns it with its ids made local; the owning hub
+# takes it only for what it shares; the answer names the new thread by its
+# id here, and the client making it waits for the mirror (laws far_create_*,
+# made_far_*)
+law far_create_routes:
+  {FR.Route.link.of(FR.Fr.route(J.Json.obj([J.KV{"id", J.Num{"7"}}, J.KV{"m", J.Str{"thread.create"}}, J.KV{"p", J.Json.obj([J.KV{"project", J.Str{"p1~p"}}, J.KV{"title", J.Str{"New thread"}}])}]))) == "p1" : String}
+
+law far_fork_routes:
+  {FR.Route.link.of(FR.Fr.route(J.Json.obj([J.KV{"id", J.Num{"7"}}, J.KV{"m", J.Str{"thread.fork"}}, J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{"p1~pt"}}])}]))) == "p1" : String}
+
+law far_create_ids_local:
+  {FR.Fr.params.local(FR.Fr.obj.fields(J.Json.obj([J.KV{"project", J.Str{"p1~p"}}, J.KV{"title", J.Str{"x~y"}}])), "p1") == FR.Fr.obj.fields(J.Json.obj([J.KV{"project", J.Str{"p"}}, J.KV{"title", J.Str{"x~y"}}])) : J.Json}
+
+law far_machine_routes:
+  {FR.Fr.params.link(FR.Fr.obj.fields(J.Json.obj([J.KV{"on", J.Str{"p1"}}, J.KV{"path", J.Str{"/x"}}]))) == "p1" : String}
+
+law far_machine_none_here:
+  {FR.Fr.params.link(FR.Fr.obj.fields(J.Json.obj([J.KV{"on", J.Str{""}}, J.KV{"path", J.Str{"/x"}}]))) == "" : String}
+
+law far_create_in_shared_project:
+  {FR.Fr.allowed(M.State.apply(M.State.empty(), M.ProjectCreated{"p", "b", "/b", 1n}),
+    J.Json.obj([J.KV{"m", J.Str{"thread.create"}}, J.KV{"p", J.Json.obj([J.KV{"project", J.Str{"p"}}])}])) == True{} : Bool}
+
+law far_create_not_in_unshared_project:
+  {FR.Fr.allowed(M.State.apply(M.State.empty(), M.ProjectCreated{"p", "b", "/b", 1n}),
+    J.Json.obj([J.KV{"m", J.Str{"thread.create"}}, J.KV{"p", J.Json.obj([J.KV{"project", J.Str{"q"}}])}])) == False{} : Bool}
+
+law far_create_not_in_a_mirror:
+  {FR.Fr.allowed(M.State.apply(M.State.empty(), M.ProjectCreated{"p1~p", "b", "/b", 1n}),
+    J.Json.obj([J.KV{"m", J.Str{"thread.create"}}, J.KV{"p", J.Json.obj([J.KV{"project", J.Str{"p1~p"}}])}])) == False{} : Bool}
+
+law far_pin_only_shared_thread:
+  {FR.Fr.allowed(M.State.empty(), J.Json.obj([J.KV{"m", J.Str{"thread.pin"}}, J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{"t"}}])}])) == False{} : Bool}
+
+law far_settings_not_remote:
+  {FR.Fr.allowed(M.State.empty(), J.Json.obj([J.KV{"m", J.Str{"setting.set"}}, J.KV{"p", J.Json.obj([J.KV{"key", J.Str{"k"}}])}])) == False{} : Bool}
+
+law far_reply_names_thread:
+  {FR.Fr.reply.on(J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{"0"}}, J.KV{"ok", J.Flag{True{}}}, J.KV{"thread", J.Str{"t5"}}]), "9", "p1") ==
+    "{\"t\":\"reply\",\"id\":9,\"ok\":true,\"thread\":\"p1~t5\"}" : String}
+
+law far_pin_shared:
+  {FR.Fr.shared(M.State.apply(M.State.apply(M.State.empty(), M.ProjectCreated{"p", "b", "/b", 1n}), M.ThreadCreated{"t", "p", "x", M.Local{}, "", "", "claude", "", 2n}), M.ThreadPinned{"t", True{}, 3n}) == True{} : Bool}
+
+law made_far_waits_for_mirror:
+  {U.Made.waiting(U.Ui.recv(U.Act.ui(U.Ui.new_thread(U.Ui.init(0n), "p1~p")), U.Made.demo("0", "p1~t9"))) == True{} : Bool}
+
+law made_far_selects_when_mirrored:
+  {U.Ui.sel(U.Ui.recv(U.Ui.recv(U.Act.ui(U.Ui.new_thread(U.Ui.init(0n), "p1~p")), U.Made.demo("0", "p1~t9")), U.Made.made("changes", "p1~t9"))) == "p1~t9" : String}
+
+law made_far_done_when_mirrored:
+  {U.Made.waiting(U.Ui.recv(U.Ui.recv(U.Act.ui(U.Ui.new_thread(U.Ui.init(0n), "p1~p")), U.Made.demo("0", "p1~t9")), U.Made.made("changes", "p1~t9"))) == False{} : Bool}
+
+law made_far_failed_not_waiting:
+  {U.Made.waiting(U.Ui.recv(U.Act.ui(U.Ui.new_thread(U.Ui.init(0n), "p1~p")), J.Json.obj([J.KV{"t", J.Str{"reply"}}, J.KV{"id", J.Num{"0"}}, J.KV{"ok", J.Flag{False{}}}]))) == False{} : Bool}
+
+law proj_machine_cycle_ends_here:
+  {U.Proj.cycle(["", "p1", "p2"], "p2", "") == "" : String}
+
+law proj_machine_cycle_next:
+  {U.Proj.cycle(["", "p1", "p2"], "p1", "") == "p2" : String}
+
+law proj_on_request_names_machine:
+  {U.Proj.on.kv("p1", [J.KV{"path", J.Str{"/x"}}]) == [J.KV{"on", J.Str{"p1"}}, J.KV{"path", J.Str{"/x"}}] : List<&2, J.KV>}
+
+law proj_here_request_unchanged:
+  for p: List<&2, J.KV>
+  {U.Proj.on.kv("", p) == p : List<&2, J.KV>}
+
 # The sidebar's index (client.bend's Side.ix, gathered once a frame) gives
 # what walking the state gives: rows, phases, subagent counts, the active
 # view, and work for the settle tick; phones compare only the threads a
@@ -5366,7 +5488,7 @@ law far_backoff:
 # lines the log holds that this build cannot decode give the feed a history
 # of its own, so mirrors pull it afresh
 law far_epoch_on_unknown_lines:
-  {[FR.Fr.history.body("x", 3n, 3n), FR.Fr.history.body("x", 5n, 3n)] == ["x", "x|unknown:2"] : List<&2, String>}
+  {[FR.Fr.history.body("x", 3n, 3n), FR.Fr.history.body("x", 5n, 3n)] == ["x|view:2", "x|unknown:2|view:2"] : List<&2, String>}
 
 # the hub's heartbeat draws nothing and changes nothing; a link silent for
 # longer than the limit is dead, one heard within it is not
@@ -5845,3 +5967,380 @@ law mate_loopback_lower_asks:
 
 law mate_loopback_higher_waits:
   {U.Mate.due(False{}, U.Mate.demo.lo("4003"), Nil{}, M.State.empty()) == Nil{} : List<&2, U.MRow>}
+
+# Viewers for threads elsewhere (core/fview.bend): the owning hub answers
+# only reads about a thread it shares, a path never leaves the thread's
+# folder (and never reaches a hidden file), and what is kept here from
+# another machine lives under <home>/farfs/<link>, whatever the link or the
+# folder says.
+
+law fview_file_up:
+  {FVW.Fv.file.ok("lib/../../etc/passwd") == False{} : Bool}
+
+law fview_file_abs:
+  {FVW.Fv.file.ok("/etc/passwd") == False{} : Bool}
+
+law fview_file_hidden:
+  {FVW.Fv.file.ok(".git/config") == False{} : Bool}
+
+law fview_file_hidden_deep:
+  {FVW.Fv.file.ok("hw/.env") == False{} : Bool}
+
+law fview_file_pick:
+  {FVW.Fv.file.ok(".backplane.json") == True{} : Bool}
+
+law fview_file_ok:
+  {FVW.Fv.file.ok("hw/board.kicad_pcb") == True{} : Bool}
+
+law fview_file_empty:
+  {FVW.Fv.file.ok("") == False{} : Bool}
+
+law fview_dir_root:
+  {FVW.Fv.dir.ok("") == True{} : Bool}
+
+law fview_dir_up:
+  {FVW.Fv.dir.ok("../x") == False{} : Bool}
+
+law fview_reads_disjoint:
+  {FVW.Fv.disjoint(FR.Fr.methods(), FVW.Fv.reads()) == True{} : Bool}
+
+law fview_no_open:
+  {FVW.Fv.read("file.open") == False{} : Bool}
+
+law fview_no_pdf:
+  {FVW.Fv.read("pdf.page") == False{} : Bool}
+
+law fview_no_fs:
+  {FVW.Fv.read("fs.list") == False{} : Bool}
+
+law fview_allowed_not_write:
+  for +s: M.State
+  for +p: J.Json
+  {FVW.Fv.allowed(s, J.Json.obj([J.KV{"m", J.Str{"turn.start"}}, J.KV{"p", p}])) == False{} : Bool}
+
+law fview_allowed_path:
+  for +s: M.State
+  {FVW.Fv.allowed(s, J.Json.obj([J.KV{"m", J.Str{"view.get"}}, J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{"t1"}}, J.KV{"path", J.Str{"../../etc/passwd"}}])}])) == False{} : Bool}
+
+law fview_allowed_want:
+  for +s: M.State
+  {FVW.Fv.allowed(s, J.Json.obj([J.KV{"m", J.Str{"view.ver"}}, J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{"t1"}}, J.KV{"want", J.Str{"a.kicad_pcb\n.ssh/id_rsa"}}])}])) == False{} : Bool}
+
+law fview_allowed_dir:
+  for +s: M.State
+  {FVW.Fv.allowed(s, J.Json.obj([J.KV{"m", J.Str{"files.dir"}}, J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{"t1"}}, J.KV{"path", J.Str{"/etc"}}])}])) == False{} : Bool}
+
+law fview_cache_under:
+  {FVW.Fv.cache("/h", "beta", "/home/u/p") == "/h/farfs/beta/home/u/p" : String}
+
+law fview_cache_dotdot:
+  {FVW.Fv.cache("/h", "beta", "/home/../etc") == "" : String}
+
+law fview_cache_link_slash:
+  {FVW.Fv.cache("/h", "a/b", "/p") == "" : String}
+
+law fview_cache_link_dotdot:
+  {FVW.Fv.cache("/h", "..", "/p") == "" : String}
+
+law fview_cache_relative:
+  {FVW.Fv.cache("/h", "beta", "p") == "" : String}
+
+law fview_cache_of_file:
+  {FVW.Fv.cache.of("/h", "b", "/p", "/p/a.kicad_pcb") == "/h/farfs/b/p/a.kicad_pcb" : String}
+
+law fview_cache_of_outside:
+  {FVW.Fv.cache.of("/h", "b", "/p", "/q/a") == "" : String}
+
+law fview_cache_of_prefix:
+  {FVW.Fv.cache.of("/h", "b", "/p", "/pq/a") == "" : String}
+
+law fview_fix_thread:
+  {J.Json.get_str(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(FVW.Fv.fix("/h", "b", "{\"t\":\"reply\",\"id\":0,\"ok\":true,\"result\":{\"thread\":\"t1\",\"fmRoot\":\"/p\"}}")), J.Null{}), "result"), "thread", "") == "b~t1" : String}
+
+law fview_fix_root:
+  {J.Json.get_str(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(FVW.Fv.fix("/h", "b", "{\"t\":\"reply\",\"id\":0,\"ok\":true,\"result\":{\"thread\":\"t1\",\"fmRoot\":\"/p\"}}")), J.Null{}), "result"), "fmRoot", "") == "/h/farfs/b/p" : String}
+
+law fview_fix_again:
+  {FVW.Fv.fix("/h", "b", FVW.Fv.fix("/h", "b", "{\"t\":\"reply\",\"id\":0,\"ok\":true,\"result\":{\"thread\":\"t1\",\"root\":\"/p\"}}")) == FVW.Fv.fix("/h", "b", "{\"t\":\"reply\",\"id\":0,\"ok\":true,\"result\":{\"thread\":\"t1\",\"root\":\"/p\"}}") : String}
+
+law fview_fix_leaves_error:
+  {FVW.Fv.fix("/h", "b", "not json") == "not json" : String}
+# Agents across machines (core/fmcp.bend)
+# ----------------------------------------
+# An agent's thread tool naming another machine is a signed request to that
+# machine's hub, which runs it only for what it shares; a machine that is
+# not linked here is never sent anything, and only the listed tools are
+# taken from the owner's machines.
+
+# a tool call as the hub hears it
+def Fx.call(+tool: String, +a: J.Json) -> J.Json:
+  J.Json.obj([J.KV{"method", J.Str{"tools/call"}}, J.KV{"params", J.Json.obj([J.KV{"name", J.Str{tool}}, J.KV{"arguments", a}])}])
+
+def Fx.ask(+tool: String) -> J.Json:
+  J.Json.obj([J.KV{"m", J.Str{"mcp.call"}}, J.KV{"p", J.Json.obj([J.KV{"tool", J.Str{tool}}])}])
+
+law fmc_taken_tool:
+  {FMC.Fm.allowed(Fx.ask("thread_send")) == True{} : Bool}
+
+law fmc_only_listed_tools:
+  {FMC.Fm.allowed(Fx.ask("work_run")) == False{} : Bool}
+
+law fmc_no_terminal_or_delegate:
+  {FMC.Fm.allowed(Fx.ask("terminal_open")) == False{} : Bool}
+
+law fmc_permit_keeps_client_rules:
+  for +s: M.State
+  for +p: J.Json
+  {FMC.Fm.permit(s, J.Json.obj([J.KV{"m", J.Str{"thread.delete"}}, J.KV{"p", p}])) == False{} : Bool}
+
+# a thread this machine does not share is neither written to nor changed
+law fmc_unshared_refused:
+  {MC.Res.good(FMC.Fm.call(M.State.empty(), 1000n, "thread_send", "p1~t9", J.Json.obj([J.KV{"threadId", J.Str{"t1"}}, J.KV{"text", J.Str{"hi"}}]))) == False{} : Bool}
+
+law fmc_unshared_changes_nothing:
+  {List.is_empty(&2, M.Change, MC.Res.changes(FMC.Fm.call(M.State.empty(), 1000n, "thread_send", "p1~t9", J.Json.obj([J.KV{"threadId", J.Str{"t1"}}, J.KV{"text", J.Str{"hi"}}])))) == True{} : Bool}
+
+law fmc_unshared_interrupt_refused:
+  {MC.Res.good(FMC.Fm.call(M.State.empty(), 1000n, "thread_interrupt", "p1~t9", J.Json.obj([J.KV{"threadId", J.Str{"t1"}}]))) == False{} : Bool}
+
+# where a call goes
+law fmc_plan_here_stays:
+  {FMC.Fm.plan.name(FMC.Fm.plan.o(Fx.call("thread_send", J.Json.obj([J.KV{"threadId", J.Str{"t1"}}])), M.State.empty(), Nil{}, "t0")) == "here" : String}
+
+law fmc_plan_wait_polls_here:
+  {FMC.Fm.plan.name(FMC.Fm.plan.o(Fx.call("thread_wait", J.Json.obj([J.KV{"threadId", J.Str{"p1~t1"}}])), M.State.empty(), Nil{}, "t0")) == "here" : String}
+
+law fmc_plan_unlinked_never_sent:
+  {FMC.Fm.plan.name(FMC.Fm.plan.o(Fx.call("thread_send", J.Json.obj([J.KV{"threadId", J.Str{"p1~t1"}}])), M.State.empty(), Nil{}, "t0")) == "answer" : String}
+
+law fmc_plan_unlinked_machine_never_sent:
+  {FMC.Fm.plan.name(FMC.Fm.plan.o(Fx.call("thread_launch", J.Json.obj([J.KV{"machine", J.Str{"beta"}}])), M.State.empty(), Nil{}, "t0")) == "answer" : String}
+
+law fmc_plan_machine_list_answered:
+  {FMC.Fm.plan.name(FMC.Fm.plan.o(Fx.call("machine_list", J.Json.obj(Nil{})), M.State.empty(), Nil{}, "t0")) == "answer" : String}
+
+law fmc_plan_other_tools_here:
+  {FMC.Fm.plan.name(FMC.Fm.plan.o(Fx.call("work_run", J.Json.obj([J.KV{"command", J.Str{"ls"}}])), M.State.empty(), Nil{}, "t0")) == "here" : String}
+
+# ids: the machine's own going out, its link coming back
+law fmc_args_made_local:
+  {J.Json.show(J.Obj{FMC.Fm.args.local(FR.Fr.obj.fields(J.Json.obj([J.KV{"threadId", J.Str{"p1~t1"}}, J.KV{"text", J.Str{"a~b"}}])), "p1")}) == "{\"threadId\":\"t1\",\"text\":\"a~b\"}" : String}
+
+law fmc_args_other_link_kept:
+  {J.Json.show(J.Obj{FMC.Fm.args.local(FR.Fr.obj.fields(J.Json.obj([J.KV{"threadId", J.Str{"p2~t1"}}])), "p1")}) == "{\"threadId\":\"p2~t1\"}" : String}
+
+law fmc_reply_ids_named_by_link:
+  {J.Json.show(FMC.Fm.far.json(J.Json.obj([J.KV{"threadId", J.Str{"t1"}}, J.KV{"title", J.Str{"t1"}}, J.KV{"threads", J.Json.arr([J.Json.obj([J.KV{"id", J.Str{"t2"}}, J.KV{"project", J.Str{""}}])])}]), "p1")) == "{\"threadId\":\"p1~t1\",\"title\":\"t1\",\"threads\":[{\"id\":\"p1~t2\",\"project\":\"\"}]}" : String}
+
+# /give sends nothing to a machine that is not linked: each word naming
+# one is an error the person hears
+law fmc_give_unlinked_nothing:
+  {FMC.Fm.give.names(FMC.Fm.give(M.State.empty(), Nil{}, J.Json.obj([J.KV{"m", J.Str{"bots.give"}}, J.KV{"p", J.Json.obj([J.KV{"thread", J.Str{"t1"}}, J.KV{"text", J.Str{"/give >beta:fix and %beta:board"}}])}]), 5n)) == "answer answer " : String}
+
+# the hub's own /give never reads a machine's word as one of its own
+law fmc_give_local_drops_machines:
+  {FMC.Fm.give.text("/give >beta:fix %mine %beta:board now") == "/give %mine now" : String}
+# Live text of threads elsewhere (core/farlive.bend): ephemeral, ordered by
+# length and generation, never a change
+
+law flive_delta_appends:
+  {FLV.FL.text(FLV.FL.get(FLV.Took.bs(FLV.FL.take(FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{})), "b~t", "cd", 5n, 2n, False{}, False{})), "b~t")) == "abcd" : String}
+
+law flive_gap_asks:
+  {FLV.Took.v(FLV.FL.take(FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{})), "b~t", "zz", 5n, 9n, False{}, False{})) == 2n : Nat}
+
+law flive_gap_changes_nothing:
+  {FLV.FL.text(FLV.FL.get(FLV.Took.bs(FLV.FL.take(FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{})), "b~t", "zz", 5n, 9n, False{}, False{})), "b~t")) == "ab" : String}
+
+law flive_end_blocks_old:
+  {FLV.Took.v(FLV.FL.take(FLV.FL.ends([FLV.End{"b~t", 9n}], FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{}))), "b~t", "ab", 5n, 0n, False{}, False{})) == 1n : Nat}
+
+law flive_end_no_resurrect:
+  {FLV.FL.text(FLV.FL.get(FLV.Took.bs(FLV.FL.take(FLV.FL.ends([FLV.End{"b~t", 9n}], FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{}))), "b~t", "ab", 5n, 0n, False{}, False{})), "b~t")) == "" : String}
+
+law flive_next_gen_taken:
+  {FLV.FL.text(FLV.FL.get(FLV.Took.bs(FLV.FL.take(FLV.FL.ends([FLV.End{"b~t", 9n}], FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{}))), "b~t", "cd", 9n, 0n, False{}, False{})), "b~t")) == "cd" : String}
+
+# the durable end came first (a restart, a reordering): a delta of the
+# stream it ended, arriving after, never shows
+law flive_end_before_any:
+  {FLV.Took.v(FLV.FL.take(FLV.FL.ends([FLV.End{"b~t", 9n}], Nil{}), "b~t", "ab", 5n, 0n, False{}, False{})) == 1n : Nat}
+
+# an end of an older stream leaves a newer one that came first standing
+law flive_end_keeps_newer:
+  {FLV.FL.text(FLV.FL.get(FLV.FL.ends([FLV.End{"b~t", 9n}], FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "cd", 10n, 0n, False{}, False{}))), "b~t")) == "cd" : String}
+
+law flive_snap_replaces:
+  {FLV.FL.text(FLV.FL.get(FLV.Took.bs(FLV.FL.take(FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{})), "b~t", "abcdef", 5n, 0n, False{}, True{})), "b~t")) == "abcdef" : String}
+
+law flive_snap_older_stale:
+  {FLV.Took.v(FLV.FL.take(FLV.FL.ends([FLV.End{"b~t", 9n}], FLV.Took.bs(FLV.FL.take(Nil{}, "b~t", "ab", 5n, 0n, False{}, False{}))), "b~t", "ab", 5n, 0n, False{}, True{})) == 1n : Nat}
+
+law flive_ended_ids:
+  {FLV.FL.ended.ids(FLV.FL.ended([FR.Item{4n, C.Change.encode(M.MessagePosted{"t", "m:1", M.Assistant{}, "hi", 3n})}, FR.Item{5n, C.Change.encode(M.TurnChanged{"u", M.Completed{}, 4n})}, FR.Item{6n, C.Change.encode(M.TurnChanged{"v", M.Running{}, 5n})}], "b")) == ["b~t", "b~u"] : List<&2, String>}
+
+law flive_user_message_keeps:
+  {FLV.FL.ended.ids(FLV.FL.ended([FR.Item{4n, C.Change.encode(M.MessagePosted{"t", "m:1", M.User{}, "hi", 3n})}], "b")) == Nil{} : List<&2, String>}
+
+law flive_body_no_items:
+  {List.length(&2, FR.Item, FR.Fr.items.of(J.Json.elems(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(FLV.FL.body("a", 0n, [FLV.LI{"t", 5n, 0n, "ab", 2n, False{}}])), J.Null{}), "items")))) == 0n : Nat}
+
+law flive_body_has_live:
+  {List.length(&2, J.Json, J.Json.elems(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(FLV.FL.body("a", 0n, [FLV.LI{"t", 5n, 0n, "ab", 2n, False{}}])), J.Null{}), "live"))) == 1n : Nat}
+
+law flive_queue_joins:
+  {FLV.LQ.pend(FLV.LQ.add(FLV.LQ.add(FLV.LQ.new("b"), 10n, "t", 5n, 0n, "ab"), 10n, "t", 5n, 2n, "cd")) == [FLV.LI{"t", 5n, 0n, "abcd", 4n, False{}}] : List<&2, FLV.LI>}
+
+law flive_queue_gap_owes_whole:
+  {FLV.LQ.pend(FLV.LQ.add(FLV.LQ.add(FLV.LQ.new("b"), 10n, "t", 5n, 0n, "ab"), 10n, "t", 5n, 7n, "cd")) == [FLV.LI{"t", 5n, 0n, "", 0n, True{}}] : List<&2, FLV.LI>}
+
+law flive_queue_whole_absorbs:
+  {FLV.LQ.pend(FLV.LQ.add(FLV.LQ.need(FLV.LQ.new("b"), "t", 0n), 10n, "t", 5n, 0n, "ab")) == [FLV.LI{"t", 0n, 0n, "", 0n, True{}}] : List<&2, FLV.LI>}
+
+law flive_queue_threads_apart:
+  {List.length(&2, FLV.LI, FLV.LQ.pend(FLV.LQ.add(FLV.LQ.add(FLV.LQ.new("b"), 10n, "t", 5n, 0n, "ab"), 10n, "u", 5n, 0n, "cd"))) == 2n : Nat}
+
+law flive_one_request_out:
+  {FLV.LQ.due(FLV.LQ.add(FLV.LQ.start(FLV.LQ.add(FLV.LQ.new("b"), 10n, "t", 5n, 0n, "ab")), 10n, "t", 5n, 2n, "cd")) == False{} : Bool}
+
+law flive_due_after_answer:
+  {FLV.LQ.due(FLV.LQ.done(FLV.LQ.add(FLV.LQ.start(FLV.LQ.add(FLV.LQ.new("b"), 10n, "t", 5n, 0n, "ab")), 10n, "t", 5n, 2n, "cd"), True{}, 10n)) == True{} : Bool}
+
+law flive_quiet_drops:
+  {FLV.LQ.pend(FLV.LQ.add(FLV.LQ.done(FLV.LQ.start(FLV.LQ.add(FLV.LQ.new("b"), 10n, "t", 5n, 0n, "ab")), False{}, 100n), 105n, "t", 5n, 2n, "cd")) == Nil{} : List<&2, FLV.LI>}
+
+law flive_quiet_ends:
+  {FLV.LQ.pend(FLV.LQ.add(FLV.LQ.done(FLV.LQ.start(FLV.LQ.add(FLV.LQ.new("b"), 10n, "t", 5n, 0n, "ab")), False{}, 100n), 108n, "t", 5n, 2n, "cd")) == [FLV.LI{"t", 5n, 2n, "cd", 2n, False{}}] : List<&2, FLV.LI>}
+
+law flive_whole_from_buffer:
+  {FLV.FL.fill([FLV.LI{"t", 0n, 0n, "", 0n, True{}}], LV.Live.add(LV.Live.add(Nil{}, "t", "ab"), "t", "cd")) == [FLV.LI{"t", 0n, 0n, "abcd", 4n, True{}}] : List<&2, FLV.LI>}
+
+# a delta of a stream that ended before its request went is not sent
+law flive_delta_ended_dropped:
+  {FLV.FL.fill([FLV.LI{"t", 0n, 0n, "ab", 2n, False{}}], LV.Live.end(LV.Live.add(Nil{}, "t", "ab"), "t")) == Nil{} : List<&2, FLV.LI>}
+
+law flive_whole_ended_dropped:
+  {FLV.FL.fill([FLV.LI{"t", 0n, 0n, "", 0n, True{}}], LV.Live.end(LV.Live.add(Nil{}, "t", "ab"), "t")) == Nil{} : List<&2, FLV.LI>}
+
+law flive_link_gone:
+  {LV.Live.msg(FLV.FL.drop.link(LV.Live.add(LV.Live.add(Nil{}, "b~t", "ab"), "t", "cd"), "b~")) == LV.Live.msg(LV.Live.add(Nil{}, "t", "cd")) : String}
+
+law flive_far_message_ends_live:
+  {U.Ui.live.of(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{"b~t"}}, J.KV{"text", J.Str{"hel"}}])), Maybe.default(&2, J.Json, J.Json.parse(FR.Fr.msg("b", "Beta", False{}, 3n, 4n, [FR.Item{4n, C.Change.encode(M.MessagePosted{"t", "m:1", M.Assistant{}, "hello", 3n})}])), J.Null{})), "b~t") == "" : String}
+
+law flive_far_activity_keeps_live:
+  {U.Ui.live.of(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{"b~t"}}, J.KV{"text", J.Str{"hel"}}])), Maybe.default(&2, J.Json, J.Json.parse(FR.Fr.msg("b", "Beta", False{}, 3n, 4n, [FR.Item{4n, C.Change.encode(M.TodosSet{"t", "[]", 3n})}])), J.Null{})), "b~t") == "hel" : String}
+
+law flive_far_delta_shows:
+  {U.Ui.live.of(U.Ui.recv(U.Ui.recv(U.Ui.init(0n), J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{"b~t"}}, J.KV{"text", J.Str{"hel"}}])), J.Json.obj([J.KV{"t", J.Str{"delta"}}, J.KV{"thread", J.Str{"b~t"}}, J.KV{"text", J.Str{"lo"}}])), "b~t") == "hello" : String}
+
+# Alerts of threads elsewhere: one key, one island line
+
+law notice_far_key_same:
+  {NO.Notice.key(NO.Notice.of(M.State.empty(), "b~t", False{}, False{})) == "turn-t" : String}
+
+law notice_far_fail_key_same:
+  {NO.Notice.kind(NO.Notice.of(M.State.empty(), "b~t", True{}, False{})) ++ " " ++ NO.Notice.key(NO.Notice.of(M.State.empty(), "b~t", True{}, False{})) == "fail turn-t" : String}
+
+law notice_local_key_kept:
+  {NO.Notice.key(NO.Notice.of(M.State.empty(), "t", False{}, False{})) == "turn-t" : String}
+
+law island_far_once:
+  {List.length(&2, J.Json, Hb.Hubs.lines.once([J.Json.obj([J.KV{"thread", J.Str{"b~t"}}]), J.Json.obj([J.KV{"thread", J.Str{"t"}}])])) == 1n : Nat}
+
+law island_far_owner_wins:
+  {J.Json.get_str(Maybe.default(&2, J.Json, List.head(&2, J.Json, Hb.Hubs.lines.once([J.Json.obj([J.KV{"thread", J.Str{"b~t"}}]), J.Json.obj([J.KV{"thread", J.Str{"t"}}])])), J.Null{}), "thread", "") == "t" : String}
+
+law island_far_alone_kept:
+  {List.length(&2, J.Json, Hb.Hubs.lines.once([J.Json.obj([J.KV{"thread", J.Str{"b~t"}}]), J.Json.obj([J.KV{"thread", J.Str{"u"}}])])) == 2n : Nat}
+
+# A window on another machine's hub (core/rview.bend): the hub answers a
+# client's viewer reads only for a thread it has a folder for and a path the
+# viewers may read; what the window keeps of a hub's files lives under its
+# own folder for that hub, whatever the path says.
+
+law rview_at_under:
+  {RVW.Rview.at("/c/remote/hb", "/home/u/p/a.kicad_pcb") == "/c/remote/hb/home/u/p/a.kicad_pcb" : String}
+
+law rview_at_climbs:
+  {RVW.Rview.at("/c/remote/hb", "/home/u/../../../etc/passwd") == "" : String}
+
+law rview_at_relative:
+  {RVW.Rview.at("/c/remote/hb", "git\tx") == "git\tx" : String}
+
+law rview_back_at:
+  {RVW.Rview.back("/c/remote/hb", RVW.Rview.at("/c/remote/hb", "/home/u/p/a.kicad_pcb")) == "/home/u/p/a.kicad_pcb" : String}
+
+law rview_back_outside:
+  {RVW.Rview.back("/c/remote/hb", "/etc/passwd") == "" : String}
+
+law rview_want_hidden:
+  {RVW.Rview.want("/c/remote/hb", "/c/remote/hb/p", "/c/remote/hb/p/.env") == "" : String}
+
+law rview_want_file:
+  {RVW.Rview.want("/c/remote/hb", "/c/remote/hb/p", "/c/remote/hb/p/hw/a.step") == "hw/a.step" : String}
+
+law rview_ask_get_up:
+  {RVW.Rview.ask.ok("/view/get", "/p", "", "", "../a") == False{} : Bool}
+
+law rview_ask_get_abs:
+  {RVW.Rview.ask.ok("/view/get", "/p", "", "", "/etc/passwd") == False{} : Bool}
+
+law rview_ask_get_hidden:
+  {RVW.Rview.ask.ok("/view/get", "/p", "", "", ".ssh/id_rsa") == False{} : Bool}
+
+law rview_ask_get_ok:
+  {RVW.Rview.ask.ok("/view/get", "/p", "", "", "hw/a.kicad_pcb") == True{} : Bool}
+
+law rview_ask_ver_hidden:
+  {RVW.Rview.ask.ok("/view/ver", "/p", "", "a.kicad_pcb\n.env", "") == False{} : Bool}
+
+law rview_ask_no_folder:
+  {RVW.Rview.ask.ok("/view/get", "", "", "", "a.kicad_pcb") == False{} : Bool}
+
+law rview_ask_other:
+  {RVW.Rview.ask.ok("/view/other", "/p", "", "", "a.kicad_pcb") == False{} : Bool}
+
+law rview_git_option:
+  {RVW.Rview.ask.ok("/view/git", "/p", "", "", "git\t/p/.git\t--output=/tmp/x\t2\t/p/a.kicad_pcb") == False{} : Bool}
+
+law rview_git_dir:
+  {RVW.Rview.ask.ok("/view/git", "/p", "", "", "git\t/etc\tabc123\t2\t/p/a.kicad_pcb") == False{} : Bool}
+
+law rview_git_climbs:
+  {RVW.Rview.ask.ok("/view/git", "/p", "", "", "git\t/p/.git\tabc123\t2\t/p/../../etc/passwd") == False{} : Bool}
+
+law rview_git_ok:
+  {RVW.Rview.ask.ok("/view/git", "/p", "", "", "git\t/p/.git\tabc123\t2\t/p/a.kicad_pcb") == True{} : Bool}
+
+# a version is read only from the thread's own repository, and never a
+# hidden file of it
+law rview_git_other_repo:
+  {RVW.Rview.ask.ok("/view/git", "/p", "", "", "git\t/private/.git\tabc123\t8\t/private/a.kicad_pcb") == False{} : Bool}
+
+law rview_git_hidden:
+  {RVW.Rview.ask.ok("/view/git", "/p", "", "", "git\t/p/.git\tabc123\t2\t/p/.env") == False{} : Bool}
+
+law rview_root_unknown:
+  {RVW.Rview.root.k(False{}, False{}, "/h", "", "/p", "") == "" : String}
+
+law rview_root_far_cache:
+  {RVW.Rview.root.k(False{}, True{}, "/h", "beta", "", "/h/farfs/beta/p") == "/h/farfs/beta/p" : String}
+
+law rview_root_far_other_link:
+  {RVW.Rview.root.k(False{}, True{}, "/h", "beta", "", "/h/farfs/gamma/p") == "" : String}
+
+law rview_root_far_climbs:
+  {RVW.Rview.root.k(False{}, True{}, "/h", "beta", "", "/h/farfs/beta/../../etc") == "" : String}
+
+law rview_root_own_ignores_claim:
+  {RVW.Rview.root.k(True{}, False{}, "/h", "", "/p", "/etc") == "/p" : String}
+
+law rview_enc_unreserved:
+  {RVW.Rview.enc("hw/a-b_c.kicad_pcb") == "hw/a-b_c.kicad_pcb" : String}
+
+law rview_enc_breaks:
+  {RVW.Rview.enc("a\nb&c=d") == "a%0Ab%26c%3Dd" : String}
+
+law rview_spec_local:
+  {RVW.Rview.spec("", "/c", "t", "g") == "" : String}

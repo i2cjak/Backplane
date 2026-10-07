@@ -353,14 +353,14 @@ def One.seen(+u: U.Ui, +o: J.Json) -> List<&2, N.Seen>:
 def One.got.d(delta: Bool, +u: U.Ui, +o: J.Json) -> Did:
   match delta:
     case True{}:
-      Did{One.got.seen(U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o)), Nil{}}
+      Did{One.got.seen(VW.View.far(o, U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o))), Nil{}}
     case False{}:
-      One.got.b(U.Boot.on(u), One.seen(u, o), One.got.seen(U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o)))
+      One.got.b(U.Boot.on(u), One.seen(u, o), One.got.seen(VW.View.far(o, U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o))))
 
 # the same comparing every thread (the spec One.got.d keeps to: law
 # alerts_ids_same)
 def One.got.all(+u: U.Ui, +o: J.Json) -> Did:
-  One.got.b(U.Boot.on(u), N.Note.seen(U.Ui.threads(S.Mob.st(u))), One.got.seen(U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o)))
+  One.got.b(U.Boot.on(u), N.Note.seen(U.Ui.threads(S.Mob.st(u))), One.got.seen(VW.View.far(o, U.Ui.recv_act(VW.View.sheets(VW.View.picked(u, o), o), o))))
 
 def One.got(+u: U.Ui, +o: J.Json) -> Did:
   One.got.d(String.eq(J.Json.get_str(o, "t", ""), "delta"), u, o)
@@ -372,9 +372,9 @@ def One.run(op: Op, +u: U.Ui) -> Did:
     case Got{+o}:
       One.got(u, o)
     case On{b}:
-      Did{VW.View.online(u, b), Nil{}}
+      Did{VW.View.online(S.Mob.heard.set(u), b), Nil{}}
     case Tick{now}:
-      Did{U.Act{U.Ui.tick(u, now), Nil{}}, Nil{}}
+      Did{U.Act{S.Mob.heard.set(U.Ui.tick(u, now)), Nil{}}, Nil{}}
     case Reg{p, t, k, th, e, b}:
       Did{U.Ui.rpc.keep(u, "device.register", [J.KV{"platform", J.Json.str(p)}, J.KV{"token", J.Json.str(t)},
         J.KV{"kind", J.Json.str(k)}, J.KV{"thread", J.Json.str(th)}, J.KV{"env", J.Json.str(e)}, J.KV{"bundle", J.Json.str(b)}]), Nil{}}
@@ -530,6 +530,11 @@ def Hubs.tick(hs: Hubs, +now: Nat) -> HAct:
 def Hubs.register(hs: Hubs, p: String, t: String, k: String, th: String, e: String, b: String) -> HAct:
   Hubs.step(hs, True{}, "", Reg{p, t, k, th, e, b})
 
+# a token for one hub alone: the Live Activity a hub keeps (iOS runs one
+# per paired hub, Hubs.islands), so no hub updates or ends another's
+def Hubs.register.at(hs: Hubs, +key: String, p: String, t: String, k: String, th: String, e: String, b: String) -> HAct:
+  Hubs.step(hs, False{}, key, Reg{p, t, k, th, e, b})
+
 # Actions
 # -------
 
@@ -654,10 +659,42 @@ def Hubs.list(hs: Hubs) -> List<&2, Hub>:
     case Hubs{_, _, _, l}:
       l
 
+# A thread named with no hub (a notification's tap: the hub that pushed it
+# named it in its own ids, maybe a mirror's `<link>~<id>`) belongs to the
+# hub that holds it: the focused one when it does, else the first that does.
+def Hub.holds(h: Hub, +id: String) -> Bool:
+  match h:
+    case Hub{_, +u}:
+      FR.Fr.has(Map.has(&2, M.Thread, FR.Fr.st.threads(U.Ui.state(u)), id))
+
+def Hubs.holder(hs: List<&2, Hub>, +id: String) -> String:
+  match hs:
+    case Nil{}:
+      ""
+    case +h <> t:
+      Bool.pick(String, Hub.holds(h, id), Hub.key(h), Hubs.holder(t, id))
+
+def Hubs.held.k(+hs: Hubs, +cur: String, +other: String, +action: String, +value: String) -> HAct:
+  Bool.pick(HAct, String.is_empty(other), Hubs.act.k(hs, cur, False{}, action, value), Hubs.act.k(hs, cur, True{}, action, other ++ "|" ++ value))
+
+def Hubs.held(here: Bool, +hs: Hubs, +action: String, +value: String) -> HAct:
+  match here:
+    case True{}:
+      Hubs.act.k(hs, Hubs.cur(hs), False{}, action, value)
+    case False{}:
+      Hubs.held.k(hs, Hubs.cur(hs), Hubs.holder(Hubs.list(hs), value), action, value)
+
+def Hubs.act.r.k(known: Bool, +hs: Hubs, +action: String, +value: String) -> HAct:
+  match known:
+    case True{}:
+      Hubs.act.k(hs, Hubs.cur(hs), True{}, action, value)
+    case False{}:
+      Hubs.held(Bool.or(Bool.not(String.eq(action, "select")), Hub.holds(Hub{Hubs.cur(hs), Hubs.ui(hs, Hubs.cur(hs))}, value)), hs, action, value)
+
 def Hubs.act.r(routed: Bool, +hs: Hubs, +action: String, +value: String) -> HAct:
   match routed:
     case True{}:
-      Hubs.act.k(hs, Hubs.cur(hs), Hubs.has(Hubs.list(hs), Hubs.key_of(value)), action, value)
+      Hubs.act.r.k(Hubs.has(Hubs.list(hs), Hubs.key_of(value)), hs, action, value)
     case False{}:
       Hubs.act.k(hs, Hubs.cur(hs), False{}, action, value)
 
@@ -999,6 +1036,59 @@ def Hubs.lines(ss: List<&2, Shown>) -> List<&2, J.Json>:
     case +s <> t:
       List.append(&2, J.Json, J.Json.elems(J.Json.get_obj(J.Json.get_obj(Shown.j(s), "island"), "lines")), Hubs.lines(t))
 
+# A thread the owner's machine runs and this phone's other hub mirrors is
+# one thread: the island lists it once, as its owner's hub gives it (the
+# once list keeps the last of a key, so the owner's lines go last), else
+# one mirror's (law island_far_once)
+# (a line's thread is qualified by its hub, "host:port|id": the key is the
+# owner's own id, so a mirror's "<link>~t" and its owner's "t" are one)
+def Hubs.line.id(+t: String) -> String:
+  Bool.pick(String, String.contains(t, "|"), Hubs.rest(t), t)
+
+def Hubs.line.is.far(+l: J.Json) -> Bool:
+  FR.Fr.is(Hubs.line.id(J.Json.get_str(l, "thread", "")))
+
+def Hubs.line.keep(take: Bool, l: J.Json, rest: List<&2, J.Json>) -> List<&2, J.Json>:
+  match take:
+    case True{}:
+      l <> rest
+    case False{}:
+      rest
+
+# the lines whose thread is elsewhere (far) or here (not far)
+def Hubs.lines.part(ls: List<&2, J.Json>, +far: Bool) -> List<&2, J.Json>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      Hubs.line.keep(Bool.pick(Bool, far, Hubs.line.is.far(l), Bool.not(Hubs.line.is.far(l))), l, Hubs.lines.part(t, far))
+
+def Hubs.lines.keyed(ls: List<&2, J.Json>) -> List<&2, BU.RK<J.Json>>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case +l <> t:
+      BU.RK{FR.Fr.local(Hubs.line.id(J.Json.get_str(l, "thread", ""))), l} <> Hubs.lines.keyed(t)
+
+def Hubs.lines.once(+ls: List<&2, J.Json>) -> List<&2, J.Json>:
+  BU.BU.once.vals(J.Json, BU.BU.once.of(J.Json, Hubs.lines.keyed(List.append(&2, J.Json, Hubs.lines.part(ls, True{}), Hubs.lines.part(ls, False{})))))
+
+# Each hub's own island, for iOS's Live Activity per hub: a hub pushes and
+# ends only its own (push.bend), so one machine going idle never ends or
+# overwrites another's. With several hubs the headline names the machine.
+def Hubs.island.named(+many: Bool, +name: String, +i: J.Json) -> J.Json:
+  N.Note.island.k.named(J.Json.elems(J.Json.get_obj(i, "lines")), Bool.pick(String, many, name, ""))
+
+def Hubs.islands.go(ss: List<&2, Shown>, +many: Bool) -> List<&2, J.Json>:
+  match ss:
+    case Nil{}:
+      Nil{}
+    case Shown{+k, +n, +j} <> t:
+      J.Json.obj([J.KV{"hub", J.Json.str(k)}, J.KV{"island", Hubs.island.named(many, n, J.Json.get_obj(j, "island"))}]) <> Hubs.islands.go(t, many)
+
+def Hubs.islands(+ss: List<&2, Shown>) -> List<&2, J.Json>:
+  Hubs.islands.go(ss, Nat.is_gt(List.length(&2, Shown, ss), 1n))
+
 def Hubs.rows(ss: List<&2, Shown>) -> List<&2, J.Json>:
   match ss:
     case Nil{}:
@@ -1325,7 +1415,8 @@ def Hubs.screen.k(+ss: List<&2, Shown>, +cur: String, +list: List<&2, Hub>) -> J
     J.KV{"settings", J.Json.get_obj(Hubs.of(ss, cur), "settings")},
     J.KV{"tour", J.Json.get_obj(Hubs.of(ss, cur), "tour")},
     J.KV{"find", J.Json.get_obj(Hubs.of(ss, cur), "find")},
-    J.KV{"island", N.Note.island.k(Hubs.lines(ss))},
+    J.KV{"island", N.Note.island.k(Hubs.lines.once(Hubs.lines(ss)))},
+    J.KV{"islands", J.Json.arr(Hubs.islands(ss))},
     J.KV{"thread", Hubs.origin.focus(ss, cur, "thread")},
     J.KV{"bots", J.Json.arr(Hubs.bots(ss, list, Nat.is_gt(List.length(&2, Shown, ss), 1n)))},
     J.KV{"rooms", J.Json.arr(Hubs.rooms(ss, Nat.is_gt(List.length(&2, Shown, ss), 1n)))},

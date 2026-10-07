@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Link
@@ -704,6 +705,7 @@ private fun FolderPicker(m: AppModel, p: Folders) {
                             "add" -> Icons.Filled.AddCircleOutline
                             "new", "mkdir" -> Icons.Filled.CreateNewFolder
                             "off" -> Icons.Filled.Check
+                            "machine" -> Icons.Filled.Computer
                             else -> Icons.Filled.Folder
                         }
                         val tone = if (r.kind == "dir" || r.kind == "up") MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary

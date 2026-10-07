@@ -18,6 +18,7 @@ import ../core/model.bend as M
 import ../core/bot.bend as BT
 import ../core/perf.bend as PF
 import ../core/hist.bend as HS
+import ../core/rview.bend as RV
 import ../core/emb.bend as EM
 import ../core/onboard.bend as OB
 
@@ -1533,14 +1534,14 @@ def Nui.status(+n: Nui, +key: String, +text: String) -> Nui:
 
 # the browser (its page's frames come as images, layout.bend's Lay.page)
 # and the diff (from the client state) read no file
-def Nui.source.k(x: V.Vx, +root: String) -> String:
+def Nui.source.k(x: V.Vx, +root: String, +pre: String) -> String:
   match x:
     case V.Vx{+k, _, _, _, _, _, _, _, +pa, _, bm}:
-      Bool.pick(String, U32.is_ge(k, 3), V.Src.key(k, "", ""), V.Src.key(k, root, pa))
+      Bool.pick(String, U32.is_ge(k, 3), V.Src.key(k, "", ""), V.Src.key(k, RV.Rview.at(pre, root), RV.Rview.at(pre, pa)))
 
 # the source the viewer should show now (Src.key)
 def Nui.source(+n: Nui) -> String:
-  Nui.source.k(Vw.x(Nui.vw(n)), U.Ui.root(Nui.ui(n)))
+  Nui.source.k(Vw.x(Nui.vw(n)), U.Ui.root(Nui.ui(n)), U.Ui.info(Nui.ui(n), "local.remote.pre"))
 
 def Vw.asked(v: V.Vw, +key: String) -> V.Vw:
   match v:

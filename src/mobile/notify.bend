@@ -230,6 +230,15 @@ def Note.island.k(+ls: List<&2, J.Json>) -> J.Json:
     J.KV{"headline", J.Json.str(Note.headline(List.length(&2, J.Json, ls), Note.first(ls)))},
     J.KV{"lines", J.Json.arr(ls)}])
 
+# the same with a machine's name after the headline ("" for none)
+def Note.named(+h: String, +name: String) -> String:
+  Bool.pick(String, String.is_empty(name), h, h ++ " · " ++ name)
+
+def Note.island.k.named(+ls: List<&2, J.Json>, +name: String) -> J.Json:
+  J.Json.obj([J.KV{"running", J.Json.nat(List.length(&2, J.Json, ls))},
+    J.KV{"headline", J.Json.str(Note.named(Note.headline(List.length(&2, J.Json, ls), Note.first(ls)), name))},
+    J.KV{"lines", J.Json.arr(ls)}])
+
 def Note.island(ts: List<&2, M.Thread>, +es: List<&2, M.Entry>) -> J.Json:
   Note.island.k(Note.lines(ts, es))
 
@@ -290,6 +299,31 @@ def Note.lines.w(ts: List<&2, M.Thread>, +kids: Map<&2, Nat>, +st: M.State) -> L
 
 def Note.island.w(ts: List<&2, M.Thread>, +st: M.State) -> J.Json:
   Note.island.k(Note.lines.w(ts, M.Work.kids.map(st), st))
+
+# A hub the phone no longer reaches keeps its last state in the phone, and
+# a thread running then reads running forever (a hub stopped, or paired at
+# an address it left). Its threads stay on the island while it answers and
+# for as long after it was last heard as the hub's own pushed island holds
+# (push.bend's Island.fresh), then go (laws island_unheard_*)
+def Note.fresh() -> Nat:
+  10800n
+
+def Note.heard.in(online: Bool, +now: Nat, +heard: Nat, +fresh: Nat) -> Bool:
+  match online:
+    case True{}:
+      True{}
+    case False{}:
+      Nat.is_lt(Nat.sub(now, heard), fresh)
+
+def Note.heard(online: Bool, +now: Nat, +heard: Nat) -> Bool:
+  Note.heard.in(online, now, heard, Note.fresh())
+
+def Note.island.h(heard: Bool, ts: List<&2, M.Thread>, +st: M.State) -> J.Json:
+  match heard:
+    case True{}:
+      Note.island.w(ts, st)
+    case False{}:
+      Note.island.k(Nil{})
 
 def Note.busy.k(running: Bool, +busy: Nat) -> Bool:
   match running:

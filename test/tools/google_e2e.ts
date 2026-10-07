@@ -175,6 +175,21 @@ try {
   const gm = await tool(a, th, "gmail_search");
   check("gmail tools run on the shared link", gm.includes("No messages"), gm);
 
+  // a phone signs in through its own loopback listener: the sign-in
+  // begins with the phone's redirect and finishes with what it caught
+  const phone = "http://127.0.0.1:49152/oauth/google";
+  const cp = await op(a, "connect", { redirect: phone });
+  const up = new URL(cp?.googleUrl ?? "http://x/");
+  check("a phone's loopback redirect begins its sign-in", up.searchParams.get("redirect_uri") === phone, up.search);
+  const ce = await op(a, "connect", { redirect: "http://evil.example.com/oauth/google" });
+  const ue = new URL(ce?.googleUrl ?? "http://x/");
+  check("any other redirect is the hub's own", ue.searchParams.get("redirect_uri") === `http://127.0.0.1:${a.port}/oauth/google`, ue.search);
+  const cp2 = await op(a, "connect", { redirect: phone });
+  const up2 = new URL(cp2?.googleUrl ?? "http://x/");
+  const fin = await op(a, "finish", { pasted: `${phone}?state=${up2.searchParams.get("state")}&code=4%2F0Ab9&scope=x` });
+  check("the phone's caught address finishes it", fin?.ok && String(fin?.google).startsWith("Connected as cat@example.com"), fin);
+  check("the code is traded with the phone's redirect", grants.at(-1)?.redirect_uri === phone, grants.at(-1));
+
   // a second account
   const c2 = await op(a, "connect");
   const u2 = new URL(c2?.googleUrl ?? "http://x/");

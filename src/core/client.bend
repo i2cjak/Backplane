@@ -16,6 +16,8 @@ import ./space.bend as SPC
 import ./refs.bend as RF
 import ./mech.bend as MC
 import ./far.bend as FR
+import ./fview.bend as FV
+import ./farlive.bend as FLV
 import ./desk.bend as DK
 import ./hist.bend as HI
 import ./links.bend as LK
@@ -284,7 +286,7 @@ def Local.keep.go(ks: List<&2, String>, +old: Map<&2, String>, m: Map<&2, String
 # (and the clock this client last ticked, which a folded turn's "5m ago"
 # reads)
 def Local.keep(+old: Map<&2, String>, m: Map<&2, String>) -> Map<&2, String>:
-  Local.keep.go(["cid", "local.machine", "local.machines", "local.drafts", "local.hub", "clock", "local.fixed", "local.generation", "local.state.hub", "local.state.gen"], old, m)
+  Local.keep.go(["cid", "local.machine", "local.machines", "local.drafts", "local.hub", "clock", "local.fixed", "local.generation", "local.state.hub", "local.state.gen", "local.remote.url", "local.remote.pre"], old, m)
 
 # A reconnect to the same hub (the log's origin is the one this client
 # had) keeps what the person chose in each thread's viewer: its kind, path
@@ -1156,8 +1158,42 @@ def Ui.reselect.act(+old: String, a: Act) -> Act:
       Act{Ui.reselect(old, u), cs}
 
 # the selected thread's view: its kind, path, change count and diff
-def Ui.view_get(+u: Ui, +k: String) -> String:
+# What a thread elsewhere's viewer shows waits for the file: its kind and
+# path read as the Files tab and nothing until the hub that keeps the cache
+# says the file is in it ("fv.ready:<t>" names the path it had then).
+def Fv.kinds() -> List<&2, String>:
+  ["board", "schematic", "3d", "image", "pdf"]
+
+def Fv.kind(+k: String) -> Bool:
+  FR.Fr.may.go(Fv.kinds(), k)
+
+# a path as the owner's folder names it ("" for one outside, or no folder yet)
+def Fv.rel.of(+root: String, +path: String) -> String:
+  Bool.pick(String, String.is_empty(root), "", Bool.pick(String, String.starts_with(path, "/"), FV.Fv.rel(root, path), path))
+
+def Fv.t(+u: Ui, +k: String) -> String:
   Ui.info(u, k ++ ":" ++ Ui.sel(u))
+
+def Fv.pending(+u: Ui) -> Bool:
+  Bool.and(Bool.and(FR.Fr.is(Ui.sel(u)), Fv.kind(Fv.t(u, "view.kind"))),
+    Bool.and(Bool.not(String.is_empty(Fv.rel.of(Fv.t(u, "fv.root"), Fv.t(u, "view.path")))), Bool.not(String.eq(Fv.t(u, "view.path"), Fv.t(u, "fv.ready")))))
+
+def Ui.view_get.k(held: Bool, +u: Ui, +k: String) -> String:
+  match held:
+    case True{}:
+      Bool.pick(String, String.eq(k, "view.kind"), "files", "")
+    case False{}:
+      Ui.info(u, k ++ ":" ++ Ui.sel(u))
+
+def Ui.view_get.far(far: Bool, +u: Ui, +k: String) -> String:
+  match far:
+    case True{}:
+      Ui.view_get.k(Bool.and(Bool.or(String.eq(k, "view.kind"), String.eq(k, "view.path")), Fv.pending(u)), u, k)
+    case False{}:
+      Ui.info(u, k ++ ":" ++ Ui.sel(u))
+
+def Ui.view_get(+u: Ui, +k: String) -> String:
+  Ui.view_get.far(FR.Fr.is(Ui.sel(u)), u, k)
 
 def Ui.diff(+u: Ui, +r: J.Json) -> Ui:
   Ui.diff.k(u, Viewer.of(J.Json.get_str(r, "thread", ""), Ui.sel(u)), r)
@@ -1237,10 +1273,16 @@ def Ui.dir(+st: M.State, +wt: String, +project: String) -> String:
 
 # the selected thread's directory: its worktree, else its project's folder
 # ("" with nothing selected). The viewer shows the board the thread edits.
+def Ui.root.here(+st: M.State, +sel: String) -> String:
+  Bool.pick(String, String.is_empty(sel), "", Ui.dir(st, Ui.thread_worktree(Ui.thread(st, sel)), Ui.thread_project(Ui.thread(st, sel))))
+
+# A thread elsewhere shows the folder its hub keeps its files in (the
+# cache core/fview.bend names; "" until the first answer of far.view says
+# which): the viewers read it as they read a folder here.
 def Ui.root(u: Ui) -> String:
   match u:
-    case Ui{+st, +sel, _, _, _, _, _, _, _, _, _, _, _, _, nf, ob, tr}:
-      Bool.pick(String, String.is_empty(sel), "", Ui.dir(st, Ui.thread_worktree(Ui.thread(st, sel)), Ui.thread_project(Ui.thread(st, sel))))
+    case Ui{+st, +sel, _, _, _, _, _, _, _, _, _, _, _, _, +nf, ob, tr}:
+      Bool.pick(String, FR.Fr.is(sel), Str.get(nf, "fv.root:" ++ sel), Ui.root.here(st, sel))
 
 # Views both clients share
 # ------------------------
@@ -2654,12 +2696,6 @@ def Made.rid(u: Ui) -> Nat:
 def Made.want(+u: Ui) -> Ui:
   Ui.scratch_set(Ui.scratch_set(u, "@want.new", Nat.show(Made.rid(u))), "@want.new.at", Made.at(u))
 
-# a thread this client asked for is still to come (the phones show its
-# page at once, waiting, rather than leave the button to be tapped again;
-# the answer, made or failed, ends it: laws made_waiting_*)
-def Made.waiting(+u: Ui) -> Bool:
-  Bool.not(String.is_empty(Ui.scratch(u, "@want.new")))
-
 def Ui.new_thread(u: Ui, +pid: String) -> Act:
   Ui.rpc(Made.want(u), "thread.create", [J.KV{"project", J.Str{pid}}, J.KV{"title", J.Str{"New thread"}}])
 
@@ -3325,6 +3361,83 @@ def Models.label_of(+info: String, +provider: String, +model: String) -> String:
 # the server (fs.list). The query and selection live in the drafts map
 # under keys no thread id can take.
 
+# The machine the picker works on: "" the hub this client is connected to,
+# else the link of another of the owner's machines (info "proj.on"). Its
+# requests carry it as `on`, and the hub sends them there (Fr.params.link).
+def Proj.on(u: Ui) -> String:
+  Ui.info(u, "proj.on")
+
+def Proj.on.kv(+on: String, +p: List<&2, J.KV>) -> List<&2, J.KV>:
+  Bool.pick(List<&2, J.KV>, String.is_empty(on), p, J.KV{"on", J.Str{on}} <> p)
+
+# whether a project (its id here) is on the machine `on` ("" this hub's own)
+def Proj.of(+on: String, +id: String) -> Bool:
+  Bool.pick(Bool, String.is_empty(on), Bool.not(FR.Fr.is(id)), String.eq(FR.Fr.link(id), on))
+
+def Proj.ps.k(keep: Bool, p: M.Project, rest: List<&2, M.Project>) -> List<&2, M.Project>:
+  match keep:
+    case True{}:
+      p <> rest
+    case False{}:
+      rest
+
+def Proj.ps.go(ps: List<&2, M.Project>, +on: String) -> List<&2, M.Project>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case M.Project{+id, ti, r, c, rm} <> t:
+      Proj.ps.k(Proj.of(on, id), M.Project{id, ti, r, c, rm}, Proj.ps.go(t, on))
+
+# the projects of the machine the picker works on
+def Proj.ps(+u: Ui) -> List<&2, M.Project>:
+  Proj.ps.go(Ui.projects(Ui.state(u)), Proj.on(u))
+
+# The owner's other machines the picker can work on: the links whose
+# mirror has answered ("far.name.<link>", Ui.far.k) and are not away
+def Proj.machines.k(keep: Bool, +id: String, rest: List<&2, String>) -> List<&2, String>:
+  match keep:
+    case True{}:
+      id <> rest
+    case False{}:
+      rest
+
+def Proj.machines.go(ps: List<&2, BT.Peer>, +u: Ui) -> List<&2, String>:
+  match ps:
+    case Nil{}:
+      Nil{}
+    case BT.Peer{+id, _, _, _, +rv} <> t:
+      Proj.machines.k(Bool.and(Bool.and(Bool.not(rv), Bool.not(Mate.off(Ui.state(u), Ui.info(u, "far.name." ++ id)))), Bool.and(Bool.not(String.is_empty(Ui.info(u, "far.name." ++ id))), Bool.not(String.eq(Ui.info(u, "far.away." ++ id), "1")))), id, Proj.machines.go(t, u))
+
+def Proj.machines(+u: Ui) -> List<&2, String>:
+  Proj.machines.go(BT.World.peers(M.State.bots(Ui.state(u))), u)
+
+def Proj.cycle.next(ls: List<&2, String>, +first: String) -> String:
+  match ls:
+    case Nil{}:
+      first
+    case x <> _:
+      x
+
+# the machine after `on` in ["", links...], and "" after the last
+def Proj.cycle(ls: List<&2, String>, +on: String, +first: String) -> String:
+  match ls:
+    case Nil{}:
+      first
+    case +x <> +t:
+      Bool.pick(String, String.eq(x, on), Proj.cycle.next(t, first), Proj.cycle(t, on, first))
+
+# the machine the next tap of the picker's machine row picks
+def Proj.next(+u: Ui) -> String:
+  Proj.cycle("" <> Proj.machines(u), Proj.on(u), "")
+
+def Proj.on.name(+u: Ui) -> String:
+  Bool.pick(String, String.is_empty(Proj.on(u)), "this machine", Ui.info(u, "far.name." ++ Proj.on(u)))
+
+# the picker's row naming the machine it works on: shown only when the
+# owner has other machines up; a tap goes to the next
+def Proj.machine.row(+u: Ui) -> List<&2, PItem>:
+  Bool.pick(List<&2, PItem>, List.is_empty(&2, String, Proj.machines(u)), Nil{}, [PItem{"On " ++ Proj.on.name(u) ++ " (change)", "proj-on", Proj.next(u)}])
+
 def Proj.query(u: Ui) -> String:
   match u:
     case Ui{_, _, dr, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
@@ -3359,7 +3472,7 @@ def Ui.error_put(u: Ui, e: String) -> Ui:
 # a request of the picker's: only the answer to the newest one counts (a
 # listing that arrives after the user has moved on is dropped)
 def Proj.rpc(+u: Ui, m: String, p: List<&2, J.KV>) -> Act:
-  Ui.rpc(Ui.scratch_set(u, "@proj.rid", Nat.show(Ui.rid(u))), m, p)
+  Ui.rpc(Ui.scratch_set(u, "@proj.rid", Nat.show(Ui.rid(u))), m, Proj.on.kv(Proj.on(u), p))
 
 # whether a new thread is waited for (Ui.see selects it when it comes)
 def Ui.want_new(u: Ui, b: Bool) -> Ui:
@@ -3398,12 +3511,27 @@ def Proj.cmds.front(cs: List<&2, Cmd>, a: Act) -> Act:
 def Proj.find(a: Act) -> Act:
   match a:
     case Act{+u, cs}:
-      Proj.cmds.front(cs, Ui.rpc(Ui.scratch_set(u, "@proj.frid", Nat.show(Ui.rid(u))), "fs.find", Nil{}))
+      Proj.cmds.front(cs, Ui.rpc(Ui.scratch_set(u, "@proj.frid", Nat.show(Ui.rid(u))), "fs.find", Proj.on.kv(Proj.on(u), Nil{})))
 
 # opens on the projects; the folder list is fetched where it was last
 # (home the first time)
 def Proj.open(+u: Ui) -> Act:
   Proj.focus(Proj.find(Proj.rpc(Proj.mode(Ui.flag_on(u, "proj"), ""), "fs.list", [J.KV{"path", J.Str{Proj.dir(u)}}])))
+
+# a machine chosen: its folders and projects are asked for afresh
+def Proj.machine(+u: Ui, +on: String) -> Act:
+  Proj.open(Ui.scratch_set(Ui.scratch_set(Ui.scratch_set(Ui.info_set(Ui.info_set(Ui.info_set(Ui.info_set(u, "proj.on", on), "proj.dir", ""), "proj.found", ""), "proj.home", ""), "@mpick", ""), "@mpick.asked", ""), "@mpick.follow", ""))
+
+def Proj.open.k(here: Bool, +u: Ui) -> Act:
+  match here:
+    case True{}:
+      Proj.open(u)
+    case False{}:
+      Proj.machine(u, "")
+
+# the picker as it opens: on the hub this client is connected to
+def Proj.open.fresh(+u: Ui) -> Act:
+  Proj.open.k(String.is_empty(Proj.on(u)), u)
 
 def Proj.names(xs: List<&2, J.Json>) -> List<&2, String>:
   match xs:
@@ -3561,7 +3689,7 @@ def Proj.is_project(ps: List<&2, M.Project>, +root: String) -> Bool:
 
 # the listed folder as a project (once)
 def Proj.add(+u: Ui, +dir: String) -> List<&2, PItem>:
-  Bool.pick(List<&2, PItem>, Proj.is_project(Ui.projects(Ui.state(u)), dir), [PItem{dir ++ " is already a project", "", ""}], [PItem{"Add " ++ dir ++ " as a project", "proj-add", dir}])
+  Bool.pick(List<&2, PItem>, Proj.is_project(Proj.ps(u), dir), [PItem{dir ++ " is already a project", "", ""}], [PItem{"Add " ++ dir ++ " as a project", "proj-add", dir}])
 
 # (a match, not Bool.pick: only the list shown is made)
 def Proj.items.q(empty: Bool, +u: Ui, +q: String, +dir: String, +ns: List<&2, String>) -> List<&2, PItem>:
@@ -3653,7 +3781,7 @@ def Proj.dedup(xs: List<&2, PCand>, +acc: List<&2, PCand>) -> List<&2, PCand>:
 
 # live projects, then removed ones, then those found on disk
 def Proj.cands(+u: Ui) -> List<&2, PCand>:
-  Proj.dedup(List.concat(&2, PCand, [Proj.cands.ps(Ui.projects(Ui.state(u)), True{}), Proj.cands.ps(Ui.projects(Ui.state(u)), False{}),
+  Proj.dedup(List.concat(&2, PCand, [Proj.cands.ps(Proj.ps(u), True{}), Proj.cands.ps(Proj.ps(u), False{}),
     Proj.cands.found(Proj.nonempty(String.split(Ui.info(u, "proj.found"), Proj.sep())))]), Nil{})
 
 def Proj.rank.k(+sc: Nat, +r: Nat, +ti: String, +a: String, +ro: String, +rest: List<&2, PCand>) -> List<&2, PCand>:
@@ -3706,7 +3834,7 @@ def Proj.items.m(dir: Bool, +u: Ui) -> List<&2, PItem>:
 # from a folder). A typed path goes there, adds it, or creates it. The
 # folders: Proj.folders
 def Proj.items(+u: Ui) -> List<&2, PItem>:
-  Proj.items.m(Proj.browsing(u), u)
+  List.append(&2, PItem, Proj.items.m(Proj.browsing(u), u), Proj.machine.row(u))
 
 # the path a row of the projects list stands for, as it is shown beside it
 def Proj.detail(+u: Ui, it: PItem) -> String:
@@ -3773,7 +3901,7 @@ def Proj.go.p(none: Bool, +u: Ui, +pid: String) -> Act:
 
 # going to a project opens its latest thread, or starts one
 def Proj.go(+u: Ui, +root: String) -> Act:
-  Proj.go.p(String.is_empty(Proj.id_of(Ui.projects(Ui.state(u)), root)), u, Proj.id_of(Ui.projects(Ui.state(u)), root))
+  Proj.go.p(String.is_empty(Proj.id_of(Proj.ps(u), root)), u, Proj.id_of(Proj.ps(u), root))
 
 # the folder browser, where it was last (listed afresh)
 def Proj.browse(+u: Ui) -> Act:
@@ -3799,12 +3927,14 @@ def Proj.run.k(i: Nat, +u: Ui, +v: String) -> Act:
       Proj.browse(u)
     case 7n:
       Act{Proj.mode(u, ""), Nil{}}
+    case 8n:
+      Proj.machine(u, v)
     case _:
       Act{u, Nil{}}
 
 # the picker's actions, in Proj.run.k's order
 def Proj.acts() -> List<&2, String>:
-  ["proj-add", "proj-cd", "proj-mkdir", "proj-new", "proj-pick", "proj-found", "proj-browse", "proj-back"]
+  ["proj-add", "proj-cd", "proj-mkdir", "proj-new", "proj-pick", "proj-found", "proj-browse", "proj-back", "proj-on"]
 
 def Proj.pos(xs: List<&2, String>, +x: String, +i: Nat) -> Nat:
   match xs:
@@ -4030,17 +4160,26 @@ def Fm.again(log: Bool, a: Act) -> Act:
 def Pdf.ask(+u: Ui, +path: String, +page: String) -> Act:
   Ui.rpc(Ui.info_set(u, "pdf.page:" ++ Ui.sel(u), page), "pdf.page", [J.KV{"path", J.Str{path}}, J.KV{"page", J.Str{page}}])
 
+# a PDF opened: its first page is asked for; on a thread elsewhere once the
+# file is in the cache (Fv.sync)
+def Fm.pdf(far: Bool, +u: Ui, +path: String) -> Act:
+  match far:
+    case True{}:
+      Act{Ui.info_set(Ui.view_put(u, "pdf", path), "pdf.page:" ++ Ui.sel(u), ""), Nil{}}
+    case False{}:
+      Pdf.ask(Ui.view_put(u, "pdf", path), path, "1")
+
 def Fm.open.k(i: Nat, +u: Ui, +kind: String, +path: String) -> Act:
   match i:
     case 0n:
       Act{Ui.view_put(u, kind, path), Nil{}}
     case 1n:
-      Pdf.ask(Ui.view_put(u, "pdf", path), path, "1")
+      Fm.pdf(FR.Fr.is(Ui.sel(u)), u, path)
     case _:
       Act{u, Nil{}}
 
 def Fm.open(+u: Ui, +rel: String) -> Act:
-  Fm.open.k(Bool.pick(Nat, String.eq(FM.Fm.kind(rel), "pdf"), 1n, Bool.pick(Nat, String.is_empty(FM.Fm.kind(rel)), 2n, 0n)), u, FM.Fm.kind(rel), FM.Fm.abs(Ui.root(u), rel))
+  Fm.open.k(Bool.pick(Nat, Bool.or(String.is_empty(FM.Fm.kind(rel)), String.is_empty(Ui.root(u))), 2n, Bool.pick(Nat, String.eq(FM.Fm.kind(rel), "pdf"), 1n, 0n)), u, FM.Fm.kind(rel), FM.Fm.abs(Ui.root(u), rel))
 
 # the page a PDF shows in the window, its picture, how many pages, why not
 def Pdf.page(+u: Ui) -> String:
@@ -4320,10 +4459,141 @@ def Mpage.sync.if(on: Bool, a: Act) -> Act:
     case Act{+u, cmds}:
       Mpage.sync.k(Bool.and(on, Bool.not(String.eq(Mpage.at(u), Ui.scratch(u, "@mech.at")))), u, Mpage.at(u), cmds)
 
-def Mpage.sync(a: Act) -> Act:
+# Viewers for a thread elsewhere (core/fview.bend)
+# ------------------------------------------------
+# The hub this client is on keeps the thread's files in a cache the viewers
+# read, brought from the owning hub by far.view. The client asks, naming
+# the file on screen and the digest of the list it last got; the answer
+# comes when the owner's files change (or after about half a minute, "same"),
+# and the next ask follows it, so the cache follows the owner with no timer
+# here. Kept per thread in the info map: fv.root (the cache folder),
+# fv.have (the digest), fv.sent ("w:" and the file asked for), fv.fly ("1"
+# while an ask is out) and fv.at (when), fv.ready (the path that was in the
+# cache when the last answer came), fv.err (what could not be reached).
+def Fv.now(u: Ui) -> Nat:
+  match u:
+    case Ui{_, _, _, _, _, _, now, _, _, _, _, _, _, _, _, _, _}:
+      now
+
+# the viewer needs the cache: a thread elsewhere with its panel open on the
+# board, the schematic, 3D, an image, a PDF, or the Files tab
+def Fv.on(+u: Ui) -> Bool:
+  Bool.and(Bool.and(FR.Fr.is(Ui.sel(u)), Ui.panel(u)),
+    Bool.or(Bool.or(String.is_empty(Fv.t(u, "view.kind")), Fv.kind(Fv.t(u, "view.kind"))), String.eq(Fv.t(u, "view.kind"), "files")))
+
+# the file on screen, from the owner's folder
+def Fv.want(+u: Ui) -> String:
+  Bool.pick(String, Fv.kind(Fv.t(u, "view.kind")), Fv.rel.of(Fv.t(u, "fv.root"), Fv.t(u, "view.path")), "")
+
+def Fv.stale(+u: Ui) -> Bool:
+  Nat.is_gt(Fv.now(u), Nat.add(Maybe.default(&2, Nat, Nat.read(Fv.t(u, "fv.at")), 0n), 45n))
+
+# an ask is due: none out, or one out for too long, or for another file; and
+# not one that just failed for this file
+def Fv.due(+u: Ui, +w: String) -> Bool:
+  Bool.and(Bool.or(Bool.not(String.eq(Fv.t(u, "fv.fly"), "1")), Bool.or(Fv.stale(u), Bool.not(String.eq("w:" ++ w, Fv.t(u, "fv.sent"))))),
+    Bool.or(Fv.stale(u), Bool.not(Bool.and(String.eq("w:" ++ w, Fv.t(u, "fv.err")), Bool.not(String.eq(Fv.t(u, "fv.fly"), "1"))))))
+
+def Fv.mark(+u: Ui, +w: String) -> Ui:
+  Ui.info_set(Ui.info_set(Ui.info_set(Ui.info_set(u, "fv.fly:" ++ Ui.sel(u), "1"), "fv.sent:" ++ Ui.sel(u), "w:" ++ w), "fv.at:" ++ Ui.sel(u), Nat.show(Fv.now(u))), "fv.err:" ++ Ui.sel(u), "")
+
+# the digest to hold the answer on: the last one, when it was for this file
+def Fv.have(+u: Ui, +w: String) -> String:
+  Bool.pick(String, String.eq("w:" ++ w, Fv.t(u, "fv.sent")), Fv.t(u, "fv.have"), "")
+
+def Fv.send(+u: Ui, +w: String, cmds: List<&2, Cmd>) -> Act:
+  Ui.also(Ui.rpc(Fv.mark(u, w), "far.view", [J.KV{"thread", J.Str{Ui.sel(u)}}, J.KV{"want", J.Str{w}}, J.KV{"have", J.Str{Fv.have(u, w)}}]), cmds)
+
+def Fv.sync.k(go: Bool, +u: Ui, +w: String, cmds: List<&2, Cmd>) -> Act:
+  match go:
+    case True{}:
+      Fv.send(u, w, cmds)
+    case False{}:
+      Act{u, cmds}
+
+# a PDF that came: its first page is asked for
+def Fv.pdf.k(go: Bool, +u: Ui, cmds: List<&2, Cmd>) -> Act:
+  match go:
+    case True{}:
+      Ui.also(Pdf.ask(u, Fv.t(u, "view.path"), "1"), cmds)
+    case False{}:
+      Act{u, cmds}
+
+# An answer of far.view: the folder, the digest, and the file on screen
+# either in the cache or not on the owner (it shows then, as a file that is
+# not there); one for a file no longer asked for is dropped.
+def Fv.at(+u: Ui, +th: String, +k: String) -> String:
+  Ui.info(u, k ++ ":" ++ th)
+
+def Fv.put(+u: Ui, +th: String, +k: String, +v: String) -> Ui:
+  Ui.info_set(u, k ++ ":" ++ th, v)
+
+def Fv.got.fresh(+u: Ui, +th: String, +r: J.Json) -> Ui:
+  Fv.put(Fv.put(Fv.put(Fv.put(Fv.put(u, th, "fv.fly", ""), th, "fv.root", J.Json.get_str(r, "root", "")), th, "fv.have", J.Json.get_str(r, "ver", "")),
+    th, "fv.err", ""), th, "fv.ready", Bool.pick(String, J.Json.get_bool(r, "same", False{}), Fv.at(u, th, "fv.ready"), Fv.at(u, th, "view.path")))
+
+def Fv.got.down(+u: Ui, +th: String, +r: J.Json) -> Ui:
+  Fv.put(Fv.put(Fv.put(u, th, "fv.fly", ""), th, "fv.err", "w:" ++ J.Json.get_str(r, "want", "")), th, "fv.ready", Fv.at(u, th, "view.path"))
+
+def Fv.got.k(down: Bool, +u: Ui, +th: String, +r: J.Json) -> Ui:
+  match down:
+    case True{}:
+      Fv.got.down(u, th, r)
+    case False{}:
+      Fv.got.fresh(u, th, r)
+
+def Fv.got(+u: Ui, +r: J.Json) -> Ui:
+  Bool.pick(Ui, String.eq("w:" ++ J.Json.get_str(r, "want", ""), Fv.at(u, J.Json.get_str(r, "thread", ""), "fv.sent")),
+    Fv.got.k(Bool.not(String.is_empty(J.Json.get_str(r, "down", ""))), u, J.Json.get_str(r, "thread", ""), r), u)
+
+def Fv.reply(has: Bool, +u: Ui, +r: J.Json) -> Ui:
+  match has:
+    case True{}:
+      Fv.got(u, r)
+    case False{}:
+      u
+
+def Fv.pdf.due(+u: Ui) -> Bool:
+  Bool.and(Bool.and(String.eq(Fv.t(u, "view.kind"), "pdf"), Bool.not(String.is_empty(Fv.t(u, "view.path")))),
+    Bool.and(String.eq(Fv.t(u, "fv.ready"), Fv.t(u, "view.path")), String.is_empty(Fv.t(u, "pdf.page"))))
+
+def Fv.pdf(a: Act) -> Act:
+  match a:
+    case Act{+u, cmds}:
+      Fv.pdf.k(Fv.pdf.due(u), u, cmds)
+
+# (w: the file the viewer shows, from the owner's folder; the phones pass
+# their own viewer's, mobile/view.bend)
+def Fv.sync.on(on: Bool, +w: String, a: Act) -> Act:
+  match on a:
+    case True{} Act{+u, cmds}:
+      Fv.pdf(Fv.sync.k(Fv.due(u, w), u, w, cmds))
+    case False{} _:
+      a
+
+# (only a thread elsewhere does anything here)
+def Fv.sync.far(far: Bool, a: Act) -> Act:
+  match far a:
+    case True{} Act{+u, cmds}:
+      Fv.sync.on(Fv.on(u), Fv.want(u), Act{u, cmds})
+    case False{} _:
+      a
+
+# (a phone asks for its own viewer's file, mobile/view.bend's View.fv: on
+# a phone ("local.fixed") this one stays out, so one file is asked for,
+# not two in turn)
+def Fv.sync(a: Act) -> Act:
+  match a:
+    case Act{+u, cmds}:
+      Fv.sync.far(Bool.and(FR.Fr.is(Ui.sel(u)), Bool.not(String.eq(Ui.info(u, "local.fixed"), "1"))), Act{u, cmds})
+
+def Mpage.sync.m(a: Act) -> Act:
   match a:
     case Act{+u, cmds}:
       Mpage.sync.if(Bool.or(String.eq(Ui.view_get(u, "view.kind"), "mech"), Mpage.onpart(u)), Act{u, cmds})
+
+def Mpage.sync(a: Act) -> Act:
+  Fv.sync(Mpage.sync.m(a))
 
 # The web's viewer: the board, the schematic and a 3D model (the board's,
 # or a part's) come as they come to the phones. The page asks the hub for
@@ -4356,10 +4626,13 @@ def Solid.sync.k(same: Bool, u: Ui, +want: String, +kind: String, +path: String,
       Ui.also(Ui.rpc(Ui.scratch_set(u, "@solid.at", want), "kicad.watch",
         [J.KV{"kind", J.Str{Bool.pick(String, String.is_empty(want), "", Solid.ask(kind))}}, J.KV{"root", J.Str{root}}, J.KV{"path", J.Str{path}}]), cmds)
 
-def Solid.sync(a: Act) -> Act:
+def Solid.sync.m(a: Act) -> Act:
   match a:
     case Act{+u, cmds}:
       Solid.sync.k(String.eq(Solid.want(u), Ui.scratch(u, "@solid.at")), u, Solid.want(u), Solid.kind(u), Ui.view_get(u, "view.path"), Ui.root(u), cmds)
+
+def Solid.sync(a: Act) -> Act:
+  Fv.sync(Solid.sync.m(a))
 
 # what the page says under its parts: where to get FreeCAD when the hub
 # has none, else nothing
@@ -5219,20 +5492,38 @@ def Bots.token.clear(u: Ui) -> Ui:
 def Bots.token(u: Ui, +hook: String, +op: String) -> Act:
   Ui.rpc(Bots.token.clear(u), "bots.hook_token", [J.KV{"hook", J.Str{hook}}, J.KV{"op", J.Str{op}}])
 
-def Bots.google.rpc(+u: Ui, +op: String, +account: String) -> Act:
+def Bots.google.rpc.x(+u: Ui, +op: String, +account: String, +pasted: String, +redirect: String) -> Act:
   Ui.rpc(u, "bots.google", [J.KV{"op", J.Str{op}}, J.KV{"clientId", J.Str{Bots.field(u, "gid")}}, J.KV{"clientSecret", J.Str{Bots.field(u, "gsecret")}},
-    J.KV{"pasted", J.Str{Bots.field(u, "gpaste")}}, J.KV{"account", J.Str{account}}])
+    J.KV{"pasted", J.Str{pasted}}, J.KV{"account", J.Str{account}}, J.KV{"redirect", J.Str{redirect}}])
 
-# "signout:<address>" signs one account out; "disconnect" signs out every one
-def Bots.google.k(one: Bool, +u: Ui, +op: String) -> Act:
-  match one:
-    case True{}:
+def Bots.google.rpc(+u: Ui, +op: String, +account: String) -> Act:
+  Bots.google.rpc.x(u, op, account, Bots.field(u, "gpaste"), "")
+
+# A phone signs in through a loopback listener of its own (docs/bots.md
+# "Google"): "connect@<port>" begins with Google sending its browser back
+# to http://127.0.0.1:<port>/oauth/google, and "done:<address>" finishes
+# with the address the listener caught.
+def Bots.google.loop(+port: String) -> String:
+  "http://127.0.0.1:" ++ port ++ "/oauth/google"
+
+def Bots.google.op(i: Nat, +u: Ui, +op: String) -> Act:
+  match i:
+    case 0n:
       Bots.google.rpc(u, "disconnect", String.drop(op, 8n))
-    case False{}:
+    case 1n:
+      Bots.google.rpc.x(u, "connect", "", "", Bots.google.loop(String.drop(op, 8n)))
+    case 2n:
+      Bots.google.rpc.x(u, "finish", "", String.drop(op, 5n), "")
+    case _:
       Bots.google.rpc(u, op, "")
 
+# "signout:<address>" signs one account out; "disconnect" signs out every one
+def Bots.google.at(+op: String) -> Nat:
+  Bool.pick(Nat, String.starts_with(op, "signout:"), 0n,
+    Bool.pick(Nat, String.starts_with(op, "connect@"), 1n, Bool.pick(Nat, String.starts_with(op, "done:"), 2n, 3n)))
+
 def Bots.google(+u: Ui, +op: String) -> Act:
-  Bots.google.k(String.starts_with(op, "signout:"), u, op)
+  Bots.google.op(Bots.google.at(op), u, op)
 
 def Bots.google.keep(empty: Bool, x: String, rest: List<&2, String>) -> List<&2, String>:
   match empty:
@@ -5878,7 +6169,7 @@ def Hs.refs.store(has: Bool, u: Ui, +o: J.Json) -> Ui:
       u
 
 def Ui.reply.skills(u: Ui, +o: J.Json) -> Ui:
-  Skills.got(Skills.has(o), Mpage.reply(Mpage.has(o), Hs.refs.store(Hs.refs.has(o), Ui.reply.body(u, o), o), o), o)
+  Fv.reply(Fm.has(J.Json.get_obj(o, "result"), "farView"), Skills.got(Skills.has(o), Mpage.reply(Mpage.has(o), Hs.refs.store(Hs.refs.has(o), Ui.reply.body(u, o), o), o), o), J.Json.get_obj(o, "result"))
 
 # The bar
 # -------
@@ -6192,7 +6483,7 @@ def Want.thread(+u: Ui, id: String) -> Ui:
 def Made.got(go: Bool, u: Ui, +th: String) -> Ui:
   match go:
     case True{}:
-      Want.thread(u, th)
+      Ui.scratch_set(Want.thread(u, th), "@made.far", Bool.pick(String, FR.Fr.is(th), th, ""))
     case False{}:
       u
 
@@ -6256,8 +6547,22 @@ def Ui.far.k(+u: Ui, +link: String, +o: J.Json) -> Ui:
       FR.Fr.items.of(J.Json.elems(J.Json.get_obj(o, "items"))))), link, J.Json.get_str(o, "name", link), J.Json.get_bool(o, "away", False{}))),
     "far.away." ++ link, Bool.pick(String, J.Json.get_bool(o, "away", False{}), "1", "")), "far.name." ++ link, J.Json.get_str(o, "name", link))
 
+# a thread elsewhere whose message was posted or turn ended shows no live
+# text any more (the same rule as a local one, Ui.see; core/farlive.bend)
+def Ui.live.gone(u: Ui, +thread: String) -> Ui:
+  match u:
+    case Ui{st, sel, dr, +live, op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}:
+      Ui{st, sel, dr, Map.set(&2, String, live, thread, ""), op, on, now, ad, pa, v, rid, w, er, note, nf, ob, tr}
+
+def Ui.far.live(ids: List<&2, String>, u: Ui) -> Ui:
+  match ids:
+    case Nil{}:
+      u
+    case +id <> t:
+      Ui.far.live(t, Ui.live.gone(u, id))
+
 def Ui.far(+u: Ui, +o: J.Json) -> Ui:
-  Far.arrived(Ui.far.k(u, J.Json.get_str(o, "link", ""), o))
+  Far.arrived(Ui.far.live(FLV.FL.ended.ids(FLV.FL.ended(FR.Fr.items.of(J.Json.elems(J.Json.get_obj(o, "items"))), J.Json.get_str(o, "link", ""))), Ui.far.k(u, J.Json.get_str(o, "link", ""), o)))
 
 # whether the machine a thing elsewhere lives on did not answer last time
 def Ui.far.away(+u: Ui, +id: String) -> Bool:
@@ -6336,6 +6641,20 @@ def Want.thread.exists(st: M.State, +id: String) -> Bool:
   match st:
     case M.State{_, ts, _, _, _, _, _, _, _, _, _}:
       Want.thread.has(Map.has(&2, M.Thread, ts, id))
+
+# a thread this client asked for is still to come (the phones show its
+# page at once, waiting, rather than leave the button to be tapped again;
+# the answer, made or failed, ends it: laws made_waiting_*)
+# the hub that owns the project made the thread and told us its id here,
+# but its mirror has not landed yet (the push may follow the answer): still
+# making, until the thread is here or the person goes elsewhere (which
+# clears "@thread.want", Bots.sel.set)
+def Made.coming(+u: Ui) -> Bool:
+  Bool.and(Bool.and(Bool.not(String.is_empty(Ui.scratch(u, "@made.far"))), String.eq(Ui.scratch(u, "@made.far"), Ui.scratch(u, "@thread.want"))),
+    Bool.not(Want.thread.exists(Ui.state.of(u), Ui.scratch(u, "@made.far"))))
+
+def Made.waiting(+u: Ui) -> Bool:
+  Bool.or(Bool.not(String.is_empty(Ui.scratch(u, "@want.new"))), Made.coming(u))
 
 def Bots.wanted.k(bound: Bool, +u: Ui) -> Ui:
   match bound:
@@ -6776,7 +7095,7 @@ def Ui.act.k(i: Nat, u: Ui, +value: String) -> Act:
     case 25n:
       Ui.on_thread.p(u, "git.revert", [J.KV{"turn", J.Num{Bool.pick(String, String.is_empty(value), "0", value)}}])
     case 26n:
-      Proj.open(u)
+      Proj.open.fresh(u)
     case 27n:
       Proj.run.k(1n, u, value)
     case 28n:
@@ -7184,12 +7503,20 @@ def Ui.act.e(emb: Bool, +u: Ui, +action: String, +value: String) -> Act:
     case False{}:
       Emb.sync.sel(Ui.sel(u), Mpage.sync(Ui.act.m(Nat.is_lt(C.Codec.pos(Menu.actions(), action), 16n), C.Codec.pos(Menu.actions(), action), u, action, value)))
 
+# the picker's machine row (routed before the action table)
+def Ui.act.p(pick: Bool, +u: Ui, +action: String, +value: String) -> Act:
+  match pick:
+    case True{}:
+      Proj.machine(u, value)
+    case False{}:
+      Ui.act.e(String.starts_with(action, "emb-"), u, action, value)
+
 def Ui.act.t(tour: Bool, +u: Ui, +action: String, +value: String) -> Act:
   match tour:
     case True{}:
       Tour.act(u, action)
     case False{}:
-      Ui.act.e(String.starts_with(action, "emb-"), u, action, value)
+      Ui.act.p(String.eq(action, "proj-on"), u, action, value)
 
 def Ui.act(+u: Ui, +action: String, +value: String) -> Act:
   Ui.act.t(String.starts_with(action, "ob-"), u, action, value)

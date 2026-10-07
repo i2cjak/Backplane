@@ -1,6 +1,7 @@
 import Base
 import ./model.bend as M
 import ./bot.bend as BT
+import ./far.bend as FR
 
 # One item, one alert. When a turn ends, this decides whether it tells the
 # person (the hub's APNs push, the phone's own alert) and under which key.
@@ -280,17 +281,24 @@ def Ask.open(s: M.State, +thread: String) -> Bool:
 # The decision
 # ------------
 
+# A thread elsewhere is keyed by its id on its own machine, the key the
+# owning hub uses for it, so the same turn alerts once however many of the
+# owner's machines and clients raise it: alerts with one key replace each
+# other (laws notice_far_key_same, notice_far_room_key_same)
+def Notice.turn(+thread: String) -> String:
+  "turn-" ++ FR.Fr.local(thread)
+
 def Notice.room.key(n: Nat, +room: String, +thread: String) -> String:
   match n:
     case 1n:
-      Bool.pick(String, String.is_empty(room), "turn-" ++ thread, "room-" ++ room)
+      Bool.pick(String, String.is_empty(room), Notice.turn(thread), "room-" ++ room)
     case _:
-      "turn-" ++ thread
+      Notice.turn(thread)
 
 def Notice.of.bot.n(+n: Nat, own: Bool, +room: String, +thread: String) -> Notice:
   match own:
     case True{}:
-      Notice{Notice.name(n), "turn-" ++ thread}
+      Notice{Notice.name(n), Notice.turn(thread)}
     case False{}:
       Notice{Notice.name(n), Notice.room.key(n, room, thread)}
 
@@ -313,7 +321,7 @@ def Notice.of.k(m: Maybe<&2, BT.Bot>, +s: M.State, +thread: String, +failed: Boo
     case Some{b}:
       Notice.of.bot(s, b, thread, failed, local)
     case None{}:
-      Notice{Notice.name(Notice.decide.w(M.Work.busy(s, thread), failed, False{}, Ask.open(s, thread), False{}, False{}, False{})), "turn-" ++ thread}
+      Notice{Notice.name(Notice.decide.w(M.Work.busy(s, thread), failed, False{}, Ask.open(s, thread), False{}, False{}, False{})), Notice.turn(thread)}
 
 # what one ended turn tells the person: kind "" (nothing), "done" or
 # "fail", and the key its alert replaces others under
