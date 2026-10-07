@@ -174,6 +174,10 @@ data class Viewer(
     val hist: HistBar? = null,
     // the Files tab (open "files"), and an image or a PDF it opened
     val files: FilesPage? = null, val file: FileView? = null,
+    // the layer focus (core/layers.bend): the layers drawn dimmed (a bit
+    // each), the one drawn last (255 none), the list's All/Dim/Only (0-2)
+    // and whether it has one (a board), and the Layers button's words
+    val dim: Int = 0, val lift: Int = 255, val layerMode: Int = 0, val layerModes: Boolean = false, val layerHead: String = "Layers",
 )
 
 // the Files tab: where the folder is, its rows (a tap sends action with
@@ -218,7 +222,7 @@ data class MechShot(val view: String, val url: String)
 
 data class Sheet(val label: String, val value: String, val on: Boolean, val loop: Boolean)
 
-data class LayerRow(val layer: Int, val name: String, val on: Boolean)
+data class LayerRow(val layer: Int, val name: String, val on: Boolean, val active: Boolean = false)
 
 // the composer's model chip: its label, the models ("model" sends one)
 // and the efforts the current one takes ("effort")
@@ -493,7 +497,7 @@ private fun viewer(o: JSONObject) = Viewer(
     },
     o.optBoolean("light"), ints(o.optJSONArray("look")),
     o.optJSONArray("sheets").map { Sheet(it.optString("label"), it.optString("value"), it.optBoolean("on"), it.optBoolean("loop")) },
-    o.optJSONArray("layerList").map { LayerRow(it.optInt("layer"), it.optString("name"), it.optBoolean("on")) },
+    o.optJSONArray("layerList").map { LayerRow(it.optInt("layer"), it.optString("name"), it.optBoolean("on"), it.optBoolean("active")) },
     o.optInt("off"), o.optBoolean("parts", true), o.optString("note"),
     o.optJSONObject("mech")?.let { p ->
         MechPage(p.optString("say"), p.optString("note"), choices(p.optJSONArray("parts")), p.optString("name"), p.optString("path"),
@@ -513,6 +517,8 @@ private fun viewer(o: JSONObject) = Viewer(
             f.optBoolean("ready"))
     },
     file = o.optJSONObject("file")?.let { FileView(it.optString("name"), it.optString("kind"), it.optString("url")) },
+    dim = o.optInt("dim"), lift = o.optInt("lift", 255), layerMode = o.optInt("layerMode"), layerModes = o.optBoolean("layerModes"),
+    layerHead = o.optString("layerHead", "Layers"),
 )
 
 private fun strs(a: JSONArray?): List<String> =

@@ -1039,7 +1039,9 @@ private fun PlotScreen(m: AppModel, v: Viewer) {
             s.renderer.orbit.fov = v.fov
             s.setThree(v.open == "3d" || v.open == "mech")
             if (f != null && f.none.isEmpty()) s.show(f, v.bg, v.slab, v.look)
-            if (s.renderer.off != v.off) { s.renderer.off = v.off; s.requestRender() }
+            if (s.renderer.off != v.off || s.renderer.dim != v.dim || s.renderer.lift != v.lift) {
+                s.renderer.off = v.off; s.renderer.dim = v.dim; s.renderer.lift = v.lift; s.requestRender()
+            }
             if (v.open == "3d" || v.open == "mech") s.mesh(mesh)
             s.mark(v.picked)
         })
@@ -1285,13 +1287,22 @@ private fun ViewerControls(m: AppModel, v: Viewer, present: Set<Int>, modifier: 
             var open by remember { mutableStateOf(false) }
             OutlinedButton(onClick = { open = true }) {
                 Icon(Icons.Filled.Layers, null, tint = fg)
-                Text("Layers", color = fg, modifier = Modifier.padding(start = 6.dp))
+                Text(v.layerHead, color = fg, maxLines = 1, modifier = Modifier.padding(start = 6.dp))
             }
-            // stays open: several layers are turned on and off in a row
+            // stays open: several layers are turned on and off in a row. A
+            // row's box shows or hides it; its name makes it the active layer
+            // (again: all back), and over a board's rows All, Dim, Only say how
+            // the others show (core/layers.bend)
             DropdownMenu(open, { open = false }) {
-                for (l in layers) DropdownMenuItem(text = { Text(l.name) },
-                    leadingIcon = { Checkbox(l.on, null) },
-                    onClick = { m.act("view-layer", l.layer.toString()) })
+                if (v.layerModes) Row(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
+                    for ((i, label) in listOf("All", "Dim", "Only").withIndex())
+                        FilterChip(v.layerMode == i, { m.act("view-layer-mode", i.toString()) }, label = { Text(label) },
+                            modifier = Modifier.padding(end = 6.dp))
+                }
+                for (l in layers) DropdownMenuItem(
+                    text = { Text(l.name, color = if (l.active) MaterialTheme.colorScheme.primary else Color.Unspecified) },
+                    leadingIcon = { Checkbox(l.on, { m.act("view-layer", l.layer.toString()) }) },
+                    onClick = { m.act("view-layer-pick", l.layer.toString()) })
             }
         }
         if (v.open == "3d" && v.layers.isNotEmpty()) FilterChip(v.parts, { m.act("view-parts") }, label = { Text("Parts", color = fg) },

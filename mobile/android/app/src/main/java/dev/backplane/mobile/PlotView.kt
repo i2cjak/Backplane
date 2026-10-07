@@ -278,6 +278,11 @@ class PlotRenderer : GLSurfaceView.Renderer {
     // the layers the user turned off, a bit each
     @Volatile var off = 0
     private fun shown(layer: Int) = layer !in 0..31 || (off shr layer) and 1 == 0
+    // the layer focus (core/layers.bend): layers drawn at a quarter, a bit
+    // each, and the active one, drawn after the rest (255 none)
+    @Volatile var dim = 0
+    @Volatile var lift = 255
+    private fun dimmed(layer: Int) = layer in 0..31 && (dim shr layer) and 1 == 1
     @Volatile var three = false
     @Volatile var orbit = Orbit()
     @Volatile var thick = 1600f
@@ -532,7 +537,8 @@ class PlotRenderer : GLSurfaceView.Renderer {
     }
 
     private fun draw(l: Layer) =
-        layer(l.color, bufs[0], listOf(l.caps to 1f, l.freshCaps to fade), bufs[1], listOf(l.tris to 1f, l.freshTris to fade))
+        layer(if (dimmed(l.layer)) l.color.copyOf().also { it[3] *= 0.25f } else l.color,
+            bufs[0], listOf(l.caps to 1f, l.freshCaps to fade), bufs[1], listOf(l.tris to 1f, l.freshTris to fade))
 
     private fun hi() {
         if (hiCaps + hiTris == 0) return
@@ -600,7 +606,9 @@ class PlotRenderer : GLSurfaceView.Renderer {
                 if (hiLayer in face) hi()
             }
         } else {
-            for (l in layers) if (shown(l.layer)) draw(l)
+            // the active layer on top, as KiCad draws it
+            for (l in layers) if (shown(l.layer) && l.layer != lift) draw(l)
+            for (l in layers) if (shown(l.layer) && l.layer == lift) draw(l)
             hi()
         }
         // the scene to the screen

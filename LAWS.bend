@@ -87,6 +87,7 @@ import ./src/core/live.bend as LV
 import ./src/core/farlive.bend as FLV
 import ./src/core/contain.bend as CTN
 import ./src/core/qr.bend as QR
+import ./src/core/layers.bend as LY
 
 # Backplane's rules, stated over the real code. `bend PROOF.bend` proves each
 # one. Humans own this file: an agent may add laws, never weaken or delete
@@ -6344,3 +6345,53 @@ law rview_enc_breaks:
 
 law rview_spec_local:
   {RVW.Rview.spec("", "/c", "t", "g") == "" : String}
+
+# The layer list and its focus (core/layers.bend)
+# ------------------------------------------------
+# A board's layers listed in KiCad's order: copper front to back, pads,
+# vias, holes, then the technical layers front/back paired
+law lyr_board_order_kicad:
+  {LY.Lyr.order(0) == [12, 11, 10, 9, 8, 7, 6, 5, 13, 23, 24, 15, 2, 16, 3, 14, 4, 19, 20, 22, 21, 17, 1, 18, 0] : List<&2, U32>}
+
+# with no focus every layer looks as it does
+law lyr_plain_as_is:
+  {LY.Lyr.shade(0, LY.Lyr.plain(), 16, (7, 200)) == (7, 200) : U32 & U32}
+
+# dimmed: the other layers at a quarter
+law lyr_dim_quarter:
+  {LY.Lyr.shade(0, LY.Focus{12, 1}, 16, (7, 200)) == (7, 50) : U32 & U32}
+
+# only: the other layers hidden
+law lyr_only_hides:
+  {LY.Lyr.shade(0, LY.Focus{12, 2}, 16, (7, 200)) == (7, 0) : U32 & U32}
+
+# the active layer always shows, even one hidden by default
+law lyr_active_shows:
+  {LY.Lyr.shade(0, LY.Focus{15, 2}, 15, (7, 0)) == (7, 200) : U32 & U32}
+
+# a copper layer keeps its vias, and every layer the board's outline
+law lyr_copper_keeps_vias:
+  {LY.Lyr.shade(0, LY.Focus{5, 2}, 23, (7, 255)) == (7, 255) : U32 & U32}
+
+law lyr_outline_stays:
+  {LY.Lyr.shade(0, LY.Focus{16, 2}, 22, (7, 255)) == (7, 255) : U32 & U32}
+
+# a click on the active layer again puts every layer back
+law lyr_pick_again_all:
+  {LY.Lyr.pick(LY.Focus{16, 1}, 16) == LY.Focus{16, 0} : LY.Focus}
+
+# ctrl+H goes around: dimmed, hidden, as they are
+law lyr_cycle_round:
+  {LY.Lyr.cycle(0, LY.Lyr.cycle(0, LY.Lyr.cycle(0, LY.Focus{12, 0}))) == LY.Focus{12, 0} : LY.Focus}
+
+# the window's kind word carries the focus and gives the kind back
+law lyr_kind_round:
+  {LY.Lyr.kind.focus(LY.Lyr.kind.with(9, LY.Focus{16, 2})) == LY.Focus{16, 2} : LY.Focus}
+
+law lyr_kind_base:
+  {LY.Lyr.kind.base(LY.Lyr.kind.with(9, LY.Focus{16, 2})) == 9 : U32}
+
+# the masks the web and phones draw from agree: only hides every layer
+# not kept and never the active one
+law lyr_masks_only:
+  {LY.Masks.off(LY.Lyr.masks(0, 4096, LY.Focus{12, 2})) == 37736447 : U32}

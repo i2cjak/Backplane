@@ -254,6 +254,14 @@ struct Viewer: Decodable {
     let sheets: [SheetRow]?
     let layerList: [LayerRow]?
     let off: UInt32?
+    // the layer focus (core/layers.bend): the layers drawn dimmed (a bit
+    // each), the one drawn last (255 none), the list's All/Dim/Only (0-2)
+    // and whether it has one (a board), and the Layers button's words
+    let dim: UInt32?
+    let lift: Int?
+    let layerMode: Int?
+    let layerModes: Bool?
+    let layerHead: String?
     let parts: Bool?
     // what the hub says about the source (parts with no 3D model)
     let note: String?
@@ -345,6 +353,8 @@ struct LayerRow: Decodable, Hashable {
     let layer: Int
     let name: String
     let on: Bool
+    // the active layer of the focus (core/layers.bend)
+    let active: Bool?
 }
 
 // the composer's model chip: its label, the models ("model" sends one)

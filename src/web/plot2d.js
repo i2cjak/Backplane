@@ -103,6 +103,8 @@ class View {
     this.key = "";
     this.plot = null;
     this.off = 0;
+    this.dim = 0;
+    this.lift = 255;
     this.scale = 1; this.ox = 0; this.oy = 0;
     this.fitted = false;
     this.fade = 220;
@@ -220,11 +222,15 @@ class View {
     g.lineJoin = "round";
     const now = performance.now();
     let fading = false;
-    for (const k of p.chunks) {
+    // the active layer of a focus (data-lift) after the rest, on top
+    const lift = this.lift;
+    const order = lift >= 0 && lift < 32 ? [...p.chunks.filter((k) => k.layer !== lift), ...p.chunks.filter((k) => k.layer === lift)] : p.chunks;
+    for (const k of order) {
       if (Math.floor(this.off / 2 ** k.layer) % 2) continue; // a layer turned off
       const a = this.fade > 0 ? Math.min(1, (now - (k.born ?? 0)) / this.fade) : 1;
       if (a < 1) fading = true;
-      g.globalAlpha = a;
+      // a layer the focus dims (core/layers.bend's Lyr.masks) at a quarter
+      g.globalAlpha = Math.floor(this.dim / 2 ** k.layer) % 2 ? a / 4 : a;
       g.fillStyle = k.color;
       g.strokeStyle = k.color;
       g.fill(k.fill);
@@ -261,8 +267,8 @@ function present(p) {
 export function mount(canvas) {
   if (!canvas) { view = null; return; }
   if (!view || view.canvas !== canvas) view = new View(canvas, canvas.dataset.bg || "#0d0f12");
-  const off = Number(canvas.dataset.off || 0);
-  if (off !== view.off) { view.off = off; view.later(); }
+  const off = Number(canvas.dataset.off || 0), dim = Number(canvas.dataset.dim || 0), lift = Number(canvas.dataset.lift ?? 255);
+  if (off !== view.off || dim !== view.dim || lift !== view.lift) { view.off = off; view.dim = dim; view.lift = lift; view.later(); }
   present(view.plot);
   view.fade = Number(canvas.dataset.fade || 0);
   const key = canvas.dataset.key || "";
