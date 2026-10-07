@@ -312,7 +312,7 @@ def Ops.item.k(look: U32 & U32, p: B.Prim, +v: View, +c: D.Clip, +fade: U32, res
 
 # a layer's colour and opacity in a board (kind 0) or a schematic (kind 1)
 def Look.of(+kind: U32, +layer: U32) -> U32 & U32:
-  LO.Look.of(LY.Lyr.kind.base(kind), layer)
+  LO.Look.of(kind, layer)
 
 # (a comparison's marks included: other scenes have nothing on them)
 def Look.count(+kind: U32) -> Nat:
@@ -383,21 +383,22 @@ def Look.ui(+flip: U32) -> Bool:
 def Look.ground(+flip: U32) -> U32:
   LO.Look.ground(Look.light(flip))
 
-def Look.on.k(+kind: U32, +layer: U32, +flip: U32) -> U32 & U32:
+# a layer's colour and opacity once the user's flips apply
+def Look.on(+kind: U32, +layer: U32, +flip: U32) -> U32 & U32:
   Look.flip.k(Look.flipped(flip, layer), LO.Look.of.t(Look.light(flip), Bool.pick(U32, Look.cmp(flip), U32.or(kind, LO.Look.diff()), kind), layer))
 
-# a layer's colour and opacity once the user's flips apply, then the
-# focus the kind word carries (core/layers.bend: the active layer stands
-# out, the rest dimmed or hidden)
-def Look.on(+kind: U32, +layer: U32, +flip: U32) -> U32 & U32:
-  LY.Lyr.shade(LY.Lyr.kind.base(kind), LY.Lyr.kind.focus(kind), layer, Look.on.k(LY.Lyr.kind.base(kind), layer, flip))
+# as the scene draws it: Look.on, then the focus the kind word carries
+# (core/layers.bend's Lyr.kind.with: the active layer stands out, the rest
+# dimmed or hidden); a kind with no focus looks as Look.on says
+def Look.at(+kind: U32, +layer: U32, +flip: U32) -> U32 & U32:
+  LY.Lyr.shade(LY.Lyr.kind.base(kind), LY.Lyr.kind.focus(kind), layer, Look.on(LY.Lyr.kind.base(kind), layer, flip))
 
 def Look.alpha.k(l: U32 & U32) -> U32:
   (_, a) = l
   a
 
 def Look.alpha(+kind: U32, +layer: U32, +flip: U32) -> U32:
-  Look.alpha.k(Look.on(kind, layer, flip))
+  Look.alpha.k(Look.at(kind, layer, flip))
 
 # whether a layer shows
 def Look.shows(+kind: U32, +layer: U32, +flip: U32) -> Bool:
@@ -439,7 +440,7 @@ def Cull.meets(b: D.Box, +v: View, c: D.Clip) -> Bool:
 def Ops.pick(keep: Bool, +p: B.Prim, +layer: U32, +v: View, +c: D.Clip, +fade: U32, +kind: U32, +flip: U32, rest: List<&2, R.Op>) -> List<&2, R.Op>:
   match keep:
     case True{}:
-      Ops.item.k(Look.on(kind, layer, flip), p, v, c, fade, rest)
+      Ops.item.k(Look.at(kind, layer, flip), p, v, c, fade, rest)
     case False{}:
       rest
 
