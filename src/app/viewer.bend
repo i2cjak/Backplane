@@ -8,6 +8,7 @@ import ../gfx/mesh.bend as MS
 import ../gfx/face.bend as FA
 import ../gfx/bitmap.bend as BM
 import ../core/look.bend as LO
+import ../core/layers.bend as LY
 
 # The board viewer. A scene is the board's items, each with the time it
 # appeared, kept in paint order: by layer, then key. A new file merges into
@@ -311,11 +312,11 @@ def Ops.item.k(look: U32 & U32, p: B.Prim, +v: View, +c: D.Clip, +fade: U32, res
 
 # a layer's colour and opacity in a board (kind 0) or a schematic (kind 1)
 def Look.of(+kind: U32, +layer: U32) -> U32 & U32:
-  LO.Look.of(kind, layer)
+  LO.Look.of(LY.Lyr.kind.base(kind), layer)
 
 # (a comparison's marks included: other scenes have nothing on them)
 def Look.count(+kind: U32) -> Nat:
-  LO.Look.count(U32.or(kind, LO.Look.diff()))
+  LO.Look.count(U32.or(LY.Lyr.kind.base(kind), LO.Look.diff()))
 
 # Layer visibility
 # ----------------
@@ -382,9 +383,14 @@ def Look.ui(+flip: U32) -> Bool:
 def Look.ground(+flip: U32) -> U32:
   LO.Look.ground(Look.light(flip))
 
-# a layer's colour and opacity once the user's flips apply
-def Look.on(+kind: U32, +layer: U32, +flip: U32) -> U32 & U32:
+def Look.on.k(+kind: U32, +layer: U32, +flip: U32) -> U32 & U32:
   Look.flip.k(Look.flipped(flip, layer), LO.Look.of.t(Look.light(flip), Bool.pick(U32, Look.cmp(flip), U32.or(kind, LO.Look.diff()), kind), layer))
+
+# a layer's colour and opacity once the user's flips apply, then the
+# focus the kind word carries (core/layers.bend: the active layer stands
+# out, the rest dimmed or hidden)
+def Look.on(+kind: U32, +layer: U32, +flip: U32) -> U32 & U32:
+  LY.Lyr.shade(LY.Lyr.kind.base(kind), LY.Lyr.kind.focus(kind), layer, Look.on.k(LY.Lyr.kind.base(kind), layer, flip))
 
 def Look.alpha.k(l: U32 & U32) -> U32:
   (_, a) = l
@@ -543,13 +549,27 @@ def Ops.gate(keep: Bool, +p: B.Prim, +layer: U32, +v: View, +c: D.Clip, +now: Na
 # past the kind's count, hidden layers and items off the panel make none.
 # The cheap test (base or not) comes first, so a settled scene's overlay
 # costs one comparison per item.
-def Ops.scene(ss: List<&2, Seen>, +v: View, +c: D.Clip, +now: Nat, +cut: Nat, +base: Bool, +kind: U32, +flip: U32) -> List<&2, R.Op>:
+# (lift: the one layer drawn apart, LY.Lyr.lift: 255 none)
+def Ops.scene.k(ss: List<&2, Seen>, +v: View, +c: D.Clip, +now: Nat, +cut: Nat, +base: Bool, +kind: U32, +flip: U32, +lift: U32) -> List<&2, R.Op>:
   match ss:
     case Nil{}:
       Nil{}
     case Seen{B.Item{_, _, +l, +p, _}, +b} <> t:
-      Ops.gate(Bool.not(Bool.xor(base, Vw.settled(b, cut))), p, l, v, c, now, b, kind, flip,
-        Ops.scene(t, v, c, now, cut, base, kind, flip))
+      Ops.gate(Bool.and(Bool.not(Bool.xor(base, Vw.settled(b, cut))), LY.Lyr.lift.ok(lift, l)), p, l, v, c, now, b, kind, flip,
+        Ops.scene.k(t, v, c, now, cut, base, kind, flip, lift))
+
+def Ops.scene.two(on: Bool, +ss: List<&2, Seen>, +v: View, +c: D.Clip, +now: Nat, +cut: Nat, +base: Bool, +kind: U32, +flip: U32) -> List<&2, R.Op>:
+  match on:
+    case True{}:
+      List.append(&2, R.Op, Ops.scene.k(ss, v, c, now, cut, base, kind, flip, LY.Lyr.lift.under(LY.Lyr.kind.focus(kind))),
+        Ops.scene.k(ss, v, c, now, cut, base, kind, flip, LY.Lyr.lift.over(LY.Lyr.kind.focus(kind))))
+    case False{}:
+      Ops.scene.k(ss, v, c, now, cut, base, kind, flip, LY.Lyr.lift.none())
+
+# the scene's ops in paint order; under a focus (core/layers.bend) the
+# active layer after all the others, as KiCad draws it on top
+def Ops.scene(+ss: List<&2, Seen>, +v: View, +c: D.Clip, +now: Nat, +cut: Nat, +base: Bool, +kind: U32, +flip: U32) -> List<&2, R.Op>:
+  Ops.scene.two(LY.Lyr.on(LY.Lyr.kind.focus(kind)), ss, v, c, now, cut, base, kind, flip)
 
 def Pick.circ(c: B.Pt, +r: F32) -> D.Box:
   match c:

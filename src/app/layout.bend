@@ -33,6 +33,7 @@ import ../core/voice.bend as VC
 import ../core/mech.bend as MC
 import ../core/hist.bend as HS
 import ../core/look.bend as LO
+import ../core/layers.bend as LY
 import ../core/tools.bend as TO
 import ../core/emb.bend as EM
 import ../core/onboard.bend as OB
@@ -3410,10 +3411,6 @@ def Lay.viewer.vw(+ty: Ty, v: V.Vw, +draft: String, +diff: String, +mech: Bool, 
 # for a schematic with sheets, the trail from the root to the sheet on
 # show and the whole sheet tree in the same list (a click goes there).
 
-# (and a comparison's marks, listed when a comparison shows)
-def Side.names(+k: U32) -> List<&2, String>:
-  LO.Look.names(U32.or(k, LO.Look.diff()), Bool.pick(List<&2, String>, U32.is_eq(k, 1), SC.Sch.layer_names(), B.Layer.names()))
-
 def Side.color(l: U32 & U32) -> U32:
   (c, _) = l
   c
@@ -3421,34 +3418,59 @@ def Side.color(l: U32 & U32) -> U32:
 def Side.has(+present: U32, +i: U32, +count: Nat) -> Bool:
   Bool.and(Nat.is_lt(U32.to_nat(i), count), Bool.not(U32.is_eq(U32.and(present, V.Look.bit(i)), 0)))
 
-def Side.layer(+ty: Ty, +k: U32, +l: U32, +name: String, +flip: U32, +x: U32, +y: U32, +w: U32, +c: D.Clip) -> Out:
+# a layer's row: its colour (a click shows or hides it, vw-layer) and its
+# name (a click makes it the active layer, the rest dimmed, vw-layer-pick;
+# core/layers.bend); the active one lit
+def Side.layer(+ty: Ty, +k: U32, +l: U32, +flip: U32, +act: Bool, +x: U32, +y: U32, +w: U32, +c: D.Clip) -> Out:
   +on = V.Look.shows(k, l, flip)
-  Out{List.append(&2, R.Op, [D.Draw.rect(c, (x + 12 : U32), (y + 6 : U32), 10, 10, Side.color(V.Look.on(k, l, flip)), Bool.pick(U32, on, 255, 50))],
-      Ty.text(ty, 2n, name, c, (x + 32 : U32), y, 22, Bool.pick(U32, on, T.Th.text(), T.Th.faint()))),
-    [Lay.hit(x, y, w, 22, "vw-layer", U32.show(l))]}
+  Out{List.concat(&2, R.Op, [Bool.pick(List<&2, R.Op>, act, [D.Draw.rect(c, (x + 4 : U32), y, (w - 8 : U32), 22, T.Th.sel(), 255)], Nil{}),
+      [D.Draw.rect(c, (x + 12 : U32), (y + 6 : U32), 10, 10, Side.color(V.Look.on(k, l, flip)), Bool.pick(U32, on, 255, 50))],
+      Ty.text(ty, 2n, LY.Lyr.name(k, l), c, (x + 32 : U32), y, 22, Bool.pick(U32, act, T.Th.accent(), Bool.pick(U32, on, T.Th.text(), T.Th.faint())))]),
+    [Lay.hit(x, y, 28, 22, "vw-layer", U32.show(l)), Lay.hit((x + 28 : U32), y, (w - 28 : U32), 22, "vw-layer-pick", U32.show(l))]}
 
-def Side.layer.if(show: Bool, +ty: Ty, +k: U32, +l: U32, +name: String, +flip: U32, +x: U32, +y: U32, +w: U32, +c: D.Clip) -> Out:
+def Side.layer.if(show: Bool, +ty: Ty, +k: U32, +l: U32, +flip: U32, +act: Bool, +x: U32, +y: U32, +w: U32, +c: D.Clip) -> Out:
   match show:
     case True{}:
-      Side.layer(ty, k, l, name, flip, x, y, w, c)
+      Side.layer(ty, k, l, flip, act, x, y, w, c)
     case False{}:
       Out.none()
 
-# one row per layer the scene has, from y down
-def Side.layers(ns: List<&2, String>, +i: U32, +y: U32, +ty: Ty, +k: U32, +present: U32, +flip: U32, +x: U32, +w: U32, +c: D.Clip) -> List<&2, Out>:
-  match ns:
+# one row per layer the scene has, in KiCad's order (LY.Lyr.order), from y down
+def Side.layers(ls: List<&2, U32>, +y: U32, +ty: Ty, +k: U32, +present: U32, +flip: U32, +f: LY.Focus, +x: U32, +w: U32, +c: D.Clip) -> List<&2, Out>:
+  match ls:
     case Nil{}:
       Nil{}
-    case +nm <> t:
-      Side.layer.if(Side.has(present, i, V.Look.count(k)), ty, k, i, nm, flip, x, y, w, c)
-      <> Side.layers(t, (i + 1 : U32), Bool.pick(U32, Side.has(present, i, V.Look.count(k)), (y + 22 : U32), y), ty, k, present, flip, x, w, c)
+    case +i <> t:
+      Side.layer.if(Side.has(present, i, V.Look.count(k)), ty, k, i, flip, Bool.and(LY.Lyr.on(f), U32.is_eq(i, LY.Lyr.active(f))), x, y, w, c)
+      <> Side.layers(t, Bool.pick(U32, Side.has(present, i, V.Look.count(k)), (y + 22 : U32), y), ty, k, present, flip, f, x, w, c)
 
-def Side.n(ns: List<&2, String>, +i: U32, +present: U32, +count: Nat, +acc: U32) -> U32:
-  match ns:
+def Side.n(ls: List<&2, U32>, +present: U32, +count: Nat, +acc: U32) -> U32:
+  match ls:
     case Nil{}:
       acc
-    case _ <> t:
-      Side.n(t, (i + 1 : U32), present, count, Bool.pick(U32, Side.has(present, i, count), (acc + 1 : U32), acc))
+    case +i <> t:
+      Side.n(t, present, count, Bool.pick(U32, Side.has(present, i, count), (acc + 1 : U32), acc))
+
+# the order the list follows (a comparison's marks after the kind's own)
+def Side.order(+k: U32) -> List<&2, U32>:
+  LY.Lyr.order(U32.or(k, LO.Look.diff()))
+
+# KiCad's high contrast over a board's list: the layers other than the
+# active one as they are, dimmed or hidden (vw-layer-mode)
+def Side.mode(+ty: Ty, +m: U32, +cur: U32, +label: String, +x: U32, +y: U32, +w: U32, +c: D.Clip) -> Out:
+  Out{List.append(&2, R.Op, Lay.box(c, x, y, w, 24, 4, Bool.pick(U32, U32.is_eq(m, cur), T.Th.sel(), T.Th.raise()), Bool.pick(U32, U32.is_eq(m, cur), T.Th.accent(), T.Th.line())),
+      Ty.text(ty, 2n, label, c, (x + (w - Ty.width(ty, 2n, label)) / 2 : U32), y, 24, Bool.pick(U32, U32.is_eq(m, cur), T.Th.text(), T.Th.dim()))),
+    [Lay.hit(x, y, w, 24, "vw-layer-mode", U32.show(m))]}
+
+def Side.modes(board: Bool, +ty: Ty, +f: LY.Focus, +x: U32, +y: U32, +w: U32, +c: D.Clip) -> Out:
+  match board:
+    case True{}:
+      +cur = {Bool.pick(U32, LY.Lyr.on(f), LY.Lyr.mode(f), 0) : U32}
+      +bw = {((w - 24) / 3 : U32) : U32}
+      Out.all([Side.mode(ty, 0, cur, "All", (x + 12 : U32), y, bw, c), Side.mode(ty, 1, cur, "Dim", (x + 12 + bw : U32), y, bw, c),
+        Side.mode(ty, 2, cur, "Only", (x + 12 + bw * 2 : U32), y, bw, c)])
+    case False{}:
+      Out.none()
 
 def Side.sheet(+ty: Ty, r: HI.Row, +j: Nat, +at: Nat, +x: U32, +y: U32, +w: U32, +c: D.Clip) -> Out:
   match r:
@@ -3469,27 +3491,32 @@ def Side.sheets(rs: List<&2, HI.Row>, +j: Nat, +at: Nat, +ty: Ty, +x: U32, +y: U
 def Side.reset(+ty: Ty, +x: U32, +y: U32, +c: D.Clip) -> Out:
   Out{Ty.text(ty, 2n, "Reset layers", c, (x + 12 : U32), y, 22, T.Th.accent()), [Lay.hit(x, y, 200, 22, "vw-layers-reset", "")]}
 
-# the open list: the sheet tree (schematics with sheets), then the layers
-def Side.list(+ty: Ty, +k: U32, +present: U32, +flip: U32, +rs: List<&2, HI.Row>, +at: Nat, +x1: U32, +h: U32) -> Out:
+# the open list: the sheet tree (schematics with sheets), then a board's
+# All/Dim/Only, then the layers
+def Side.list(+ty: Ty, +k: U32, +present: U32, +flip: U32, +f: LY.Focus, +rs: List<&2, HI.Row>, +at: Nat, +x1: U32, +h: U32) -> Out:
   +w = {240 : U32}
   +x = {(x1 - 16 - w : U32) : U32}
   +ns = {U32.from_nat(Bool.pick(Nat, Nat.is_gt(List.length(&2, HI.Row, rs), 1n), List.length(&2, HI.Row, rs), 0n)) : U32}
   +sh = {Bool.pick(U32, U32.is_eq(ns, 0), 0, (ns * 22 + 9 : U32)) : U32}
-  +nl = {Side.n(Side.names(k), 0, present, V.Look.count(k), 0) : U32}
-  +rh = {Bool.pick(U32, U32.is_eq(flip, 0), 0, 22) : U32}
-  +ph = {U32.min((sh + nl * 22 + rh + 12 : U32), (h - 112 : U32)) : U32}
+  +board = U32.is_eq(k, 0)
+  +mh = {Bool.pick(U32, board, 32, 0) : U32}
+  +nl = {Side.n(Side.order(k), present, V.Look.count(k), 0) : U32}
+  +reset = Bool.or(Bool.not(U32.is_eq(U32.and(flip, 536870911), 0)), LY.Lyr.on(f))
+  +rh = {Bool.pick(U32, reset, 22, 0) : U32}
+  +ph = {U32.min((sh + mh + nl * 22 + rh + 12 : U32), (h - 112 : U32)) : U32}
   +c = {D.Clip{x, 96, (x + w : U32), (96 + ph : U32)} : D.Clip}
   Out.all([
     Out{Lay.box(D.Clip.all(), x, 96, w, ph, 6, T.Th.panel(), T.Th.line()), [Lay.hit(x, 96, w, ph, "vw-panel", "")]},
     Out.all(Side.sheets(Bool.pick(List<&2, HI.Row>, U32.is_eq(ns, 0), Nil{}, rs), 0n, at, ty, x, 102, w, c)),
     Out.ops(Bool.pick(List<&2, R.Op>, U32.is_eq(ns, 0), Nil{}, [D.Draw.rect(c, (x + 8 : U32), (102 + sh - 5 : U32), (w - 16 : U32), 1, T.Th.line(), 255)])),
-    Out.all(Side.layers(Side.names(k), 0, (102 + sh : U32), ty, k, present, flip, x, w, c)),
-    Out.when(Bool.not(U32.is_eq(flip, 0)), Side.reset(ty, x, (102 + sh + nl * 22 : U32), c))])
+    Side.modes(board, ty, f, x, (102 + sh : U32), w, c),
+    Out.all(Side.layers(Side.order(k), (102 + sh + mh : U32), ty, k, present, flip, f, x, w, c)),
+    Out.when(reset, Side.reset(ty, x, (102 + sh + mh + nl * 22 : U32), c))])
 
-def Side.list.if(open: Bool, +ty: Ty, +k: U32, +ss: List<&2, V.Seen>, +flip: U32, +rs: List<&2, HI.Row>, +at: Nat, +x1: U32, +h: U32) -> Out:
+def Side.list.if(open: Bool, +ty: Ty, +k: U32, +ss: List<&2, V.Seen>, +flip: U32, +f: LY.Focus, +rs: List<&2, HI.Row>, +at: Nat, +x1: U32, +h: U32) -> Out:
   match open:
     case True{}:
-      Side.list(ty, k, V.Layers.present(ss, 0), flip, rs, at, x1, h)
+      Side.list(ty, k, V.Layers.present(ss, 0), flip, f, rs, at, x1, h)
     case False{}:
       Out.none()
 
@@ -3515,6 +3542,10 @@ def Side.ground.if(on: Bool, +ty: Ty, +n: S.Nui, +x1: U32) -> Out:
     case False{}:
       Out.none()
 
+# the Layers chip names the active layer while one stands out
+def Side.head(+k: U32, +f: LY.Focus) -> String:
+  Bool.pick(String, LY.Lyr.on(f), "Layers · " ++ LY.Lyr.name(k, LY.Lyr.active(f)), "Layers")
+
 def Side.k(board: Bool, +ty: Ty, +n: S.Nui, +k: U32, +ss: List<&2, V.Seen>, +x0: U32, +x1: U32, +h: U32) -> Out:
   match board:
     case True{}:
@@ -3524,9 +3555,9 @@ def Side.k(board: Bool, +ty: Ty, +n: S.Nui, +k: U32, +ss: List<&2, V.Seen>, +x0:
       +sheets = Bool.and(U32.is_eq(k, 1), Nat.is_gt(List.length(&2, HI.Row, rs), 1n))
       Out.all([
         Out.all(Side.trail(Bool.pick(List<&2, Nat>, sheets, HI.Hier.chain(rs, at), Nil{}), rs, at, ty, (x0 + 16 : U32))),
-        Lay.chip(ty, (x1 - 16 - Lay.button.w(ty, "Layers") : U32), 60, "Layers", open, "vw-layers", ""),
-        Side.ground(ty, n, (x1 - 22 - Lay.button.w(ty, "Layers") - 28 : U32)),
-        Side.list.if(open, ty, k, ss, S.Nui.look(n), Bool.pick(List<&2, HI.Row>, sheets, rs, Nil{}), at, x1, h)])
+        Lay.chip(ty, (x1 - 16 - Lay.button.w(ty, Side.head(k, S.Nui.lfocus(n))) : U32), 60, Side.head(k, S.Nui.lfocus(n)), open, "vw-layers", ""),
+        Side.ground(ty, n, (x1 - 22 - Lay.button.w(ty, Side.head(k, S.Nui.lfocus(n))) - 28 : U32)),
+        Side.list.if(open, ty, k, ss, S.Nui.look(n), S.Nui.lfocus(n), Bool.pick(List<&2, HI.Row>, sheets, rs, Nil{}), at, x1, h)])
     case False{}:
       Out.none()
 

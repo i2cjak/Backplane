@@ -87,7 +87,7 @@ def with_hits(n: N.Nui, hs: List<&2, N.Hit>, +ms: Nat) -> N.Nui:
 
 # the frame's base brought up to date, as Shell.paint.k does
 def based(+n: N.Nui, +ms: Nat) -> N.Nui:
-  N.Nui.with_vw(n, MA.Shell.vw.if(N.Nui.panel(n), N.Nui.vw(n), N.Nui.width(n), N.Nui.height(n), N.Nui.vx0(n), ms, N.Nui.flip(n)))
+  N.Nui.with_vw(n, MA.Shell.vw.if(N.Nui.panel(n), N.Nui.vw(n), N.Nui.width(n), N.Nui.height(n), N.Nui.vx0(n), ms, N.Nui.flip(n), N.Nui.lfocus.bits(n)))
 
 def base_of(vw: V.Vw) -> Image:
   match vw:
@@ -128,7 +128,7 @@ def Times.show(t: Times, +n: Nat) -> String:
         ++ "  tiles drawn " ++ tenths(k, n)
 
 def same(+w: U32, +h: U32, +os: List<&2, R.Op>, +vw: V.Vw, +x0: U32, +ms: Nat, +flip: U32, +tiles: TI.Tiles) -> Bool:
-  TI.Eq.image(TI.Tiles.image(tiles), TI.Tiles.image(TI.Plan.run(MA.Shell.image(True{}, os, vw, w, h, x0, ms, flip, Nil{}, Map.new(&2, BM.Bitmap), TI.FNone{}, 0), TI.Frame.edge(w, h))))
+  TI.Eq.image(TI.Tiles.image(tiles), TI.Tiles.image(TI.Plan.run(MA.Shell.image(True{}, os, vw, w, h, x0, ms, flip, 0, Nil{}, Map.new(&2, BM.Bitmap), TI.FNone{}, 0), TI.Frame.edge(w, h))))
 
 # a frame's steps, timed
 type Laid is Data:
@@ -159,7 +159,7 @@ type Fin is Data:
 def f.tiles.k(+n2: N.Nui, +o: L.Out, +memo: L.TLMemo, +oh: List<&2, N.Hit>, fr0: TI.Frames, +ms: Nat, +a: Nat, +b: Nat, +c: Nat, t: Times, ok: Bool, +check: Bool) -> IO(Fin):
   do IO<Fin>:
     +t3 : Nat <- IO.now()
-    +pl : TI.Plan = MA.Shell.image(N.Nui.panel(n2), ops(o), N.Nui.vw(n2), N.Nui.width(n2), N.Nui.height(n2), N.Nui.vx0(n2), ms, N.Nui.flip(n2), hits(o), Map.new(&2, BM.Bitmap), fr0, N.Hits.slide(hits(o), oh))
+    +pl : TI.Plan = MA.Shell.image(N.Nui.panel(n2), ops(o), N.Nui.vw(n2), N.Nui.width(n2), N.Nui.height(n2), N.Nui.vx0(n2), ms, N.Nui.flip(n2), N.Nui.lfocus.bits(n2), hits(o), Map.new(&2, BM.Bitmap), fr0, N.Hits.slide(hits(o), oh))
     +kd : Nat = TI.Plan.count(pl)
     +t4 : Nat <- IO.now()
     +d : TI.Drawn = TI.Plan.drawn(pl, TI.Frame.edge(N.Nui.width(n2), N.Nui.height(n2)))
@@ -231,7 +231,7 @@ def warm(+ty: L.Ty, +cats: Map<&2, CA.CatF>, +n0: N.Nui, +ms: Nat) -> Kept:
   +memo = L.Lay.memo(ty, n, L.TL.memo.none())
   +o = BV.Bv.frame(ty, memo, cats, n)
   Kept{with_hits(n, hits(o), ms), memo, TI.FSome{N.Nui.width(n), N.Nui.height(n),
-    TI.Plan.run(MA.Shell.image(N.Nui.panel(n), ops(o), N.Nui.vw(n), N.Nui.width(n), N.Nui.height(n), N.Nui.vx0(n), ms, N.Nui.flip(n), hits(o), Map.new(&2, BM.Bitmap), TI.FNone{}, 0), TI.Frame.edge(N.Nui.width(n), N.Nui.height(n)))}}
+    TI.Plan.run(MA.Shell.image(N.Nui.panel(n), ops(o), N.Nui.vw(n), N.Nui.width(n), N.Nui.height(n), N.Nui.vx0(n), ms, N.Nui.flip(n), N.Nui.lfocus.bits(n), hits(o), Map.new(&2, BM.Bitmap), TI.FNone{}, 0), TI.Frame.edge(N.Nui.width(n), N.Nui.height(n)))}}
 
 def arg.u(+xs: List<&2, String>, +i: Nat, +d: U32) -> U32:
   F32.to_u32(Maybe.default(&2, F32, F32.read(Maybe.default(&2, String, List.get(&2, String, xs, i), "")), U32.to_f32(d)))
@@ -252,7 +252,7 @@ def kept_n(k: Kept) -> N.Nui:
 def fresh.k(vw: V.Vw, +w: U32, +h: U32, +x0: U32, +ms: Nat, +flip: U32) -> Image:
   match vw:
     case V.Vw{+ss, +v, _, _, _, _, _, _, _, _, +vx}:
-      MA.Shell.base(w, h, x0, ss, v, ms, flip, False{}, vx)
+      MA.Shell.base(w, h, x0, ss, v, ms, flip, 0, False{}, vx)
 
 def fresh(+n: N.Nui, +ms: Nat) -> Image:
   fresh.k(N.Nui.vw(n), N.Nui.width(n), N.Nui.height(n), N.Nui.vx0(n), ms, N.Nui.flip(n))

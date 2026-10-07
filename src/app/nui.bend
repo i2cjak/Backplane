@@ -21,6 +21,7 @@ import ../core/hist.bend as HS
 import ../core/rview.bend as RV
 import ../core/emb.bend as EM
 import ../core/onboard.bend as OB
+import ../core/layers.bend as LY
 
 # The native window's state around the shared client state (Ui): size,
 # pointer, scroll, focus and the composer caret. Input is pure: an event
@@ -810,6 +811,18 @@ def Nui.flip.key(+n: Nui) -> String:
 def Nui.flip(+n: Nui) -> U32:
   Maybe.default(&2, U32, U32.read(U.Ui.scratch(Nui.ui(n), Nui.flip.key(n))), 0)
 
+# the layer focus of the kind on show (core/layers.bend: the active layer
+# and how the others show), kept per kind like the flips
+def Nui.lfocus.key(+n: Nui) -> String:
+  "@vw.focus." ++ U32.show(Vw.kind(Nui.vw(n)))
+
+def Nui.lfocus(+n: Nui) -> LY.Focus:
+  LY.Lyr.read(U.Ui.scratch(Nui.ui(n), Nui.lfocus.key(n)))
+
+# the focus as the viewer's kind word carries it (LY.Lyr.kind.with)
+def Nui.lfocus.bits(+n: Nui) -> U32:
+  LY.Lyr.kind.with(0, Nui.lfocus(n))
+
 # the viewer's light ground (its sun/moon button, "@vw.light"), and the
 # window's light theme (Settings, Appearance: the hub's "ui.theme")
 def Nui.vlight(+n: Nui) -> Bool:
@@ -1327,7 +1340,7 @@ def Keys.name.k(ctrl: Bool, shift: Bool, term: Bool, +c: U32) -> String:
   match ctrl shift term:
     case True{} False{} False{}:
       Bool.pick(String, U32.is_eq(c, 106), "term", Bool.pick(String, U32.is_eq(c, 100), "diff", Bool.pick(String, U32.is_eq(c, 110), "new", Bool.pick(String, U32.is_eq(c, 107), "palette",
-        Bool.pick(String, U32.is_eq(c, 112), "files", Bool.pick(String, Bool.and(U32.is_ge(c, 49), U32.is_le(c, 57)), "jump", ""))))))
+        Bool.pick(String, U32.is_eq(c, 112), "files", Bool.pick(String, Bool.and(U32.is_ge(c, 49), U32.is_le(c, 57)), "jump", Bool.pick(String, U32.is_eq(c, 104), "layers", "")))))))
     case True{} False{} True{}:
       Bool.pick(String, U32.is_eq(c, 106), "term", "")
     case True{} True{} _:
@@ -1595,8 +1608,16 @@ def Nui.goto.k(none: Bool, +n: Nui, +pid: String, +id: String) -> Step:
 def Nui.goto(+n: Nui, +pid: String) -> Step:
   Bool.pick(Step, String.is_empty(pid), Step{n, Nil{}, False{}}, Nui.goto.k(String.is_empty(U.Side.home(Nui.ui(n), pid)), n, pid, U.Side.home(Nui.ui(n), pid)))
 
+# the focus changed: the scene is drawn again under it
+def Nui.lfocus.set(+n: Nui, +f: LY.Focus) -> Step:
+  Step{Nui.with_vw(Nui.with_ui(n, U.Ui.scratch_set(Nui.ui(n), Nui.lfocus.key(n), LY.Lyr.show(f))), Vw.stale(Nui.vw(n))), Nil{}, True{}}
+
+# the kind of the scene on show (0 a board, 1 a schematic)
+def Nui.look.kind(+n: Nui) -> U32:
+  Vw.kind(Nui.vw(n))
+
 def Keys.list() -> List<&2, String>:
-  ["term", "diff", "new", "prev", "next", "settle", "pin", "paste", "palette", "jump", "search", "files", "project", "perf"]
+  ["term", "diff", "new", "prev", "next", "settle", "pin", "paste", "palette", "jump", "search", "files", "project", "perf", "layers"]
 
 def Nui.shortcut.k(i: Nat, +n: Nui, +code: U32) -> Step:
   match i:
@@ -1626,6 +1647,10 @@ def Nui.shortcut.k(i: Nat, +n: Nui, +code: U32) -> Step:
       Nui.goto(n, U.Side.nth(U.Side.projects(Nui.ui(n)), U32.to_nat((code - 49 : U32))))
     case 13n:
       Nui.act(n, "flag", "perf")
+    # ctrl+h: KiCad's high contrast, the other layers as they are, dimmed,
+    # hidden and around again (core/layers.bend's Lyr.cycle)
+    case 14n:
+      Nui.lfocus.set(n, LY.Lyr.cycle(Nui.look.kind(n), Nui.lfocus(n)))
     case _:
       Step{n, [NPaste{}], False{}}
 
@@ -1883,10 +1908,10 @@ def Vw.press(v: V.Vw, +x: U32, +y: U32) -> V.Vw:
     case V.Vw{s, vi, f, r, _, _, _, b, fr, cu, V.Vx{k, p, t, c, sh, bu, _, _, pa, se, bm}}:
       V.Vw{s, vi, f, r, True{}, x, y, b, fr, cu, V.Vx{k, p, t, c, sh, bu, x, y, pa, se, bm}}
 
-def Vw.release.k(click: Bool, v: V.Vw, +x: U32, +y: U32, +flip: U32) -> V.Vw:
+def Vw.release.k(click: Bool, v: V.Vw, +x: U32, +y: U32, +flip: U32, +fk: U32) -> V.Vw:
   match click v:
     case True{} V.Vw{+s, +vi, f, r, _, lx, ly, b, fr, cu, V.Vx{+k, _, t, c, sh, bu, px, py, pa, se, bm}}:
-      V.Vw{s, vi, f, r, False{}, lx, ly, b, fr, cu, V.Vx{k, Bool.pick(String, U32.is_eq(k, 2), "", V.Pick.at(s, vi, U32.to_f32(x), U32.to_f32(y), k, flip)), t, c, sh, bu, px, py, pa, se, bm}}
+      V.Vw{s, vi, f, r, False{}, lx, ly, b, fr, cu, V.Vx{k, Bool.pick(String, U32.is_eq(k, 2), "", V.Pick.at(s, vi, U32.to_f32(x), U32.to_f32(y), U32.or(k, fk), flip)), t, c, sh, bu, px, py, pa, se, bm}}
     case False{} V.Vw{s, vi, f, r, _, lx, ly, b, fr, cu, +vx}:
       V.Vw{s, vi, f, r, False{}, lx, ly, b, Bool.and(fr, Bool.not(U32.is_eq(Vx.kind(vx), 2))), cu, vx}
 
@@ -1904,15 +1929,15 @@ def Vw.dragging(v: V.Vw) -> Bool:
     case V.Vw{_, _, _, _, d, _, _, _, _, _, _}:
       d
 
-def Vw.release(+v: V.Vw, +x: U32, +y: U32, +flip: U32) -> V.Vw:
-  Vw.release.k(Bool.and(Vw.dragging(v), Vw.near(Vx.press_at(Vw.x(v)), x, y)), v, x, y, flip)
+def Vw.release(+v: V.Vw, +x: U32, +y: U32, +flip: U32, +fk: U32) -> V.Vw:
+  Vw.release.k(Bool.and(Vw.dragging(v), Vw.near(Vx.press_at(Vw.x(v)), x, y)), v, x, y, flip, fk)
 
 def Nui.view_press(+n: Nui, +x: U32, +y: U32, down: Bool) -> Step:
   match down:
     case True{}:
       Step{Nui.with_vw(n, Vw.press(Nui.vw(n), x, y)), Nil{}, False{}}
     case False{}:
-      Step{Nui.with_vw(n, Vw.release(Nui.vw(n), x, y, Nui.flip(n))), Nil{}, Vw.dragging(Nui.vw(n))}
+      Step{Nui.with_vw(n, Vw.release(Nui.vw(n), x, y, Nui.flip(n), Nui.lfocus.bits(n))), Nil{}, Vw.dragging(Nui.vw(n))}
 
 def Nui.dragging(n: Nui) -> Bool:
   match n:
@@ -2472,6 +2497,11 @@ def Nui.sheet.open(m: Maybe<&2, Nat>, +n: Nui) -> Step:
 def Nui.layers.set(+n: Nui, +flip: U32) -> Step:
   Step{Nui.with_vw(Nui.with_ui(n, U.Ui.scratch_set(Nui.ui(n), Nui.flip.key(n), U32.show(flip))), Vw.stale(Nui.vw(n))), Nil{}, True{}}
 
+# Reset layers: every layer as it is by default, no focus
+def Nui.layers.reset(+n: Nui) -> Step:
+  Nui.layers.set(Nui.with_ui(n, U.Ui.scratch_set(Nui.ui(n), Nui.lfocus.key(n), "")), 0)
+
+
 # the viewer's sun/moon button: its own light or dark ground, whatever
 # the window's theme; the scene is drawn again on it
 def Nui.vlight.flip(+n: Nui) -> Step:
@@ -2487,7 +2517,7 @@ def Nui.vw_act.more(i: Nat, +n: Nui, +value: String) -> Step:
     case 1n:
       Nui.layers.set(n, V.Look.toggle(Nui.flip(n), Maybe.default(&2, U32, U32.read(value), 31)))
     case 2n:
-      Nui.layers.set(n, 0)
+      Nui.layers.reset(n)
     case 3n:
       Nui.sheet.go(n, Maybe.default(&2, Nat, Nat.read(value), 0n))
     case 4n:
@@ -2498,6 +2528,12 @@ def Nui.vw_act.more(i: Nat, +n: Nui, +value: String) -> Step:
       Nui.vlight.flip(n)
     case 7n:
       Nui.shortcut.k(U.Keys.pos(Keys.list(), value), n, 0)
+    # a click on a layer's name: it stands out (LY.Lyr.pick)
+    case 8n:
+      Nui.lfocus.set(n, LY.Lyr.pick(Nui.lfocus(n), LY.Lyr.num(value, LY.Lyr.none())))
+    # the list's All, Dim, Only
+    case 9n:
+      Nui.lfocus.set(n, LY.Lyr.set(Nui.look.kind(n), Nui.lfocus(n), LY.Lyr.num(value, 0)))
     case _:
       Step{n, Nil{}, False{}}
 
@@ -2524,7 +2560,7 @@ def Nui.vw_act.k(i: Nat, +n: Nui, +value: String) -> Step:
 
 # the window's own actions (they never reach the client state)
 def Nui.vw_act(+n: Nui, +action: String, +value: String) -> Step:
-  Nui.vw_act.k(Nui.pos(["vw-kind", "vw-unpick", "vw-pal", "vw-palx", "vw-proj", "vw-projx", "vw-projo", "vw-find", "vw-layers", "vw-layer", "vw-layers-reset", "vw-sheet", "vw-open", "vw-up", "vw-light", "vw-key"], action, 0n), n, value)
+  Nui.vw_act.k(Nui.pos(["vw-kind", "vw-unpick", "vw-pal", "vw-palx", "vw-proj", "vw-projx", "vw-projo", "vw-find", "vw-layers", "vw-layer", "vw-layers-reset", "vw-sheet", "vw-open", "vw-up", "vw-light", "vw-key", "vw-layer-pick", "vw-layer-mode"], action, 0n), n, value)
 
 # a link in a message: only a web address is ever opened (law link_no_script)
 def Nui.click.url(url: Bool, +n: Nui, +action: String, +value: String) -> Step:

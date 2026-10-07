@@ -1708,7 +1708,7 @@ def Shell.base3(draft: Bool, +ww: U32, +hh: U32, +x0: U32, ts: FA.Scene3, +c: MS
     case False{}:
       FA.Scene3.render.q(True{}, ww, hh, x0, 52, (ww - x0 : U32), (hh - 52 : U32), ts, c, now, bg)
 
-def Shell.base(+ww: U32, +hh: U32, +x0: U32, +ss: List<&2, V.Seen>, +v: V.View, +now: Nat, +flip: U32, +drag: Bool, x: V.Vx) -> Image:
+def Shell.base(+ww: U32, +hh: U32, +x0: U32, +ss: List<&2, V.Seen>, +v: V.View, +now: Nat, +flip: U32, +fk: U32, +drag: Bool, x: V.Vx) -> Image:
   match x:
     case V.Vx{2, _, ts, c, _, _, _, _, _, _, bm}:
       R.Frame.over(ww, hh, [D.Draw.rect(D.Clip.all(), 264, 0, (x0 - 264 : U32), hh, L.Theme.ground(flip), 255)], Shell.base3(drag, ww, hh, x0, ts, c, now, V.Look.ground(flip)))
@@ -1716,25 +1716,25 @@ def Shell.base(+ww: U32, +hh: U32, +x0: U32, +ss: List<&2, V.Seen>, +v: V.View, 
       Shell.shot.base(ww, hh, x0, flip, bm)
     case V.Vx{+k, _, _, _, _, _, _, _, _, _, bm}:
       FR.Fresh.frame(ww, hh, List.reverse(&2, R.Op, D.Draw.rect(D.Clip.all(), x0, 52, (ww - x0 : U32), hh, V.Look.ground(flip), 255)
-        <> V.Ops.scene(ss, v, D.Clip{x0, 52, ww, hh}, now, now, True{}, k, flip)), L.Theme.ground(flip))
+        <> V.Ops.scene(ss, v, D.Clip{x0, 52, ww, hh}, now, now, True{}, U32.or(k, fk), flip)), L.Theme.ground(flip))
 
-def Shell.vw.k(redraw: Bool, vw: V.Vw, +ww: U32, +hh: U32, +x0: U32, +now: Nat, +flip: U32) -> V.Vw:
+def Shell.vw.k(redraw: Bool, vw: V.Vw, +ww: U32, +hh: U32, +x0: U32, +now: Nat, +flip: U32, +fk: U32) -> V.Vw:
   match redraw vw:
     case True{} V.Vw{+ss, +v, f, r, +d, lx, ly, _, _, _, +vx}:
-      V.Vw{ss, v, f, r, d, lx, ly, Shell.base(ww, hh, x0, ss, v, now, flip, d, vx), True{}, now, vx}
+      V.Vw{ss, v, f, r, d, lx, ly, Shell.base(ww, hh, x0, ss, v, now, flip, fk, d, vx), True{}, now, vx}
     case False{} _:
       vw
 
 # refresh the base if the scene or view changed, or fades ended since
-def Shell.vw(+vw: V.Vw, +ww: U32, +hh: U32, +x0: U32, +now: Nat, +flip: U32) -> V.Vw:
+def Shell.vw(+vw: V.Vw, +ww: U32, +hh: U32, +x0: U32, +now: Nat, +flip: U32, +fk: U32) -> V.Vw:
   match vw:
     case V.Vw{+ss, +v, f, r, d, lx, ly, b, +fr, +cut, vx}:
-      Shell.vw.k(Bool.or(Bool.or(Bool.not(fr), V.Vw.late(ss, cut, now)), FA.Scene3.fading(Vx.scene(vx), cut)), V.Vw{ss, v, f, r, d, lx, ly, b, fr, cut, vx}, ww, hh, x0, now, flip)
+      Shell.vw.k(Bool.or(Bool.or(Bool.not(fr), V.Vw.late(ss, cut, now)), FA.Scene3.fading(Vx.scene(vx), cut)), V.Vw{ss, v, f, r, d, lx, ly, b, fr, cut, vx}, ww, hh, x0, now, flip, fk)
 
-def Shell.vw.if(open: Bool, +vw: V.Vw, +ww: U32, +hh: U32, +x0: U32, +ms: Nat, +flip: U32) -> V.Vw:
+def Shell.vw.if(open: Bool, +vw: V.Vw, +ww: U32, +hh: U32, +x0: U32, +ms: Nat, +flip: U32, +fk: U32) -> V.Vw:
   match open:
     case True{}:
-      Shell.vw(vw, ww, hh, x0, ms, flip)
+      Shell.vw(vw, ww, hh, x0, ms, flip, fk)
     case False{}:
       vw
 
@@ -1745,21 +1745,21 @@ def Vx.pick(x: V.Vx) -> String:
 
 # UI ops over the fading items and the picked item, over the base; tiles
 # the last frame drew the same way are kept (the plan of TI.Frame.par)
-def Shell.image.over(+ops: List<&2, R.Op>, vw: V.Vw, +ww: U32, +hh: U32, +x0: U32, +now: Nat, +flip: U32, +hs: List<&2, N.Hit>, +pics: Map<&2, BM.Bitmap>, prev: TI.Frames, +dy: U32) -> TI.Plan:
+def Shell.image.over(+ops: List<&2, R.Op>, vw: V.Vw, +ww: U32, +hh: U32, +x0: U32, +now: Nat, +flip: U32, +fk: U32, +hs: List<&2, N.Hit>, +pics: Map<&2, BM.Bitmap>, prev: TI.Frames, +dy: U32) -> TI.Plan:
   match vw:
     case V.Vw{+ss, +v, _, _, _, _, _, +b, _, +cut, +vx}:
       TI.Frame.plan(ww, hh, List.append(&2, R.Op, L.Theme.ops(V.Look.ui(flip), ops), List.reverse(&2, R.Op,
-        List.append(&2, R.Op, Bool.pick(List<&2, R.Op>, U32.is_eq(Vx.kind(vx), 2), Nil{}, V.Ops.scene(ss, v, D.Clip{x0, 52, ww, hh}, now, cut, False{}, Vx.kind(vx), flip)),
+        List.append(&2, R.Op, Bool.pick(List<&2, R.Op>, U32.is_eq(Vx.kind(vx), 2), Nil{}, V.Ops.scene(ss, v, D.Clip{x0, 52, ww, hh}, now, cut, False{}, U32.or(Vx.kind(vx), fk), flip)),
           V.Ops.picked(ss, Vx.pick(vx), v, D.Clip{x0, 52, ww, hh}, flip)))),
         Pics.over(hs, pics, Nil{}, ww, hh, b), prev, dy)
 
 # the frame: UI ops over the fading items over the base. dy is how far
 # the thread scrolled since the last frame: tiles it moved are taken from
 # there, not drawn again
-def Shell.image(pa: Bool, +ops: List<&2, R.Op>, +vw: V.Vw, +ww: U32, +hh: U32, +x0: U32, +now: Nat, +flip: U32, +hs: List<&2, N.Hit>, +pics: Map<&2, BM.Bitmap>, prev: TI.Frames, +dy: U32) -> TI.Plan:
+def Shell.image(pa: Bool, +ops: List<&2, R.Op>, +vw: V.Vw, +ww: U32, +hh: U32, +x0: U32, +now: Nat, +flip: U32, +fk: U32, +hs: List<&2, N.Hit>, +pics: Map<&2, BM.Bitmap>, prev: TI.Frames, +dy: U32) -> TI.Plan:
   match pa:
     case True{}:
-      Shell.image.over(ops, vw, ww, hh, x0, now, flip, hs, pics, prev, dy)
+      Shell.image.over(ops, vw, ww, hh, x0, now, flip, fk, hs, pics, prev, dy)
     case False{}:
       TI.Frame.plan(ww, hh, L.Theme.ops(V.Look.ui(flip), ops), Pics.over(hs, pics, Nil{}, ww, hh, Pix{L.Theme.ground(flip)}), prev, dy)
 
@@ -1894,7 +1894,7 @@ def Lbv.paint(on: Bool, +ops: List<&2, R.Op>, +hs: List<&2, N.Hit>, +oh: List<&2
         +s : N.Step = Shell.hits(n, hs, epoch)
         Shell.shown(r, Shell.hits.nui(s), q, i, wa, Shell.hits.anim(s, Shell.anim(n, ms)), ms)
     case False{}:
-      Shell.present(Shell.image(N.Nui.panel(n), ops, N.Nui.vw(n), N.Nui.width(n), N.Nui.height(n), N.Nui.vx0(n), ms, N.Nui.look(n), hs, Tie.pics(Aux.tie(wa)), Aux.frames(wa), N.Hits.slide(hs, oh)),
+      Shell.present(Shell.image(N.Nui.panel(n), ops, N.Nui.vw(n), N.Nui.width(n), N.Nui.height(n), N.Nui.vx0(n), ms, N.Nui.look(n), N.Nui.lfocus.bits(n), hs, Tie.pics(Aux.tie(wa)), Aux.frames(wa), N.Hits.slide(hs, oh)),
         L.Out{ops, hs}, n, w, q, i, wa, epoch, ms, t0, t2)
 
 def Shell.paint.out(o: L.Out, +oh: List<&2, N.Hit>, +n: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), +wa: Aux, +epoch: Nat, +ms: Nat, +t0: U32, +t2: U32) -> IO(Shell):
@@ -1979,7 +1979,7 @@ def Shell.paint.k(+n0: N.Nui, w: Window, +q: Chan(ShellMsg), +i: Chan(S.Msg), wa
   match n0:
     case N.Nui{u, +ww, +hh, mx, my, sd, sc, ca, fo, pa, oh, _, vw0}:
       Shell.paint.go(oh, N.Nui{u, ww, hh, mx, my, sd, sc, ca, fo, pa, Nil{}, ms,
-        Shell.vw.if(N.Nui.panel(n0), vw0, ww, hh, N.Nui.vx0(n0), ms, N.Nui.look(n0))}, w, q, i, wa, epoch, ms)
+        Shell.vw.if(N.Nui.panel(n0), vw0, ww, hh, N.Nui.vx0(n0), ms, N.Nui.look(n0), N.Nui.lfocus.bits(n0))}, w, q, i, wa, epoch, ms)
 
 # what a frame notes before it is laid out: the hover's and the caret's
 # starts, the lightbox's ease, the cats' clock
