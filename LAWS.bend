@@ -1,5 +1,6 @@
 import Base
 import ./src/server/server.bend as MPCREDIT # mail perf
+import ./src/core/schematic.bend as SC # kicad fork viewers
 import ./src/core/charter.bend as CH # mail 2c
 import ./src/core/mailrun.bend as MRUN # mail 2c
 import ./src/server/mailstore.bend as MIX # mail index
@@ -10043,3 +10044,11 @@ law mail_credit_native_kept:
   for w: MPCREDIT.Wire
   for charge: Nat
   {MPCREDIT.Wire.charged(True{}, w, charge) == w : MPCREDIT.Wire}
+# ---- kicad fork viewers ----
+law fork_cache_legacy:
+  for id: String
+  {SC.Sch.cache.name("", id) == id : String}
+law fork_cache_alias:
+  for id: String
+  {SC.Sch.cache.name("local", id) == "local" : String}
+# ---- end kicad fork viewers ----
