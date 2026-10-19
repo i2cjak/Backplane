@@ -153,6 +153,7 @@ import ./src/core/release.bend as REL
 import ./src/core/review.bend as RV
 import ./src/core/slash.bend as SL
 import ./src/core/agy.bend as AGY
+import ./src/core/omp.bend as OMP
 import ./src/core/told.bend as TLD
 import ./src/core/rules.bend as RLS
 import ./src/core/tboard.bend as TBD
@@ -8010,16 +8011,20 @@ law teach_draft_secret_no_value:
 # a pause is the browser card (its picture and the person's choices);
 # every other ask keeps the standard card
 law mobile_browser_ask_card:
+  for +lc: I18.Loc
+  for +st: M.State
   for +a: M.Ask
   for +d: String
   for +nf: Map<&2, String>
-  {MSC.Mob.ask.k(True{}, a, d, nf) == MBT.MBots.ask(U.Teach.ask.from(a, nf)) : J.Json}
+  {MSC.Mob.ask.k.loc(lc, st, True{}, a, d, nf) == MBT.MBots.ask.loc(lc, U.Teach.ask.from.loc(lc, a, nf)) : J.Json}
 
 law mobile_other_ask_standard:
+  for +lc: I18.Loc
+  for +st: M.State
   for +a: M.Ask
   for +d: String
   for +nf: Map<&2, String>
-  {MSC.Mob.ask.k(False{}, a, d, nf) == MSC.Mob.ask.std(a, d) : J.Json}
+  {MSC.Mob.ask.k.loc(lc, st, False{}, a, d, nf) == MSC.Mob.ask.std.loc(lc, st, a, d) : J.Json}
 
 # a card on the Browser tab is added only for a browser ask
 law mobile_browser_card_only_browser:
@@ -8518,6 +8523,17 @@ law mail_origin_keeps_outputs:
   {H.Step.outs_of(H.Origin.step(st, thread, msg, origin, at)) == H.Step.outs_of(st) : List<&2, H.Out>}
 
 # ---- end mail 1 ----
+
+# ---- omp ----
+# omp's mapping is total: supervised asks, both edit modes write, full access runs yolo
+law omp_approval_total:
+  {Bool.and(Bool.and(String.eq(OMP.Omp.approval(M.Supervised{}), "always-ask"), String.eq(OMP.Omp.approval(M.AcceptEdits{}), "write")), Bool.and(String.eq(OMP.Omp.approval(M.AutoMode{}), "write"), String.eq(OMP.Omp.approval(M.FullAccess{}), "yolo"))) == True{} : Bool}
+
+# only full access runs omp with yolo, which allows everything
+law omp_yolo_only_full:
+  {Bool.and(Bool.and(Bool.not(String.eq(OMP.Omp.approval(M.Supervised{}), "yolo")), Bool.not(String.eq(OMP.Omp.approval(M.AcceptEdits{}), "yolo"))), Bool.not(String.eq(OMP.Omp.approval(M.AutoMode{}), "yolo"))) == True{} : Bool}
+
+# ---- end omp ----
 # ---- links (ref) ----
 
 law ref_uri_parse_thread:

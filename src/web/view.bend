@@ -793,24 +793,34 @@ def View.ask.opts(ls: List<&2, String>, +id: String) -> List<&2, D.Node>:
     case +l <> t:
       D.Dom.button("", "answer", id ++ "|" ++ l, l, l) <> View.ask.opts(t, id)
 
-def View.ask.btns.loc(+lc: I.Loc, +k: String, +id: String, +o: String, +draft: String) -> List<&2, D.Node>:
+def View.ask.approval(empty: Bool, omp: Bool, +lc: I.Loc, +id: String) -> List<&2, D.Node>:
+  match empty omp:
+    case _ True{}:
+      [D.Dom.button("primary", "answer", id ++ "|accept", MSG.T.approval.allow(lc), MSG.T.approval.allow(lc)), D.Dom.button("", "answer", id ++ "|decline", MSG.T.approval.deny(lc), MSG.T.approval.deny(lc))]
+    case _ False{}:
+      [D.Dom.button("primary", "answer", id ++ "|accept", MSG.T.ask.allow.once(lc), MSG.T.approval.allow(lc)), D.Dom.button("", "answer", id ++ "|session", MSG.T.ask.allow.session.tip(lc), MSG.T.approval.session(lc)), D.Dom.button("", "answer", id ++ "|decline", MSG.T.approval.deny(lc), MSG.T.approval.deny(lc))]
+
+def View.ask.btns.omp.loc(+lc: I.Loc, omp: Bool, +k: String, +id: String, +o: String, +draft: String) -> List<&2, D.Node>:
   Bool.pick(List<&2, D.Node>, String.eq(k, "send"), [D.Dom.button("primary", "answer", id ++ "|accept", MSG.T.ask.send.tip(lc), MSG.T.composer.send(lc)), D.Dom.button("", "answer", id ++ "|decline", MSG.T.ask.send.none(lc), MSG.T.ask.notnow(lc))],
   Bool.pick(List<&2, D.Node>, String.eq(k, "plan"), [D.Dom.button("primary", "answer", id ++ "|implement", MSG.T.ask.implement.tip(lc), MSG.T.approval.implement(lc)), D.Dom.button("", "answer", id ++ "|dismiss", MSG.T.approval.dismiss(lc), MSG.T.approval.dismiss(lc))],
     Bool.pick(List<&2, D.Node>, String.eq(k, "input"),
       List.append(&2, D.Node, View.ask.opts(String.split(o, '\n'), id),
         Bool.pick(List<&2, D.Node>, String.is_empty(String.trim(draft)), [D.Dom.button("", "answer", id ++ "|", MSG.T.approval.dismiss(lc), MSG.T.approval.dismiss(lc))], [D.Dom.button("primary", "answer", id ++ "|" ++ String.trim(draft), MSG.T.ask.draft.tip(lc), MSG.T.approval.draft(lc))])),
-      [D.Dom.button("primary", "answer", id ++ "|accept", MSG.T.ask.allow.once(lc), MSG.T.approval.allow(lc)), D.Dom.button("", "answer", id ++ "|session", MSG.T.ask.allow.session.tip(lc), MSG.T.approval.session(lc)), D.Dom.button("", "answer", id ++ "|decline", MSG.T.approval.deny(lc), MSG.T.approval.deny(lc))])))
+      View.ask.approval(String.is_empty(o), omp, lc, id))))
 
-def View.ask.btns(+k: String, +id: String, +o: String, +draft: String) -> List<&2, D.Node>:
-  View.ask.btns.loc(I.En{}, k, id, o, draft)
+def View.ask.btns.loc(+lc: I.Loc, +k: String, +id: String, +o: String, +draft: String) -> List<&2, D.Node>:
+  View.ask.btns.omp.loc(lc, False{}, k, id, o, draft)
 
-def View.ask.std(+lc: I.Loc, a: M.Ask, +draft: String) -> D.Node:
+def View.ask.btns(+lc: I.Loc, omp: Bool, +k: String, +id: String, +o: String, +draft: String) -> List<&2, D.Node>:
+  View.ask.btns.omp.loc(lc, omp, k, id, o, draft)
+
+def View.ask.std(+lc: I.Loc, omp: Bool, a: M.Ask, +draft: String) -> D.Node:
   match a:
     case M.Ask{+id, _, +k, +tool, +d, +o, _, _}:
       D.El{"div", id, [D.At{"class", "ask " ++ k}], [
         D.Dom.span("ask-head", U.Ask.head.loc(lc, k, tool, d)),
         Bool.pick(D.Node, String.eq(k, "plan"), D.El{"div", "", [D.At{"class", "body"}], D.Md.render.loc(lc, d)}, D.El{"div", "", [D.At{"class", "ask-detail"}], [D.Txt{d}]}),
-        D.El{"div", "", [D.At{"class", "ask-btns"}], View.ask.btns.loc(lc, U.Ask.bkind(k, tool), id, o, draft)}]}
+        D.El{"div", "", [D.At{"class", "ask-btns"}], View.ask.btns.omp.loc(lc, omp, U.Ask.bkind(k, tool), id, o, draft)}]}
 
 # a browser task paused for help: its question, the screenshot, and the
 # person's choices (client.bend's Teach.ask)
@@ -834,24 +844,24 @@ def View.ask.web.loc(+lc: I.Loc, t: U.TAsk) -> D.Node:
 def View.ask.web(t: U.TAsk) -> D.Node:
   View.ask.web.loc(I.En{}, t)
 
-def View.ask.k(+lc: I.Loc, web: Bool, a: M.Ask, +draft: String, nf: Map<&2, String>) -> D.Node:
+def View.ask.k(+lc: I.Loc, omp: Bool, web: Bool, a: M.Ask, +draft: String, nf: Map<&2, String>) -> D.Node:
   match web:
     case True{}:
       View.ask.web.loc(lc, U.Teach.ask.from.loc(lc, a, nf))
     case False{}:
-      View.ask.std(lc, a, draft)
+      View.ask.std(lc, omp, a, draft)
 
-def View.ask(+lc: I.Loc, a: M.Ask, +draft: String, nf: Map<&2, String>) -> D.Node:
+def View.ask(+lc: I.Loc, omp: Bool, a: M.Ask, +draft: String, nf: Map<&2, String>) -> D.Node:
   match a:
     case M.Ask{_, _, +k, _, _, _, _, _}:
-      View.ask.k(lc, String.eq(k, "browser"), a, draft, nf)
+      View.ask.k(lc, omp, String.eq(k, "browser"), a, draft, nf)
 
-def View.asks(+lc: I.Loc, as: List<&2, M.Ask>, +draft: String, +nf: Map<&2, String>) -> List<&2, D.Node>:
+def View.asks(+lc: I.Loc, +omp: Bool, as: List<&2, M.Ask>, +draft: String, +nf: Map<&2, String>) -> List<&2, D.Node>:
   match as:
     case Nil{}:
       Nil{}
     case a <> t:
-      View.ask(lc, a, draft, nf) <> View.asks(lc, t, draft, nf)
+      View.ask(lc, omp, a, draft, nf) <> View.asks(lc, omp, t, draft, nf)
 
 def View.qbtns(bs: List<&2, U.QBtn>) -> List<&2, D.Node>:
   match bs:
@@ -1233,7 +1243,7 @@ def View.settings.loc(+lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2, String>, 
       View.setrow(MSG.T.settings.settle(lc), MSG.T.settings.settle.note(lc), View.days.loc(lc, M.Setting.get(st, "settle.days", "3"))),
       View.setrow(MSG.T.settings.restart(lc), MSG.T.settings.restart.note(lc), View.chips.loc(lc, ["on", "off"], Bool.pick(String, M.Carry.on(st), "on", "off"), "restart.continue"))],
       View.notify(lc, st), View.agy.rows(U.Fallbackv.rows(u)),
-      [View.setrow(MSG.T.settings.provider(lc), MSG.T.settings.agents.note(lc, Bool.pick(String, String.is_empty(U.Models.cli(U.Str.get(nf, "models"), prov)), MSG.T.settings.provider.missing(lc, prov), U.Models.cli(U.Str.get(nf, "models"), prov))), View.chips.loc(lc, ["claude", "codex", "grok", "muse", "antigravity"], prov, "agent.provider")),
+      [View.setrow(MSG.T.settings.provider(lc), MSG.T.settings.agents.note(lc, Bool.pick(String, String.is_empty(U.Models.cli(U.Str.get(nf, "models"), prov)), MSG.T.settings.provider.missing(lc, prov), U.Models.cli(U.Str.get(nf, "models"), prov))), View.chips.loc(lc, ["claude", "codex", "grok", "muse", "antigravity", "omp"], prov, "agent.provider")),
       View.setrow(MSG.T.settings.model(lc), Bool.pick(String, String.is_empty(M.Setting.get(st, "agent.model", "")), MSG.T.common.default(lc), M.Setting.get(st, "agent.model", "")) ++ ": " ++ U.Models.label_of(U.Str.get(nf, "models"), prov, M.Setting.get(st, "agent.model", "")), View.chips.loc(lc, U.Models.menu(U.Str.get(nf, "models"), prov), M.Setting.get(st, "agent.model", ""), "agent.model")),
       View.setrow(MSG.T.settings.writing.provider(lc), MSG.T.web.settings.writing.note(lc), View.chips.loc(lc, ["claude", "codex", "grok", "muse"], U.TextGen.provider(st), "text.provider")),
       View.setrow(MSG.T.web.settings.writing.model(lc), Bool.pick(String, String.is_empty(U.TextGen.model(st)), MSG.T.common.default(lc), U.TextGen.model(st)) ++ ": " ++ U.Models.label_of(U.Str.get(nf, "models"), U.TextGen.provider(st), U.TextGen.model(st)),
@@ -1933,7 +1943,8 @@ def View.composer.t(+lc: I.Loc, +st: M.State, +sel: String, +drafts: Map<&2, Str
     U.Chip.all(U.Str.get(nf, "models"), pr, mo), U.Effort.of(st, sel), U.Skills.shown(st, sel, drafts, nf), atts, up, vo, mic)
 
 def View.asks.box(+lc: I.Loc, +st: M.State, +id: String, +draft: String, +nf: Map<&2, String>) -> D.Node:
-  D.El{"div", "asks", [D.At{"class", "asks"}, D.At{"id", "asks"}], View.asks(lc, U.Asks.open(st, id), draft, nf)}
+  +omp = String.eq(M.Thread.provider(U.Ui.thread(st, id)), "omp")
+  D.El{"div", "asks", [D.At{"class", "asks"}, D.At{"id", "asks"}], View.asks(lc, omp, U.Asks.open(st, id), draft, nf)}
 
 # the same two from the Ui alone (app.bend's composer and asks)
 def View.composer.k(+lc: I.Loc, u: U.Ui, t: M.Thread, +atts: List<&2, String>, +up: String, vo: List<&2, D.Node>, +mic: String) -> D.Node:

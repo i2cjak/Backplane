@@ -3104,17 +3104,25 @@ def Lay.plan.lines(+ty: Ty, ls: List<&2, String>, +x0: U32, +y: U32) -> Out:
       Out.cat(Out.ops(Ty.text(ty, 3n, l, D.Clip.all(), (x0 + 14 : U32), y, 21, T.Th.soft())), Lay.plan.lines(ty, t, x0, (y + 21 : U32)))
 
 # the buttons of an ask, right to left
-def Ask.choices.loc(+l: I.Loc, +k: String, +id: String, +o: String, +draft: String) -> List<&2, S.Hit>:
+def Ask.choices.approval(empty: Bool, omp: Bool, +l: I.Loc, +id: String, +options: String) -> List<&2, S.Hit>:
+  match empty omp:
+    case _ True{}:
+      [S.Hit{0, 0, 0, 0, MSG.T.approval.allow(l), id ++ "|accept"}, S.Hit{0, 0, 0, 0, MSG.T.approval.deny(l), id ++ "|decline"}]
+    case True{} False{}:
+      [S.Hit{0, 0, 0, 0, MSG.T.approval.allow(l), id ++ "|accept"}, S.Hit{0, 0, 0, 0, MSG.T.approval.session(l), id ++ "|session"}, S.Hit{0, 0, 0, 0, MSG.T.approval.deny(l), id ++ "|decline"}]
+    case False{} False{}:
+      Ask.opts(String.split(options, '\n'), id)
+
+def Ask.choices.loc(+l: I.Loc, omp: Bool, +k: String, +id: String, +o: String, +draft: String) -> List<&2, S.Hit>:
   Bool.pick(List<&2, S.Hit>, String.eq(k, "send"), [S.Hit{0, 0, 0, 0, "Send", id ++ "|accept"}, S.Hit{0, 0, 0, 0, "Not now", id ++ "|decline"}],
   Bool.pick(List<&2, S.Hit>, String.eq(k, "plan"), [S.Hit{0, 0, 0, 0, MSG.T.approval.implement(l), id ++ "|implement"}, S.Hit{0, 0, 0, 0, MSG.T.approval.dismiss(l), id ++ "|dismiss"}],
     Bool.pick(List<&2, S.Hit>, String.eq(k, "input"),
       List.append(&2, S.Hit, Bool.pick(List<&2, S.Hit>, String.is_empty(String.trim(draft)), [S.Hit{0, 0, 0, 0, MSG.T.approval.dismiss(l), id ++ "|"}], [S.Hit{0, 0, 0, 0, MSG.T.approval.draft(l), id ++ "|" ++ String.trim(draft)}]),
         List.reverse(&2, S.Hit, Ask.opts(String.split(o, '\n'), id))),
-      [S.Hit{0, 0, 0, 0, MSG.T.approval.allow(l), id ++ "|accept"}, S.Hit{0, 0, 0, 0, MSG.T.approval.session(l), id ++ "|session"}, S.Hit{0, 0, 0, 0, MSG.T.approval.deny(l), id ++ "|decline"}])))
+      Ask.choices.approval(String.is_empty(o), omp, l, id, o))))
 
 def Ask.choices(+k: String, +id: String, +o: String, +draft: String) -> List<&2, S.Hit>:
-  Ask.choices.loc(I.En{}, k, id, o, draft)
-
+  Ask.choices.loc(I.En{}, False{}, k, id, o, draft)
 def Ask.text.lines(+ty: Ty, ls: List<&2, String>, +x0: U32, +y: U32) -> Out:
   match ls:
     case Nil{}:
@@ -3151,16 +3159,17 @@ def Ask.range(+ty: Ty, +info: Map<&2, String>, +k: String, +id: String, +d: Stri
   +show = Ask.shown(n)
   Bool.pick(String, String.eq(k, "approval"), Pane.range.loc(Ty.loc(ty), Ask.off(Pane.off(info, "ask:" ++ id), n, show), show, n), "")
 
-def Ask.std.card(+ty: Ty, a: M.Ask, +draft: String, +info: Map<&2, String>, +x0: U32, +x1: U32, +y: U32) -> Out:
+def Ask.std.card(+ty: Ty, st: M.State, a: M.Ask, +draft: String, +info: Map<&2, String>, +x0: U32, +x1: U32, +y: U32) -> Out:
   match a:
-    case M.Ask{+id, _, +k, +tool, +d, +o, _, _}:
+    case M.Ask{+id, +thread, +k, +tool, +d, +o, _, _}:
+      +omp = String.eq(M.Thread.provider(U.Ui.thread(st, thread)), "omp")
       +h = Ask.std.h(ty, M.Ask{id, "", k, tool, d, o, True{}, ""}, (x1 - x0 - 32 : U32))
       +head = U.Ask.head.loc(Ty.loc(ty), k, tool, d) ++ Ask.range(ty, info, k, id, d, (x1 - x0 - 32 : U32))
       Out.all([
         Out.ops(Lay.box(D.Clip.all(), x0, y, (x1 - x0 : U32), h, 0, T.Th.panel(), T.Th.warn())),
         Out.ops(Ty.text(ty, 2n, head, D.Clip.all(), (x0 + 14 : U32), (y + 4 : U32), 22, T.Th.warn())),
         Ask.body(ty, k, id, d, info, x0, x1, y, h),
-        Ask.buttons(ty, Ask.choices.loc(Ty.loc(ty), U.Ask.bkind(k, tool), id, o, draft), (y + h - 36 : U32), (x1 - 12 : U32))])
+        Ask.buttons(ty, Ask.choices.loc(Ty.loc(ty), omp, U.Ask.bkind(k, tool), id, o, draft), (y + h - 36 : U32), (x1 - 12 : U32))])
 
 # the buttons of a paused task's card, right to left (the first is leftmost)
 def Ask.tbtns(bs: List<&2, U.TBtn>, +ty: Ty, +y: U32, +x: U32) -> Out:
@@ -3204,24 +3213,24 @@ def Ask.web.card.k(+t: U.TAsk, +ty: Ty, +nf: Map<&2, String>, +x0: U32, +x1: U32
     Out.when(Bool.not(String.is_empty(shot)), Lay.thumb(ty, Lay.tshot(U.Str.get(nf, "listen"), shot), U.Str.get(nf, "img:" ++ Lay.tshot(U.Str.get(nf, "listen"), shot)), (x0 + 14 : U32), sy, (x1 - x0 - 28 : U32), 148)),
     Ask.tbtns(Ask.web.btns(t), ty, (y + h - 36 : U32), (x1 - 12 : U32))])
 
-def Ask.card.k(web: Bool, +ty: Ty, a: M.Ask, +draft: String, +nf: Map<&2, String>, +x0: U32, +x1: U32, +y: U32) -> Out:
+def Ask.card.k(web: Bool, +ty: Ty, st: M.State, a: M.Ask, +draft: String, +nf: Map<&2, String>, +x0: U32, +x1: U32, +y: U32) -> Out:
   match web:
     case True{}:
       Ask.web.card.k(U.Teach.ask.from.loc(Ty.loc(ty), a, nf), ty, nf, x0, x1, y)
     case False{}:
-      Ask.std.card(ty, a, draft, nf, x0, x1, y)
+      Ask.std.card(ty, st, a, draft, nf, x0, x1, y)
 
-def Ask.card(+ty: Ty, a: M.Ask, +draft: String, +nf: Map<&2, String>, +x0: U32, +x1: U32, +y: U32) -> Out:
+def Ask.card(+ty: Ty, st: M.State, a: M.Ask, +draft: String, +nf: Map<&2, String>, +x0: U32, +x1: U32, +y: U32) -> Out:
   match a:
     case M.Ask{_, _, +k, _, _, _, _, _}:
-      Ask.card.k(String.eq(k, "browser"), ty, a, draft, nf, x0, x1, y)
+      Ask.card.k(String.eq(k, "browser"), ty, st, a, draft, nf, x0, x1, y)
 
-def Lay.asks(+ty: Ty, as: List<&2, M.Ask>, +draft: String, +nf: Map<&2, String>, +x0: U32, +x1: U32, +y: U32) -> Out:
+def Lay.asks(+ty: Ty, +st: M.State, as: List<&2, M.Ask>, +draft: String, +nf: Map<&2, String>, +x0: U32, +x1: U32, +y: U32) -> Out:
   match as:
     case Nil{}:
       Out.none()
     case +a <> t:
-      Out.cat(Ask.card(ty, a, draft, nf, x0, x1, y), Lay.asks(ty, t, draft, nf, x0, x1, (y + Ask.h(ty, a, nf, (x1 - x0 - 32 : U32)) + 8 : U32)))
+      Out.cat(Ask.card(ty, st, a, draft, nf, x0, x1, y), Lay.asks(ty, st, t, draft, nf, x0, x1, (y + Ask.h(ty, a, nf, (x1 - x0 - 32 : U32)) + 8 : U32)))
 
 # A side question (/btw) and its answer, in a card over the composer until
 # closed; its answer wraps to at most Btw.rows() lines
@@ -4063,7 +4072,7 @@ def Lay.settings(+ty: Ty, +st: M.State, +n: S.Nui, +info: Map<&2, String>, +v: S
     Set.head(ty, MSG.T.settings.agents(Ty.loc(ty)), x, (b2 + 192 : U32)),
     Set.card(x, (b2 + 224 : U32), w, (124 + dy : U32)),
     Set.row(ty, MSG.T.settings.agents.default(Ty.loc(ty)), MSG.T.settings.agents.note(Ty.loc(ty), Set.cli.loc(Ty.loc(ty), U.Models.cli(U.Str.get(info, "models"), prov), prov)), x, (b2 + 226 : U32), w),
-    Set.chips(ty, ["claude", "codex", "grok", "muse", "antigravity"], prov, "agent.provider", (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32), (b2 + 274 : U32)),
+    Set.chips(ty, ["claude", "codex", "grok", "muse", "antigravity", "omp"], prov, "agent.provider", (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32), (b2 + 274 : U32)),
     Set.chips(ty, ms, M.Setting.get(st, "agent.model", ""), "agent.model", (x + 16 : U32), (x + w - 16 : U32), (x + 16 : U32), (b2 + 308 : U32)),
     Out.ops(Ty.text(ty, 2n, Ty.fit(ty, 2n, Set.model_line.loc(Ty.loc(ty), U.Models.label_of(U.Str.get(info, "models"), prov, M.Setting.get(st, "agent.model", "")), M.Setting.get(st, "agent.model", "")), (w - 32 : U32)),
       D.Clip.all(), (x + 16 : U32), (b2 + 318 + dy : U32), 24, T.Th.dim())),
@@ -6719,7 +6728,7 @@ def Lay.thread.k(+ty: Ty, +memo: TLMemo, t: M.Thread, +draft: String, +held: Str
           Lay.ready(ty, Ready.line(st, pics, sel, Lay.running(turn)), U.Fab.ready.btn.of(st, pics, sel), cx0, cx1, (h - eh - 124 + 2 : U32)),
           Lay.queued(ty, qs, Lay.running(turn), cx0, cx1, (h - eh : U32)),
           Lay.todos(ty, tds, tdr, tdm, tdo, tda, sel, tdoff, List.length(&2, TD.TRow, tdall), cx0, cx1, (h - eh - 124 - Lay.qh(qs) : U32)),
-          Lay.asks(ty, asks, draft, pics, cx0, cx1, (h - 132 - ah - qh - eh - bh + 4 : U32)),
+          Lay.asks(ty, st, asks, draft, pics, cx0, cx1, (h - 132 - ah - qh - eh - bh + 4 : U32)),
           Btw.card.if(Bool.not(String.is_empty(bq)), ty, bq, ba, cx0, cx1, (h - 132 - qh - eh - bh + 4 : U32)),
           Lay.picker(picking, ty, U.Models.menu(info, pr), mo, info, pr, cx0, cx1, (h - 128 - eh : U32), (60 + hy : U32), U.Chip.all(info, pr, mo), U.Effort.of(st, sel), moff)])
       Out.cat(Out.cat(tl, TL.pill(String.is_empty(pill), ty, pill, cx0, cx1, (h - ah - qh - eh - bh - 132 : U32))), ch)

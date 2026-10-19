@@ -9433,10 +9433,10 @@ def Laws.teach_recording_not_early():
 def Laws.teach_draft_secret_no_value():
   {==}
 
-def Laws.mobile_browser_ask_card(a, d, nf):
+def Laws.mobile_browser_ask_card(lc, st, a, d, nf):
   {==}
 
-def Laws.mobile_other_ask_standard(a, d, nf):
+def Laws.mobile_other_ask_standard(lc, st, a, d, nf):
   {==}
 
 def Laws.mobile_browser_card_only_browser(t, rest):
@@ -10446,6 +10446,15 @@ def Laws.mail_origin_keeps_outputs(st, thread, msg, origin, at):
       {==}
 
 # ---- end mail 1 ----
+
+# ---- omp ----
+def Laws.omp_approval_total():
+  {==}
+
+def Laws.omp_yolo_only_full():
+  {==}
+
+# ---- end omp ----
 # ---- links (ref) ----
 
 def Laws.ref_uri_parse_thread():

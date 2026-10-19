@@ -29,6 +29,7 @@ import ../core/kexport.bend as KXP
 import ./browser.bend as BR
 import ../core/acp.bend as AC
 import ../core/msp.bend as MS
+import ../core/omp.bend as OM
 import ../core/agy.bend as AGY
 import ./agyio.bend as AGX
 import ./mailstore.bend as MST
@@ -2956,7 +2957,7 @@ def Grok.started.ok(started: U32 & Socket, +t: MS.Proto, +thread: String, +gen: 
 def Grok.failed(e: U32 & String, +p: MS.Proto, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
   (_, msg) = e
   do IO<Unit>:
-    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, SpawnFailed{thread, gen, AC.Acp.failed("could not start " ++ MS.Proto.name(p) ++ ": " ++ msg ++ ". " ++ MS.Proto.install(p))})
+    ok : Result<&1, &1, Msg, Unit> <- Chan.send(Msg, inbox, SpawnFailed{thread, gen, MS.Proto.spawn_failed(p, msg)})
     return Unit{}
 
 def Grok.started(r: Result<&1, &1, U32 & String, U32 & Socket>, +t: MS.Proto, +thread: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
@@ -3711,10 +3712,10 @@ def Desk.tell(seen: Bool, +cl: List<&2, Client>, +st: M.State, +thread: String, 
 
 # the reply now, or (for a request that waits on the user) parked until
 # the ask it opened is answered
-def Hub.mcp.send(later: Bool, +park: String, +body: String, +text: String, +reply: Chan(String), +cfg: Cfg) -> IO(Unit):
+def Hub.mcp.send(later: Bool, omp: Bool, +park: String, +body: String, +text: String, +reply: Chan(String), +cfg: Cfg) -> IO(Unit):
   match later:
     case True{}:
-      Park.put(Cfg.pk(cfg), PK.PPark{park, body, reply})
+      Park.put(Cfg.pk(cfg), PK.PPark{park, body, reply, omp})
     case False{}:
       do IO<Unit>:
         ok : Result<&1, &1, String, Unit> <- Chan.send(String, reply, text)
@@ -4105,6 +4106,17 @@ def Grok.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: Stri
     +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
     Grok.run(Grok.args(r, model, Hub.effort_of(st, thread)),
       MS.PAcp{AC.AcpTurn{cwd, Hub.mcp_url.g(cfg, thread, gen), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), AG.Mention.expand("grok", text, ss), session, Grok.asks(r)}}, cwd, thread, gen, inbox)
+
+# one oh-my-pi turn: Grok's runner over ACP, one process per turn, the
+# argv of omp.bend (its approval mode) and the model and thinking level
+# the composer chose (POmp)
+def Omp.go(+cfg: Cfg, +st: M.State, +thread: String, +cwd: String, +model: String, +session: String, +r: M.RuntimeMode, +text: String, +gen: String, +inbox: Chan(Msg)) -> IO(Unit):
+  do IO<Unit>:
+    +fs : K.Files <- Files.prepared(thread, cwd, inbox)
+    +ss : List<&2, AG.USkill> <- Skills.scan(cwd)
+    +keys : String <- AKS.Ak.prompt(Cfg.home(cfg))
+    Grok.run(OM.Omp.args(r),
+      MS.POmp{AC.AcpTurn{cwd, Hub.mcp_url.g(cfg, thread, gen), Hub.prompt(cfg, st, thread, cwd, fs, keys) ++ AG.USkill.prompt(ss), AG.Mention.expand("omp", text, ss), session, Grok.asks(r)}, model, Hub.effort_of(st, thread)}, cwd, thread, gen, inbox)
 
 # one Muse turn: Grok's runner over MSP; the turn's gen makes its command
 # ids (Muse refuses one it has seen)
@@ -4930,8 +4942,8 @@ def Models.text3(+cl: List<&2, String>, +cx: List<&2, String>, +gk: List<&2, Str
 def Models.text4(+cl: List<&2, String>, +cx: List<&2, String>, +gk: List<&2, String>, +ms: List<&2, String>) -> String:
   Models.join(Models.text3(cl, cx, gk), Models.line("muse", ms))
 
-def Models.text5(+cl: List<&2, String>, +cx: List<&2, String>, +gk: List<&2, String>, +ms: List<&2, String>, +ag: List<&2, String>) -> String:
-  Models.join(Models.text4(cl, cx, gk, ms), Models.line("antigravity", ag))
+def Models.text5(+cl: List<&2, String>, +cx: List<&2, String>, +gk: List<&2, String>, +ms: List<&2, String>, +ag: List<&2, String>, +om: List<&2, String>) -> String:
+  Models.join(Models.join(Models.text4(cl, cx, gk, ms), Models.line("antigravity", ag)), Models.line("omp", om))
 
 # what the providers offer: the models JSON clients read, and a line for
 # the agents' prompt
@@ -5199,10 +5211,10 @@ def Refresh.found(fd: Found, +inbox: Chan(Msg), +cache: String, +last: String) -
       Refresh.news(BT.Models.news(ms, last), ms, mt, inbox, cache, last)
 
 # (Antigravity's "agy": what is installed and its accounts, AGY.Agy.info.json)
-def Models.found(+cl: List<&2, String>, +cx: List<&2, String>, +gk: List<&2, String>, +ms: List<&2, String>, +ag: List<&2, String>, agy: J.Json, about: J.Json) -> Found:
+def Models.found(+cl: List<&2, String>, +cx: List<&2, String>, +gk: List<&2, String>, +ms: List<&2, String>, +ag: List<&2, String>, +om: List<&2, String>, agy: J.Json, about: J.Json) -> Found:
   Found{J.Json.show(J.Json.obj([J.KV{"claude", Models.strs(cl)}, J.KV{"codex", Models.strs(cx)}, J.KV{"grok", Models.strs(gk)}, J.KV{"muse", Models.strs(ms)}, J.KV{"antigravity", Models.strs(ag)},
-    J.KV{"agy", agy}, J.KV{"about", about}])),
-    Models.text5(cl, cx, gk, ms, ag)}
+    J.KV{"omp", Models.strs(om)}, J.KV{"agy", agy}, J.KV{"about", about}])),
+    Models.text5(cl, cx, gk, ms, ag, om)}
 
 def Models.boot(ks: String & List<&2, Q.Skill>, +rt: K.Rt, fd: Found, +fc: String) -> Boot:
   (kdir, skills) = ks
@@ -5234,6 +5246,14 @@ def Models.grok(r: P.Ran) -> List<&2, String>:
       Models.grok.go(String.lines(out))
     case _:
       Nil{}
+
+# the text `omp models --json` printed ("" when it did not run)
+def Models.omp.text(+r: P.Ran) -> String:
+  match r:
+    case P.Ran{0, out}:
+      out
+    case _:
+      ""
 
 def Main.has(r: P.Ran) -> Bool:
   match r:
@@ -5329,6 +5349,16 @@ def About.muse.go(xs: List<&2, J.Json>) -> List<&2, J.KV>:
 def About.muse(+xs: List<&2, J.Json>) -> List<&2, J.KV>:
   Bool.pick(List<&2, J.KV>, List.is_empty(&2, J.Json, xs), Nil{}, J.KV{"default", J.Str{"Muse's own default"}} <> About.muse.go(xs))
 
+def About.omp.go(xs: List<&2, String>) -> List<&2, J.KV>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +m <> t:
+      J.KV{m, J.Str{m}} <> About.omp.go(t)
+
+def About.omp(+xs: List<&2, String>) -> List<&2, J.KV>:
+  Bool.pick(List<&2, J.KV>, List.is_empty(&2, String, xs), Nil{}, J.KV{"default", J.Str{"oh-my-pi's own default"}} <> About.omp.go(xs))
+
 def About.cli(r: P.Ran) -> String:
   match r:
     case P.Ran{0, out}:
@@ -5357,12 +5387,18 @@ def Models.detect(+user: String, +home: String) -> IO(Found):
     vg : P.Ran <- P.Proc.run("sh", ["-c", (PT.Port.tmo() ++ "tmo 10 grok --version")], "/")
     mu : P.Ran <- P.Proc.run("sh", ["-c", Muse.probe.sh()], "/")
     vm : P.Ran <- P.Proc.run("sh", ["-c", (PT.Port.tmo() ++ "command -v muse >/dev/null && tmo 10 muse --version")], "/")
+    +oc : P.Ran <- P.Proc.run("sh", ["-c", (PT.Port.tmo() ++ "command -v omp >/dev/null && tmo 15 omp models --json")], "/")
+    vo : P.Ran <- P.Proc.run("sh", ["-c", (PT.Port.tmo() ++ "command -v omp >/dev/null && tmo 10 omp --version")], "/")
     +xs : List<&2, J.Json> = Claude.listed(pc)
     +mx : List<&2, J.Json> = Muse.catalog(mu)
     +ag : AGY.AgyInfo <- AGX.Agx.probe(AGX.Agx.root(home))
-    return Models.found(Claude.models(Main.has(cl), xs), Models.on(Main.has(cx), Models.codex(cache)), Models.grok(gk), Models.muse(mx), AGY.Agy.info.models(ag), AGY.Agy.info.json(ag),
+    +oj : J.Json = OM.Omp.catalog(Models.omp.text(oc))
+    +om : List<&2, String> = OM.Omp.models.j(oj)
+    +oe : List<&2, J.KV> = OM.Omp.efforts.j(oj)
+    return Models.found(Claude.models(Main.has(cl), xs), Models.on(Main.has(cx), Models.codex(cache)), Models.grok(gk), Models.muse(mx), AGY.Agy.info.models(ag), om, AGY.Agy.info.json(ag),
       J.Json.obj([J.KV{"claude", Claude.about(About.cli(vc), xs)}, J.KV{"codex", About.one(About.cli(vx), About.codex(cache))}, J.KV{"grok", About.one(About.cli(vg), About.grok(gk))},
-        J.KV{"muse", About.one(About.cli(vm), About.muse(mx))}, J.KV{"antigravity", AGY.Agy.info.about(ag)}]))
+        J.KV{"muse", About.one(About.cli(vm), About.muse(mx))}, J.KV{"antigravity", AGY.Agy.info.about(ag)},
+        J.KV{"omp", J.Json.obj([J.KV{"cli", J.Str{About.cli(vo)}}, J.KV{"labels", J.Json.obj(About.omp(om))}, J.KV{"efforts", J.Json.obj(oe)}])}]))
 
 # The CLIs are looked for on PATH, which a launcher's or a service's hub
 # lacks the login shell's part of (nvm, volta...): before each detection the
@@ -5387,7 +5423,7 @@ def Path.refresh(+home: String) -> IO(Unit):
     +next : String = CPA.CliPath.next(cur, home, Path.out(r))
     Path.set(String.eq(cur, next), next)
 
-# which of the four CLIs are on PATH now (Antigravity's agy lives in
+# which of the five CLIs are on PATH now (Antigravity's agy lives in
 # <home>/antigravity, AGX.Agx.probe, not on PATH), "claude codex " style;
 # a stand-in's block (core/standin.bend) is none
 def Models.present() -> IO(String):
@@ -8623,6 +8659,13 @@ def Hub.out(h: Hub, o: B.Out) -> IO(Hub):
         +g : String = Hub.gen(st, now)
         IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Agt.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, g, inbox)))
         Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
+    case Hub{+st, f, ls, cl, as, +inbox, +cfg, note} B.OmpTurn{+thread, +cwd, +model, +session, r, +text}:
+      do IO<Hub>:
+        +now : Nat <- Now.nat()
+        +t2 : String = Far.turn(cfg, st, now, thread, text)
+        +g : String = Hub.gen(st, now)
+        IO.spawn(Unit, IO.bind(String, Unit, EmbNote.take(cfg, st, thread), n => Omp.go(cfg, st, thread, cwd, model, session, r, t2 ++ n, g, inbox)))
+        Hub.placeholder(Hub{st, f, ls, cl, as, inbox, cfg, note}, thread, g)
     case Hub{st, f, ls, cl, as, +inbox, cfg, note} B.LockGuard{+name, old, +holder}:
       do IO<Hub>:
         LG.Guard.drop(name, old)
@@ -9984,16 +10027,16 @@ def Hub.tick(h: Hub, +now: Nat) -> IO(Hub):
 def Hub.mcp.fail(+body: String) -> String:
   MC.Mcp.error(Maybe.default(&2, J.Json, J.Json.get(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), "id"), J.Null{}), "-32000", "Backplane could not record this (the log write failed); nothing was done")
 
-def Hub.mcp.after(r: Hub & Bool, +park: String, +body: String, +text: String, +reply: Chan(String)) -> IO(Hub):
+def Hub.mcp.after(r: Hub & Bool, +park: String, +body: String, +text: String, +reply: Chan(String), omp: Bool) -> IO(Hub):
   (h, ok) = r
   match h ok:
     case Hub{hs, f, ls, cl, as, inbox, +cfg, note} True{}:
       do IO<Hub>:
-        Hub.mcp.send(Bool.not(String.is_empty(park)), park, body, text, reply, cfg)
+        Hub.mcp.send(Bool.not(String.is_empty(park)), omp, park, body, text, reply, cfg)
         return Hub{hs, f, ls, cl, as, inbox, cfg, note}
     case Hub{hs, f, ls, cl, as, inbox, +cfg, note} False{}:
       do IO<Hub>:
-        Hub.mcp.send(False{}, "", body, Hub.mcp.fail(body), reply, cfg)
+        Hub.mcp.send(False{}, omp, "", body, Hub.mcp.fail(body), reply, cfg)
         return Hub{hs, f, ls, cl, as, inbox, cfg, note}
 
 def MailJob.mcp.json(+r: MST.StoreResult<J.Json>, +id: J.Json) -> String:
@@ -10007,21 +10050,22 @@ def Hub.mail.mcp.read(h: Hub, +cs: List<&2, M.Change>, +conv: String, +before: S
     case Hub{+st, f, +ls, +cl, +as, +inbox, +cfg, +note}:
       do IO<Hub>:
         r : MST.StoreResult<J.Json> <- MailJob.page(Cfg.home(cfg), st, conv, "*", before, n)
-        IO.bind(Hub & Bool, Hub, Hub.step.ok(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{cs, Nil{}}), got => Hub.mcp.after(got, "", body, MailJob.mcp.json(r, J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), "id")), reply))
+        IO.bind(Hub & Bool, Hub, Hub.step.ok(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{cs, Nil{}}), got => Hub.mcp.after(got, "", body, MailJob.mcp.json(r, J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), "id")), reply, False{}))
 
-def Hub.mcp.k(o: MC.McpOut, h: Hub, +reply: Chan(String), +body: String) -> IO(Hub):
+def Hub.mcp.k(o: MC.McpOut, h: Hub, +reply: Chan(String), +body: String, omp: Bool) -> IO(Hub):
   match o:
     case MC.McpOut{_, B.Step{cs, B.MailRead{_, _, conv, before, n} <> Nil{}}, _}:
       Hub.mail.mcp.read(h, cs, conv, before, n, reply, body)
     case MC.McpOut{+text, st, +park}:
-      IO.bind(Hub & Bool, Hub, Hub.step.ok(h, st), r => Hub.mcp.after(r, park, body, text, reply))
+      IO.bind(Hub & Bool, Hub, Hub.step.ok(h, st), r => Hub.mcp.after(r, park, body, text, reply, omp))
 
 def Hub.mcp.hub.normal(h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match h:
     case Hub{+st, f, ls, cl, as, inbox, +cfg, note}:
       Hub.mcp.k(BH.Ride.mcp(BH.Bots.mcp(st, now, thread, Maybe.default(&2, J.Json, J.Json.parse(Cfg.models(cfg)), J.Null{}), Cfg.version(cfg),
           Maybe.default(&2, J.Json, J.Json.parse(BN.Bn.dir(Cfg.bn(cfg))), J.Json.arr(Nil{})), GG.Google.tool_defs(), body), st, now, thread),
-        Hub{st, f, ls, cl, as, inbox, cfg, note}, reply, body)
+        Hub{st, f, ls, cl, as, inbox, cfg, note}, reply, body,
+        String.eq(M.Thread.provider(M.State.thread.get(st, thread)), "omp"))
 
 def LockTool.preflight(free: Bool, +name: String, +holder: String, +home: String) -> IO(Bool):
   match free:
@@ -10167,7 +10211,7 @@ def Hub.newproj.made(h: Hub, +root: String, +name: String, +id: String, +reply: 
   match h:
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       Hub.mcp.k(MC.Mcp.reply(Maybe.default(&2, J.Json, J.Json.parse(id), J.Null{}), BH.Bots.newproj.made(st, now, root, name)),
-        Hub{st, f, ls, cl, as, inbox, cfg, note}, reply, "")
+        Hub{st, f, ls, cl, as, inbox, cfg, note}, reply, "", False{})
 
 def Hub.mcp.w(+secs: Nat, h: Hub, +thread: String, +o: J.Json, body: String, +reply: Chan(String), +now: Nat) -> IO(Hub):
   match secs h:
@@ -12029,7 +12073,7 @@ def Hub.cal.ask(ask: Bool, h: Hub, +thread: String, +tool: String, +args: J.Json
       do IO<Hub>:
         +ask : String = B.Hub.id("q", now, B.Hub.seq(st))
         +r2 : Chan(String) <- Chan.new(String, 1)
-        Park.put(Cfg.pk(cfg), PK.PPark{ask, "", r2})
+        Park.put(Cfg.pk(cfg), PK.PPark{ask, "", r2, False{}})
         IO.spawn(Unit, Gg.wait(r2, Cfg.home(cfg), tool, args, id, reply))
         Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{[M.AskOpened{ask, thread, "approval", tool, detail, "", now}], Nil{}})
 
@@ -12043,7 +12087,7 @@ def Hub.google.k(ask: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(St
       do IO<Hub>:
         +ask : String = B.Hub.id("q", now, B.Hub.seq(st))
         +r2 : Chan(String) <- Chan.new(String, 1)
-        Park.put(Cfg.pk(cfg), PK.PPark{ask, "", r2})
+        Park.put(Cfg.pk(cfg), PK.PPark{ask, "", r2, False{}})
         IO.spawn(Unit, Gg.wait(r2, Cfg.home(cfg), Gg.tool(o), Gg.args(o), J.Json.get_obj(o, "id"), reply))
         Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{[M.AskOpened{ask, thread, "approval", Gg.tool(o), Gg.detail(o), "", now}], Nil{}})
 
@@ -12123,7 +12167,7 @@ def Hub.gmail.k(ask: Bool, h: Hub, +thread: String, +tool: String, +detail: Stri
       do IO<Hub>:
         +ask : String = B.Hub.id("q", now, B.Hub.seq(st))
         +r2 : Chan(String) <- Chan.new(String, 1)
-        Park.put(Cfg.pk(cfg), PK.PPark{ask, "", r2})
+        Park.put(Cfg.pk(cfg), PK.PPark{ask, "", r2, False{}})
         IO.spawn(Unit, Gg.gwait(r2, Cfg.home(cfg), plan, id, reply))
         Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{[M.AskOpened{ask, thread, "approval", tool, detail, "", now}], Nil{}})
 
@@ -12212,7 +12256,7 @@ def Hub.newproj.k(ask: Bool, h: Hub, +thread: String, +o: J.Json, +reply: Chan(S
       do IO<Hub>:
         +ask : String = B.Hub.id("q", now, B.Hub.seq(st))
         +r2 : Chan(String) <- Chan.new(String, 1)
-        Park.put(Cfg.pk(cfg), PK.PPark{ask, "", r2})
+        Park.put(Cfg.pk(cfg), PK.PPark{ask, "", r2, False{}})
         IO.spawn(Unit, Np.wait(r2, inbox, thread, Gg.args(o), J.Json.get_obj(o, "id"), reply))
         Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note}, B.Step{[M.AskOpened{ask, thread, "approval", "project_create", BH.Bots.newproj.detail(Gg.args(o)), "", now}], Nil{}})
 
@@ -12364,7 +12408,7 @@ def Hub.task.paused(h: Hub, +thread: String, +bot: String, +run: String, +slug: 
       do IO<Hub>:
         +ask : String = B.Hub.id("q", now, B.Hub.seq(st))
         +r2 : Chan(String) <- Chan.new(String, 1)
-        Park.put(Cfg.pk(cfg), PK.PPark{ask, "", r2})
+        Park.put(Cfg.pk(cfg), PK.PPark{ask, "", r2, False{}})
         IO.spawn(Unit, Tk.wait(r2, inbox, bot, rid, reply))
         Hub.step(Hub{st, f, ls, cl, as, inbox, cfg, note},
           B.Step{[M.AskOpened{ask, thread, "browser", "task_pause", TE.Pause.detail(bot, run, slug, n, kind, question, risky), TE.Pause.options(risky), now}], Nil{}})
@@ -12607,7 +12651,7 @@ def Od.ask(ok: Bool, h: Hub, +thread: String, +dir: String, +abs: String, +m: J.
       do IO<Hub>:
         +ask : String = B.Hub.id("q", now, B.Hub.seq(st))
         +r2 : Chan(String) <- Chan.new(String, 1)
-        Park.put(Cfg.pk(cfg), PK.PPark{ask, "", r2})
+        Park.put(Cfg.pk(cfg), PK.PPark{ask, "", r2, False{}})
         IO.spawn(Unit, Od.wait(r2, inbox, Cfg.home(cfg), Od.server(st), abs, ps, thread))
         # (the agent hears at once and ends its turn; the person's Send may
         # come any time, Od.wait)
@@ -12805,7 +12849,7 @@ def Hub.mcp.far(own: Bool, h: Hub, +link: String, +rq: String, +o: J.Json, body:
         IO.spawn(Unit, Far.mcp.job(Maybe.default(&2, J.Json, J.Json.get(o, "id"), J.Null{}), link, rq, Cfg.home(cfg), Bot.peer.url(st, link), reply))
         return Hub{st, f, ls, cl, as, inbox, cfg, note}
     case False{} _:
-      Hub.mcp.k(MC.Mcp.reply(Maybe.default(&2, J.Json, J.Json.get(o, "id"), J.Null{}), MC.Res.fail("sync with that machine is off here")), h, reply, body)
+      Hub.mcp.k(MC.Mcp.reply(Maybe.default(&2, J.Json, J.Json.get(o, "id"), J.Null{}), MC.Res.fail("sync with that machine is off here")), h, reply, body, False{})
 
 # a tool call for a machine of the owner's goes there (fmcp.bend); machine_list
 # is answered here; any other runs as before
@@ -12814,7 +12858,7 @@ def Hub.mcp.f(p: FM.Plan, h: Hub, +thread: String, +o: J.Json, body: String, +re
     case FM.PHere{} _:
       Hub.mcp.x(XR.Xref.read.is(o), h, thread, o, body, reply, now)
     case FM.PAnswer{r} _:
-      Hub.mcp.k(MC.Mcp.reply(Maybe.default(&2, J.Json, J.Json.get(o, "id"), J.Null{}), r), h, reply, body)
+      Hub.mcp.k(MC.Mcp.reply(Maybe.default(&2, J.Json, J.Json.get(o, "id"), J.Null{}), r), h, reply, body, False{})
     case FM.PFar{+link, +rq} Hub{+st, f, ls, cl, as, +inbox, +cfg, note}:
       Hub.mcp.far(Far.own.id(st, cfg, link), Hub{st, f, ls, cl, as, inbox, cfg, note}, link, rq, o, body, reply)
 
@@ -13030,7 +13074,7 @@ def Hub.mcp.stale(+body: String) -> String:
 
 def Hub.mcp.charter.allowed(ok: Bool, +s: M.State, +r: ML.Run, h: Hub, +thread: String, +body: String, +reply: Chan(String), +now: Nat, +o: J.Json) -> IO(Hub):
   match ok:
-    case False{}: Hub.mcp.k(MC.Mcp.reply(J.Json.get_obj(o, "id"), MC.Res{False{}, J.Str{"Outside the charter; escalated"}, B.Run.escalate(s, now, ML.Run.bot(r), ML.Run.conv(r), "bot", "Outside the charter: " ++ J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""))}), h, reply, body)
+    case False{}: Hub.mcp.k(MC.Mcp.reply(J.Json.get_obj(o, "id"), MC.Res{False{}, J.Str{"Outside the charter; escalated"}, B.Run.escalate(s, now, ML.Run.bot(r), ML.Run.conv(r), "bot", "Outside the charter: " ++ J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""))}), h, reply, body, False{})
     case True{}:
       IO.bind(Hub, Hub, Hub.step(h, MC.Mcp.run.decide(s, now, r, J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), "charter: " ++ CH.Charter.line(ML.Box.charter(M.State.mail(s), ML.Run.bot(r)), J.Json.get_str(J.Json.get_obj(o, "params"), "name", ""), J.Json.get_obj(J.Json.get_obj(o, "params"), "arguments")))), h2 => Hub.mcp(h2, thread, body, reply, now))
 
@@ -13368,7 +13412,7 @@ def Hub.ship.asked(h: Hub, +thread: String, +body: String, +reply: Chan(String),
     case Hub{+st, f, ls, cl, as, inbox, cfg, note}:
       Hub.mcp.k(MC.Mcp.reply(Maybe.default(&2, J.Json, J.Json.get(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), "id"), J.Null{}),
           MC.Mcp.ship(st, now, thread, J.Json.get_obj(J.Json.get_obj(Maybe.default(&2, J.Json, J.Json.parse(body), J.Null{}), "params"), "arguments"), out)),
-        Hub{st, f, ls, cl, as, inbox, cfg, note}, reply, body)
+        Hub{st, f, ls, cl, as, inbox, cfg, note}, reply, body, False{})
 
 def Hub.ship.newest.k(p: M.State & Hub, +why: String, +out: String, +now: Nat) -> IO(Hub):
   (st, h) = p

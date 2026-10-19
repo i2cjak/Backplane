@@ -14,7 +14,7 @@ import Base
 
 # the CLIs looked up on PATH (Antigravity runs from <home>/antigravity)
 def Standin.names() -> List<&2, String>:
-  ["claude", "codex", "grok", "muse"]
+  ["claude", "codex", "grok", "muse", "omp"]
 
 def Standin.mark() -> String:
   "BACKPLANE-STANDIN-MISSING"

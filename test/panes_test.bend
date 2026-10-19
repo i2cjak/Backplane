@@ -98,7 +98,7 @@ def main() -> IO(Unit):
     +todo_out : L.Out = L.Lay.todos.k(True{}, L.Ty.none(), todos(4n), Nil{}, "", False{}, False{}, "t1", 0n, 4n, 100, 900, 500)
     C.Check.str("the todo head beats its scrolling pane", hit.action(N.Hit.find(hits(todo_out), 200, 470)), "fold")
     +ask : M.Ask = M.Ask{"a", "t1", "approval", "Bash", "Run ls", "", True{}, ""}
-    +ask_out : L.Out = L.Ask.card(L.Ty.none(), ask, "", Map.new(&2, String), 100, 900, 100)
+    +ask_out : L.Out = L.Ask.card(L.Ty.none(), M.State.empty(), ask, "", Map.new(&2, String), 100, 900, 100)
     C.Check.str("an approval's button beats its scrolling pane", hit.action(N.Hit.find(hits(ask_out), 880, (100 + L.Ask.h(L.Ty.none(), ask, Map.new(&2, String), 768) - 20 : U32))), "answer")
     +u : U.Ui = U.Ui.init(0n)
     +many : List<&2, TD.Todo> = todos(200n)

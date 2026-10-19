@@ -757,10 +757,17 @@ def Mob.ask.draft.loc(+lc: I.Loc, empty: Bool, +id: String, +draft: String) -> J
     case False{}:
       Mob.btn(MSG.T.approval.draft(lc), id ++ "|" ++ String.trim(draft), True{})
 
+def Mob.ask.approval(empty: Bool, omp: Bool, +lc: I.Loc, +id: String) -> List<&2, J.Json>:
+  match empty omp:
+    case _ True{}:
+      [Mob.btn(MSG.T.approval.allow(lc), id ++ "|accept", True{}), Mob.btn(MSG.T.approval.deny(lc), id ++ "|decline", False{})]
+    case _ False{}:
+      [Mob.btn(MSG.T.approval.allow(lc), id ++ "|accept", True{}), Mob.btn(MSG.T.approval.session(lc), id ++ "|session", False{}), Mob.btn(MSG.T.approval.deny(lc), id ++ "|decline", False{})]
+
 def Mob.ask.draft(empty: Bool, +id: String, +draft: String) -> J.Json:
   Mob.ask.draft.loc(I.En{}, empty, id, draft)
 
-def Mob.ask.btns.loc(+lc: I.Loc, i: Nat, +id: String, +o: String, +draft: String) -> List<&2, J.Json>:
+def Mob.ask.btns.omp.loc(+lc: I.Loc, omp: Bool, i: Nat, +id: String, +o: String, +draft: String) -> List<&2, J.Json>:
   match i:
     case 0n:
       [Mob.btn(MSG.T.approval.implement(lc), id ++ "|implement", True{}), Mob.btn(MSG.T.approval.dismiss(lc), id ++ "|dismiss", False{})]
@@ -770,10 +777,12 @@ def Mob.ask.btns.loc(+lc: I.Loc, i: Nat, +id: String, +o: String, +draft: String
       [Mob.btn(MSG.T.composer.send(lc), id ++ "|accept", True{}), Mob.btn(MSG.T.ask.notnow(lc), id ++ "|decline", False{})]
 
     case _:
-      [Mob.btn(MSG.T.approval.allow(lc), id ++ "|accept", True{}), Mob.btn(MSG.T.approval.session(lc), id ++ "|session", False{}), Mob.btn(MSG.T.approval.deny(lc), id ++ "|decline", False{})]
+      Mob.ask.approval(String.is_empty(o), omp, lc, id)
 
-def Mob.ask.btns(i: Nat, +id: String, +o: String, +draft: String) -> List<&2, J.Json>:
-  Mob.ask.btns.loc(I.En{}, i, id, o, draft)
+def Mob.ask.btns(+lc: I.Loc, omp: Bool, i: Nat, +id: String, +o: String, +draft: String) -> List<&2, J.Json>:
+  Mob.ask.btns.omp.loc(lc, omp, i, id, o, draft)
+def Mob.ask.btns.loc(+lc: I.Loc, i: Nat, +id: String, +o: String, +draft: String) -> List<&2, J.Json>:
+  Mob.ask.btns.omp.loc(lc, False{}, i, id, o, draft)
 
 def Mob.ask.body.loc(+lc: I.Loc, plan: Bool, +d: String) -> List<&2, J.Json>:
   match plan:
@@ -785,37 +794,39 @@ def Mob.ask.body.loc(+lc: I.Loc, plan: Bool, +d: String) -> List<&2, J.Json>:
 def Mob.ask.body(plan: Bool, +d: String) -> List<&2, J.Json>:
   Mob.ask.body.loc(I.En{}, plan, d)
 
-def Mob.ask.std.loc(+lc: I.Loc, a: M.Ask, +draft: String) -> J.Json:
+def Mob.ask.std.loc(+lc: I.Loc, st: M.State, a: M.Ask, +draft: String) -> J.Json:
   match a:
-    case M.Ask{+id, _, +k, +tool, +d, +o, _, _}:
+    case M.Ask{+id, +thread, +k, +tool, +d, +o, _, _}:
+      +omp = String.eq(M.Thread.provider(U.Ui.thread(st, thread)), "omp")
       J.Json.obj([J.KV{"id", J.Json.str(id)}, J.KV{"kind", J.Json.str(k)},
         J.KV{"head", J.Json.str(U.Ask.head.loc(lc, k, tool, d))},
         J.KV{"detail", J.Json.str(Bool.pick(String, String.eq(k, "plan"), "", d))},
         J.KV{"blocks", J.Json.arr(Mob.ask.body.loc(lc, String.eq(k, "plan"), d))},
-        J.KV{"buttons", J.Json.arr(Mob.ask.btns.loc(lc, C.Codec.pos(["plan", "input", "send"], U.Ask.bkind(k, tool)), id, o, draft))}])
+        J.KV{"buttons", J.Json.arr(Mob.ask.btns.omp.loc(lc, omp, C.Codec.pos(["plan", "input", "send"], U.Ask.bkind(k, tool)), id, o, draft))}])
 
-def Mob.ask.std(a: M.Ask, draft: String) -> J.Json:
-  Mob.ask.std.loc(I.En{}, a, draft)
+def Mob.ask.std(st: M.State, a: M.Ask, draft: String) -> J.Json:
+  Mob.ask.std.loc(I.En{}, st, a, draft)
 
-def Mob.ask.k.loc(+lc: I.Loc, web: Bool, a: M.Ask, +draft: String, nf: Map<&2, String>) -> J.Json:
+def Mob.ask.k.loc(+lc: I.Loc, st: M.State, web: Bool, a: M.Ask, +draft: String, nf: Map<&2, String>) -> J.Json:
   match web:
     case True{}:
       MB.MBots.ask.loc(lc, U.Teach.ask.from.loc(lc, a, nf))
     case False{}:
-      Mob.ask.std.loc(lc, a, draft)
+      Mob.ask.std.loc(lc, st, a, draft)
 
-def Mob.ask.k(web: Bool, a: M.Ask, draft: String, nf: Map<&2, String>) -> J.Json:
-  Mob.ask.k.loc(I.En{}, web, a, draft, nf)
+def Mob.ask.k(st: M.State, web: Bool, a: M.Ask, draft: String, nf: Map<&2, String>) -> J.Json:
+  Mob.ask.k.loc(I.En{}, st, web, a, draft, nf)
+def Mob.ask(+lc: I.Loc, st: M.State, +a: M.Ask, +draft: String, nf: Map<&2, String>) -> J.Json:
+  match a:
+    case M.Ask{_, _, +k, _, _, _, _, _}:
+      Mob.ask.k.loc(lc, st, String.eq(MB.MBots.ask.kind(a), "browser"), a, draft, nf)
 
-def Mob.ask(+lc: I.Loc, +a: M.Ask, +draft: String, nf: Map<&2, String>) -> J.Json:
-  Mob.ask.k.loc(lc, String.eq(MB.MBots.ask.kind(a), "browser"), a, draft, nf)
-
-def Mob.asks(+lc: I.Loc, as: List<&2, M.Ask>, +draft: String, +nf: Map<&2, String>) -> List<&2, J.Json>:
+def Mob.asks(+lc: I.Loc, +st: M.State, as: List<&2, M.Ask>, +draft: String, +nf: Map<&2, String>) -> List<&2, J.Json>:
   match as:
     case Nil{}:
       Nil{}
     case a <> t:
-      Mob.ask(lc, a, draft, nf) <> Mob.asks(lc, t, draft, nf)
+      Mob.ask(lc, st, a, draft, nf) <> Mob.asks(lc, st, t, draft, nf)
 
 # Subagents (core/subs.bend): what this thread delegated ("select" with
 # the row's key opens its thread) and the agent's own ("fold" with its
@@ -1123,7 +1134,7 @@ def Mob.thread(+lc: I.Loc, render: Bool, u: U.Ui, t: M.Thread, pend: List<&2, St
         J.KV{"entries", J.Json.arr(Mob.paged.es(lc, pg, st, id, nf, drafts, V.View.running(turn)))},
         J.KV{"earlier", J.Json.nat(U.Win.hidden(pg))},
         J.KV{"sending", J.Json.arr(Mob.strs(pend))},
-        J.KV{"asks", J.Json.arr(Mob.asks(lc, U.Asks.open(st, id), U.Str.get(drafts, sel), nf))},
+        J.KV{"asks", J.Json.arr(Mob.asks(lc, st, U.Asks.open(st, id), U.Str.get(drafts, sel), nf))},
         J.KV{"queued", J.Json.str("")},
         J.KV{"queue", J.Json.arr(List.append(&2, J.Json, Mob.fab(st, nf, id, V.View.running(turn)), Mob.queue(lc, M.Queue.context(M.Queue.items(st, id)), True{}, V.View.running(turn))))},
         J.KV{"todos", Mob.todos(lc, nf, id, U.Todos.shown(st, id, V.View.running(turn)))},
@@ -1472,6 +1483,7 @@ def Mob.kx.settings(+u: U.Ui) -> List<&2, J.Json>:
 def Mob.lang(+u: U.Ui) -> J.Json:
   Mob.lang.loc(U.Lang.loc(u), u)
 
+
 # Antigravity (client.bend's Agv.rows), as every client draws them: a
 # button "open-url" the app opens in the browser itself
 def Mob.agy.btns(bs: List<&2, U.AgBtn>) -> List<&2, J.Json>:
@@ -1502,7 +1514,7 @@ def Mob.settings.of.loc(+lc: I.Loc, +u: U.Ui, +st: M.State, +nf: Map<&2, String>
   J.Json.obj([J.KV{"rows", J.Json.arr(List.append(&2, J.Json, List.append(&2, J.Json, List.concat(&2, J.Json, [[
     Mob.set.row(Mob.set.days.label.loc(lc, M.Setting.get(st, "settle.days", "3")), MSG.T.settings.settle.note(lc), Mob.set.days(M.Setting.get(st, "settle.days", "3"))),
     Mob.set.row(MSG.T.settings.restart(lc), MSG.T.settings.restart.note(lc), Mob.set.chips.loc(lc, ["on", "off"], Bool.pick(String, M.Carry.on(st), "on", "off"), "restart.continue"))], Mob.notify(lc, st), Mob.agy.rows(U.Fallbackv.rows(u)), [
-    Mob.set.row(MSG.T.settings.provider(lc), Bool.pick(String, String.is_empty(U.Models.cli(models, prov)), MSG.T.settings.provider.missing(lc, prov), U.Models.cli(models, prov)), Mob.set.chips.loc(lc, ["claude", "codex", "grok", "muse", "antigravity"], prov, "agent.provider")),
+    Mob.set.row(MSG.T.settings.provider(lc), Bool.pick(String, String.is_empty(U.Models.cli(models, prov)), MSG.T.settings.provider.missing(lc, prov), U.Models.cli(models, prov)), Mob.set.chips.loc(lc, ["claude", "codex", "grok", "muse", "antigravity", "omp"], prov, "agent.provider")),
     Mob.set.row(MSG.T.settings.model(lc), Bool.pick(String, String.is_empty(model), MSG.T.common.default(lc), model) ++ ": " ++ U.Models.label_of(models, prov, model), Mob.set.chips.loc(lc, "" <> U.Models.list(models, prov), model, "agent.model")),
     Mob.set.row.f("KiCad", U.KN.summary(nf) ++ " · " ++ U.Str.get(nf, "kicad.cli"), [Mob.set.field("kpath", MSG.T.settings.kicad.path(lc), False{}, U.Ui.scratch(u, "@f.kpath"))], [Mob.set.btn(MSG.T.settings.kicad.path.save(lc), "kicad-path-save", "", False{})])], Mob.kn(U.KN.of(nf, st)), [
     Mob.set.row(U.FreeCAD.label.loc(lc, nf), U.FreeCAD.note(lc, nf), Nil{}),

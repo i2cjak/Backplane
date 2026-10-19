@@ -69,6 +69,8 @@ type Out is Data:
   MuseTurn{thread: String, cwd: String, model: String, session: String, runtime: M.RuntimeMode, text: String}
   # Google's Antigravity agent over ACP (core/agy.bend)
   AgyTurn{thread: String, cwd: String, model: String, session: String, runtime: M.RuntimeMode, text: String}
+  # oh-my-pi over ACP (core/omp.bend): one process per turn
+  OmpTurn{thread: String, cwd: String, model: String, session: String, runtime: M.RuntimeMode, text: String}
   # a turn ended: "completed", "failed", or "stopped" (Stop, archive,
   # delete: no alert, but the phones' island still hears of it)
   TurnEnded{thread: String, state: String}
@@ -417,8 +419,8 @@ def Hub.title.k(fresh: Bool, +thread: String, +text: String, +now: Nat, rest: Li
 
 # the effects that run one turn of a thread's agent, by provider: Claude
 # keeps one process per thread fed with stream-json; Codex, Grok, Muse and
-# Antigravity run a process per turn, resuming their session (Grok and
-# Antigravity over ACP, Muse over MSP, all reported in Codex's event shapes)
+# Antigravity run a process per turn, resuming their session (Grok, Antigravity
+# and oh-my-pi over ACP, Muse over MSP, all reported in Codex's event shapes)
 def Hub.run.k(i: Nat, +thread: String, +cwd: String, +provider: String, +model: String, +session: String, runtime: M.RuntimeMode, interaction: M.InteractionMode, +text: String, +uuid: String) -> List<&2, Out>:
   match i:
     case 1n:
@@ -429,6 +431,8 @@ def Hub.run.k(i: Nat, +thread: String, +cwd: String, +provider: String, +model: 
       [MuseTurn{thread, cwd, model, session, runtime, text}]
     case 4n:
       [AgyTurn{thread, cwd, model, session, runtime, text}]
+    case 5n:
+      [OmpTurn{thread, cwd, model, session, runtime, text}]
     case _:
       [AgentStart{thread, cwd, provider, model, session, runtime, interaction}, Claude.send(thread, cwd, text, uuid)]
 
@@ -436,7 +440,7 @@ def Hub.run.k(i: Nat, +thread: String, +cwd: String, +provider: String, +model: 
 def Hub.run(t: M.Thread, +cwd: String, +text: String, +uuid: String) -> List<&2, Out>:
   match t:
     case M.Thread{+id, _, _, _, _, _, _, _, _, _, _, _, _, _, _, +provider, model, runtime, interaction, session, _}:
-      Hub.run.k(C.Codec.pos(["claude", "codex", "grok", "muse", "antigravity"], provider), id, cwd, provider, model, session, runtime, interaction, text, uuid)
+      Hub.run.k(C.Codec.pos(["claude", "codex", "grok", "muse", "antigravity", "omp"], provider), id, cwd, provider, model, session, runtime, interaction, text, uuid)
 
 def Hub.post.go(wait: Bool, +t: M.Thread, +cwd: String, +queued: String, +now: Nat, +thread: String, +msg: String, role: M.Role, +text: String) -> Step:
   match wait:
@@ -2624,6 +2628,24 @@ def Hub.answer.plan(impl: Bool, +s: M.State, +now: Nat, +client: U32, +id: Strin
     case False{}:
       Step{[M.AskClosed{ask, answer, now}], [Reply.ok(client, id), AskAnswered{ask, answer}]}
 
+# The omp card exposes Allow/Deny, not a session grant. Older clients may
+# still send "session"; normalize it before storing the answer.
+def Hub.answer.value.k(omp_approval: Bool, session: Bool, allow: Bool, deny: Bool, +answer: String) -> String:
+  match omp_approval session allow deny:
+    case True{} True{} _ _:
+      "accept"
+    case True{} _ True{} _:
+      "accept"
+    case True{} _ _ True{}:
+      "decline"
+    case _ _ _ _:
+      answer
+
+def Hub.answer.value(a: M.Ask, s: M.State, +answer: String) -> String:
+  match a:
+    case M.Ask{_, +thread, +kind, _, _, _, _, _}:
+      Hub.answer.value.k(Bool.and(String.eq(M.Thread.provider(Hub.thread(s, thread)), "omp"), String.eq(kind, "approval")),
+        String.eq(answer, "session"), String.eq(answer, "Allow"), String.eq(answer, "Deny"), answer)
 # an order's question (order_ask, core/order.bend) parks nothing: the
 # person's answer is posted in its thread as their message, which starts
 # (or queues) the agent's turn however long they took; a dismissal only
@@ -2635,21 +2657,21 @@ def Hub.answer.order(said: Bool, +s: M.State, +now: Nat, +client: U32, +id: Stri
     case False{}:
       Step{[M.AskClosed{ask, answer, now}], [Reply.ok(client, id)]}
 
-def Hub.answer.open(order: Bool, +s: M.State, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String, +th: String, +k: String) -> Step:
+def Hub.answer.open(order: Bool, +a: M.Ask, +s: M.State, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String, +th: String, +k: String) -> Step:
   match order:
     case True{}:
       Hub.answer.order(Bool.not(String.is_empty(String.trim(answer))), s, now, client, id, ask, answer, th)
     case False{}:
-      Hub.answer.plan(Bool.and(String.eq(k, "plan"), String.eq(answer, "implement")), s, now, client, id, ask, answer, th)
+      Hub.answer.plan(Bool.and(String.eq(k, "plan"), String.eq(answer, "implement")), s, now, client, id, ask, Hub.answer.value(a, s, answer), th)
 
 # the user's answer: the ask closes (once; law ask_closes_once), a parked
 # agent request gets its reply, implementing a plan leaves plan mode and
 # asks the agent to carry it out, and an order's question is answered in
 # its thread (Hub.answer.order)
-def Hub.answer.k(a: M.Ask, +s: M.State, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String) -> Step:
+def Hub.answer.k(+a: M.Ask, +s: M.State, +now: Nat, +client: U32, +id: String, +ask: String, +answer: String) -> Step:
   match a:
     case M.Ask{_, +th, +k, +tool, _, _, True{}, _}:
-      Hub.answer.open(String.eq(tool, "order_ask"), s, now, client, id, ask, answer, th, k)
+      Hub.answer.open(String.eq(tool, "order_ask"), a, s, now, client, id, ask, answer, th, k)
     case M.Ask{_, _, _, _, _, _, False{}, _}:
       Step.outs([Reply.ok(client, id)])
 
@@ -3102,6 +3124,8 @@ def Codex.item.k(i: Nat, +thread: String, +now: Nat, +seq: Nat, +it: J.Json) -> 
       Step{[M.ActivityLogged{thread, Hub.id("f", now, seq), "tool", "edit", J.Json.show(J.Json.get_obj(it, "changes")), now}], Nil{}}
     case 3n:
       Step{[M.TodosSet{thread, TD.Todo.show(TD.Todo.codex(it)), now}], Nil{}}
+    case 4n:
+      Step{[M.ActivityLogged{thread, Hub.id("n", now, seq), "info", "resume", J.Json.get_str(it, "text", ""), now}], Nil{}}
     case _:
       Step.none()
 
@@ -3125,7 +3149,7 @@ def Codex.line.k(i: Nat, +s: M.State, +thread: String, +now: Nat, +o: J.Json) ->
       Step.after(Claude.init.k(Claude.init.same(Hub.thread(s, thread), J.Json.get_str(o, "thread_id", "")), thread, J.Json.get_str(o, "thread_id", ""), now),
         Turn.codex.start(Claude.init.same(Hub.thread(s, thread), J.Json.get_str(o, "thread_id", "")), thread, J.Json.get_str(o, "thread_id", ""), now))
     case 1n:
-      Codex.item.k(C.Codec.pos(["agent_message", "command_execution", "file_change", "todo_list"], J.Json.get_str(J.Json.get_obj(o, "item"), "type", "")), thread, now, Hub.seq(s), J.Json.get_obj(o, "item"))
+      Codex.item.k(C.Codec.pos(["agent_message", "command_execution", "file_change", "todo_list", "backplane_note"], J.Json.get_str(J.Json.get_obj(o, "item"), "type", "")), thread, now, Hub.seq(s), J.Json.get_obj(o, "item"))
     case 2n:
       Step{M.TurnChanged{thread, M.Completed{}, now} <> Turn.codex(s, thread, now, o), Nil{}}
     case 4n:
@@ -3149,7 +3173,7 @@ def Codex.line.parsed(m: Maybe<&2, J.Json>, +s: M.State, +thread: String, +now: 
 # Grok's and Muse's tool calls are logged before they run: their design
 # steps come at "tool.done"
 def Hub.acp_like(+p: String) -> Bool:
-  Bool.or(Bool.or(String.eq(p, "grok"), String.eq(p, "muse")), String.eq(p, "antigravity"))
+  Bool.or(Bool.or(Bool.or(String.eq(p, "grok"), String.eq(p, "muse")), String.eq(p, "antigravity")), String.eq(p, "omp"))
 
 # the open-call outs of a Codex-like line, after its step
 def Tools.codex(acp: Bool, m: Maybe<&2, J.Json>, st: Step, +thread: String) -> Step:
