@@ -35,6 +35,19 @@ cores=$(nproc 2>/dev/null || echo 4)
 jobs=${TEST_JOBS:-$(( cores / 4 ))}
 if [ "$jobs" -lt 1 ]; then jobs=1; fi
 if [ "$jobs" -gt 6 ]; then jobs=6; fi
+# and never more than memory holds: a test's bun takes up to about
+# TEST_MEM_GB (default 5) whatever the core count, and a CI runner (16 GB,
+# 4 cores) that ran 4 at once was shut down mid-shard
+mem_gb=${TEST_MEM_GB:-5}
+avail_kb=$(awk '/^MemAvailable:/{print $2}' /proc/meminfo 2>/dev/null || true)
+if [ -n "$avail_kb" ]; then
+  fit=$(( avail_kb / (mem_gb * 1048576) ))
+  [ "$fit" -lt 1 ] && fit=1
+  if [ "$jobs" -gt "$fit" ]; then
+    echo "test.sh: $jobs jobs asked, $fit fit in $(( avail_kb / 1048576 )) GB available; running $fit" >&2
+    jobs=$fit
+  fi
+fi
 
 all_tests=""
 for t in test/*_test.bend; do
@@ -77,16 +90,19 @@ for t in $tests; do
   ( s=$(now_ms)
     rc=0
     driver="test/tools/$(basename "$t" _test.bend).mjs"
+    # each step's peak RSS appended (cost() keeps the largest)
+    tm=""
+    [ -x /usr/bin/time ] && tm="/usr/bin/time -a -f %M -o $work/$i.rss"
     (
       export BUN_JSC_forceRAMSize=4294967296
       if [ -f "$driver" ]; then
         if grep -q '^def main(' "$t"; then
-          nice -n 19 bend "$t" || exit $?
+          $tm nice -n 19 bend "$t" || exit $?
         fi
-        nice -n 19 bend "$t" -o "$work/$i.mjs" || exit $?
-        nice -n 19 bun "$driver" "$PWD/$work/$i.mjs"
+        $tm nice -n 19 bend "$t" -o "$work/$i.mjs" || exit $?
+        $tm nice -n 19 bun "$driver" "$PWD/$work/$i.mjs"
       else
-        nice -n 19 bend "$t"
+        $tm nice -n 19 bend "$t"
       fi
     ) >"$work/$i.out" 2>&1 || rc=$?
     echo $rc >"$work/$i.rc"
@@ -112,13 +128,19 @@ if [ -n "${TEST_TIMINGS_OUT:-}" ]; then
   sort -rn -o "$TEST_TIMINGS_OUT" "$TEST_TIMINGS_OUT"
 fi
 
-# Replay in order with the original per-test validation.
+# Replay in order with the original per-test validation. Each verdict
+# line also says how long the test ran and its peak memory.
+cost() {
+  ms=$(cat "$work/$1.dur" 2>/dev/null || echo 0)
+  kb=$(grep -E '^[0-9]+$' "$work/$1.rss" 2>/dev/null | sort -n | tail -n1)
+  awk -v ms="$ms" -v kb="${kb:-0}" 'BEGIN { if (kb > 0) printf " (%.1fs, %.1f GB)", ms / 1000, kb / 1048576; else printf " (%.1fs)", ms / 1000 }'
+}
 status=0
 i=0
 for t in $tests; do
   out="$work/$i.out"
   if [ "$(cat "$work/$i.rc")" != 0 ]; then
-    echo "$t: exited non-zero"; cat "$out"; status=1; i=$(( i + 1 )); continue
+    echo "$t: exited non-zero$(cost $i)"; cat "$out"; status=1; i=$(( i + 1 )); continue
   fi
   if grep -q '^ok ' "$out" && ! grep -q '^Error:' "$out"; then
     :
@@ -126,9 +148,9 @@ for t in $tests; do
     echo "$t: did not run"; head -20 "$out"; status=1; i=$(( i + 1 )); continue
   fi
   if grep -q '^FAIL' "$out"; then
-    echo "$t:"; grep '^FAIL' "$out"; status=1
+    echo "$t:$(cost $i)"; grep '^FAIL' "$out"; status=1
   else
-    echo "$t: ok"
+    echo "$t: ok$(cost $i)"
   fi
   i=$(( i + 1 ))
 done

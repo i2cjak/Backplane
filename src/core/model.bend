@@ -1388,9 +1388,18 @@ def Queue.context(qs: List<&2, QItem>) -> List<&2, QItem>:
     case QItem{+m, t} <> rest:
       Queue.context.k(String.starts_with(m, "handoff:"), QItem{m, t}, Queue.context(rest))
 
-def State.switch.k(+s: State, +th: String, +old: String, +oldse: String, +p: String, m: String) -> State:
-  +s1 = State.setting(State.setting(s, Switch.session.key(th, old), oldse), Switch.seen.key(th, old), Nat.show(Switch.count(s, th)))
+# the switch given how many entries the thread has (Switch.count, or a
+# store's counter that equals it: the indexed store's build keeps no entries)
+def State.switch.n(+s: State, +th: String, +old: String, +oldse: String, +p: String, m: String, +n: Nat) -> State:
+  +s1 = State.setting(State.setting(s, Switch.session.key(th, old), oldse), Switch.seen.key(th, old), Nat.show(n))
   State.thread((t => Switch.set(p, m, Setting.get(s1, Switch.session.key(th, p), ""), t)), s1, th)
+
+def State.switch.k(+s: State, +th: String, +old: String, +oldse: String, +p: String, m: String) -> State:
+  State.switch.n(s, th, old, oldse, p, m, Switch.count(s, th))
+
+# a ProviderSet with the thread's entry count given
+def State.switch.c(+s: State, +th: String, +p: String, m: String, +n: Nat) -> State:
+  State.switch.n(s, th, Switch.prov(State.thread.get(s, th)), Switch.sess(State.thread.get(s, th)), p, m, n)
 
 def State.switch(+s: State, +th: String, +p: String, m: String) -> State:
   State.switch.k(s, th, Switch.prov(State.thread.get(s, th)), Switch.sess(State.thread.get(s, th)), p, m)
