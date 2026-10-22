@@ -148,6 +148,8 @@ jobs:
             BACKPLANE_JS_TARGET=$t scripts/build-js.sh src/server/main.bend dist-js/$t/backplane-serve
           done
           ls -l dist-js/*/
+          # the notices every one ships with, Bun's pinned to its version
+          BACKPLANE_LICENSES_STRICT=1 scripts/js-licenses.sh dist-js/licenses
       # the web client the hub serves (test/smoke.ts loads its page)
       - name: Web client
         run: bend src/web/index.html -o build/web > /dev/null

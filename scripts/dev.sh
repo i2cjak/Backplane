@@ -281,6 +281,8 @@ stage() {
   if [ "$service_only" = 1 ]; then
     cp dist/backplane dist/backplane-serve build/dev-pkg/
     [ -e LICENSE ] && cp LICENSE build/dev-pkg/
+    # a JS hub ships Bun's and Bend's notices (scripts/js-licenses.sh)
+    [ "$service_js" = 1 ] && scripts/js-licenses.sh build/dev-pkg/licenses
     return 0
   fi
   [ -d dist/kistack ] && cp -R dist/kistack build/dev-pkg/kistack

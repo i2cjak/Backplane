@@ -36,6 +36,12 @@ Every target cross-builds from one Linux machine, each in under a second once th
 - **Bake.** A release's Google client and telemetry credentials go into a private prelude: `scripts/google-header.py` and `scripts/telemetry-header.py` write `.js` when asked for it. The prelude is compiled in and deleted afterwards, so the emitted and kept JS never hold credentials. The JS twins `effects/google.js` and `effects/telemetry.js` read `globalThis.BACKPLANE_BAKED`. Test: `bun test/tools/js_bake_test.ts`.
 - **Compile.** The compile minifies whitespace and syntax but keeps names (`--keep-names`), so a field crash's stack still names Bend's defs and the effects. It also turns off Bun's `.env` and `bunfig.toml` autoload, which is on by default, so the hub never reads a project's `.env`.
 
+## Licenses
+
+A compiled binary contains Bun (MIT). Bun statically links JavaScriptCore and WebKit (LGPL-2, with some BSD parts) and tinycc (LGPL-2.1). The emitted JS also contains Bend's runtime and Base (Apache-2.0).
+
+`scripts/js-licenses.sh DIR` writes both sets of notices into `DIR/bun` and `DIR/bend`. The texts live in `deploy/licenses`. Bun's is its own LICENSE.md for the pinned version, and both texts are checked by hash. `NOTICE.md` says where the LGPL source is (Bun's WebKit commit) and how to run the program on a modified Bun (`BACKPLANE_JS_BUN_RUNTIME`). Strict mode (`BACKPLANE_LICENSES_STRICT=1`, as in CI) stops when the Bun in use isn't the version the notices name. `dev.sh stage` and CI stage the notices.
+
 ## Releases and the desktop app
 
 `scripts/service-release.py js` is the release producer's JS route. The request has kind `backplane-service-js-inputs`, and its toolchain pins:
