@@ -6,15 +6,14 @@ import Base
 def Clock.epoch() -> IO(U32):
   import "./effects/host.js"
 
-# One full collection and a release of free memory, at most once per
-# process, called when the boot's thin index is warm (server.bend's
-# Hub.thin.warmed): on the JS target its build leaves ~0.9 GB of heap
-# capacity behind at the boot peak (3.35 GB → 2.44 GB measured on a copy of
-# the real log, 2026-10-22). Answers the line to log; "" when nothing was
-# done (the C build, or any later call). It goes once store mode keeps the
-# thin index small (only the recent threads).
-def Mem.settle() -> IO(String):
-  import "./effects/mem.c"
+# One full collection and a release of free memory after a boot's big
+# step (`after` names it for the log): the store's hot load (server.bend's
+# Boot.act) and, without store mode, the thin index's build
+# (Hub.thin.warmed). On the JS target each leaves heap capacity and garbage
+# the collector had not gone for: the hot load peaked past a 1 GB budget with
+# ~0.4 GB live, the thin build left ~0.9 GB at the boot peak (2026-10-22).
+# Answers the line to log; "" where there is no collector to ask.
+def Mem.settle(after: String) -> IO(String):
   import "./effects/mem.js"
 
 # The event log from byte offset off (decimal text; "0" for all of it,
@@ -25,6 +24,14 @@ def Mem.settle() -> IO(String):
 # of them on a real log, the JS hub's 25 GB). A file that cannot be read,
 # or an offset at or past its end, is ["", off].
 def EvLog.read_from(path: String, off: String) -> IO(List<&2, String>):
+  import "./effects/evlog.js"
+
+# Bounded pread on the same log descriptor, without one List cell per
+# byte. Done holds [used bytes, total bytes read, line byte length, text,
+# ...], complete lines oldest first, excluding newlines from lengths.
+# A trailing fragment contributes to total only, as stobuild's Cut.of.
+# The File/error contract and max-byte cap match File.read_at.
+def EvLog.read_chunk(file: File, off: U32, max: U32) -> IO(File & Result<&1, &1, U32 & String, List<&2, String>>):
   import "./effects/evlog.js"
 
 # up to max bytes as they arrive; [] means the peer closed

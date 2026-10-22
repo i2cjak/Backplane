@@ -14,8 +14,8 @@ import ../src/core/utf8.bend as U
 # line, and a store.db holding what S1's pure materializer makes of its
 # first lines (facts, records, and meta as stobuild writes it).
 # HB.Hot.load must answer the full replay's records (but the cold
-# settings) and its wire lines, for cuts before and after the torn line
-# and at the end; a store with another codec or of another log is refused.
+# settings), retaining no wire lines, for cuts before and after the torn
+# line and at the end; a store with another codec or of another log is refused.
 
 def text.of(c: M.Change) -> String:
   J.Json.show(CO.Change.encode(c))
@@ -150,7 +150,7 @@ def hot.loads(+n: Nat) -> IO(Unit):
     +hot : HB.Hot <- HB.Hot.load(dir)
     C.Check.str("cut " ++ Nat.show(n) ++ ": used", HB.Hot.why(hot), "")
     C.Check.str("cut " ++ Nat.show(n) ++ ": records", dump(warm.go(Map.to_list(&2, String, S.Tab.dump(HB.Hot.st(hot))), Map.new(&2, String))), want())
-    C.Check.str("cut " ++ Nat.show(n) ++ ": wire lines", String.join(HB.Hot.ls(hot), "\n"), String.join(ST.Loaded.wire(full()), "\n"))
+    C.Check.str("cut " ++ Nat.show(n) ++ ": no log lines held", Nat.show(List.length(&2, String, HB.Hot.ls(hot))), "0")
     C.Check.str("cut " ++ Nat.show(n) ++ ": seq", Nat.show(M.State.seq(HB.Hot.st(hot))), Nat.show(M.State.seq(ST.Loaded.st(full()))))
     rm : Result<&1, &1, U32 & String, U32 & (String & String)> <- Process.run("rm", ["-rf", dir], "", 4096, 10000)
     return Unit{}

@@ -5,19 +5,26 @@ import ../core/codec.bend as C
 import ../core/storedb.bend as SDB
 import ../core/utf8.bend as U
 import ./db.bend as D
+import ./host.bend as H
+import ../core/far.bend as FR
+import ../core/bot.bend as BT
+import ../core/mail.bend as ML
 
 # The store's first build (store.db from events.jsonl, docs:
 # bp-coord/store/S1-SCHEMA.md)
 # ---------------------------------------------------------------
-# The log is read a chunk at a time (File.read_at), never whole: a chunk's
+# The log is read a chunk at a time (EvLog.read_chunk), never whole: a chunk's
 # complete lines are folded and their facts written in one Db.script; the
 # partial last line is read again with the next chunk, and a line longer
 # than a chunk makes the chunk grow until it fits. The fold keeps no
-# entries (Stb.strip after every chunk): the one step that reads them,
+# entries or room-post text (Stb.strip after every chunk), older mail
+# headers (Stb.after after each mail), or cold settings (written straight
+# to SQL, never inserted in the fold): the one step that reads entries,
 # ProviderSet's Switch.count, is given a counter of each thread's own
 # entries instead (M.State.switch.c). After the last line every record of
-# the final state is written (SDB.Dump.ops) with the meta rows; the
-# counters are not (nothing would keep them current on commit). Numbering
+# the final state is written (Stb.records, same Row.* as Dump.part) with
+# the meta rows; counters are not written (nothing would keep them
+# current on commit). Numbering
 # is SDB.Mat.step's: a line that is not JSON takes its bytes but no number, a line no change
 # decodes from gets a line row (wire "") and is not folded; a trailing
 # fragment with no newline is left for the hub (it never reads one either).
@@ -66,13 +73,38 @@ def Cut.go(bs: List<&2, U32>, s: CutS) -> Cut:
 def Cut.of(bs: List<&2, U32>) -> Cut:
   Cut.go(bs, CutS{Nil{}, 0n, Nil{}, 0n, 0n})
 
-# The fold without entries
-# ------------------------
+# Native chunk reader's compact form. Cut.of above remains the pure byte
+# oracle; both paths use the same UTF-8/newline/fragment semantics.
+def Cut.native.lines(xs: List<&2, String>, acc: List<&2, Ln>) -> List<&2, Ln>:
+  match xs:
+    case len <> text <> t:
+      Cut.native.lines(t, Ln{M.Switch.num(len, 0n), text} <> acc)
+    case _:
+      List.reverse(&2, Ln, acc)
+
+def Cut.native(xs: List<&2, String>) -> Cut:
+  match xs:
+    case used <> total <> t:
+      Cut{Cut.native.lines(t, Nil{}), M.Switch.num(used, 0n), M.Switch.num(total, 0n)}
+    case _:
+      Cut{Nil{}, 0n, 0n}
+
+# The fold without already-filed histories
+# ----------------------------------------
+
+# RoomPosted facts have been produced for the chunk transaction when
+# Stb.strip runs. No State.apply or Sdb.facts transition reads World.posts;
+# Dump.part never dumps them. Preserve World.talk and every other
+# world field for subsequent records.
+def Stb.world(w: BT.World) -> BT.World:
+  match w:
+    case BT.World{bs, rs, _, hs, ro, ms, pe, sp, ho, ta, pg, tk}:
+      BT.World{bs, rs, Nil{}, hs, ro, ms, pe, sp, ho, ta, pg, tk}
 
 def Stb.ext(x: M.Ext) -> M.Ext:
   match x:
     case M.Ext{w, _, mail}:
-      M.Ext{w, Map.new(&2, List<&2, M.Entry>), mail}
+      M.Ext{Stb.world(w), Map.new(&2, List<&2, M.Entry>), mail}
 
 def Stb.exts(xs: List<&2, M.Ext>) -> List<&2, M.Ext>:
   match xs:
@@ -108,14 +140,74 @@ def Stb.bump(m: Maybe<&2, M.Entry>, cnt: Map<&2, Nat>) -> Map<&2, Nat>:
     case None{}:
       cnt
 
-# one change folded: M.State.apply, but a ProviderSet takes the thread's
-# count from the counters
+# Cold settings are opaque run-input copies: no model transition reads
+# them. Keep their rows in SQL, and preserve the fold's tick without ever
+# inserting their values into M.State. Empty cold values are records too
+# (only told.*, rule.*, board.* use deletion semantics).
+def Stb.setting(cold: Bool, st: M.State, k: String, v: String) -> M.State:
+  match cold:
+    case True{}:
+      M.State.tick(st)
+    case False{}:
+      M.State.tick(M.State.setting(st, k, v))
+
+# one change folded: M.State.apply, but cold settings bypass the fold and
+# a ProviderSet takes the thread's count from the counters. WorkSet also
+# writes a setting, so it must use the same cold-key decision.
 def Stb.apply(+st: M.State, +cnt: Map<&2, Nat>, +c: M.Change) -> M.State:
   match c:
     case M.ProviderSet{+id, +p, m, _}:
       M.State.tick(M.State.switch.c(st, id, p, m, Stb.count(cnt, id)))
+    case M.SettingSet{+k, v, _}:
+      Stb.setting(SDB.Sdb.cold(k), st, k, v)
+    case M.WorkSet{+th, +kind, rows, _}:
+      +k = kind ++ "." ++ th
+      Stb.setting(SDB.Sdb.cold(k), st, k, rows)
     case other:
       M.State.apply(st, other)
+
+# The cold setting row named by this event, if any. SDB.Row.set uses the
+# same raw text and cold flag as the final fold dump, including #digits.
+def Stb.setting.ops(cold: Bool, k: String, v: String) -> List<&2, SDB.Op>:
+  match cold:
+    case True{}:
+      [SDB.Row.set(k, v)]
+    case False{}:
+      Nil{}
+
+def Stb.cold(c: M.Change) -> List<&2, SDB.Op>:
+  match c:
+    case M.SettingSet{+k, v, _}:
+      Stb.setting.ops(SDB.Sdb.cold(k), k, v)
+    case M.WorkSet{+th, +kind, rows, _}:
+      +k = kind ++ "." ++ th
+      Stb.setting.ops(SDB.Sdb.cold(k), k, rows)
+    case _:
+      Nil{}
+
+# Mail facts keep every header in SQL. The fold's only header-dependent
+# output is Row.conv's wanted field from Box.newest; Headers.add compares
+# against that same first header (timestamp ties favour the new arrival).
+# Keep exactly that header after each mail event. Preserve Box.ids in full:
+# duplicate mail must still be ignored even after its header was dropped.
+def Stb.header(ms: List<&2, ML.Mail>) -> List<&2, ML.Mail>:
+  match ms:
+    case Nil{}:
+      Nil{}
+    case m <> _:
+      [m]
+
+def Stb.mail(+b: ML.Box, +conv: String) -> ML.Box:
+  ML.Box.with_mails(b, Map.set(&2, List<&2, ML.Mail>, ML.Box.mails(b), conv, Stb.header(ML.Box.headers(b, conv))))
+
+def Stb.after(c: M.Change, st: M.State) -> M.State:
+  match c:
+    case M.MailPosted{_, +conv, _, _, _, _, _, _, _, _}:
+      M.State.with_mail(b => Stb.mail(b, conv), st)
+    case M.RoomPosted{_, +room, _, _, _, _}:
+      M.State.with_mail(b => Stb.mail(b, "room:" ++ room), st)
+    case _:
+      st
 
 # The build
 # ---------
@@ -137,6 +229,15 @@ def Stb.sqls(os: List<&2, SDB.Op>, acc: List<&2, List<&2, String>>) -> List<&2, 
     case o <> t:
       Stb.sqls(t, SDB.Sql.of(o) <> acc)
 
+# a change's far_line rows (FR.Fr.fact over the state after it: what the
+# commit path writes, storedb.bend's Sto.far.fact), as statements
+def Stb.far(fs: List<&2, FR.Fact>, acc: List<&2, List<&2, String>>) -> List<&2, List<&2, String>>:
+  match fs:
+    case Nil{}:
+      acc
+    case FR.Fact{+seq, +scope} <> t:
+      Stb.far(t, ["INSERT INTO far_line(seq, scope) VALUES (CAST(? AS INTEGER), ?) ON CONFLICT DO NOTHING", Nat.show(seq), scope] <> acc)
+
 # the log's origin: the "at" of its first line that parses (Hub.origin)
 def Stb.origin(+seq: Nat, +o: J.Json, origin: String) -> String:
   match seq:
@@ -145,14 +246,15 @@ def Stb.origin(+seq: Nat, +o: J.Json, origin: String) -> String:
     case _:
       origin
 
-def Stb.change(m: Maybe<&2, M.Change>, +st: M.State, +cnt: Map<&2, Nat>, +seq: Nat, +off: Nat, +len: Nat, +ord: Nat, items: List<&2, List<&2, String>>, id: String, origin: String) -> Acc:
+def Stb.change(m: Maybe<&2, M.Change>, +st: M.State, +cnt: Map<&2, Nat>, +seq: Nat, +off: Nat, +len: Nat, +ord: Nat, items: List<&2, List<&2, String>>, id: String, origin: String, w: String) -> Acc:
   match m:
     case Some{+c}:
       +p = SDB.F.posts(c)
       +cnt2 = Stb.bump(p, cnt)
-      Acc{Stb.apply(st, cnt, c), cnt2, seq, Nat.add(off, 1n+len), SDB.Sdb.ord(c, ord), Stb.sqls(SDB.Sdb.facts(st, SDB.At{seq, off, len, ord}, c), items), id, origin}
+      +post = Stb.after(c, Stb.apply(st, cnt, c))
+      Acc{post, cnt2, seq, Nat.add(off, 1n+len), SDB.Sdb.ord(c, ord), Stb.far(FR.Fr.fact(post, c, seq), Stb.sqls(Stb.cold(c), Stb.sqls(SDB.Sdb.facts(st, SDB.At{seq, off, len, ord}, c), items))), id, origin}
     case None{}:
-      Acc{st, cnt, seq, Nat.add(off, 1n+len), ord, Stb.sqls([SDB.F.line(SDB.At{seq, off, len, ord}, "")], items), id, origin}
+      Acc{st, cnt, seq, Nat.add(off, 1n+len), ord, Stb.sqls([SDB.F.line(SDB.At{seq, off, len, ord}, w)], items), id, origin}
 
 # Flat strings
 # ------------
@@ -191,7 +293,7 @@ def Stb.flat(j: J.Json) -> J.Json:
 def Stb.parsed(m: Maybe<&2, J.Json>, st: M.State, cnt: Map<&2, Nat>, +seq: Nat, +off: Nat, +len: Nat, ord: Nat, items: List<&2, List<&2, String>>, id: String, origin: String) -> Acc:
   match m:
     case Some{+o}:
-      Stb.change(C.Change.decode(Stb.flat(o)), st, cnt, 1n+seq, off, len, ord, items, id, Stb.origin(seq, o, origin))
+      Stb.change(C.Change.decode(Stb.flat(o)), st, cnt, 1n+seq, off, len, ord, items, id, Stb.origin(seq, o, origin), C.Change.wire_over(o, ""))
     case None{}:
       Acc{st, cnt, seq, Nat.add(off, 1n+len), ord, items, id, origin}
 
@@ -226,18 +328,19 @@ def Acc.off(a: Acc) -> Nat:
 def Stb.meta.sql(+k: String, v: String) -> List<&2, String>:
   ["INSERT OR REPLACE INTO meta(k, v) VALUES (?, ?)", k, v]
 
-# the statements written after the last line
+# the meta, written last (after every record): a store with a codec in its
+# meta is a whole one; far_line is filled (Fr.fact per line above)
 def Stb.end(a: Acc) -> List<&2, List<&2, String>>:
   match a:
-    case Acc{+st, _, +seq, +off, +ord, _, id, origin}:
-      List.append(&2, List<&2, String>, List.reverse(&2, List<&2, String>, Stb.sqls(SDB.Dump.ops(st), Nil{})), [
-        Stb.meta.sql("schema", "1"),
-        Stb.meta.sql("codec", Nat.show(SDB.Sdb.codec())),
-        Stb.meta.sql("applied_seq", Nat.show(seq)),
-        Stb.meta.sql("applied_off", Nat.show(off)),
-        Stb.meta.sql("ord", Nat.show(ord)),
-        Stb.meta.sql("log_id", id),
-        Stb.meta.sql("origin", origin)])
+    case Acc{_, _, +seq, +off, +ord, _, id, origin}:
+      [Stb.meta.sql("schema", "1"),
+       Stb.meta.sql("applied_seq", Nat.show(seq)),
+       Stb.meta.sql("applied_off", Nat.show(off)),
+       Stb.meta.sql("ord", Nat.show(ord)),
+       Stb.meta.sql("log_id", id),
+       Stb.meta.sql("origin", origin),
+       Stb.meta.sql("far_line", "filled"),
+       Stb.meta.sql("codec", Nat.show(SDB.Sdb.codec()))]
 
 def Acc.seq(a: Acc) -> Nat:
   match a:
@@ -273,21 +376,54 @@ def Stb.ok.k(ok: Bool, +what: String, +r: String) -> IO(Unit):
 def Stb.check(+what: String, +r: String) -> IO(Unit):
   Stb.ok.k(String.starts_with(r, "ok"), what, r)
 
-def Stb.write.k(+h: String, r: List<&2, List<&2, String>> & Acc) -> IO(Acc):
+# Progress
+# --------
+# The hub that waits for a build reads HOME/store.build ("progress <lines>
+# <bytes done> <log bytes>", replaced whole after each chunk) for its note;
+# the same line goes to stdout.
+
+def Stb.put.done(r: File & Result<&1, &1, U32 & String, Unit>) -> IO(Unit):
+  (f, _) = r
+  File.close(f)
+
+def Stb.put.k(r: Result<&1, &1, U32 & String, File>, +text: String) -> IO(Unit):
+  match r:
+    case Done{f}:
+      IO.bind(File & Result<&1, &1, U32 & String, Unit>, Unit, File.write(f, text), Stb.put.done)
+    case Fail{_}:
+      IO.pure(Unit, Unit{})
+
+# a file's text replaced whole (written beside it, then renamed over it)
+def Stb.put(+path: String, +text: String) -> IO(Unit):
+  do IO<Unit>:
+    IO.bind(Result<&1, &1, U32 & String, File>, Unit, File.open(path ++ ".tmp", "w"), r => Stb.put.k(r, text))
+    mv : Result<&1, &1, U32 & String, Unit> <- H.FS.rename(path ++ ".tmp", path)
+    return Unit{}
+
+def Stb.progress(+home: String, +seq: Nat, +off: Nat, +total: Nat) -> IO(Unit):
+  +line = "progress " ++ Nat.show(seq) ++ " " ++ Nat.show(off) ++ " " ++ Nat.show(total)
+  do IO<Unit>:
+    IO.print("store-rebuild " ++ line)
+    Stb.put(home ++ "/store.build", line ++ "\n")
+
+def Stb.write.k(+h: String, +home: String, +total: Nat, r: List<&2, List<&2, String>> & Acc) -> IO(Acc):
   (items, +a) = r
   do IO<Acc>:
     +res : String <- D.Db.script(h, items)
     Stb.check("chunk ending at " ++ Nat.show(Acc.off(a)), res)
+    Stb.progress(home, Acc.seq(a), Acc.off(a), total)
     return a
 
 # a chunk's lines folded and written in one transaction; answers the
 # accumulator after them, entries stripped
-def Stb.write(+h: String, ls: List<&2, Ln>, a: Acc) -> IO(Acc):
-  Stb.write.k(h, Acc.take(Stb.lines(ls, a)))
+def Stb.write(+h: String, +home: String, +total: Nat, ls: List<&2, Ln>, a: Acc) -> IO(Acc):
+  Stb.write.k(h, home, total, Acc.take(Stb.lines(ls, a)))
 
 # what to do after a chunk: 0 the log has ended (nothing read, or only a
 # fragment with no newline before the end), 1 lines were read (go on), 2 a
-# line longer than the chunk (read again, twice as much)
+# line longer than the chunk (read again, twice as much); a successful
+# read resets to the configured chunk so a long line cannot raise all
+# subsequent chunk allocations
 def Stb.next.k(none: Bool, nothing: Bool, short: Bool) -> Nat:
   match none nothing short:
     case True{} _ _:
@@ -302,37 +438,37 @@ def Stb.next.k(none: Bool, nothing: Bool, short: Bool) -> Nat:
 def Stb.next(+used: Nat, +total: Nat, +max: U32) -> Nat:
   Stb.next.k(Nat.is_eq(total, 0n), Nat.is_eq(used, 0n), Nat.is_lt(total, U32.to_nat(max)))
 
-def Stb.then(i: Nat, f: File, +h: String, +max: U32, ls: List<&2, Ln>, a: Acc, k: File -> Acc -> U32 -> IO(File & Acc)) -> IO(File & Acc):
+def Stb.then(i: Nat, f: File, +h: String, +home: String, +logsize: Nat, +chunk: U32, +max: U32, ls: List<&2, Ln>, a: Acc, k: File -> Acc -> U32 -> IO(File & Acc)) -> IO(File & Acc):
   match i:
     case 0n:
       IO.pure(File & Acc, (f, a))
     case 1n:
-      IO.bind(Acc, File & Acc, Stb.write(h, ls, a), a2 => k(f, a2, max))
+      IO.bind(Acc, File & Acc, Stb.write(h, home, logsize, ls, a), a2 => k(f, a2, chunk))
     case _:
       k(f, a, U32.mul(max, 2))
 
-def Stb.cut(f: File, +h: String, +max: U32, c: Cut, a: Acc, k: File -> Acc -> U32 -> IO(File & Acc)) -> IO(File & Acc):
+def Stb.cut(f: File, +h: String, +home: String, +logsize: Nat, +chunk: U32, +max: U32, c: Cut, a: Acc, k: File -> Acc -> U32 -> IO(File & Acc)) -> IO(File & Acc):
   match c:
     case Cut{ls, +used, +total}:
-      Stb.then(Stb.next(used, total, max), f, h, max, ls, a, k)
+      Stb.then(Stb.next(used, total, max), f, h, home, logsize, chunk, max, ls, a, k)
 
-def Stb.read(r: File & Result<&1, &1, U32 & String, List<&2, U32>>, +h: String, +max: U32, a: Acc, k: File -> Acc -> U32 -> IO(File & Acc)) -> IO(File & Acc):
+def Stb.read(r: File & Result<&1, &1, U32 & String, List<&2, String>>, +h: String, +home: String, +logsize: Nat, +chunk: U32, +max: U32, a: Acc, k: File -> Acc -> U32 -> IO(File & Acc)) -> IO(File & Acc):
   (f, res) = r
   match res:
     case Done{bs}:
-      Stb.cut(f, h, max, Cut.of(bs), a, k)
+      Stb.cut(f, h, home, logsize, chunk, max, Cut.native(bs), a, k)
     case Fail{(_, e)}:
       IO.die(File & Acc, 1, "store build: read: " ++ e)
 
 # chunks until the log ends (fuel: more than the chunks it can take)
-def Stb.loop(fuel: Nat, f: File, +h: String, +max: U32, +a: Acc) -> IO(File & Acc):
+def Stb.loop(fuel: Nat, f: File, +h: String, +home: String, +logsize: Nat, +chunk: U32, +max: U32, +a: Acc) -> IO(File & Acc):
   match fuel:
     case 0n:
       IO.pure(File & Acc, (f, a))
     case 1n+n:
       +off : Nat = Acc.off(a)
-      IO.bind(File & Result<&1, &1, U32 & String, List<&2, U32>>, File & Acc, File.read_at(f, U32.from_nat(off), max),
-        r => Stb.read(r, h, max, a, f2 => a2 => m2 => Stb.loop(n, f2, h, m2, a2)))
+      IO.bind(File & Result<&1, &1, U32 & String, List<&2, String>>, File & Acc, H.EvLog.read_chunk(f, U32.from_nat(off), max),
+        r => Stb.read(r, h, home, logsize, chunk, max, a, f2 => a2 => m2 => Stb.loop(n, f2, h, home, logsize, chunk, m2, a2)))
 
 def Stb.file(r: Result<&1, &1, U32 & String, File>) -> IO(File):
   match r:
@@ -366,43 +502,248 @@ type Built is Data:
 
 # the log's id (SDB.Sdb.log_id of its first 4096 bytes, as the commit path
 # checks it), then the chunks
-def Stb.first(+size: Nat, +h: String, +chunk: U32, r: File & Result<&1, &1, U32 & String, List<&2, U32>>) -> IO(File & Acc):
+def Stb.first(+size: Nat, +h: String, +home: String, +chunk: U32, r: File & Result<&1, &1, U32 & String, List<&2, U32>>) -> IO(File & Acc):
   (f, res) = r
-  Stb.loop(Nat.add(size, 64n), f, h, chunk, Acc.new(SDB.Sdb.log_id(Result.default(&1, &1, U32 & String, List<&2, U32>, res, Nil{}))))
+  Stb.loop(Nat.add(size, 64n), f, h, home, size, chunk, chunk, Acc.new(SDB.Sdb.log_id(Result.default(&1, &1, U32 & String, List<&2, U32>, res, Nil{}))))
 
-def Stb.run(r: File & Nat, +h: String, +chunk: U32) -> IO(File & Acc):
+def Stb.run(r: File & Nat, +h: String, +home: String, +chunk: U32) -> IO(File & Acc):
   (f, +size) = r
-  IO.bind(File & Result<&1, &1, U32 & String, List<&2, U32>>, File & Acc, File.read_at(f, 0, 4096), x => Stb.first(size, h, chunk, x))
+  do IO<File & Acc>:
+    IO.print("store-rebuild start " ++ Nat.show(size))
+    IO.bind(File & Result<&1, &1, U32 & String, List<&2, U32>>, File & Acc, File.read_at(f, 0, 4096), x => Stb.first(size, h, home, chunk, x))
 
-def Stb.finish.k(+h: String, f: File, +a: Acc) -> IO(Built):
+# Final records, streamed from the maps
+# -------------------------------------
+# A batch contains at most 128 rows. A conservative UTF-8 payload budget
+# (4 bytes per code point, capped per field) triggers a flush at 64 KiB;
+# the last row can exceed that budget, so a single large JSON record is
+# still possible. No full-domain Map.to_list, Op list or SQL list is made.
+type RecordBatch is Data:
+  RecordBatch{items: List<&2, List<&2, String>>, rows: Nat, size: Nat}
+
+# Count at most 16384 code points without allocating an encoded byte list.
+def Stb.record.chars(fuel: Nat, s: String, n: Nat) -> Nat:
+  match fuel s:
+    case 0n _:
+      n
+    case 1n+r SNil{}:
+      n
+    case 1n+r SCon{_, t}:
+      Stb.record.chars(r, t, 1n+n)
+
+def Stb.record.size(xs: List<&2, String>, n: Nat) -> Nat:
+  match xs:
+    case Nil{}:
+      n
+    case x <> t:
+      Stb.record.size(t, Nat.add(n, Nat.mul(4n, Stb.record.chars(16384n, x, 0n))))
+
+def Stb.record.flush(+h: String, b: RecordBatch) -> IO(RecordBatch):
+  match b:
+    case RecordBatch{items, _, _}:
+      do IO<RecordBatch>:
+        res : String <- D.Db.script(h, List.reverse(&2, List<&2, String>, items))
+        Stb.check("record batch", res)
+        return RecordBatch{Nil{}, 0n, 0n}
+
+def Stb.record.full(full: Bool, +h: String, b: RecordBatch) -> IO(RecordBatch):
+  match full:
+    case True{}:
+      Stb.record.flush(h, b)
+    case False{}:
+      IO.pure(RecordBatch, b)
+
+def Stb.record.add(+h: String, +item: List<&2, String>, b: RecordBatch) -> IO(RecordBatch):
+  match b:
+    case RecordBatch{items, +rows, +size}:
+      +n : Nat = 1n+rows
+      +bytes = Nat.add(size, Stb.record.size(item, 0n))
+      Stb.record.full(Bool.or(Nat.is_ge(n, 128n), Nat.is_ge(bytes, 65536n)), h, RecordBatch{item <> items, n, bytes})
+
+# Structural traversal: each subtree is consumed, and each row is encoded
+# only when reached. The IO continuation keeps the remaining subtree,
+# not a pre-serialized copy of the domain. Like Base List.map/filter,
+# row is a closed template; reusable captured data is an explicit context,
+# never a runtime function marked +. All template arguments precede values.
+def Stb.record.tree(~V: Data, ~Ctx: Data, ~row: Ctx -> String -> V -> SDB.Op, m: Map<&2, V>, +h: String, +ctx: Ctx, b: RecordBatch) -> IO(RecordBatch):
+  match m:
+    case MTip{}:
+      IO.pure(RecordBatch, b)
+    case MLeaf{k, v}:
+      Stb.record.add(h, SDB.Sql.of(row(ctx, k, v)), b)
+    case MNode{_, lo, hi}:
+      IO.bind(RecordBatch, RecordBatch, Stb.record.tree(~V, ~Ctx, ~row, lo, h, ctx, b), b2 => Stb.record.tree(~V, ~Ctx, ~row, hi, h, ctx, b2))
+
+def Stb.record.end(+h: String, b: RecordBatch) -> IO(Unit):
+  do IO<Unit>:
+    rest : RecordBatch <- Stb.record.flush(h, b)
+    return Unit{}
+
+def Stb.domain(~V: Data, ~Ctx: Data, ~row: Ctx -> String -> V -> SDB.Op, +name: String, m: Map<&2, V>, +h: String, +ctx: Ctx) -> IO(Unit):
+  do IO<Unit>:
+    IO.print("store-rebuild records " ++ name ++ " start")
+    IO.bind(RecordBatch, Unit, Stb.record.tree(~V, ~Ctx, ~row, m, h, ctx, RecordBatch{Nil{}, 0n, 0n}), b => Stb.record.end(h, b))
+    IO.print("store-rebuild records " ++ name ++ " done")
+
+# After replay, dedup IDs, order/count/live indexes are no longer needed
+# by any serializer. Conversation rows need only the newest headers, so
+# give Row.conv a box containing those alone and release it after convs.
+def Stb.mail.records(b: ML.Box, +h: String) -> IO(Unit):
+  match b:
+    case ML.Box{cs, ms, marks, _, _, _, origins, runs, _, _, charters, decisions, _, names, _}:
+      +heads = ML.Box.with_mails(ML.Box.empty(), ms)
+      do IO<Unit>:
+        Stb.domain(~ML.Conv, ~ML.Box, ~(ctx => k => v => SDB.Row.conv(ctx, v)), "conv", cs, h, heads)
+        Stb.domain(~ML.Mark, ~Unit, ~(ctx => k => v => SDB.Row.mark(k, v)), "mark", marks, h, Unit{})
+        Stb.domain(~ML.Run, ~Unit, ~(ctx => k => v => SDB.Row.run(v)), "run", runs, h, Unit{})
+        Stb.domain(~ML.Origin, ~Unit, ~(ctx => k => v => SDB.Row.origin(k, v)), "origin", origins, h, Unit{})
+        Stb.domain(~String, ~Unit, ~(ctx => k => v => SDB.Row.obj("charter", k, J.Str{v})), "charter", charters, h, Unit{})
+        Stb.domain(~List<&2, ML.Decision>, ~Unit, ~(ctx => k => v => SDB.Row.obj("decision", k, J.Json.arr(SDB.Row.decisions.js(v, Nil{})))), "decision", decisions, h, Unit{})
+        Stb.domain(~String, ~Unit, ~(ctx => k => v => SDB.Row.obj("mailname", k, J.Str{v})), "mailname", names, h, Unit{})
+
+def Stb.world.records(w: BT.World, +h: String) -> IO(Unit):
+  match w:
+    case BT.World{bs, rs, _, hs, ro, ms, pe, sp, ho, ta, pg, tk}:
+      do IO<Unit>:
+        Stb.domain(~BT.Bot, ~Unit, ~(ctx => k => v => SDB.Row.bot(v)), "bot", bs, h, Unit{})
+        Stb.domain(~BT.Room, ~Unit, ~(ctx => k => v => SDB.Row.room(v)), "room", rs, h, Unit{})
+        Stb.domain(~BT.Routine, ~Unit, ~(ctx => k => v => SDB.Row.routine(v)), "routine", ro, h, Unit{})
+        Stb.domain(~BT.Hook, ~Unit, ~(ctx => k => v => SDB.Row.hook(v)), "hook", hs, h, Unit{})
+        Stb.domain(~BT.Mem, ~Unit, ~(ctx => k => v => SDB.Row.mem(k, v)), "mem", ms, h, Unit{})
+        Stb.domain(~BT.Peer, ~Unit, ~(ctx => k => v => SDB.Row.peer(v)), "peer", pe, h, Unit{})
+        Stb.domain(~String, ~Unit, ~(ctx => k => v => SDB.Row.obj("space", k, J.Str{v})), "space", sp, h, Unit{})
+        Stb.domain(~BT.Page, ~Unit, ~(ctx => k => v => SDB.Row.page(k, v)), "page", pg, h, Unit{})
+        Stb.domain(~String, ~Unit, ~(ctx => k => v => SDB.Row.obj("skill", k, J.Str{v})), "skill", tk, h, Unit{})
+        Stb.domain(~BT.Hops, ~Unit, ~(ctx => k => v => SDB.Row.hops(k, v)), "hops", ho, h, Unit{})
+        Stb.domain(~Nat, ~Unit, ~(ctx => k => v => SDB.Row.obj("talk", k, C.Codec.nat(v))), "talk", ta, h, Unit{})
+
+def Stb.ext.records(x: M.Ext, +h: String) -> IO(Unit):
+  match x:
+    case M.Ext{w, _, mail}:
+      do IO<Unit>:
+        Stb.world.records(w, h)
+        Stb.mail.records(Maybe.default(&2, ML.Box, List.head(&2, ML.Box, mail), ML.Box.empty()), h)
+
+# Destructure once: completed domains are not carried into later domains.
+# The exact same Row.* serializers as Dump.part produce every record.
+def Stb.records(st: M.State, +h: String) -> IO(Unit):
+  match st:
+    case M.State{ps, ts, _, n, tk, sg, qu, ak, dv, nv, bw}:
+      do IO<Unit>:
+        Stb.domain(~M.Project, ~Unit, ~(ctx => k => v => SDB.Row.project(v)), "project", ps, h, Unit{})
+        Stb.domain(~M.Thread, ~Unit, ~(ctx => k => v => SDB.Row.thread(v)), "thread", ts, h, Unit{})
+        Stb.domain(~M.Task, ~Unit, ~(ctx => k => v => SDB.Row.task(v)), "task", tk, h, Unit{})
+        Stb.domain(~M.Ask, ~Unit, ~(ctx => k => v => SDB.Row.ask(v)), "ask", ak, h, Unit{})
+        Stb.domain(~List<&2, M.QItem>, ~Unit, ~(ctx => k => v => SDB.Row.queue(k, v)), "queue", qu, h, Unit{})
+        Stb.domain(~String, ~Unit, ~(ctx => k => v => SDB.Row.set(k, v)), "setting", sg, h, Unit{})
+        Stb.domain(~M.Device, ~Unit, ~(ctx => k => v => SDB.Row.device(v)), "device", dv, h, Unit{})
+        Stb.domain(~M.Nav, ~Unit, ~(ctx => k => v => SDB.Row.nav(k, v)), "nav", nv, h, Unit{})
+        Stb.ext.records(M.Ext.of(bw), h)
+        res : String <- D.Db.script(h, [SDB.Sql.of(SDB.Row.obj("state", "seq", C.Codec.nat(n)))])
+        Stb.check("state sequence", res)
+
+def Stb.gone(+path: String) -> IO(Unit):
+  do IO<Unit>:
+    r : Result<&1, &1, U32 & String, Unit> <- H.FS.remove(path)
+    return Unit{}
+
+def Stb.moved(r: Result<&1, &1, U32 & String, Unit>) -> IO(Unit):
+  match r:
+    case Done{_}:
+      IO.pure(Unit, Unit{})
+    case Fail{(_, e)}:
+      IO.die(Unit, 1, "store build: rename store.db.tmp: " ++ e)
+
+# a holds only completion metadata here: the full fold is consumed by
+# the record dump, so it is no longer rooted during journal close/rename.
+def Stb.finish.records(+h: String, +home: String, f: File, st: M.State, +a: Acc) -> IO(Built):
+  +db = home ++ "/store.db"
   do IO<Built>:
     File.close(f)
+    Stb.records(st, h)
     +res : String <- D.Db.script(h, Stb.end(a))
-    Stb.check("records", res)
-    sy : String <- D.Db.exec(h, "PRAGMA synchronous = NORMAL")
-    Stb.check("pragma", sy)
+    Stb.check("meta", res)
+    IO.print("store-rebuild journal start")
+    jm : String <- D.Db.exec(h, "PRAGMA journal_mode = DELETE")
+    Stb.check("journal", jm)
     cl : String <- D.Db.close(h)
     Stb.check("close", cl)
+    IO.print("store-rebuild journal done")
+    Stb.gone(db ++ "-wal")
+    Stb.gone(db ++ "-shm")
+    Stb.gone(db)
+    mv : Result<&1, &1, U32 & String, Unit> <- H.FS.rename(db ++ ".tmp", db)
+    Stb.moved(mv)
+    Stb.gone(home ++ "/store.build")
     return Built{Acc.seq(a), Acc.off(a), Acc.ord(a)}
 
-def Stb.finish(+h: String, r: File & Acc) -> IO(Built):
+def Stb.finish.k(+h: String, +home: String, f: File, a: Acc) -> IO(Built):
+  match a:
+    case Acc{st, _, seq, off, ord, _, id, origin}:
+      Stb.finish.records(h, home, f, st, Acc{M.State.empty(), Map.new(&2, Nat), seq, off, ord, Nil{}, id, origin})
+
+def Stb.finish(+h: String, +home: String, r: File & Acc) -> IO(Built):
   (f, a) = r
-  Stb.finish.k(h, f, a)
+  Stb.finish.k(h, home, f, a)
 
 # HOME/store.db made again from HOME/events.jsonl, read chunk bytes at a
-# time (a line longer than that grows the read). The old store, if any, is
-# deleted first.
+# time (a line longer than that grows the read), built in store.db.tmp and
+# renamed over store.db only once whole: an interrupted build leaves no
+# store.db of its own (the old one, if any, stays until the rename)
 def Stb.build(+home: String, +chunk: U32) -> IO(Built):
-  +db : String = home ++ "/store.db"
+  +db : String = home ++ "/store.db.tmp"
   do IO<Built>:
     rm : Result<&1, &1, U32 & String, U32 & (String & String)> <- Process.run("rm", ["-f", db, db ++ "-wal", db ++ "-shm", db ++ "-journal"], "", 4096, 30000)
     o : String <- D.Db.open(db)
     +h : String <- Stb.open(o)
+    # Bound SQLite's page cache to 2 MiB; sort/index scratch goes to disk.
+    cfg : String <- D.Db.exec(h, "PRAGMA cache_size = -2048; PRAGMA temp_store = FILE")
+    Stb.check("cache and temp storage", cfg)
     sch : String <- D.Db.exec(h, SDB.Sdb.schema())
     Stb.check("schema", sch)
     sy : String <- D.Db.exec(h, "PRAGMA synchronous = OFF")
     Stb.check("pragma", sy)
     f0 : File <- IO.bind(Result<&1, &1, U32 & String, File>, File, File.open(home ++ "/events.jsonl", "r"), Stb.file)
     fs : File & Nat <- IO.bind(File & Result<&1, &1, U32 & String, U32>, File & Nat, File.size(f0), Stb.size)
-    out : File & Acc <- Stb.run(fs, h, chunk)
-    Stb.finish(h, out)
+    out : File & Acc <- Stb.run(fs, h, home, chunk)
+    Stb.finish(h, home, out)
+
+# The child: backplane-serve --store-rebuild HOME (src/core/cli.bend)
+# --------------------------------------------------------------------
+
+def Stb.args.copy(xs: List<String>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case x <> t:
+      x <> Stb.args.copy(t)
+
+def Stb.args.back(xs: List<&2, String>) -> List<String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case x <> t:
+      x <> Stb.args.back(t)
+
+def Stb.done(b: Built, +t0: Nat, +t1: Nat) -> IO(Unit):
+  match b:
+    case Built{seq, off, ord}:
+      IO.print("store built lines=" ++ Nat.show(seq) ++ " applied_off=" ++ Nat.show(off) ++ " entries=" ++ Nat.show(Nat.sub(ord, 1n)) ++ " ms=" ++ Nat.show(Nat.sub(t1, t0)))
+
+def Stb.child(+home: String) -> IO(Unit):
+  do IO<Unit>:
+    t0 : Nat <- IO.now()
+    b : Built <- Stb.build(home, 262144)
+    t1 : Nat <- IO.now()
+    Stb.done(b, t0, t1)
+
+def Stb.main.k(xs: List<&2, String>, go: List<String> -> IO(Unit)) -> IO(Unit):
+  match xs:
+    case "--store-rebuild" <> +home <> _:
+      Stb.child(home)
+    case +a:
+      go(Stb.args.back(a))
+
+# the arguments, if they ask for a store build (else go on with them)
+def Stb.main(xs: List<String>, go: List<String> -> IO(Unit)) -> IO(Unit):
+  Stb.main.k(Stb.args.copy(xs), go)
